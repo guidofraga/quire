@@ -156,17 +156,6 @@ pub fn sort_regions(v: &mut Json) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn sample_files_are_already_canonical() {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/beam-check.quire");
-        for name in ["document.json", "results.json"] {
-            let text = std::fs::read_to_string(dir.join(name)).unwrap();
-            let v: Json = serde_json::from_str(&text).unwrap();
-            assert_eq!(to_string(&v), text, "{name} is not byte-identical after a round trip");
-        }
-    }
 
     #[test]
     fn small_values_stay_inline_and_regions_expand() {

@@ -1,7 +1,7 @@
 # 02 — The `.quire` Document Format (v1)
 
 > Replaces SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
-> Reference importer: [`tools/sm2quire.py`](../tools/sm2quire.py). Example document: [`samples/beam-check.quire/`](../samples/beam-check.quire/document.json).
+> Reference importer: [`tools/sm2quire.py`](../tools/sm2quire.py).
 
 ## 1. Design goals, measured against a real SMath file
 

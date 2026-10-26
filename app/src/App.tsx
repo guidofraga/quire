@@ -31,7 +31,8 @@ import { Inspector, setInspectorTab } from "./Inspector";
 import { type Background, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
-import { applyTheme, setSettingsOpen, withDefaults } from "./settings";
+import { directPdf, shrinkImages } from "./export";
+import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
 import { type Align, activeView, commands, run as runText } from "./richtext";
 import {
   type AlignMode,
@@ -178,10 +179,13 @@ async function withPrintLayout(run: () => Promise<unknown>) {
   pageRule.textContent = `@page { size: ${g.paperW}px ${g.paperH}px; margin: 0; }`;
   document.head.appendChild(pageRule);
   setState({ printing: true, selection: [], caret: null });
+  let restoreImages = () => {};
   try {
     await settle();
+    restoreImages = await shrinkImages(prefs.exportDpi);
     await run();
   } finally {
+    restoreImages();
     setState({ printing: false });
     pageRule.remove();
   }
@@ -190,10 +194,12 @@ async function withPrintLayout(run: () => Promise<unknown>) {
 const docTitle = () => fileName(state.path);
 
 async function exportPdf(target?: string) {
+  // Windows and Linux save PDFs from the system print dialog
+  if (isTauri && !directPdf && !target) return printDocument();
   const path = target ?? (await pickPdfPath(`${docTitle()}.pdf`));
   if (!path) return;
   await withPrintLayout(async () => {
-    if (isTauri) await api.exportPdf(path, paperPoints(layout().geom), docTitle());
+    if (isTauri) await api.exportPdf(path, paperPoints(layout().geom), docTitle(), prefs.compressPhotos);
     else window.print();
   });
   if (isTauri) flash(`Exported ${path.split("/").pop()}`);
@@ -201,7 +207,8 @@ async function exportPdf(target?: string) {
 
 async function printDocument() {
   await withPrintLayout(async () => {
-    if (isTauri) await api.print(paperPoints(layout().geom), docTitle());
+    if (isTauri && directPdf) await api.print(paperPoints(layout().geom), docTitle());
+    // blocks until the dialog closes, so the print layout stays up while it previews
     else window.print();
   });
 }
@@ -435,9 +442,6 @@ export function App() {
               Pages
             </button>
           </div>
-          <button onClick={() => runCommand("export_pdf")} title="Export as PDF (⌘E)">
-            PDF
-          </button>
           <button
             class="icon-btn"
             classList={{ on: state.inspector }}

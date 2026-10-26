@@ -35,7 +35,8 @@ export const api = {
   readAsset: (bundle: string, src: string) => call<string>("read_asset", { bundle, src }),
   newDocument: () => call<Doc>("new_document"),
   print: (paper: Paper, title: string) => call<null>("print_document", { paper, title }),
-  exportPdf: (path: string, paper: Paper, title: string) => call<null>("export_pdf", { path, paper, title }),
+  exportPdf: (path: string, paper: Paper, title: string, compress: boolean) =>
+    call<null>("export_pdf", { path, paper, title, compress }),
   finishExport: (error: string | null) => call<null>("finish_export", { error }),
 };
 

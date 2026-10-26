@@ -1,3 +1,11 @@
+/* STIX Two Math as TrueType (tools/build-math-font.py): the same math on every platform,
+   and small font subsets in exported PDFs. */
+@font-face {
+  font-family: "Quire Math";
+  src: url("./fonts/QuireMath.woff") format("woff");
+  font-display: block;
+}
+
 :root {
   --accent: #2f6fdf;
   --accent-soft: rgba(47, 111, 223, 0.12);
@@ -12,7 +20,7 @@
   --chrome-ink: #1f2328;
   --button: rgba(0, 0, 0, 0.05);
   --button-hover: rgba(0, 0, 0, 0.09);
-  --math-font: "STIX Two Math", "STIX Two Text", "Latin Modern Math", "Cambria Math", serif;
+  --math-font: "Quire Math", "STIX Two Math", "Latin Modern Math", "Cambria Math", serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: light dark;
 }
@@ -180,7 +188,6 @@ body {
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  will-change: transform;
 }
 
 .page-break {

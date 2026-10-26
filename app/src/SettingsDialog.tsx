@@ -1,5 +1,6 @@
 // Quire ▸ Settings… (⌘,): app-wide preferences and the defaults for new documents.
 import { onCleanup, onMount, Show } from "solid-js";
+import { directPdf } from "./export";
 import { Check, Field, LANGS, Num, Section, Select, Text } from "./Inspector";
 import { type Prefs, prefs, resetPrefs, setPref, setSettingsOpen, settingsOpen, type Theme } from "./settings";
 
@@ -57,6 +58,22 @@ function Dialog() {
               label="Return and Delete on empty space move the content below"
               onChange={toggle("shiftContent")}
             />
+          </Section>
+          <Section title="PDF export">
+            <Field label="Image resolution">
+              <Select
+                value={String(prefs.exportDpi)}
+                options={[
+                  ["300", "300 dpi — print"],
+                  ["150", "150 dpi — screen, smaller files"],
+                  ["0", "Original images"],
+                ]}
+                onChange={(v) => setPref("exportDpi", Number(v))}
+              />
+            </Field>
+            <Show when={directPdf}>
+              <Check checked={prefs.compressPhotos} label="Compress photos (drawings stay lossless)" onChange={toggle("compressPhotos")} />
+            </Show>
           </Section>
           <Section title="New documents">
             <div class="insp-row">

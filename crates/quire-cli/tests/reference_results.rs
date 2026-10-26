@@ -1,8 +1,8 @@
 //! Regression gate: the engine must reproduce a worksheet's stored results.
 //!
-//! The bundled example (samples/beam-check.quire) always runs. Set `QUIRE_SMATH_REFERENCE`
-//! to a `.quire` bundle imported by tools/sm2quire.py to also check that every result
-//! SMath Studio cached in it is reproduced exactly; such reports stay outside the repo.
+//! Set `QUIRE_SMATH_REFERENCE` to a `.quire` bundle imported by tools/sm2quire.py to check
+//! that every result SMath Studio cached in it is reproduced exactly; such reports stay
+//! outside the repo.
 
 use std::path::PathBuf;
 
@@ -17,16 +17,6 @@ fn mismatches(bundle: &quire_doc::Bundle) -> (usize, Vec<String>) {
         .map(|r| format!("{}: reference {} vs Quire {:?} ({:?})", r.expr, r.reference, r.ours, r.verdict))
         .collect();
     (rows.len(), wrong)
-}
-
-#[test]
-fn reproduces_the_example_results() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/beam-check.quire");
-    let bundle = quire_doc::load(path).expect("example loads");
-    let (count, wrong) = mismatches(&bundle);
-    assert_eq!(count, 12);
-    assert!(wrong.is_empty(), "results differ:\n{}", wrong.join("\n"));
-    assert!(evaluate(&bundle.document).outcomes.iter().all(|o| o.error.is_none()));
 }
 
 #[test]

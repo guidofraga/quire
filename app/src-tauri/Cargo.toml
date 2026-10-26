@@ -21,3 +21,7 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSDictionary", "NSGeometry", "NSObject"] }
 objc2-app-kit = { version = "0.3", features = ["NSPrintInfo", "NSPrintOperation", "NSView", "NSWindow", "NSResponder", "NSGraphics"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "objc2-app-kit"] }
+# re-encode photos in exported PDFs (WebKit stores every image losslessly)
+lopdf = { version = "0.46", default-features = false }
+jpeg-encoder = "0.7"
+flate2 = "1"

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use quire_ast::{Expr, parse};
+use quire_ast::{Expr, parse, print};
 use quire_units::{Unit, UnitRegistry};
 
 use crate::error::{EvalError, Result, bail};
@@ -74,6 +74,34 @@ fn names(e: &Expr, out: &mut Vec<String>) {
             names(rhs, out);
         }
         Expr::Num(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => {}
+    }
+}
+
+/// `e` with each parameter name replaced by its argument (parenthesized unless atomic).
+fn substitute(e: &Expr, params: &[String], args: &[Expr]) -> Expr {
+    let sub = |x: &Expr| substitute(x, params, args);
+    let boxed = |x: &Expr| Box::new(sub(x));
+    match e {
+        Expr::Ident(n) => match params.iter().position(|p| p == n) {
+            Some(i) => match &args[i] {
+                a @ (Expr::Ident(_) | Expr::Num(_) | Expr::Paren(_) | Expr::Call(..)) => a.clone(),
+                a => Expr::Paren(Box::new(a.clone())),
+            },
+            None => e.clone(),
+        },
+        Expr::Paren(x) => Expr::Paren(boxed(x)),
+        Expr::Unary(op, x) => Expr::Unary(*op, boxed(x)),
+        Expr::Factorial(x) => Expr::Factorial(boxed(x)),
+        Expr::Binary(op, a, b) => Expr::Binary(*op, boxed(a), boxed(b)),
+        Expr::Range(a, b) => Expr::Range(boxed(a), boxed(b)),
+        Expr::Compare(a, rest) => Expr::Compare(boxed(a), rest.iter().map(|(op, x)| (*op, sub(x))).collect()),
+        Expr::Call(n, xs) => Expr::Call(n.clone(), xs.iter().map(sub).collect()),
+        Expr::Index(b, xs) => Expr::Index(boxed(b), xs.iter().map(sub).collect()),
+        Expr::Matrix(rows) => Expr::Matrix(rows.iter().map(|r| r.iter().map(sub).collect()).collect()),
+        Expr::Define { lhs, rhs, global } => {
+            Expr::Define { lhs: boxed(lhs), rhs: boxed(rhs), global: *global }
+        }
+        Expr::Num(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => e.clone(),
     }
 }
 
@@ -173,6 +201,7 @@ impl Worksheet {
                 }
                 out.value = Some(v);
             }
+            Err(err) if r.show && self.symbolic_call(&mut out, e, &err) => {}
             Err(err) => {
                 if let Some(name) = &out.defines
                     && !name.contains('(')
@@ -186,6 +215,20 @@ impl Worksheet {
         out.constants = std::mem::take(&mut self.used_constants).into_iter().collect();
         out.shadowing = std::mem::take(&mut self.used_shadowing).into_iter().collect();
         out
+    }
+
+    /// `f(x) =` with no value for x shows the body in terms of x, as SMath does.
+    fn symbolic_call(&self, out: &mut Outcome, e: &Expr, err: &EvalError) -> bool {
+        let Expr::Call(name, args) = e else { return false };
+        let Some(Binding::Func(f)) = self.globals.get(&func_key(name, args.len())) else { return false };
+        let Some(missing) = err.message.strip_suffix(" is not defined") else { return false };
+        let mut arg_names = Vec::new();
+        args.iter().for_each(|a| names(a, &mut arg_names));
+        if !arg_names.iter().any(|n| n == missing) {
+            return false;
+        }
+        out.shown = Some(print(&substitute(&f.body, &f.params, args)));
+        true
     }
 
     /// `Ok(None)` for function definitions, which have no value of their own.
@@ -348,6 +391,27 @@ mod tests {
         assert_eq!(r[3], "6");
         assert_eq!(r[5], "120");
         assert!(run(&["f(x) := x"])[0].error.is_none());
+    }
+
+    #[test]
+    fn calling_and_integrating_functions() {
+        let r = shown(&[
+            "f(x) := x^2",
+            "f(5)",
+            "int(f(x), x, 0, 1)",
+            "f(x)",
+            "f(a + 1)",
+            "g(x) := x + c.1",
+            "g(y)",
+            "q(x) := 3 'kN/'m",
+            "int(q(x), x, 0, 2 'm)",
+        ]);
+        assert_eq!(r[1], "25");
+        assert_eq!(r[2], "0.3333");
+        assert_eq!(r[3], "x^2", "an unknown argument shows the body symbolically");
+        assert_eq!(r[4], "(a + 1)^2");
+        assert_eq!(r[6], "y + c.1");
+        assert_eq!(r[8], "6000 'N");
     }
 
     #[test]

@@ -122,18 +122,31 @@ pub fn print(window: &WebviewWindow, paper: Paper, title: String) -> Result<(), 
     }
 }
 
-pub fn export_pdf(window: &WebviewWindow, path: PathBuf, paper: Paper, title: String) -> Result<(), String> {
+pub fn export_pdf(
+    window: &WebviewWindow,
+    path: PathBuf,
+    paper: Paper,
+    title: String,
+    compress: bool,
+) -> Result<(), String> {
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| format!("cannot replace {}: {e}", path.display()))?;
     }
     #[cfg(target_os = "macos")]
     {
         run(window, paper, Some(path.clone()), title)?;
-        wait_for_file(&path, Duration::from_secs(120))
+        wait_for_file(&path, Duration::from_secs(120))?;
+        if compress {
+            // a smaller file is a bonus; the PDF is already complete without it
+            if let Err(e) = crate::pdf::compress_images(&path) {
+                eprintln!("quire: could not compress images in {}: {e}", path.display());
+            }
+        }
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (window, paper, title, wait_for_file);
+        let _ = (window, paper, title, compress, wait_for_file);
         Err("direct PDF export is macOS-only for now; use Print and choose a PDF printer".into())
     }
 }

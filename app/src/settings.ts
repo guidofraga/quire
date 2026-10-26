@@ -15,6 +15,10 @@ export interface Prefs {
   tooltips: boolean;
   /** Enter / Backspace on empty space open or close a line, moving what is below. */
   shiftContent: boolean;
+  /** Resolution of images in exported PDFs; 0 keeps them as they are. */
+  exportDpi: number;
+  /** Store photos in exported PDFs as JPEG (macOS export; drawings stay lossless). */
+  compressPhotos: boolean;
   // Defaults for new documents
   font: string;
   size: number;
@@ -30,6 +34,8 @@ const DEFAULTS: Prefs = {
   nameNotes: true,
   tooltips: true,
   shiftContent: true,
+  exportDpi: 300,
+  compressPhotos: true,
   font: "",
   size: 10,
   decimals: 4,

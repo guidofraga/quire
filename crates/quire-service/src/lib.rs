@@ -439,18 +439,38 @@ pub fn read_asset(bundle: &Path, src: &str) -> Result<String> {
 mod tests {
     use super::*;
 
-    fn sample() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/beam-check.quire")
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfake";
+
+    /// A small saved bundle with text, math, inline math and an image, in a temp folder.
+    fn fixture(tag: &str) -> PathBuf {
+        let src = assets::stage(PNG.to_vec(), "png").unwrap();
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                { "id": "head01", "kind": "text", "at": [0, 0], "text": "# Loads" },
+                { "id": "prose1", "kind": "text", "at": [0, 36], "text": "Width $`b := 20 'cm` and depth $`h := 40 'cm`" },
+                { "id": "areaa1", "kind": "math", "at": [0, 72], "expr": "A := b*h", "show": "value" },
+                { "id": "weight", "kind": "math", "at": [0, 108], "expr": "W := 2 'kg*g", "show": "value" },
+                { "id": "scheme", "kind": "image", "at": [0, 144], "size": [10, 10], "src": src,
+                  "caption": { "text": "Static scheme" } }
+            ]
+        });
+        let dir = std::env::temp_dir().join(format!("quire-{tag}-{}.quire", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        save(&dir, &doc, None).unwrap();
+        dir
     }
 
     #[test]
-    fn report_for_sample() {
-        let doc = open(&sample()).unwrap();
+    fn report_for_a_document() {
+        let dir = fixture("report");
+        let doc = open(&dir).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
         let r = report(&doc).unwrap();
-        let area = r.regions.iter().find(|v| v.result_text.as_deref() == Some("800 'cm^2")).unwrap();
+        let area = r.regions.iter().find(|v| v.result_text.as_deref() == Some("0.08 'm^2")).unwrap();
         assert!(area.input.is_some() && area.result.is_some());
-        // 19 math regions + 2 inline in the loads paragraph
-        assert_eq!(r.regions.len(), 21);
+        // 2 math regions + 2 inline in the paragraph
+        assert_eq!(r.regions.len(), 4);
         assert_eq!(r.error_count, 0);
         assert!(r.html.values().any(|h| h.contains("<h1>Loads</h1>")));
         assert!(r.html.contains_key("scheme:caption"));
@@ -482,15 +502,18 @@ mod tests {
         let src = assets::stage(png.clone(), "PNG").unwrap();
         assert!(src.starts_with("assets/") && src.ends_with(".png"));
         assert!(read_asset(Path::new("/nonexistent"), &src).unwrap().starts_with("data:image/png;base64,"));
-        let mut doc = open(&sample()).unwrap();
+        let original = fixture("saveas-src");
+        let mut doc = open(&original).unwrap();
+        let carried = doc["regions"][4]["src"].as_str().unwrap().to_string();
         doc["regions"].as_array_mut().unwrap().push(serde_json::json!(
             { "id": "zzzzzz", "kind": "image", "at": [0, 9000], "size": [10, 10], "src": src }
         ));
         let dir = std::env::temp_dir().join(format!("quire-saveas-test-{}.quire", std::process::id()));
-        save(&dir, &doc, Some(&sample())).unwrap();
+        save(&dir, &doc, Some(&original)).unwrap();
         assert_eq!(std::fs::read(dir.join(&src)).unwrap(), png);
-        assert!(dir.join("assets/e027afbe9d4229fa.png").exists(), "existing images are carried over");
+        assert!(dir.join(&carried).exists(), "existing images are carried over");
         std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&original).unwrap();
         assert!(assets::stage(vec![1, 2, 3], "exe").is_err());
     }
 
@@ -514,23 +537,24 @@ mod tests {
 
     #[test]
     fn assets_cannot_escape_the_bundle() {
-        assert!(read_asset(&sample(), "../../Cargo.toml").is_err());
-        assert!(read_asset(&sample(), "assets/../../../x.png").is_err());
-        assert!(
-            read_asset(&sample(), "assets/e027afbe9d4229fa.png")
-                .unwrap()
-                .starts_with("data:image/png;base64,")
-        );
+        let dir = fixture("assets");
+        let src = open(&dir).unwrap()["regions"][4]["src"].as_str().unwrap().to_string();
+        assert!(read_asset(&dir, "../../Cargo.toml").is_err());
+        assert!(read_asset(&dir, "assets/../../../x.png").is_err());
+        assert!(read_asset(&dir, &src).unwrap().starts_with("data:image/png;base64,"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn save_then_open_is_identical() {
-        let doc = open(&sample()).unwrap();
+        let first = fixture("save-a");
+        let doc = open(&first).unwrap();
         let dir = std::env::temp_dir().join(format!("quire-save-test-{}.quire", std::process::id()));
-        save(&dir, &doc, None).unwrap();
-        let original = std::fs::read_to_string(sample().join("document.json")).unwrap();
+        save(&dir, &doc, Some(&first)).unwrap();
+        let original = std::fs::read_to_string(first.join("document.json")).unwrap();
         let written = std::fs::read_to_string(dir.join("document.json")).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&first).unwrap();
         assert_eq!(written, original);
     }
 }

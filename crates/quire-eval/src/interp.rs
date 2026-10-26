@@ -424,8 +424,14 @@ impl<'u> Interp<'u> {
     /// Adaptive Simpson quadrature of `int(f, x, a, b)`.
     fn integrate(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
         let var = ident(&args[1], "the integration variable")?;
-        let a = self.eval(s, &args[2])?.as_num("the lower limit")?;
-        let b = self.eval(s, &args[3])?.as_num("the upper limit")?;
+        let mut a = self.eval(s, &args[2])?.as_num("the lower limit")?;
+        let mut b = self.eval(s, &args[3])?.as_num("the upper limit")?;
+        // a plain 0 limit takes the other limit's units: `int(q(x), x, 0, L)`
+        if a.v == 0.0 {
+            a.dim = b.dim;
+        } else if b.v == 0.0 {
+            b.dim = a.dim;
+        }
         same_dim(a.dim, b.dim, "integrate between")?;
         if !a.v.is_finite() || !b.v.is_finite() {
             bail!("integrals with infinite limits are not supported yet");

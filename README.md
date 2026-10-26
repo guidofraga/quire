@@ -6,7 +6,6 @@
 | [docs/02-file-format.md](docs/02-file-format.md) | The `.quire` document format: bundle layout, schema, linear math syntax, canonical serialization |
 | [schema/quire-1.schema.json](schema/quire-1.schema.json) | JSON Schema (draft 2020-12) for `document.json` |
 | [tools/sm2quire.py](tools/sm2quire.py) | SMath `.sm` → `.quire` importer (stdlib Python; the reference mapping) |
-| [samples/beam-check.quire/](samples/beam-check.quire/document.json) | An example worksheet |
 
 ## Desktop app
 
@@ -30,7 +29,7 @@
 - **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. **Canvas** is the free, endless sheet.
 - Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
 - **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
-- **Export as PDF…** (⌘E) writes exactly the page view with selectable text; **Print…** (⌘P) opens the macOS print panel.
+- **File ▸ Export as PDF…** (⌘E) writes exactly the page view with selectable text; on Windows and Linux it opens the system print dialog, where you choose Save as PDF / Print to File. Images are embedded at the resolution set in Settings ▸ PDF export. **Print…** (⌘P) opens the print dialog.
 - Every change re-evaluates the whole worksheet in Rust (well under a millisecond for typical documents). Math is drawn as MathML for now; a dedicated Rust typesetter comes later.
 
 Run it during development:
@@ -67,10 +66,6 @@ Build and try it (needs Rust; `rustup` installs it):
 
 ```bash
 cargo build --release
-```
-
-```bash
-./target/release/quire check samples/beam-check.quire
 ```
 
 ```bash

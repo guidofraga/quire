@@ -1,6 +1,8 @@
 // Quire desktop app — GPL-3.0-or-later. The engine crates it calls are MIT OR Apache-2.0.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+mod pdf;
 mod print;
 
 use std::path::PathBuf;
@@ -71,8 +73,9 @@ async fn export_pdf(
     path: PathBuf,
     paper: print::Paper,
     title: String,
+    compress: bool,
 ) -> CmdResult<()> {
-    print::export_pdf(&window, path, paper, title)
+    print::export_pdf(&window, path, paper, title, compress)
 }
 
 /// End of a headless `--export-pdf` run.
@@ -110,24 +113,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         license: Some("GPL-3.0-or-later (engine: MIT OR Apache-2.0)".into()),
         ..Default::default()
     };
-    let app_menu = Submenu::with_items(
-        app,
-        "Quire",
-        true,
-        &[
-            &PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?,
-            &sep()?,
-            &item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?,
-            &sep()?,
-            &PredefinedMenuItem::services(app, None)?,
-            &sep()?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::show_all(app, None)?,
-            &sep()?,
-            &PredefinedMenuItem::quit(app, None)?,
-        ],
-    )?;
+    // macOS keeps Settings and Quit in the app menu; elsewhere they live in File
+    let mac = cfg!(target_os = "macos");
+    let settings = item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?;
     let file = Submenu::with_items(
         app,
         "File",
@@ -148,6 +136,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
+    if !mac {
+        file.append_items(&[&sep()?, &settings, &sep()?, &PredefinedMenuItem::quit(app, Some("Quit"))?])?;
+    }
     let edit = Submenu::with_items(
         app,
         "Edit",
@@ -238,7 +229,34 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?],
     )?;
-    Menu::with_items(app, &[&app_menu, &file, &edit, &insert, &format, &arrange, &view, &window])
+    if mac {
+        let app_menu = Submenu::with_items(
+            app,
+            "Quire",
+            true,
+            &[
+                &PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?,
+                &sep()?,
+                &settings,
+                &sep()?,
+                &PredefinedMenuItem::services(app, None)?,
+                &sep()?,
+                &PredefinedMenuItem::hide(app, None)?,
+                &PredefinedMenuItem::hide_others(app, None)?,
+                &PredefinedMenuItem::show_all(app, None)?,
+                &sep()?,
+                &PredefinedMenuItem::quit(app, None)?,
+            ],
+        )?;
+        return Menu::with_items(app, &[&app_menu, &file, &edit, &insert, &format, &arrange, &view, &window]);
+    }
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?],
+    )?;
+    Menu::with_items(app, &[&file, &edit, &insert, &format, &arrange, &view, &window, &help])
 }
 
 fn main() {
