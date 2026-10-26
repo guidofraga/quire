@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quire.app/schema/quire-1.schema.json",
+  "title": "Quire document (document.json)",
+  "type": "object",
+  "required": ["format", "regions"],
+  "properties": {
+    "format": { "const": "quire/1" },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "title": { "$ref": "#/$defs/localized" },
+        "authors": { "type": "array", "items": { "type": "string" } },
+        "company": { "type": "string" },
+        "id": { "type": "string" },
+        "lang": { "type": "string" },
+        "source": { "type": "object" }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "display": {
+          "type": "object",
+          "properties": {
+            "decimals": { "type": "integer", "minimum": 0, "maximum": 15 },
+            "exponentialThreshold": { "type": "integer", "minimum": 1 },
+            "approxEqualDigits": { "type": "integer", "minimum": 1 },
+            "trailingZeros": { "type": "boolean" },
+            "fractions": { "enum": ["decimal", "fraction", "mixed"] },
+            "decimalSeparator": { "enum": ["auto", ".", ","] }
+          }
+        },
+        "calc": {
+          "type": "object",
+          "properties": {
+            "angle": { "enum": ["rad", "deg", "grad"] },
+            "precision": { "enum": ["double", "arbitrary"] }
+          }
+        },
+        "units": {
+          "type": "object",
+          "properties": {
+            "system": { "enum": ["SI", "US", "Imperial", "CGS"] },
+            "prefer": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "units": {
+      "description": "Custom unit definitions: name -> linear-syntax expression",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "styles": {
+      "type": "object",
+      "properties": {
+        "numbering": {
+          "type": "object",
+          "properties": {
+            "headings": { "type": ["string", "null"] },
+            "figures": { "type": ["string", "null"] },
+            "tables": { "type": ["string", "null"] }
+          }
+        }
+      },
+      "additionalProperties": { "$ref": "#/$defs/textStyle" }
+    },
+    "page": { "$ref": "#/$defs/page" },
+    "requires": { "type": "array", "items": { "type": "string" } },
+    "regions": { "$ref": "#/$defs/regionList" }
+  },
+  "$defs": {
+    "length": {
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]+)?(px|pt|mm|cm|in)$" }
+      ]
+    },
+    "color": { "type": "string", "pattern": "^#[0-9a-f]{6}([0-9a-f]{2})?$" },
+    "asset": { "type": "string", "pattern": "^assets/[0-9a-f]{16}\\.[a-z0-9]+$" },
+    "localized": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object", "additionalProperties": { "type": "string" } }
+      ]
+    },
+    "textStyle": {
+      "type": "object",
+      "properties": {
+        "ref": { "type": "string" },
+        "font": { "type": "string" },
+        "size": { "type": "number", "exclusiveMinimum": 0 },
+        "bold": { "type": "boolean" },
+        "italic": { "type": "boolean" },
+        "color": { "$ref": "#/$defs/color" }
+      }
+    },
+    "headerFooter": {
+      "type": "object",
+      "properties": {
+        "left": { "type": "string" },
+        "center": { "type": "string" },
+        "right": { "type": "string" },
+        "color": { "$ref": "#/$defs/color" }
+      },
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "view": { "enum": ["pages", "canvas"] },
+        "paper": {
+          "oneOf": [
+            { "enum": ["A3", "A4", "A5", "Letter", "Legal"] },
+            { "type": "array", "items": { "$ref": "#/$defs/length" }, "minItems": 2, "maxItems": 2 }
+          ]
+        },
+        "orientation": { "enum": ["portrait", "landscape"] },
+        "margins": {
+          "type": "object",
+          "properties": {
+            "top": { "$ref": "#/$defs/length" },
+            "right": { "$ref": "#/$defs/length" },
+            "bottom": { "$ref": "#/$defs/length" },
+            "left": { "$ref": "#/$defs/length" }
+          }
+        },
+        "header": { "$ref": "#/$defs/headerFooter" },
+        "footer": { "$ref": "#/$defs/headerFooter" },
+        "firstPage": {
+          "type": "object",
+          "properties": { "header": { "type": "boolean" }, "footer": { "type": "boolean" } }
+        },
+        "backgrounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["src"],
+            "properties": {
+              "pages": { "type": "string", "description": "\"all\", \"1\", \"2-4\", \"odd\", \"even\"" },
+              "src": { "$ref": "#/$defs/asset" },
+              "fit": { "enum": ["page", "margins"] }
+            }
+          }
+        },
+        "pageNumber": {
+          "type": "object",
+          "properties": {
+            "start": { "type": "integer" },
+            "style": { "enum": ["arabic", "roman", "ROMAN"] }
+          }
+        }
+      }
+    },
+    "regionList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/region" }
+    },
+    "caption": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "$ref": "#/$defs/localized" },
+        "position": { "enum": ["above", "below"] },
+        "numbered": { "type": "boolean", "default": true }
+      }
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "unit": { "type": "string" },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "notation": { "enum": ["auto", "sci", "eng", "fixed"] }
+      }
+    },
+    "region": {
+      "type": "object",
+      "required": ["id", "kind", "at"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z2-9]{6}$" },
+        "kind": {
+          "enum": ["math", "text", "image", "table", "plot2d", "plot3d", "data", "area", "pagebreak", "legacy"]
+        },
+        "at": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "size": { "type": "array", "items": { "type": "number", "minimum": 0 }, "minItems": 2, "maxItems": 2 },
+        "width": { "type": "number", "minimum": 0 },
+        "style": { "$ref": "#/$defs/textStyle" },
+        "keep": { "type": "boolean" },
+        "disabled": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "color": { "$ref": "#/$defs/color" },
+        "background": { "$ref": "#/$defs/color" },
+        "border": { "type": "boolean" },
+        "caption": { "$ref": "#/$defs/caption" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "math" } } },
+          "then": {
+            "required": ["expr"],
+            "properties": {
+              "expr": { "type": "string", "minLength": 1 },
+              "show": { "enum": ["value", "symbolic"] },
+              "mode": { "enum": ["numeric", "symbolic"] },
+              "hideInput": { "type": "boolean" },
+              "display": { "$ref": "#/$defs/display" },
+              "note": { "type": "string" },
+              "notePosition": { "enum": ["right", "below", "left", "above"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "text" } } },
+          "then": { "required": ["text"], "properties": { "text": { "$ref": "#/$defs/localized" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "image" } } },
+          "then": { "required": ["src", "size"], "properties": { "src": { "$ref": "#/$defs/asset" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "table" } } },
+          "then": {
+            "properties": {
+              "source": { "type": ["string", "null"], "description": "expression of a matrix to display" },
+              "rows": {
+                "type": "array",
+                "items": { "type": "array", "items": { "type": "string" } },
+                "description": "literal cells (Djot); a cell starting with '=' is a live expression"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "width": { "type": "number" },
+                    "align": { "enum": ["left", "center", "right", "decimal"] }
+                  }
+                }
+              },
+              "header": {
+                "type": "object",
+                "properties": { "row": { "type": "boolean" }, "column": { "type": "boolean" } }
+              },
+              "display": { "$ref": "#/$defs/display" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "enum": ["plot2d", "plot3d"] } } },
+          "then": {
+            "required": ["size"],
+            "properties": {
+              "series": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "y": { "type": "string" },
+                    "x": { "type": "string" },
+                    "range": { "type": "string" },
+                    "label": { "type": "string" },
+                    "style": { "type": "object" }
+                  }
+                }
+              },
+              "surface": { "type": "string" },
+              "parametric": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+              "axes": { "type": ["boolean", "object"] },
+              "grid": { "type": "boolean" },
+              "legend": { "enum": ["none", "top-left", "top-right", "bottom-left", "bottom-right"] },
+              "render": { "type": "string" },
+              "camera": {
+                "type": "object",
+                "properties": {
+                  "azimuth": { "type": "number" },
+                  "elevation": { "type": "number" },
+                  "distance": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "data" } } },
+          "then": {
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "src": { "$ref": "#/$defs/asset" },
+              "inline": { "type": "array" },
+              "format": { "enum": ["csv", "tsv", "json"] },
+              "header": { "type": "boolean" },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "name": { "type": "string" }, "unit": { "type": "string" } }
+                }
+              }
+            },
+            "oneOf": [{ "required": ["src"] }, { "required": ["inline"] }]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "area" } } },
+          "then": {
+            "required": ["regions"],
+            "properties": {
+              "height": { "type": "number" },
+              "title": { "$ref": "#/$defs/localized" },
+              "collapsed": { "type": "boolean" },
+              "regions": { "$ref": "#/$defs/regionList" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "legacy" } } },
+          "then": {
+            "required": ["legacy"],
+            "properties": {
+              "legacy": {
+                "type": "object",
+                "required": ["format", "src"],
+                "properties": { "format": { "type": "string" }, "src": { "$ref": "#/$defs/asset" } }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

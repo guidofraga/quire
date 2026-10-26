@@ -1,0 +1,12 @@
+/target
+node_modules/
+dist/
+.DS_Store
+
+# SMath Studio installers (proprietary, reference only)
+/SMathStudioDesktop.*
+
+# Tauri generated
+/app/src-tauri/gen/
+.vite/
+

@@ -1,0 +1,448 @@
+// The ribbon under the toolbar: one stable layout (Text · Paragraph · Equation · Arrange),
+// each group enabled by context instead of swapping controls in and out.
+import { AllSelection, type Command } from "prosemirror-state";
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { insertSnippet, library, loadLibrary, loadPreviews, previews, valueText } from "./insert";
+import {
+  activeView,
+  type Align,
+  type BlockStyle,
+  commands,
+  currentAlign,
+  currentMarkAttr,
+  currentStyle,
+  listActive,
+  markActive,
+  run,
+} from "./richtext";
+import {
+  type AlignMode,
+  alignRegions,
+  commitEditing,
+  distributeRegions,
+  layout,
+  setState,
+  startEditing,
+  state,
+} from "./store";
+import { STRUCTURES, SYMBOLS, type Sym } from "./symbols";
+
+const keep = (e: MouseEvent) => e.preventDefault(); // never steal focus from the editor
+
+function Btn(props: { title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: JSX.Element }) {
+  return (
+    <button
+      class="fb-btn"
+      classList={{ on: !!props.active }}
+      title={props.title}
+      disabled={props.disabled}
+      onMouseDown={keep}
+      onClick={() => props.onClick()}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+function Dropdown(props: {
+  label: JSX.Element;
+  title: string;
+  disabled?: boolean;
+  class?: string;
+  onOpen?: () => void;
+  children: (close: () => void) => JSX.Element;
+}) {
+  const [open, setOpen] = createSignal(false);
+  let root!: HTMLDivElement;
+  const onDoc = (e: MouseEvent) => {
+    if (!root.contains(e.target as Node)) setOpen(false);
+  };
+  onMount(() => document.addEventListener("mousedown", onDoc));
+  onCleanup(() => document.removeEventListener("mousedown", onDoc));
+  return (
+    <div class="fb-dropdown" ref={root}>
+      <button
+        class="fb-btn fb-select"
+        classList={{ on: open() }}
+        title={props.title}
+        disabled={props.disabled}
+        onMouseDown={keep}
+        onClick={() => {
+          if (!open()) props.onOpen?.();
+          setOpen(!open());
+        }}
+      >
+        {props.label}
+        <svg class="chevron" width="8" height="8" viewBox="0 0 8 8">
+          <path d="M1.5 3l2.5 2.5L6.5 3" fill="none" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+      </button>
+      <Show when={open()}>
+        <div class={`fb-pop ${props.class ?? ""}`} onMouseDown={keep}>
+          {props.children(() => setOpen(false))}
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+const icon = (d: string) => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+    <path d={d} />
+  </svg>
+);
+
+// ---------------------------------------------------------------------------
+// Text & paragraph
+// ---------------------------------------------------------------------------
+
+const STYLES: [BlockStyle, string][] = [
+  ["body", "Body"],
+  ["title", "Title"],
+  ["h1", "Heading 1"],
+  ["h2", "Heading 2"],
+  ["h3", "Heading 3"],
+];
+const COLORS = ["#1b1d22", "#6b7280", "#d1302a", "#e8730c", "#c79a00", "#2e8b3a", "#1d6fd1", "#6a3fc8", "#c2185b", "#0f766e"];
+const SIZES = [7, 8, 9, 10, 11, 12, 14, 16, 18, 24, 32];
+const ALIGN_ICONS: Record<Align, string> = {
+  left: "M2 3h12M2 6.5h8M2 10h12M2 13.5h8",
+  center: "M2 3h12M4 6.5h8M2 10h12M4 13.5h8",
+  right: "M2 3h12M6 6.5h8M2 10h12M6 13.5h8",
+  justify: "M2 3h12M2 6.5h12M2 10h12M2 13.5h12",
+};
+
+/** The text region that formatting applies to when no text is being edited. */
+const selectedText = () =>
+  state.selection.length === 1 && !state.editing
+    ? layout().byId.get(state.selection[0])?.region.kind === "text"
+      ? state.selection[0]
+      : null
+    : null;
+
+const textEnabled = () => !!activeView() || !!selectedText();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Run a text command; with a text box selected (not being edited), apply it to the whole box. */
+async function applyText(cmd: Command) {
+  if (activeView()) return run(cmd);
+  const id = selectedText();
+  if (!id) return;
+  startEditing(id);
+  for (let i = 0; i < 60 && !activeView(); i++) await sleep(10);
+  const view = activeView();
+  if (!view) return;
+  view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)));
+  run(cmd);
+  commitEditing();
+  setState({ selection: [id] });
+}
+
+function TextGroup() {
+  const editing = () => !!activeView();
+  return (
+    <div class="fb-group">
+      <Dropdown
+        title="Paragraph style"
+        disabled={!textEnabled()}
+        label={<span class="fb-style">{editing() ? STYLES.find(([s]) => s === currentStyle())?.[1] : "Style"}</span>}
+      >
+        {(close) => (
+          <For each={STYLES}>
+            {([s, label]) => (
+              <button
+                class={`fb-item style-${s}`}
+                classList={{ on: editing() && currentStyle() === s }}
+                onClick={() => {
+                  close();
+                  void applyText(commands.style(s));
+                }}
+              >
+                {label}
+              </button>
+            )}
+          </For>
+        )}
+      </Dropdown>
+      <Btn title="Bold  ⌘B" disabled={!textEnabled()} active={markActive("strong")} onClick={() => applyText(commands.bold)}>
+        <b>B</b>
+      </Btn>
+      <Btn title="Italic  ⌘I" disabled={!textEnabled()} active={markActive("em")} onClick={() => applyText(commands.italic)}>
+        <i class="serif">I</i>
+      </Btn>
+      <Btn title="Underline  ⌘U" disabled={!textEnabled()} active={markActive("underline")} onClick={() => applyText(commands.underline)}>
+        <u>U</u>
+      </Btn>
+      <Btn title="Strikethrough" disabled={!textEnabled()} active={markActive("strike")} onClick={() => applyText(commands.strike)}>
+        <s>S</s>
+      </Btn>
+      <Btn title="Superscript" disabled={!textEnabled()} active={markActive("sup")} onClick={() => applyText(commands.sup)}>
+        x<sup>2</sup>
+      </Btn>
+      <Btn title="Subscript" disabled={!textEnabled()} active={markActive("sub")} onClick={() => applyText(commands.sub)}>
+        x<sub>2</sub>
+      </Btn>
+      <Dropdown
+        title="Text colour"
+        disabled={!textEnabled()}
+        label={<span class="fb-swatch" style={{ background: (currentMarkAttr("color") as string) ?? "#1b1d22" }} />}
+      >
+        {(close) => (
+          <div class="fb-swatches">
+            <For each={COLORS}>
+              {(c) => (
+                <button
+                  class="fb-swatch big"
+                  style={{ background: c }}
+                  title={c}
+                  onClick={() => {
+                    close();
+                    void applyText(commands.color(c === COLORS[0] ? null : c));
+                  }}
+                />
+              )}
+            </For>
+          </div>
+        )}
+      </Dropdown>
+      <Dropdown
+        title="Font size"
+        disabled={!textEnabled()}
+        label={<span class="fb-num">{(currentMarkAttr("size") as number | null) ?? "Size"}</span>}
+      >
+        {(close) => (
+          <>
+            <button
+              class="fb-item"
+              onClick={() => {
+                close();
+                void applyText(commands.size(null));
+              }}
+            >
+              Default
+            </button>
+            <For each={SIZES}>
+              {(sz) => (
+                <button
+                  class="fb-item"
+                  classList={{ on: currentMarkAttr("size") === sz }}
+                  onClick={() => {
+                    close();
+                    void applyText(commands.size(sz));
+                  }}
+                >
+                  {sz} pt
+                </button>
+              )}
+            </For>
+          </>
+        )}
+      </Dropdown>
+    </div>
+  );
+}
+
+function ParagraphGroup() {
+  return (
+    <div class="fb-group">
+      <For each={["left", "center", "right", "justify"] as Align[]}>
+        {(a) => (
+          <Btn
+            title={{ left: "Align left", center: "Centre", right: "Align right", justify: "Justify" }[a]}
+            disabled={!textEnabled()}
+            active={!!activeView() && currentAlign() === a}
+            onClick={() => applyText(commands.align(a))}
+          >
+            {icon(ALIGN_ICONS[a])}
+          </Btn>
+        )}
+      </For>
+      <Btn title="Bulleted list" disabled={!textEnabled()} active={listActive("bullet")} onClick={() => applyText(commands.bulletList)}>
+        {icon("M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5M2.5 4h.1M2.5 8h.1M2.5 12h.1")}
+      </Btn>
+      <Btn title="Numbered list" disabled={!textEnabled()} active={listActive("ordered")} onClick={() => applyText(commands.orderedList)}>
+        {icon("M6 4h8M6 8h8M6 12h8M2 3.2l.9-.7v3M1.9 7.3c.3-.5 1.6-.5 1.6.3 0 .6-1.6 1.3-1.6 1.9h1.7")}
+      </Btn>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Equation: structures and symbols (Word's equation ribbon)
+// ---------------------------------------------------------------------------
+
+function StructuresGallery(props: { close: () => void }) {
+  return (
+    <div class="gallery">
+      <For each={STRUCTURES}>
+        {(cat) => (
+          <section class="gallery-section">
+            <h4>{cat.title}</h4>
+            <div class="gallery-grid structures">
+              <For each={cat.items}>
+                {(item) => (
+                  <button
+                    class="gallery-tile"
+                    title={`${item.label}  \\${item.name}`}
+                    onClick={() => {
+                      props.close();
+                      insertSnippet(item.insert, { template: true });
+                    }}
+                  >
+                    <Show when={previews()[item.name]} fallback={<code>{item.insert}</code>}>
+                      <span innerHTML={previews()[item.name]} />
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </div>
+          </section>
+        )}
+      </For>
+    </div>
+  );
+}
+
+const SYMBOL_TABS = [...SYMBOLS.map((c) => [c.id, c.title] as const), ["constants", "Constants"] as const, ["units", "Units"] as const];
+const [symbolTab, setSymbolTab] = createSignal<string>("greek");
+
+function SymbolsGallery(props: { close: () => void }) {
+  const pick = (sym: Sym) => {
+    props.close();
+    insertSnippet(sym.insert);
+  };
+  const pickName = (name: string) => {
+    props.close();
+    insertSnippet(name);
+  };
+  return (
+    <div class="gallery symbols">
+      <div class="gallery-tabs">
+        <For each={SYMBOL_TABS}>
+          {([id, title]) => (
+            <button classList={{ on: symbolTab() === id }} onClick={() => setSymbolTab(id)}>
+              {title}
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={symbolTab() === "constants"}>
+        <div class="gallery-list">
+          <For each={library()?.constants ?? []}>
+            {(c) => (
+              <button class="gallery-row" onClick={() => pickName(c.name)}>
+                <span class="row-name math-font">{c.name.replace(".", "")}</span>
+                <span class="row-title">{c.title}</span>
+                <span class="row-value">{valueText(c.value)}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={symbolTab() === "units"}>
+        <div class="gallery-list">
+          <For each={library()?.units ?? []}>
+            {(u) => (
+              <button class="gallery-row" onClick={() => pickName(u.name)}>
+                <span class="row-name unit-color">{u.name}</span>
+                <span class="row-title">{u.title}</span>
+                <span class="row-value">{valueText(u.value)}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <For each={SYMBOLS}>
+        {(cat) => (
+          <Show when={symbolTab() === cat.id}>
+            <div class="gallery-grid">
+              <For each={cat.items}>
+                {(sym) => (
+                  <button class="gallery-tile symbol" classList={{ "text-only": !!sym.textOnly }} title={`\\${sym.name}`} onClick={() => pick(sym)}>
+                    {sym.insert}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function EquationGroup() {
+  return (
+    <div class="fb-group">
+      <Dropdown
+        title="Equation structures: fractions, roots, integrals, matrices…"
+        class="wide"
+        onOpen={loadPreviews}
+        label={
+          <span class="fb-eq">
+            <span class="math-font">∑</span> Structures
+          </span>
+        }
+      >
+        {(close) => <StructuresGallery close={close} />}
+      </Dropdown>
+      <Dropdown
+        title="Symbols, constants and units (or type \name, e.g. \Delta)"
+        class="wide"
+        onOpen={loadLibrary}
+        label={
+          <span class="fb-eq">
+            <span class="math-font">Ω</span> Symbols
+          </span>
+        }
+      >
+        {(close) => <SymbolsGallery close={close} />}
+      </Dropdown>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Arrange
+// ---------------------------------------------------------------------------
+
+const ARRANGE: [AlignMode, string, string][] = [
+  ["left", "Align left edges", "M2 2v12M4 4h8M4 8h5M4 12h9"],
+  ["hcenter", "Align centres", "M8 2v12M4 4h8M5.5 8h5M3.5 12h9"],
+  ["right", "Align right edges", "M14 2v12M4 4h8M7 8h5M3 12h9"],
+  ["top", "Align tops", "M2 2h12M4 4v8M8 4v5M12 4v9"],
+  ["vcenter", "Align middles", "M2 8h12M4 4v8M8 5.5v5M12 3.5v9"],
+  ["bottom", "Align bottoms", "M2 14h12M4 4v8M8 7v5M12 3v9"],
+];
+
+function ArrangeGroup() {
+  const n = () => (state.editing ? 0 : state.selection.length);
+  return (
+    <div class="fb-group">
+      <For each={ARRANGE}>
+        {([mode, title, d]) => (
+          <Btn title={title} disabled={n() < 2} onClick={() => alignRegions(state.selection, mode)}>
+            {icon(d)}
+          </Btn>
+        )}
+      </For>
+      <Btn title="Distribute horizontally" disabled={n() < 3} onClick={() => distributeRegions(state.selection, "x")}>
+        {icon("M2 3v10M14 3v10M6 5h4v6H6z")}
+      </Btn>
+      <Btn title="Distribute vertically" disabled={n() < 3} onClick={() => distributeRegions(state.selection, "y")}>
+        {icon("M3 2h10M3 14h10M5 6h6v4H5z")}
+      </Btn>
+    </div>
+  );
+}
+
+export function FormatBar() {
+  return (
+    <div class="formatbar">
+      <TextGroup />
+      <ParagraphGroup />
+      <EquationGroup />
+      <ArrangeGroup />
+    </div>
+  );
+}

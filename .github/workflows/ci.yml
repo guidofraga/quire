@@ -1,0 +1,31 @@
+# Engine tests and the front-end type check on every push.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: swatinem/rust-cache@v2
+      - name: Engine tests
+        run: cargo test --workspace --exclude quire-app
+      - name: Lint
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Front-end type check
+        run: npm ci && npx tsc --noEmit
+        working-directory: app

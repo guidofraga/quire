@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "app/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+quire-ast = { path = "crates/quire-ast" }
+quire-units = { path = "crates/quire-units" }
+quire-eval = { path = "crates/quire-eval" }
+quire-doc = { path = "crates/quire-doc" }
+quire-service = { path = "crates/quire-service" }
+quire-cli = { path = "crates/quire-cli" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+lto = "thin"

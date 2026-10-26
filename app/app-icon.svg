@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a5f9f"/>
+      <stop offset="1" stop-color="#1d2f57"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef2f8"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
+  <rect x="232" y="196" width="560" height="632" rx="40" fill="url(#paper)"/>
+  <g stroke="#d5deea" stroke-width="6">
+    <line x1="232" y1="300" x2="792" y2="300"/>
+    <line x1="232" y1="700" x2="792" y2="700"/>
+  </g>
+  <!-- a radical over a fraction -->
+  <path d="M300 520 L352 500 L410 640 L478 380 L720 380" fill="none" stroke="#1d2f57" stroke-width="30" stroke-linejoin="round" stroke-linecap="round"/>
+  <line x1="510" y1="510" x2="700" y2="510" stroke="#1d2f57" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="605" cy="450" r="26" fill="#e0573d"/>
+  <circle cx="605" cy="580" r="26" fill="#1d2f57"/>
+</svg>

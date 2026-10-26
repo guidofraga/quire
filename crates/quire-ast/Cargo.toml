@@ -1,0 +1,13 @@
+[package]
+name = "quire-ast"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Quire expression AST and linear math syntax (parser + printer)"
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }

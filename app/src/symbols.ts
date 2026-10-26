@@ -1,0 +1,141 @@
+// LaTeX-named symbols and equation structures, for `\name` shortcuts and the galleries.
+
+export interface Sym {
+  /** LaTeX command without the backslash. */
+  name: string;
+  /** What gets inserted: a character, or a template where `?` marks the slots. */
+  insert: string;
+  /** Shown in galleries (defaults to `insert`). */
+  label?: string;
+  /** Not understood by the calculator: fine in text, an error in math. */
+  textOnly?: boolean;
+}
+
+export interface Category {
+  id: string;
+  title: string;
+  items: Sym[];
+}
+
+const s = (name: string, insert: string, textOnly = false): Sym => ({ name, insert, textOnly });
+
+const greekLower: Sym[] = [
+  s("alpha", "α"), s("beta", "β"), s("gamma", "γ"), s("delta", "δ"), s("epsilon", "ϵ"), s("varepsilon", "ε"),
+  s("zeta", "ζ"), s("eta", "η"), s("theta", "θ"), s("vartheta", "ϑ"), s("iota", "ι"), s("kappa", "κ"),
+  s("lambda", "λ"), s("mu", "μ"), s("nu", "ν"), s("xi", "ξ"), s("omicron", "ο"), s("pi", "π"), s("varpi", "ϖ"),
+  s("rho", "ρ"), s("varrho", "ϱ"), s("sigma", "σ"), s("varsigma", "ς"), s("tau", "τ"), s("upsilon", "υ"),
+  s("phi", "ϕ"), s("varphi", "φ"), s("chi", "χ"), s("psi", "ψ"), s("omega", "ω"),
+];
+
+const greekUpper: Sym[] = [
+  s("Gamma", "Γ"), s("Delta", "Δ"), s("Theta", "Θ"), s("Lambda", "Λ"), s("Xi", "Ξ"), s("Pi", "Π"),
+  s("Sigma", "Σ"), s("Upsilon", "Υ"), s("Phi", "Φ"), s("Psi", "Ψ"), s("Omega", "Ω"),
+];
+
+const operators: Sym[] = [
+  s("pm", "±"), s("times", "×"), s("cdot", "·"), s("div", "÷"), s("coloneq", "≔"), s("equiv", "≡"),
+  s("le", "≤"), s("leq", "≤"), s("ge", "≥"), s("geq", "≥"), s("ne", "≠"), s("neq", "≠"),
+  s("infty", "∞"), s("hbar", "ħ"), s("approx", "≈", true), s("sim", "∼", true), s("propto", "∝", true),
+  s("mp", "∓", true), s("partial", "∂", true), s("nabla", "∇", true), s("ll", "≪", true), s("gg", "≫", true),
+];
+
+const arrows: Sym[] = [
+  s("to", "→", true), s("rightarrow", "→", true), s("leftarrow", "←", true), s("leftrightarrow", "↔", true),
+  s("Rightarrow", "⇒", true), s("Leftarrow", "⇐", true), s("Leftrightarrow", "⇔", true), s("uparrow", "↑", true),
+  s("downarrow", "↓", true), s("mapsto", "↦", true), s("implies", "⇒", true), s("iff", "⇔", true),
+];
+
+const logic: Sym[] = [
+  s("therefore", "∴", true), s("because", "∵", true), s("forall", "∀", true), s("exists", "∃", true),
+  s("in", "∈", true), s("notin", "∉", true), s("subset", "⊂", true), s("subseteq", "⊆", true),
+  s("cup", "∪", true), s("cap", "∩", true), s("emptyset", "∅", true), s("neg", "¬", true),
+  s("land", "∧", true), s("lor", "∨", true),
+];
+
+const misc: Sym[] = [
+  s("degree", "°", true), s("prime", "′", true), s("dprime", "″", true), s("ell", "ℓ"), s("angle", "∠", true),
+  s("perp", "⊥", true), s("parallel", "∥", true), s("triangle", "△", true), s("square", "□", true),
+  s("dots", "…", true), s("cdots", "⋯", true), s("circ", "∘", true), s("bullet", "•", true),
+  s("permil", "‰", true), s("checkmark", "✓", true), s("dagger", "†", true),
+];
+
+const t = (name: string, insert: string, label: string): Sym => ({ name, insert, label });
+
+/** Equation structures (Word's "Structures"), as linear-syntax templates. */
+export const STRUCTURES: Category[] = [
+  {
+    id: "fraction",
+    title: "Fraction",
+    items: [t("frac", "(?)/(?)", "Fraction"), t("dfrac", "?/?", "Linear fraction")],
+  },
+  {
+    id: "script",
+    title: "Script",
+    items: [t("sup", "?^?", "Superscript"), t("sub", "?[?]", "Index"), t("sq", "?^2", "Square"), t("inv", "?^-1", "Inverse")],
+  },
+  {
+    id: "radical",
+    title: "Radical",
+    items: [t("sqrt", "sqrt(?)", "Square root"), t("cbrt", "root(?, 3)", "Cube root"), t("root", "root(?, ?)", "n-th root")],
+  },
+  {
+    id: "integral",
+    title: "Integral",
+    items: [t("int", "int(?, x, ?, ?)", "Definite integral"), t("intx", "int(?, x)", "Indefinite integral")],
+  },
+  {
+    id: "largeop",
+    title: "Large operator",
+    items: [t("sum", "sum(?, i, 1, n)", "Sum"), t("prod", "prod(?, i, 1, n)", "Product")],
+  },
+  {
+    id: "calculus",
+    title: "Calculus",
+    items: [t("diff", "diff(?, x)", "Derivative"), t("ddiff", "diff(?, x, 2)", "Second derivative"), t("lim", "lim(?, x, ?)", "Limit")],
+  },
+  {
+    id: "matrix",
+    title: "Matrix",
+    items: [
+      t("row", "[?, ?]", "Row vector"),
+      t("col", "[?; ?]", "Column vector"),
+      t("matrix", "[?, ?; ?, ?]", "2 × 2"),
+      t("matrix3", "[?, ?, ?; ?, ?, ?; ?, ?, ?]", "3 × 3"),
+    ],
+  },
+  {
+    id: "function",
+    title: "Function",
+    items: [
+      t("sin", "sin(?)", "Sine"), t("cos", "cos(?)", "Cosine"), t("tan", "tan(?)", "Tangent"), t("ln", "ln(?)", "Natural log"),
+      t("log", "log(?, 10)", "Logarithm"), t("exp", "exp(?)", "Exponential"), t("abs", "abs(?)", "Absolute value"),
+      t("max", "max(?, ?)", "Maximum"), t("min", "min(?, ?)", "Minimum"), t("if", "if(?, ?, ?)", "Condition"),
+    ],
+  },
+];
+
+export const SYMBOLS: Category[] = [
+  { id: "greek", title: "Greek", items: greekLower },
+  { id: "Greek", title: "Greek capitals", items: greekUpper },
+  { id: "operators", title: "Operators", items: operators },
+  { id: "arrows", title: "Arrows", items: arrows },
+  { id: "logic", title: "Logic & sets", items: logic },
+  { id: "misc", title: "Other", items: misc },
+];
+
+const ALL: Sym[] = [...SYMBOLS.flatMap((c) => c.items), ...STRUCTURES.flatMap((c) => c.items)];
+const BY_NAME = new Map(ALL.map((x) => [x.name, x]));
+
+export const isTemplate = (x: Sym) => x.insert.includes("?");
+
+export function exact(name: string): Sym | undefined {
+  return BY_NAME.get(name);
+}
+
+/** Commands starting with `prefix`; exact match first, then shorter names. */
+export function completions(prefix: string, limit = 8): Sym[] {
+  const lower = prefix.toLowerCase();
+  const starts = ALL.filter((x) => x.name.startsWith(prefix));
+  const loose = ALL.filter((x) => !x.name.startsWith(prefix) && x.name.toLowerCase().startsWith(lower));
+  return [...starts, ...loose].sort((a, b) => Number(b.name === prefix) - Number(a.name === prefix) || a.name.length - b.name.length).slice(0, limit);
+}

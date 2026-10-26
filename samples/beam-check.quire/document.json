@@ -1,0 +1,210 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Simply supported beam check",
+    "authors": ["Quire example"],
+    "lang": "en-US"
+  },
+  "settings": {
+    "display": { "decimals": 3 }
+  },
+  "styles": {
+    "body": { "font": "Helvetica", "size": 10 },
+    "numbering": { "headings": "1.1" }
+  },
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
+    "header": { "left": "{title}", "right": "{date}" },
+    "footer": { "right": "{page} / {pages}" }
+  },
+  "regions": [
+    {
+      "id": "title1",
+      "kind": "text",
+      "at": [0, 0],
+      "text": "{.center}\n*Simply supported beam check*"
+    },
+    {
+      "id": "toc001",
+      "kind": "toc",
+      "at": [0, 36],
+      "list": "contents"
+    },
+    {
+      "id": "scheme",
+      "kind": "image",
+      "at": [60, 108],
+      "size": [480, 165],
+      "src": "assets/e027afbe9d4229fa.png",
+      "caption": { "text": "Static scheme and design load" }
+    },
+    {
+      "id": "head01",
+      "kind": "text",
+      "at": [0, 333],
+      "text": "# Geometry"
+    },
+    {
+      "id": "spanl1",
+      "kind": "math",
+      "at": [0, 360],
+      "expr": "L := 6 'm"
+    },
+    {
+      "id": "widthb",
+      "kind": "math",
+      "at": [180, 360],
+      "expr": "b := 20 'cm"
+    },
+    {
+      "id": "depthh",
+      "kind": "math",
+      "at": [360, 360],
+      "expr": "h := 40 'cm"
+    },
+    {
+      "id": "areaa1",
+      "kind": "math",
+      "at": [0, 396],
+      "expr": "A := b*h",
+      "show": "value",
+      "display": { "unit": "cm^2" }
+    },
+    {
+      "id": "inerti",
+      "kind": "math",
+      "at": [0, 432],
+      "expr": "I := b*h^3/12",
+      "show": "value",
+      "display": { "unit": "cm^4" }
+    },
+    {
+      "id": "head02",
+      "kind": "text",
+      "at": [0, 477],
+      "text": "# Loads"
+    },
+    {
+      "id": "prose1",
+      "kind": "text",
+      "at": [0, 504],
+      "text": "Self-weight comes from the concrete density $`ρ.c := 2500 'kg/'m^3` and gravity, so $`q.sw := ρ.c*g*A =`."
+    },
+    {
+      "id": "liveq1",
+      "kind": "math",
+      "at": [0, 549],
+      "expr": "q.live := 12 'kN/'m"
+    },
+    {
+      "id": "factor",
+      "kind": "math",
+      "at": [216, 549],
+      "expr": "γ.f := 1.4"
+    },
+    {
+      "id": "designq",
+      "kind": "math",
+      "at": [0, 585],
+      "expr": "q.d := γ.f*(q.sw + q.live)",
+      "show": "value",
+      "display": { "unit": "kN/m" }
+    },
+    {
+      "id": "head03",
+      "kind": "text",
+      "at": [0, 630],
+      "text": "# Effects"
+    },
+    {
+      "id": "moment",
+      "kind": "math",
+      "at": [0, 657],
+      "expr": "M.max := q.d*L^2/8",
+      "show": "value",
+      "display": { "unit": "kN*m" }
+    },
+    {
+      "id": "shear1",
+      "kind": "math",
+      "at": [0, 702],
+      "expr": "V.max := q.d*L/2",
+      "show": "value",
+      "display": { "unit": "kN" }
+    },
+    {
+      "id": "stress",
+      "kind": "math",
+      "at": [0, 738],
+      "expr": "σ := M.max*(h/2)/I",
+      "show": "value",
+      "display": { "unit": "MPa" }
+    },
+    {
+      "id": "allow1",
+      "kind": "math",
+      "at": [0, 774],
+      "expr": "f.d := 25 'MPa"
+    },
+    {
+      "id": "check1",
+      "kind": "math",
+      "at": [0, 810],
+      "expr": "if(σ ≤ f.d, \"OK\", \"FAIL\")",
+      "show": "value"
+    },
+    {
+      "id": "ratio1",
+      "kind": "math",
+      "at": [216, 810],
+      "expr": "σ/f.d",
+      "show": "value"
+    },
+    {
+      "id": "extra1",
+      "kind": "area",
+      "at": [0, 855],
+      "title": "Deflection",
+      "regions": [
+        {
+          "id": "modulu",
+          "kind": "math",
+          "at": [0, 27],
+          "expr": "E := 30 'GPa"
+        },
+        {
+          "id": "deflec",
+          "kind": "math",
+          "at": [0, 63],
+          "expr": "δ(q) := 5*q*L^4/(384*E*I)"
+        },
+        {
+          "id": "defl01",
+          "kind": "math",
+          "at": [0, 99],
+          "expr": "δ(q.d)",
+          "show": "value",
+          "display": { "unit": "mm" }
+        },
+        {
+          "id": "limit1",
+          "kind": "math",
+          "at": [216, 99],
+          "expr": "L/250",
+          "show": "value",
+          "display": { "unit": "mm" }
+        }
+      ]
+    },
+    {
+      "id": "matrx1",
+      "kind": "math",
+      "at": [0, 1017],
+      "expr": "R := [V.max; V.max]",
+      "show": "value",
+      "display": { "unit": "kN" }
+    }
+  ]
+}

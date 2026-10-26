@@ -1,0 +1,96 @@
+# Quire — a modern successor to SMath Studio (design phase)
+
+| | |
+|---|---|
+| [docs/01-architecture.md](docs/01-architecture.md) | Platform choice (Tauri 2 + Rust core), CAS/units/evaluation engine, rendering engine, crate layout, roadmap |
+| [docs/02-file-format.md](docs/02-file-format.md) | The `.quire` document format: bundle layout, schema, linear math syntax, canonical serialization |
+| [schema/quire-1.schema.json](schema/quire-1.schema.json) | JSON Schema (draft 2020-12) for `document.json` |
+| [tools/sm2quire.py](tools/sm2quire.py) | SMath `.sm` → `.quire` importer (stdlib Python; the reference mapping) |
+| [samples/beam-check.quire/](samples/beam-check.quire/document.json) | An example worksheet |
+
+## Desktop app
+
+[app/](app) is the Tauri 2 desktop editor (GPL-3.0-or-later): a free-form canvas with live evaluation.
+
+**Writing**
+- **Click anywhere and type.** Math is the default: `L:=2 m` defines L as 2 metres (units need no marker; a variable with the same name always wins). `:` becomes `:=`, a trailing `=` shows the result, Ctrl+G turns the letter before the cursor into Greek.
+- **A word followed by a space becomes text** (`The span…`); typing `:` or `=` right after a single word turns it back into a definition.
+- Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (the `x =` button).
+- **LaTeX shortcuts, Word-style:** `\Delta`, `\varepsilon`, `\therefore`, `\sqrt`, `\int`… convert on space or punctuation, with a completion list as you type. They work in math and in text. Structures insert templates; Tab and ⇧Tab move between their `?` slots.
+- **Equation ribbon:** a Structures gallery (fractions, scripts, radicals, integrals, large operators, calculus, matrices, functions, with typeset previews) and a Symbols library (Greek, operators, arrows, logic and sets, constants, units). Click to insert at the caret.
+- **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
+- Click a selected box again (or double-click it) to edit with the caret where you clicked. With a text box selected but not being edited, the ribbon formats the whole box.
+
+**Layout**
+- Drag to move (9 px grid, **smart guides** to other regions' edges and centres; hold ⌘ for free movement), drag handles to resize text width or images.
+- Select several (Shift-click or drag a frame) and **align** left/centre/right/top/middle/bottom or **distribute** them — format bar, Arrange menu or right-click.
+- Copy, cut, paste and duplicate regions (⌘C/⌘X/⌘V/⌘D); paste or drop images straight onto the page.
+
+**Document**
+- **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. **Canvas** is the free, endless sheet.
+- Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
+- **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
+- **Export as PDF…** (⌘E) writes exactly the page view with selectable text; **Print…** (⌘P) opens the macOS print panel.
+- Every change re-evaluates the whole worksheet in Rust (well under a millisecond for typical documents). Math is drawn as MathML for now; a dedicated Rust typesetter comes later.
+
+Run it during development:
+
+```bash
+npm --prefix app install
+```
+
+```bash
+npm --prefix app run tauri dev
+```
+
+Build `Quire.app` (in `target/release/bundle/macos/`):
+
+```bash
+npm --prefix app run tauri build -- --bundles app
+```
+
+To work on the UI in a browser, run `quire serve` (the same backend over localhost) and `npm --prefix app run dev`, then open `http://localhost:5173/?open=<path to a .quire>`.
+
+## Engine (Phase P1 — done)
+
+| Crate | What it does |
+|---|---|
+| [quire-ast](crates/quire-ast) | Linear math syntax: lexer, parser, canonical printer |
+| [quire-units](crates/quire-units) | Dimensions (rational exponents), unit table with SI prefixes, kgf/tonnef/psi/°C… |
+| [quire-eval](crates/quire-eval) | Numeric kernel, built-in functions, `sum`/`int`/`diff`/`for`/`if`, worksheet semantics |
+| [quire-doc](crates/quire-doc) | Loads `.quire` bundles |
+| [quire-cli](crates/quire-cli) | The `quire` command |
+
+Installers for Windows (.msi/.exe), Linux (.AppImage/.deb/.rpm) and macOS (.dmg) are built by the **Release** GitHub Actions workflow: push a tag such as `v0.1.0`, or run it from the Actions tab, and it attaches them to a draft release. They aren't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn on first launch.
+
+Build and try it (needs Rust; `rustup` installs it):
+
+```bash
+cargo build --release
+```
+
+```bash
+./target/release/quire check samples/beam-check.quire
+```
+
+```bash
+./target/release/quire calc "2 'm + 30 'cm" --in mm
+```
+
+Other commands: `quire eval <doc>` prints the full calculation listing; `quire fmt --check <path>` verifies that every expression round-trips. Run the test suite with `cargo test`.
+
+Convert any SMath file:
+
+```bash
+python3 -I tools/sm2quire.py "path/to/file.sm" out.quire
+```
+
+## Licensing (provisional; revisit before the first public release)
+
+- Engine crates and the file-format spec/schema: **MIT OR Apache-2.0**.
+- Desktop app (Tauri shell, canvas, editor): **GPL-3.0-or-later**.
+- One rule applies from day one: engine crates never depend on GPL code. Giac, if used, lives only in the app tier.
+
+Trademark, App Store distribution, the plugin exception and contributor terms wait until there's a working app and outside contributors.
+
+Reference material (not part of the project): `SMathStudioDesktop.1_5_0_9678.*` installers and the original `.sm` file.
