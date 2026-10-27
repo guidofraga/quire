@@ -19,6 +19,8 @@ export interface Viewport {
 interface State {
   doc: Doc;
   path: string | null;
+  /** The file images are read from while `path` is not set yet (a template). */
+  origin: string | null;
   dirty: boolean;
   /** Bumped on every document change; drives re-evaluation. */
   rev: number;
@@ -43,6 +45,7 @@ const emptyDoc = (): Doc => ({ format: "quire/1", meta: { title: "Untitled" }, r
 export const [state, setState] = createStore<State>({
   doc: emptyDoc(),
   path: null,
+  origin: null,
   dirty: false,
   rev: 0,
   report: null,
@@ -120,12 +123,14 @@ export function redo() {
   restore(next);
 }
 
-export function loadDoc(doc: Doc, path: string | null) {
+/** `origin`: where images come from until the first save (a template's file). */
+export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
   undoStack.length = 0;
   redoStack.length = 0;
   setState({
     doc,
     path,
+    origin,
     dirty: false,
     rev: state.rev + 1,
     report: null,

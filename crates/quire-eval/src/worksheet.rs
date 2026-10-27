@@ -312,10 +312,12 @@ impl Worksheet {
         // units written in each region, and the names each region reads
         let mut own: Vec<Vec<String>> = Vec::with_capacity(regions.len());
         let mut reads: Vec<Vec<String>> = Vec::with_capacity(regions.len());
-        for (e, o) in parsed.iter().zip(out.iter()) {
+        for ((e, o), r) in parsed.iter().zip(out.iter()).zip(regions) {
             let mut u = Vec::new();
             let mut n = Vec::new();
-            if let Ok(e) = e {
+            if let Some(t) = &r.table {
+                n = crate::sheet::reads(t, &self.units);
+            } else if let Ok(e) = e {
                 explicit_units(e, &mut u);
                 match e {
                     Expr::Define { rhs, .. } => names(rhs, &mut n),
@@ -344,11 +346,14 @@ impl Worksheet {
                 let key = name.split('(').next().unwrap_or(name);
                 defined.insert(key.to_string(), i);
             }
-            if !r.show || r.display.unit.is_some() || o.error.is_some() {
+            let table = r.table.as_ref();
+            if table.is_none()
+                && (!r.show || r.display.unit.is_some() || o.error.is_some() || o.value.is_none())
+            {
                 continue;
             }
-            let Some(v) = &o.value else { continue };
-            // breadth-first through the definitions this result reads
+            // breadth-first through the definitions this result reads; a unit a definition
+            // is shown in (`σ` in MPa) comes before the units it is written with
             let mut order: Vec<&str> = own[i].iter().map(String::as_str).collect();
             let mut seen = vec![i];
             let mut frontier: Vec<usize> = Vec::new();
@@ -363,6 +368,7 @@ impl Worksheet {
             while !frontier.is_empty() {
                 let mut next = Vec::new();
                 for d in frontier {
+                    order.extend(regions[d].display.unit.as_deref());
                     order.extend(own[d].iter().map(String::as_str));
                     for n in &reads[d] {
                         if let Some(&e) = defined.get(n.as_str())
@@ -386,7 +392,11 @@ impl Worksheet {
                     vocab.push(WorkingUnit { name: name.to_string(), unit });
                 }
             }
-            if let Ok(text) = format_value_in(v, &r.display, &self.settings, &self.units, &vocab) {
+            if let Some(t) = table {
+                crate::sheet::reformat(t, &mut o.cells, &self.settings, &self.units, &vocab);
+            } else if let Some(v) = &o.value
+                && let Ok(text) = format_value_in(v, &r.display, &self.settings, &self.units, &vocab)
+            {
                 o.shown = Some(text);
             }
         }
@@ -664,6 +674,11 @@ mod tests {
             math("b", "loads[3, 3]"),
             table("u", "check", &[&["=loads!C3", "=IF(A1 < 40 kN, \"OK\", \"NO\")"]]),
             table("v", "bad", &[&["=1/0", "=A1"]]),
+            MathInput {
+                display: DisplaySpec { unit: Some("MPa".into()), decimals: None },
+                ..math("c", "σ := 2 kN/(10 cm^2)")
+            },
+            table("w", "uses", &[&["=σ", "=σ*2"]]),
         ];
         let settings = DisplaySettings { working_units: true, ..Default::default() };
         let out = Worksheet::new(settings).run(&regions);
@@ -675,6 +690,9 @@ mod tests {
         assert_eq!(cell(&out[3], 0, 1), "\"OK\"");
         assert!(out[4].error.as_deref().unwrap().starts_with("A1: "), "{:?}", out[4].error);
         assert!(out[4].error.as_deref().unwrap().ends_with("(and 1 more cell)"));
+        // a cell reading σ shows it the way σ is shown
+        assert_eq!(cell(&out[6], 0, 0), "2 'MPa");
+        assert_eq!(cell(&out[6], 0, 1), "4 'MPa");
     }
 
     #[test]

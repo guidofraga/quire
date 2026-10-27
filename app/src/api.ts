@@ -34,6 +34,11 @@ export const api = {
   stageImage: (data: string, ext: string) => call<string>("stage_image", { data, ext }),
   readAsset: (bundle: string, src: string) => call<string>("read_asset", { bundle, src }),
   newDocument: () => call<Doc>("new_document"),
+  listTemplates: () => call<TemplateInfo[]>("list_templates"),
+  openTemplate: (id: string) => call<{ doc: Doc; origin: string | null }>("open_template", { id }),
+  saveTemplate: (name: string, description: string, doc: Doc, from: string | null) =>
+    call<string>("save_template", { name, description, doc, from }),
+  deleteTemplate: (id: string) => call<null>("delete_template", { id }),
   print: (paper: Paper, title: string) => call<null>("print_document", { paper, title }),
   exportPdf: (path: string, paper: Paper, title: string, compress: boolean) =>
     call<null>("export_pdf", { path, paper, title, compress }),
@@ -47,6 +52,13 @@ export const api = {
   setRecent: (paths: string[]) => (isTauri ? call<null>("set_recent", { paths }) : Promise.resolve(null)),
   takeOpenRequests: () => (isTauri ? call<string[]>("take_open_requests") : Promise.resolve([] as string[])),
 };
+
+export interface TemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  builtin: boolean;
+}
 
 export interface Paper {
   widthPt: number;

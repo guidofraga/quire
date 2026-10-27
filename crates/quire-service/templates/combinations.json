@@ -1,0 +1,36 @@
+{
+  "format": "quire/1",
+  "meta": { "title": "Load Combinations", "authors": ["Your Name"] },
+  "settings": { "display": { "decimals": 2, "resultUnits": "working" } },
+  "styles": { "numbering": { "headings": "1.1", "tables": "Table {n} –" } },
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
+    "footer": { "left": "{title}", "right": "{page} / {pages}", "color": "#8a8f98" }
+  },
+  "regions": [
+    { "id": "c00", "kind": "text", "at": [0, 0], "text": "{.title}\n# Load combinations" },
+    { "id": "c01", "kind": "text", "at": [0, 54], "width": 640, "text": "Characteristic actions on one member, combined with partial and combination factors. Edit the values; the governing combination is picked automatically." },
+    { "id": "c02", "kind": "text", "at": [0, 108], "text": "# Actions" },
+    { "id": "c03", "kind": "table", "at": [0, 144], "name": "actions", "header": { "row": true, "column": true },
+      "caption": { "text": "Characteristic actions", "position": "above" },
+      "columns": [{ "width": 110 }, { "width": 90 }, { "width": 90 }, { "width": 90 }, { "width": 90 }],
+      "rows": [["Action", "G1", "G2", "Q1", "Q2"],
+               ["Description", "Self-weight", "Finishes", "Imposed", "Wind"],
+               ["Value", "120 kN", "40 kN", "60 kN", "35 kN"]] },
+    { "id": "c04", "kind": "text", "at": [0, 270], "text": "# Combinations" },
+    { "id": "c05", "kind": "table", "at": [0, 306], "name": "combos", "header": { "row": true, "column": true },
+      "caption": { "text": "Factors and design values", "position": "above" },
+      "columns": [{ "width": 150 }, { "width": 60 }, { "width": 60 }, { "width": 60 }, { "width": 60 }, { "width": 100 }],
+      "rows": [["Combination", "G1", "G2", "Q1", "Q2", "Design"],
+               ["ULS, Q1 leading", "1.35", "1.35", "1.5", "0.9", "=SUMPRODUCT(B2:E2, actions!B3:E3)"],
+               ["ULS, Q2 leading", "1.35", "1.35", "1.05", "1.5", "=SUMPRODUCT(B3:E3, actions!B3:E3)"],
+               ["ULS, G favourable", "1", "1", "0", "1.5", "=SUMPRODUCT(B4:E4, actions!B3:E3)"],
+               ["SLS, characteristic", "1", "1", "1", "0.6", "=SUMPRODUCT(B5:E5, actions!B3:E3)"],
+               ["Governing ULS", "", "", "", "", "=MAX(F2:F4)"],
+               ["Which", "", "", "", "", "=INDEX(A2:A4, MATCH(F6, F2:F4, 0))"]] },
+    { "id": "c06", "kind": "math", "at": [0, 540], "expr": "N.Ed:=combos[6, 6]", "show": "value", "note": "governing design value" },
+    { "id": "c07", "kind": "math", "at": [0, 594], "expr": "N.SLS:=combos[5, 6]", "show": "value" }
+  ]
+}

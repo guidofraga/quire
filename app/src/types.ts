@@ -42,6 +42,7 @@ export interface RegionView {
 /** quire_service::CellView */
 export interface CellView {
   result: Expr | null;
+  text: string | null;
   error: string | null;
   formula: boolean;
 }

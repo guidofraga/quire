@@ -1,0 +1,28 @@
+{
+  "format": "quire/1",
+  "meta": { "title": "Calculation Report", "authors": ["Your Name"], "company": "Your Company" },
+  "settings": { "display": { "decimals": 3, "resultUnits": "working" } },
+  "styles": { "numbering": { "headings": "1.1" } },
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
+    "header": { "left": "{title}", "right": "{company}", "color": "#8a8f98" },
+    "footer": { "left": "{author}", "center": "{date}", "right": "{page} / {pages}", "color": "#8a8f98" },
+    "firstPage": { "header": false }
+  },
+  "regions": [
+    { "id": "t0", "kind": "text", "at": [0, 0], "text": "{.title}\n# Calculation Report" },
+    { "id": "t1", "kind": "table", "at": [0, 54], "header": { "column": true }, "columns": [{ "width": 150 }, { "width": 300 }],
+      "rows": [["Project", "Project name"], ["Client", "Client name"], ["Document", "CR-001"], ["Revision", "A"], ["Prepared by", "Your Name"], ["Checked by", ""]] },
+    { "id": "t2", "kind": "text", "at": [0, 234], "text": "# Scope" },
+    { "id": "t3", "kind": "text", "at": [0, 270], "width": 640, "text": "What is designed or checked, the codes used and the main assumptions." },
+    { "id": "t4", "kind": "text", "at": [0, 324], "text": "# Design data" },
+    { "id": "t5", "kind": "text", "at": [0, 360], "width": 640, "text": "Materials, geometry and loads. Type definitions such as `L := 6 m` anywhere on the page." },
+    { "id": "t6", "kind": "text", "at": [0, 414], "text": "# Calculations" },
+    { "id": "t7", "kind": "text", "at": [0, 450], "width": 640, "text": "End a line with `=` to show its result; type a unit after it (`M = kN*m`) to choose how it is shown." },
+    { "id": "t8", "kind": "text", "at": [0, 504], "text": "# Checks" },
+    { "id": "t9", "kind": "text", "at": [0, 540], "width": 640, "text": "Compare results with their limits; a table with `=IF(…)` makes a summary that never goes stale." },
+    { "id": "ta", "kind": "text", "at": [0, 594], "text": "# Conclusion" }
+  ]
+}

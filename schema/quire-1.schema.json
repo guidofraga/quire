@@ -227,15 +227,18 @@
               "rows": {
                 "type": "array",
                 "items": { "type": "array", "items": { "type": "string" } },
-                "description": "literal cells (Djot); a cell starting with '=' is a live expression"
+                "description": "cells: text, a value with units ('12 kN', '1,5', '15%') or a spreadsheet formula starting with '=' ('=SUM(B2:B4)')"
               },
+              "name": { "type": "string", "description": "variable the table defines for the math below it: name[row, column]; other tables read name!B2" },
               "columns": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
                     "width": { "type": "number" },
-                    "align": { "enum": ["left", "center", "right", "decimal"] }
+                    "align": { "enum": ["left", "center", "right", "decimal"] },
+                    "unit": { "type": "string", "description": "unit the column's numbers are shown in" },
+                    "decimals": { "type": "integer", "minimum": 0 }
                   }
                 }
               },

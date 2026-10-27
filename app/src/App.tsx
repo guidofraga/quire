@@ -38,6 +38,7 @@ import { type Background, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
+import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
 import { directPdf, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
 import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
@@ -98,7 +99,7 @@ const loadingAssets = new Set<string>();
 
 function loadAssets() {
   // images inserted into an unsaved document are served from the staging area
-  const bundle = state.path ?? "";
+  const bundle = state.path ?? state.origin ?? "";
   const backgrounds = (state.doc.page?.backgrounds as Background[] | undefined) ?? [];
   const sources = [...layout().list.map((p) => p.region.src), ...backgrounds.map((b) => b.src)];
   for (const src of sources) {
@@ -169,8 +170,8 @@ async function save(as = false) {
     if (!path) return;
   }
   try {
-    await api.save(path, unwrap(state.doc), state.path);
-    setState({ path, dirty: false });
+    await api.save(path, unwrap(state.doc), state.path ?? state.origin);
+    setState({ path, origin: null, dirty: false });
     addRecent(path);
     flash(`Saved ${fileName(path)}`);
   } catch (e) {
@@ -297,6 +298,12 @@ function runCommand(id: string) {
     case "help":
       commitEditing();
       return setHelpOpen(true);
+    case "new_from_template":
+      commitEditing();
+      return setTemplates("new");
+    case "save_template":
+      commitEditing();
+      return setTemplates("save");
     case "recent_clear":
       return clearRecent();
     case "distribute_x":
@@ -375,6 +382,7 @@ function browserShortcuts(e: KeyboardEvent) {
   const map: Record<string, string> = {
     s: e.shiftKey ? "save_as" : "save",
     o: "open",
+    n: e.shiftKey ? "new_from_template" : "",
     z: e.shiftKey ? "redo" : "undo",
     p: e.shiftKey ? "page_view" : "print",
     e: "export_pdf",
@@ -404,7 +412,7 @@ if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__quire 
 
 export function App() {
   createEffect(on(() => state.rev, scheduleReport));
-  createEffect(on(() => [state.path, layout()] as const, loadAssets));
+  createEffect(on(() => [state.path, state.origin, layout()] as const, loadAssets));
   createEffect(() => {
     void setWindowTitle(`${fileName(state.path)}${state.dirty ? " — Edited" : ""}`);
   });
@@ -544,6 +552,14 @@ export function App() {
       <NameTooltip />
       <SettingsDialog />
       <HelpDialog />
+      <TemplatesDialog
+        onOpen={async (doc, origin) => {
+          if (!(await guardUnsaved())) return false;
+          loadDoc(doc, null, origin);
+          return true;
+        }}
+        onBlank={newDocument}
+      />
       <Show when={state.message}>
         <div class="toast" onClick={() => setState({ message: null })}>
           {state.message}

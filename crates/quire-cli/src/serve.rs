@@ -15,6 +15,12 @@ fn arg<'a>(body: &'a Json, key: &str) -> Result<&'a str, String> {
     body.get(key).and_then(Json::as_str).ok_or_else(|| format!("missing \"{key}\""))
 }
 
+/// Your templates while developing in a browser: `$QUIRE_TEMPLATES`, or a scratch folder.
+fn templates_dir() -> std::path::PathBuf {
+    std::env::var_os("QUIRE_TEMPLATES")
+        .map_or_else(|| std::env::temp_dir().join("quire-dev-templates"), Into::into)
+}
+
 fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
     let err = |e: quire_service::ServiceError| e.0;
     match command {
@@ -41,6 +47,25 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
         "stage_image" => quire_service::assets::stage_base64(arg(body, "data")?, arg(body, "ext")?)
             .map(Json::String)
             .map_err(err),
+        "list_templates" => {
+            serde_json::to_value(quire_service::templates::list(&templates_dir())).map_err(|e| e.to_string())
+        }
+        "open_template" => serde_json::to_value(
+            quire_service::templates::document(&templates_dir(), arg(body, "id")?).map_err(err)?,
+        )
+        .map_err(|e| e.to_string()),
+        "save_template" => {
+            let doc = body.get("doc").ok_or("missing \"doc\"")?;
+            let from = body.get("from").and_then(Json::as_str).map(Path::new);
+            let description = body.get("description").and_then(Json::as_str).unwrap_or("");
+            quire_service::templates::save_as(&templates_dir(), arg(body, "name")?, description, doc, from)
+                .map(Json::String)
+                .map_err(err)
+        }
+        "delete_template" => {
+            quire_service::templates::delete(&templates_dir(), arg(body, "id")?).map_err(err)?;
+            Ok(Json::Null)
+        }
         _ => Err(format!("unknown command {command}")),
     }
 }

@@ -1,7 +1,7 @@
 // Spreadsheet tables: cells hold text, values (12 kN) or formulas (=SUM(B2:B4)).
 // The engine evaluates them (crates/quire-eval/src/sheet.rs); this is the grid you edit.
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
-import { cellHtml, esc } from "./math";
+import { esc, prettyValue } from "./math";
 import { commitEditing, contentBottom, flash, insertRegion, layout, type Placed, LINE, redo, setState, snap, startEditing, state, undo, updateRegion } from "./store";
 import type { Region } from "./types";
 
@@ -359,6 +359,14 @@ export function insertTable(rows?: string[][]) {
 
 const isNumeric = (e: { t: string } | null | undefined) => !!e && e.t !== "Str";
 
+/** `4.5 'kN/'m` → 4.5 <unit>kN/m</unit>, with superscript powers and ·10ⁿ. */
+function cellValueHtml(linear: string): string {
+  const pretty = prettyValue(linear);
+  const m = /^(-?[\d.]+(?:·10[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+)?)\s*(.*)$/.exec(pretty);
+  if (!m) return esc(pretty);
+  return `<span class="cell-num">${esc(m[1])}</span>${m[2] ? ` <span class="cell-unit">${esc(m[2])}</span>` : ""}`;
+}
+
 export function SheetGrid(props: { p: Placed }) {
   const r = () => props.p.region;
   const editing = () => state.editing === r().id;
@@ -535,7 +543,9 @@ export function SheetGrid(props: { p: Placed }) {
   const cellContent = (i: number, j: number) => {
     const v = view(i, j);
     if (v?.error) return `<span class="cell-err">#ERROR</span>`;
-    if (v?.result) return cellHtml(v.result);
+    // compact like a spreadsheet: 4.5 kN/m on one line, units in their colour
+    if (v?.result?.t === "Str") return esc(v.result.c);
+    if (v?.text) return cellValueHtml(v.text);
     const text = raw(i, j);
     return text.startsWith("=") ? "" : esc(text);
   };

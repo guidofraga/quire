@@ -2072,3 +2072,146 @@ ms.str::after {
   font-size: 11px;
   font-weight: 600;
 }
+
+/* File ▸ New from Template… */
+.settings.templates {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.templates-body {
+  padding: 14px 18px 18px;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.template-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 84px;
+  padding: 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 9px;
+  background: var(--button);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.template-card:hover:not(:disabled),
+.template-card.mine:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.template-card.mine {
+  padding: 0;
+}
+
+.template-open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.template-name {
+  font-weight: 600;
+}
+
+.template-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.template-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font-size: 10px;
+  opacity: 0;
+}
+
+.template-card.mine:hover .template-delete {
+  opacity: 1;
+}
+
+.template-delete:hover {
+  background: var(--button-hover);
+  color: var(--error);
+}
+
+.templates-heading {
+  margin: 18px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.templates-empty,
+.templates-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.templates-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.btn {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--button);
+  color: inherit;
+  font: inherit;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--button-hover);
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+}
+
+.sheet .cell-unit {
+  color: var(--unit);
+}
+
+.sheet .cell-num {
+  font-variant-numeric: tabular-nums;
+}

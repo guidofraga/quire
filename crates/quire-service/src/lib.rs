@@ -6,6 +6,7 @@
 
 pub mod assets;
 pub mod canonical;
+pub mod templates;
 mod text;
 
 use std::collections::BTreeMap;
@@ -244,6 +245,8 @@ pub struct RegionView {
 pub struct CellView {
     /// The value, for 2D rendering; `None` for text and blank cells.
     pub result: Option<Expr>,
+    /// The same in linear syntax (`4.5 'kN/'m`).
+    pub text: Option<String>,
     pub error: Option<String>,
     pub formula: bool,
 }
@@ -380,6 +383,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                     row.iter()
                         .map(|c| CellView {
                             result: c.shown.as_deref().and_then(|s| parse(s).ok()),
+                            text: c.shown.clone(),
                             error: c.error.clone(),
                             formula: c.formula,
                         })

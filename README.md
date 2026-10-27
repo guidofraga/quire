@@ -19,6 +19,11 @@
 - **Equation ribbon:** a Structures gallery (fractions, scripts, radicals, integrals, large operators, calculus, matrices, functions, with typeset previews) and a Symbols library (Greek, operators, arrows, logic and sets, constants, units). Click to insert at the caret.
 - **Results in the units you work in:** with `q := 12 kN/m` and `L := 6 m`, `M := q*L^2/8 =` shows `54 kN·m`, not `54000 J`; stresses come out in MPa once you use MPa, areas in cm² when the dimensions are in cm. Type a unit after `=` to choose it (`M = kgf*m`), as in SMath; Inspector ▸ Results switches a document back to coherent SI.
 - **Functions and solving:** `f(x) := x^2`, `f(5) =`, `int(f(x), x, 0, 1) =`, `f(a) =` shows the body in terms of `a`. `solve(k*x == F, x, 0 m, 1 m)` finds a root in a range (or near the current value with `solve(…, x)`), `lsolve(A, b)` solves linear systems, `linterp(xs, ys, x)` interpolates tables; `mean`, `sort`, `norm`, `dot`, `cross` work on vectors.
+- **Spreadsheet tables** (Insert ▸ Table, ⌥⌘T, or paste cells copied from Excel):
+  - Cells hold text, values with units (`4.5 kN/m`, `1,5`, `15%`) or formulas like `=B2*C2`, `=SUM(D2:D4)` and `=IF(B5<=C5, "OK", "FAIL")`.
+  - About 50 spreadsheet functions: `IF`, `SUMIF`, `VLOOKUP`, `INDEX`/`MATCH`, `ROUND`… Formulas also read the worksheet's variables (`=σ`) and units (`=B2 + 5 kN`).
+  - Editing works like a spreadsheet: click a cell while typing a formula to insert its reference, ⌘D fills down, rows and columns are inserted from the right-click menu, and copy and paste use tab-separated cells.
+  - A named table is a matrix for the math below it (`loads[4, 4]`); other tables read its cells as `loads!B2`.
 - **Errors that help:** `cannot add a length (m) and a force (N)`; `x is defined further down` when a definition sits below its use; `did you mean A_net?` for a near miss and `did you mean the unit kN?` for `KN`.
 - **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
 - **Find and replace** (⌘F, ⌥⌘F) across math, text, notes, captions and area titles, with match case and whole names; Replace All is one undo step.
@@ -37,6 +42,7 @@
 - Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
 - **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
 - **File ▸ Export as PDF…** (⌘E) writes exactly the page view with selectable text; on Windows and Linux it opens the system print dialog, where you choose Save as PDF / Print to File. Images are embedded at the resolution set in Settings ▸ PDF export. **Print…** (⌘P) opens the print dialog.
+- **Templates:** File ▸ New from Template… (⇧⌘N) starts from a calculation report, a beam check or a load-combination sheet, or from your own: File ▸ Save as Template… keeps page setup, headers, styles, regions and images.
 - **Files:** a document is a `.quire` folder (shown as a single file in the Finder) or a `.quirez` single file, which is what Windows and Linux save and what to send by email. Both open by double-click; **File ▸ Open Recent** lists the last ten; unsaved work is kept aside and offered back if Quire quits unexpectedly.
 - Every change re-evaluates the whole worksheet in Rust (well under a millisecond for typical documents). Math is drawn as MathML for now; a dedicated Rust typesetter comes later.
 

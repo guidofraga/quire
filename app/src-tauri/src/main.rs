@@ -65,6 +65,37 @@ fn clear_recovery(app: AppHandle) -> CmdResult<()> {
     }
 }
 
+fn templates_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("templates"))
+}
+
+#[tauri::command]
+fn list_templates(app: AppHandle) -> CmdResult<Vec<quire_service::templates::TemplateInfo>> {
+    Ok(quire_service::templates::list(&templates_dir(&app)?))
+}
+
+#[tauri::command]
+fn open_template(app: AppHandle, id: String) -> CmdResult<quire_service::templates::TemplateDocument> {
+    quire_service::templates::document(&templates_dir(&app)?, &id).map_err(err)
+}
+
+#[tauri::command]
+fn save_template(
+    app: AppHandle,
+    name: String,
+    description: String,
+    doc: Json,
+    from: Option<PathBuf>,
+) -> CmdResult<String> {
+    quire_service::templates::save_as(&templates_dir(&app)?, &name, &description, &doc, from.as_deref())
+        .map_err(err)
+}
+
+#[tauri::command]
+fn delete_template(app: AppHandle, id: String) -> CmdResult<()> {
+    quire_service::templates::delete(&templates_dir(&app)?, &id).map_err(err)
+}
+
 #[tauri::command]
 fn library() -> quire_service::Library {
     quire_service::library()
@@ -191,11 +222,13 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         &[
             &item(app, "new", "New", Some("CmdOrCtrl+N"))?,
+            &item(app, "new_from_template", "New from Template…", Some("CmdOrCtrl+Shift+N"))?,
             &item(app, "open", "Open…", Some("CmdOrCtrl+O"))?,
             &recent,
             &sep()?,
             &item(app, "save", "Save", Some("CmdOrCtrl+S"))?,
             &item(app, "save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?,
+            &item(app, "save_template", "Save as Template…", None)?,
             &sep()?,
             &item(app, "export_pdf", "Export as PDF…", Some("CmdOrCtrl+E"))?,
             &item(app, "print", "Print…", Some("CmdOrCtrl+P"))?,
@@ -409,6 +442,10 @@ fn main() {
             save_document,
             read_asset,
             new_document,
+            list_templates,
+            open_template,
+            save_template,
+            delete_template,
             djot_html,
             library,
             import_image,

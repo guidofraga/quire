@@ -194,11 +194,28 @@ Two modes:
   "source": "SUMMARY", "header": { "row": true, "column": true },
   "display": { "decimals": 2 }, "caption": { "text": "Summary of checks", "position": "above" } }
 
-// literal: cells are Djot text, or live expressions when they start with "="
-{ "kind": "table", "columns": [{ "width": 220 }, { "align": "right" }],
-  "rows": [["Check", "Value"], ["Bending", "=M.max"]] }
+// spreadsheet: each cell is text, a value with units, or a formula starting with "="
+{ "kind": "table", "name": "loads", "header": { "row": true },
+  "columns": [{ "width": 110 }, { "align": "right" }, {}, { "unit": "kN/m", "decimals": 2 }],
+  "rows": [["Load", "Characteristic", "γ", "Design"],
+           ["Dead", "4.5 kN/m", "1.35", "=B2*C2"],
+           ["Live", "3 kN/m", "1.5", "=B3*C3"],
+           ["Total", "=SUM(B2:B3)", "", "=SUM(D2:D3)"]] }
 ```
-> 💡 SMath summary tables are often matrices of **hand-copied numbers**, not references to the computed variables. A literal table with `"=M.max"` cells fixes that whole class of stale-report errors.
+
+A spreadsheet table runs in reading order with the math regions:
+
+- **Cells** are text (`Dead`), values (`12`, `1,5`, `15%`, `4.5 kN/m`) or formulas (`=B2*C2`).
+- **Formulas** use spreadsheet syntax:
+  - A1 references and ranges (`$A$1`, `B2:D4`).
+  - `=` and `<>` compare; `&` joins text; `,` or `;` separates arguments; function names in any case.
+  - Functions: `IF`, `IFS`, `IFERROR`, `AND`, `OR`, `NOT`, `SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `COUNT`, `COUNTA`, `SUMIF`, `COUNTIF`, `SUMPRODUCT`, `ROUND`, `CEILING`, `MOD`, `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH`, `CHOOSE`, `CONCAT` and others.
+  - Formulas also reach the worksheet: variables defined above (`=M.max`), units (`=B2 + 5 kN`), your functions and Quire's built-ins.
+- **References:** an uppercase letters-and-digits name inside the table's bounds is a cell; outside them it is a variable (`F1`). Another table's cells are `name!B2`.
+- **`name`** makes the table a matrix variable for the math below it: `loads[4, 4]`, 1-based, header row included.
+- **Display:** numbers are shown in the units the table and the variables it reads are written in, or in the column's `unit`.
+
+> 💡 SMath summary tables are often matrices of **hand-copied numbers**, not references to the computed variables. A table with `=σ` and `=IF(B2<=C2, "OK", "FAIL")` cells fixes that whole class of stale-report errors.
 
 ### 4.7 `plot2d` / `plot3d`
 

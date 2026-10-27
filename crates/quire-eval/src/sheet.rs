@@ -38,6 +38,8 @@ pub struct CellOutcome {
     pub error: Option<String>,
     /// The cell holds a formula (its text starts with `=`).
     pub formula: bool,
+    /// The number behind `shown`, for showing it again in other units.
+    pub value: Option<Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -652,10 +654,7 @@ pub(crate) fn evaluate(
         let mut row = Vec::with_capacity(ncols);
         for c in 0..ncols {
             let formula = matches!(sheet.cells[r][c], Cell::Formula(_));
-            let spec = DisplaySpec {
-                unit: t.columns.get(c).and_then(|s| s.unit.clone()).or_else(|| t.display.unit.clone()),
-                decimals: t.columns.get(c).and_then(|s| s.decimals).or(t.display.decimals),
-            };
+            let spec = cell_spec(t, c);
             let mut out = CellOutcome { formula, ..Default::default() };
             match sheet.cell(r, c) {
                 Ok(v) => {
@@ -677,6 +676,7 @@ pub(crate) fn evaluate(
                                         let plain = DisplaySpec { unit: None, ..spec.clone() };
                                         format_value_in(v, &plain, settings, sheet.interp.units, &vocab)
                                     });
+                                out.value = Some(v.clone());
                                 match shown {
                                     Ok(s) => Some(s),
                                     Err(e) => {
@@ -699,6 +699,64 @@ pub(crate) fn evaluate(
     }
     let units = written.into_iter().collect::<BTreeSet<_>>().into_iter().collect();
     (outcomes, Value::Matrix(Matrix::new(nrows, ncols, data)), units)
+}
+
+/// How column `c` is shown: its own unit and decimals, else the table's.
+fn cell_spec(t: &TableInput, c: usize) -> DisplaySpec {
+    DisplaySpec {
+        unit: t.columns.get(c).and_then(|s| s.unit.clone()).or_else(|| t.display.unit.clone()),
+        decimals: t.columns.get(c).and_then(|s| s.decimals).or(t.display.decimals),
+    }
+}
+
+/// Show the numbers again with a fuller list of preferred units (the document's).
+pub(crate) fn reformat(
+    t: &TableInput,
+    cells: &mut [Vec<CellOutcome>],
+    settings: &DisplaySettings,
+    units: &UnitRegistry,
+    vocab: &[WorkingUnit],
+) {
+    for row in cells.iter_mut() {
+        for (c, cell) in row.iter_mut().enumerate() {
+            let spec = cell_spec(t, c);
+            if spec.unit.is_some() || cell.error.is_some() {
+                continue;
+            }
+            if let Some(v @ Value::Num(_)) = &cell.value
+                && let Ok(s) = format_value_in(v, &spec, settings, units, vocab)
+            {
+                cell.shown = Some(s);
+            }
+        }
+    }
+}
+
+/// The worksheet names a table's formulas read (`=M.max`, `=σ/f.y`).
+pub(crate) fn reads(t: &TableInput, units: &UnitRegistry) -> Vec<String> {
+    fn walk(f: &F, out: &mut Vec<String>) {
+        match f {
+            F::Quire(Expr::Ident(n)) => out.push(n.clone()),
+            F::Ext(n, ..) => out.push(n.clone()),
+            F::Neg(x) | F::Percent(x) => walk(x, out),
+            F::Bin(_, a, b) => {
+                walk(a, out);
+                walk(b, out);
+            }
+            F::Call(_, args) => args.iter().for_each(|a| walk(a, out)),
+            _ => {}
+        }
+    }
+    let size = (t.rows.len(), t.rows.iter().map(Vec::len).max().unwrap_or(0));
+    let mut out = Vec::new();
+    for cell in t.rows.iter().flatten() {
+        if let Some(src) = cell.trim().strip_prefix('=')
+            && let Ok(f) = parse_formula(src, size, units)
+        {
+            walk(&f, &mut out);
+        }
+    }
+    out
 }
 
 impl Sheet<'_, '_, '_> {

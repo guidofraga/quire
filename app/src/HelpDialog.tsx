@@ -51,11 +51,23 @@ const FUNCTIONS: Row[] = [
   ["mean, sort, norm, dot, cross, length, stack, augment", "vectors"],
 ];
 
+const TABLES: Row[] = [
+  ["12 kN, 1,5, 15%, Dead", "values with units, decimal commas, percentages, text"],
+  ["=B2*C2, =SUM(D2:D4)", "formulas: A1 references and ranges"],
+  ["=IF(B5<=C5, \"OK\", \"FAIL\")", "= and <> compare, & joins text"],
+  ["SUMIF, COUNTIF, VLOOKUP, INDEX, MATCH", "and ROUND, MIN, MAX, AVERAGE, AND, OR…"],
+  ["=σ, =B2 + 5 kN", "variables above and units work in formulas"],
+  ["Inspector ▸ Name: loads", "math below uses loads[4, 4]; tables use loads!B2"],
+];
+
 const KEYS: Row[] = [
   [`${mod}F / ${alt}${mod}F`, "find / find and replace"],
   [isMac ? "⌘G / ⇧⌘G" : "F3 / Shift+F3", "next / previous match"],
   [`${mod}'`, "next error"],
-  [`${mod}D`, "duplicate"],
+  [`${mod}D`, "duplicate; in a table, fill down"],
+  [`${alt}${mod}T`, "insert a table; paste cells from a spreadsheet"],
+  ["Enter / F2, Esc", "edit a table cell / leave the table"],
+  [`${shift}${mod}N`, "new from template"],
   [`${shift}${mod}M / ${shift}${mod}T`, "insert math / text"],
   [`${shift}${mod}P`, "pages ⇄ canvas"],
   [`${alt}${mod}I`, "inspector"],
@@ -131,6 +143,9 @@ function Dialog() {
           </Part>
           <Part title="Functions">
             <Table rows={FUNCTIONS} code />
+          </Part>
+          <Part title="Tables">
+            <Table rows={TABLES} code />
           </Part>
           <Part title="Keyboard">
             <Table rows={KEYS} />
