@@ -78,12 +78,24 @@ function Dropdown(props: {
         </svg>
       </button>
       <Show when={open()}>
-        <div class={`fb-pop ${props.class ?? ""}`} onMouseDown={keep}>
+        <div class={`fb-pop ${props.class ?? ""}`} onMouseDown={keep} ref={keepInWindow}>
           {props.children(() => setOpen(false))}
         </div>
       </Show>
     </div>
   );
+}
+
+/** Slide a popover sideways so it stays inside a narrow window. */
+function keepInWindow(el: HTMLElement) {
+  requestAnimationFrame(() => {
+    const r = el.getBoundingClientRect();
+    const margin = 8;
+    const shift = r.left < margin ? margin - r.left : r.right > innerWidth - margin ? Math.max(margin - r.left, innerWidth - margin - r.right) : 0;
+    if (!shift) return;
+    el.style.left = `${el.offsetLeft + shift}px`;
+    el.style.right = "auto";
+  });
 }
 
 const icon = (d: string) => (
@@ -436,13 +448,68 @@ function ArrangeGroup() {
   );
 }
 
+const GROUPS: { id: string; title: string; Group: () => JSX.Element }[] = [
+  { id: "text", title: "Text", Group: TextGroup },
+  { id: "paragraph", title: "Paragraph", Group: ParagraphGroup },
+  { id: "equation", title: "Equation", Group: EquationGroup },
+  { id: "arrange", title: "Arrange", Group: ArrangeGroup },
+];
+/** When the window is too narrow, groups move into the ⋯ menu in this order. */
+const OVERFLOW_ORDER = ["arrange", "paragraph", "equation", "text"];
+const MORE_WIDTH = 44;
+
 export function FormatBar() {
+  // natural widths, measured while each group is in the bar
+  const widths: Record<string, number> = {};
+  const [hidden, setHidden] = createSignal<string[]>([]);
+  let bar!: HTMLDivElement;
+  const fit = () => {
+    for (const el of bar.querySelectorAll<HTMLElement>(":scope > .fb-slot")) widths[el.dataset.group!] = el.offsetWidth;
+    if (GROUPS.some((g) => !widths[g.id])) return;
+    const style = getComputedStyle(bar);
+    const room = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const shown = new Set(GROUPS.map((g) => g.id));
+    const need = () => [...shown].reduce((n, id) => n + widths[id], 0) + (shown.size < GROUPS.length ? MORE_WIDTH : 0);
+    for (const id of OVERFLOW_ORDER) {
+      if (need() <= room) break;
+      shown.delete(id);
+    }
+    const next = GROUPS.filter((g) => !shown.has(g.id)).map((g) => g.id);
+    if (next.join() !== hidden().join()) setHidden(next);
+  };
+  onMount(() => {
+    const ro = new ResizeObserver(fit);
+    ro.observe(bar);
+    // web fonts change the widths once they load
+    void document.fonts.ready.then(fit);
+    onCleanup(() => ro.disconnect());
+  });
+  const inBar = (id: string) => !hidden().includes(id);
   return (
-    <div class="formatbar">
-      <TextGroup />
-      <ParagraphGroup />
-      <EquationGroup />
-      <ArrangeGroup />
+    <div class="formatbar" ref={bar}>
+      <For each={GROUPS}>
+        {(g) => (
+          <Show when={inBar(g.id)}>
+            <div class="fb-slot" data-group={g.id}>
+              <g.Group />
+            </div>
+          </Show>
+        )}
+      </For>
+      <Show when={hidden().length}>
+        <Dropdown label={<span class="fb-more">⋯</span>} title="More formatting" class="wide fb-more-pop">
+          {() => (
+            <For each={GROUPS.filter((g) => !inBar(g.id))}>
+              {(g) => (
+                <div class="fb-more-row">
+                  <span class="fb-more-title">{g.title}</span>
+                  <g.Group />
+                </div>
+              )}
+            </For>
+          )}
+        </Dropdown>
+      </Show>
     </div>
   );
 }

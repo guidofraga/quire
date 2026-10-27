@@ -695,6 +695,7 @@ ms.str::after {
   .scene {
     position: static !important;
     transform: none !important;
+    zoom: 1 !important;
   }
 
   .pages {
@@ -2214,4 +2215,96 @@ ms.str::after {
 
 .sheet .cell-num {
   font-variant-numeric: tabular-nums;
+}
+
+/* The ribbon on a narrow window: groups that don't fit go into the ⋯ menu */
+.formatbar .fb-group {
+  border-right: 0;
+}
+
+.fb-slot {
+  display: flex;
+  flex: none;
+}
+
+.fb-slot + .fb-slot {
+  border-left: 1px solid var(--chrome-border);
+}
+
+.formatbar > .fb-dropdown {
+  margin-left: auto;
+}
+
+.fb-more {
+  padding: 0 2px;
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.fb-more-pop {
+  gap: 4px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+}
+
+.fb-more-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.fb-more-row .fb-group {
+  flex-wrap: wrap;
+  padding: 0;
+}
+
+.fb-more-row + .fb-more-row {
+  padding-top: 4px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.fb-more-title {
+  width: 72px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* The toolbar on a narrow window: icons without labels, then fewer extras */
+.toolbar {
+  min-width: 0;
+}
+
+.toolbar .title {
+  flex: 0 1 auto;
+  min-width: 60px;
+}
+
+.tools,
+.status {
+  flex: none;
+}
+
+@media (max-width: 1080px) {
+  .toolbar .tool-label {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .status .muted {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .status .segmented,
+  .status .zoom {
+    display: none;
+  }
+}
+
+.fb-pop {
+  max-width: calc(100vw - 16px);
 }

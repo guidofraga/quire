@@ -81,6 +81,31 @@ export function reveal(id: string) {
 
 setRevealHandler(reveal);
 
+/**
+ * WebKit draws a scene scaled with `transform` as a bitmap while a text field inside it
+ * has the caret, so zoomed-in editing goes blurry. CSS `zoom` lays the scene out at size
+ * instead and stays sharp, but re-lays it out on every zoom step: use it while editing,
+ * where engines report zoomed boxes the way they do for transforms (checked once).
+ */
+const zoomKeepsCoordinates = (() => {
+  const outer = document.createElement("div");
+  outer.style.cssText = "position:absolute;visibility:hidden;zoom:2";
+  const inner = document.createElement("div");
+  inner.style.width = "10px";
+  outer.append(inner);
+  document.body.append(outer);
+  const w = inner.getBoundingClientRect().width;
+  outer.remove();
+  return Math.abs(w - 20) < 0.5;
+})();
+
+function sceneStyle(): Record<string, string> {
+  const { x, y, zoom } = state.view;
+  if (zoomKeepsCoordinates && state.editing && zoom !== 1 && !state.printing)
+    return { transform: `translate(${x / zoom}px, ${y / zoom}px)`, zoom: String(zoom) };
+  return { transform: `translate(${x}px, ${y}px) scale(${zoom})` };
+}
+
 /** Smart guides shown while dragging: a vertical and/or horizontal line, in scene px. */
 const [guides, setGuides] = createSignal<{ v?: [number, number, number]; h?: [number, number, number] }>({});
 
@@ -415,7 +440,7 @@ export function Canvas() {
     >
       <div
         class="scene"
-        style={{ transform: `translate(${state.view.x}px, ${state.view.y}px) scale(${state.view.zoom})` }}
+        style={sceneStyle()}
       >
         <For each={pageBreaks()}>
           {(y, i) => (

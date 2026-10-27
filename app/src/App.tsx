@@ -486,22 +486,22 @@ export function App() {
             <span class="glyph math-glyph">
               x<sup>2</sup>
             </span>
-            Math
+            <span class="tool-label">Math</span>
           </button>
           <button onClick={() => insertAtCaret("text")} title="Insert text (⇧⌘T)">
-            <span class="glyph">¶</span> Text
+            <span class="glyph">¶</span> <span class="tool-label">Text</span>
           </button>
           <button onClick={() => runCommand("insert_image")} title="Insert image">
-            <span class="glyph">▣</span> Image
+            <span class="glyph">▣</span> <span class="tool-label">Image</span>
           </button>
           <button onClick={() => insertTable()} title="Insert table (⌥⌘T)">
-            <span class="glyph">▦</span> Table
+            <span class="glyph">▦</span> <span class="tool-label">Table</span>
           </button>
           <button onClick={insertArea} title="Insert area">
-            <span class="glyph">▤</span> Area
+            <span class="glyph">▤</span> <span class="tool-label">Area</span>
           </button>
           <button onClick={() => runCommand("insert_toc")} title="Insert table of contents">
-            <span class="glyph">☰</span> Contents
+            <span class="glyph">☰</span> <span class="tool-label">Contents</span>
           </button>
         </div>
         <div class="status" data-tauri-drag-region>
