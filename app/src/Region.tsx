@@ -1,4 +1,5 @@
 import type { EditorView } from "prosemirror-view";
+import { hitIds } from "./find";
 import { prefs } from "./settings";
 import { createEffect, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { produce } from "solid-js/store";
@@ -250,6 +251,10 @@ function MathEditor(props: { r: Region }) {
       assignJustTyped = true;
     } else if (e.key === "=" && typedAssign) {
       e.preventDefault();
+    } else if (e.key === "~") {
+      // SMath's key for a global definition
+      e.preventDefault();
+      document.execCommand("insertText", false, " ≡ ");
     } else if (
       e.key === " " &&
       state.editingFresh &&
@@ -691,7 +696,7 @@ export function RegionBox(props: RegionProps) {
     <div
       ref={el}
       class={`region ${r().kind}`}
-      classList={{ selected: selected(), editing: editing(), error: !!state.views[r().id]?.error }}
+      classList={{ selected: selected(), editing: editing(), error: !!state.views[r().id]?.error, found: hitIds().has(r().id) }}
       data-region={r().id}
       style={{
         left: `${placed().left}px`,

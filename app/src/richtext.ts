@@ -142,7 +142,7 @@ const M = schema.marks;
 
 const DJOT_SPECIAL = /[\\*_[\]{}`~^$<>#|"]/g;
 
-function escapeText(t: string): string {
+export function escapeText(t: string): string {
   return t.replace(DJOT_SPECIAL, "\\$&");
 }
 

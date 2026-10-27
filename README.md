@@ -17,9 +17,11 @@
 - Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (the `x =` button).
 - **LaTeX shortcuts, Word-style:** `\Delta`, `\varepsilon`, `\therefore`, `\sqrt`, `\int`… convert on space or punctuation, with a completion list as you type. They work in math and in text. Structures insert templates; Tab and ⇧Tab move between their `?` slots.
 - **Equation ribbon:** a Structures gallery (fractions, scripts, radicals, integrals, large operators, calculus, matrices, functions, with typeset previews) and a Symbols library (Greek, operators, arrows, logic and sets, constants, units). Click to insert at the caret.
-- **Results in the units you work in:** with `q := 12 kN/m` and `L := 6 m`, `M := q*L^2/8 =` shows `54 kN·m`, not `54000 J`; stresses come out in MPa once you use MPa, areas in cm² when the dimensions are in cm. Inspector ▸ Results switches a document back to coherent SI.
+- **Results in the units you work in:** with `q := 12 kN/m` and `L := 6 m`, `M := q*L^2/8 =` shows `54 kN·m`, not `54000 J`; stresses come out in MPa once you use MPa, areas in cm² when the dimensions are in cm. Type a unit after `=` to choose it (`M = kgf*m`), as in SMath; Inspector ▸ Results switches a document back to coherent SI.
 - **Functions and solving:** `f(x) := x^2`, `f(5) =`, `int(f(x), x, 0, 1) =`, `f(a) =` shows the body in terms of `a`. `solve(k*x == F, x, 0 m, 1 m)` finds a root in a range (or near the current value with `solve(…, x)`), `lsolve(A, b)` solves linear systems, `linterp(xs, ys, x)` interpolates tables; `mean`, `sort`, `norm`, `dot`, `cross` work on vectors.
 - **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
+- **Find and replace** (⌘F, ⌥⌘F) across math, text, notes, captions and area titles, with match case and whole names; Replace All is one undo step.
+- `~` types a global definition `≡`, as in SMath. **Help ▸ Quire Help** (⇧⌘/, F1) is a one-page quick reference.
 - Click a selected box again (or double-click it) to edit with the caret where you clicked. With a text box selected but not being edited, the ribbon formats the whole box.
 
 **Layout**

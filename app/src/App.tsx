@@ -29,11 +29,14 @@ import {
 import { Canvas, clientToDoc, reveal, zoomCenter } from "./Canvas";
 import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
+import { FindBar } from "./FindBar";
+import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
 import { type Background, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
+import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { directPdf, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
 import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
@@ -283,6 +286,17 @@ function runCommand(id: string) {
     return;
   }
   switch (id) {
+    case "find":
+    case "find_replace":
+      commitEditing();
+      return openFind(id === "find_replace");
+    case "find_next":
+      return findStep(1);
+    case "find_prev":
+      return findStep(-1);
+    case "help":
+      commitEditing();
+      return setHelpOpen(true);
     case "recent_clear":
       return clearRecent();
     case "distribute_x":
@@ -367,6 +381,11 @@ function browserShortcuts(e: KeyboardEvent) {
     "-": "zoom_out",
     "0": "zoom_reset",
     "'": "next_error",
+    f: e.altKey ? "find_replace" : "find",
+    "?": "help",
+    "/": e.shiftKey ? "help" : "",
+    // Ctrl+G is Greek in math
+    g: e.metaKey ? (e.shiftKey ? "find_prev" : "find_next") : "",
     ",": e.altKey ? "" : "settings",
   };
   if (key === "a" && state.editing) return;
@@ -505,7 +524,10 @@ export function App() {
       </header>
       <FormatBar />
       <div class="workspace">
-        <Canvas />
+        <div class="canvas-pane">
+          <Canvas />
+          <FindBar />
+        </div>
         <Show when={state.inspector}>
           <Inspector onAddBackground={() => addBackground().catch((e) => flash(String(e)))} />
         </Show>
@@ -514,6 +536,7 @@ export function App() {
       <CompletionPopup />
       <NameTooltip />
       <SettingsDialog />
+      <HelpDialog />
       <Show when={state.message}>
         <div class="toast" onClick={() => setState({ message: null })}>
           {state.message}

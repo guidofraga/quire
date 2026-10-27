@@ -458,15 +458,20 @@ export function startEditing(id: string, at?: [number, number]) {
   setState({ editing: id, selection: [id], caret: null, editingFresh: false });
 }
 
-/** Split SMath-style trailing `=` ("show the result") from the typed text. */
-export function splitShow(text: string): { expr: string; show: boolean } {
+/**
+ * Split SMath-style `=` ("show the result") from the typed text, with the unit to show it
+ * in when one follows (`M = kN*m`).
+ */
+export function splitShow(text: string): { expr: string; show: boolean; unit?: string } {
   const t = text.trimEnd();
   if (t.endsWith("=") && !/(==|:=|<=|>=|!=|≠=)$/.test(t)) return { expr: t.slice(0, -1).trimEnd(), show: true };
+  const m = /^(.*[^=<>!:≠\s])\s*=\s*([\p{L}\p{N}_*/^()·.'°%\s-]*\p{L}[\p{L}\p{N}_*/^()·.'°%\s-]*)$/u.exec(t);
+  if (m && !/=/.test(m[2])) return { expr: m[1].trimEnd(), show: true, unit: m[2].trim() };
   return { expr: text, show: false };
 }
 
 export function editText(r: Region): string {
-  if (r.kind === "math") return (r.expr ?? "") + (r.show ? " =" : "");
+  if (r.kind === "math") return (r.expr ?? "") + (r.show ? ` =${r.display?.unit ? ` ${r.display.unit}` : ""}` : "");
   return localized(r.text, state.doc.meta?.lang);
 }
 
@@ -476,10 +481,15 @@ export function setLive(id: string, text: string) {
     const r = findDraft(d, id);
     if (!r) return;
     if (r.kind === "math") {
-      const { expr, show } = splitShow(text);
+      const { expr, show, unit } = splitShow(text);
       r.expr = expr;
       if (show) r.show = "value";
       else delete r.show;
+      if (unit) r.display = { ...r.display, unit };
+      else if (r.display?.unit) {
+        delete r.display.unit;
+        if (!Object.keys(r.display).length) delete r.display;
+      }
     } else if (r.kind === "text") {
       if (typeof r.text === "object" && r.text !== null) {
         const lang = state.doc.meta?.lang;

@@ -223,6 +223,12 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "duplicate", "Duplicate", Some("CmdOrCtrl+D"))?,
             &item(app, "delete", "Delete", None)?,
             &item(app, "select_all", "Select All", Some("CmdOrCtrl+A"))?,
+            &sep()?,
+            &item(app, "find", "Find…", Some("CmdOrCtrl+F"))?,
+            &item(app, "find_replace", "Find and Replace…", Some("CmdOrCtrl+Alt+F"))?,
+            // Ctrl+G turns letters into Greek in math, so Windows and Linux use F3
+            &item(app, "find_next", "Find Next", Some(if mac { "Cmd+G" } else { "F3" }))?,
+            &item(app, "find_prev", "Find Previous", Some(if mac { "Cmd+Shift+G" } else { "Shift+F3" }))?,
         ],
     )?;
     let insert = Submenu::with_items(
@@ -299,6 +305,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?],
     )?;
+    let help_item = item(app, "help", "Quire Help", Some(if mac { "Cmd+Shift+/" } else { "F1" }))?;
     if mac {
         let app_menu = Submenu::with_items(
             app,
@@ -318,13 +325,17 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &PredefinedMenuItem::quit(app, None)?,
             ],
         )?;
-        return Menu::with_items(app, &[&app_menu, &file, &edit, &insert, &format, &arrange, &view, &window]);
+        let help = Submenu::with_items(app, "Help", true, &[&help_item])?;
+        return Menu::with_items(
+            app,
+            &[&app_menu, &file, &edit, &insert, &format, &arrange, &view, &window, &help],
+        );
     }
     let help = Submenu::with_items(
         app,
         "Help",
         true,
-        &[&PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?],
+        &[&help_item, &sep()?, &PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?],
     )?;
     Menu::with_items(app, &[&file, &edit, &insert, &format, &arrange, &view, &window, &help])
 }

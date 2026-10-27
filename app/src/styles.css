@@ -282,6 +282,15 @@ body {
   background: rgba(47, 111, 223, 0.05);
 }
 
+.region.found:not(.editing) {
+  background: rgba(255, 196, 0, 0.22);
+  box-shadow: 0 0 0 1px rgba(214, 150, 0, 0.45);
+}
+
+.region.found.selected:not(.editing) {
+  background: rgba(255, 196, 0, 0.42);
+}
+
 .region.editing {
   outline: 1.5px solid var(--accent);
   background: #fff;
@@ -653,6 +662,7 @@ ms.str::after {
 }
 
 .app.printing .caret,
+.app.printing .findbar,
 .app.printing .key-sink,
 .app.printing .disclosure {
   display: none;
@@ -675,6 +685,7 @@ ms.str::after {
     display: none !important;
   }
 
+  .canvas-pane,
   .viewport {
     position: static !important;
     overflow: visible !important;
@@ -724,7 +735,14 @@ ms.str::after {
   min-height: 0;
 }
 
-.workspace > .viewport {
+.canvas-pane {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+.canvas-pane > .viewport {
   flex: 1;
 }
 
@@ -1770,4 +1788,139 @@ ms.str::after {
   from {
     opacity: 0;
   }
+}
+
+/* Find bar */
+.findbar {
+  position: absolute;
+  top: 10px;
+  right: 18px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font: 12px -apple-system, system-ui, sans-serif;
+  animation: pop-in 120ms ease-out;
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.findbar input {
+  width: 210px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.findbar input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.find-status {
+  min-width: 64px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.findbar button {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.findbar button:hover:not(:disabled) {
+  background: var(--button-hover);
+}
+
+.findbar button:disabled {
+  opacity: 0.35;
+}
+
+.findbar button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.find-toggle {
+  width: 18px;
+  min-width: 18px !important;
+  padding: 0 !important;
+  color: var(--muted) !important;
+}
+
+.find-nav {
+  font-size: 15px !important;
+}
+
+.findbar .find-act {
+  background: var(--button);
+}
+
+/* Help ▸ Quick reference */
+.settings.help {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.help-body {
+  padding: 4px 18px 18px;
+}
+
+.help-part h3 {
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.help-table td {
+  padding: 4px 0;
+  border-top: 1px solid var(--chrome-border);
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+.help-table td:first-child {
+  width: 46%;
+  padding-right: 14px;
+}
+
+.help-table code,
+.help-table kbd {
+  font: 12px var(--mono);
+  color: var(--chrome-ink);
+}
+
+.help-table kbd {
+  font-family: inherit;
+  font-weight: 500;
 }
