@@ -58,6 +58,12 @@ export const [state, setState] = createStore<State>({
   inspector: false,
 });
 
+/** A short notice at the bottom of the window that goes away by itself. */
+export function flash(message: string) {
+  setState({ message });
+  setTimeout(() => state.message === message && setState({ message: null }), 4000);
+}
+
 /** Measured region heights (layout px), reported by the rendered regions. */
 export const [heights, setHeights] = createStore<Record<string, number>>({});
 /** Measured region widths, for alignment and smart guides. */

@@ -1,12 +1,15 @@
 // Document actions that span the UI: clipboard, images, duplicate, context menus.
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
+import { latex } from "./latex";
+import { prettyValue } from "./math";
 import { closeMenu, type MenuItems, setRegionMenuBuilder } from "./menu";
 import type { Background } from "./pages";
 import {
   availableWidth,
   commitEditing,
   deleteRegions,
+  flash,
   GRID,
   layout,
   mutate,
@@ -55,7 +58,22 @@ function plainTextOf(regions: Region[]): string {
     .join("\n");
 }
 
+/** Text for the next copy event (Copy Result, Copy as LaTeX). */
+let pendingText: string | null = null;
+
+function copyText(text: string, what: string) {
+  pendingText = text;
+  const ok = document.execCommand("copy");
+  pendingText = null;
+  flash(ok ? `Copied ${what}` : "Could not copy");
+}
+
 export function onCopy(e: ClipboardEvent, cut: boolean) {
+  if (pendingText !== null) {
+    e.clipboardData?.setData("text/plain", pendingText);
+    e.preventDefault();
+    return;
+  }
   if (state.editing || isTextField(e.target) || !state.selection.length) return;
   const regions = selectedRegions();
   internalClipboard = regions;
@@ -269,7 +287,19 @@ export function installContextMenus(run: (command: string) => void) {
         null,
       );
     } else if (r?.kind === "math") {
+      const view = state.views[id];
       items.push(
+        {
+          label: "Copy Result",
+          disabled: !view?.resultText || !!view.error,
+          run: () => (closeMenu(), copyText(prettyValue(view!.resultText!), "the result")),
+        },
+        {
+          label: "Copy as LaTeX",
+          disabled: !view?.input,
+          run: () => (closeMenu(), copyText(latex(view!.input!, view!.error ? null : view!.result, view!.units), "as LaTeX")),
+        },
+        null,
         { label: "Show Result", checked: !!r.show, run: () => (closeMenu(), updateRegion(id, { show: r.show ? undefined : "value" })) },
         { label: "Exclude from Calculation", checked: !!r.disabled, run: () => (closeMenu(), updateRegion(id, { disabled: r.disabled ? undefined : true })) },
         null,

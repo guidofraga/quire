@@ -19,7 +19,7 @@ import {
   setWholeWord,
   wholeWord,
 } from "./find";
-import { revealRegion, setState } from "./store";
+import { flash, revealRegion } from "./store";
 
 export function FindBar() {
   const close = () => setFindOpen(false);
@@ -43,7 +43,7 @@ export function FindBar() {
     const i = currentHit();
     return i < 0 ? `${n} ${n === 1 ? "region" : "regions"}` : `${i + 1} of ${n}`;
   };
-  const say = (n: number) => setState({ message: n ? `Replaced ${n} ${n === 1 ? "occurrence" : "occurrences"}` : "Nothing to replace" });
+  const say = (n: number) => flash(n ? `Replaced ${n} ${n === 1 ? "occurrence" : "occurrences"}` : "Nothing to replace");
   // the selected match first, then on to the next one
   const replaceOne = () => {
     const list = hits();

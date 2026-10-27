@@ -47,6 +47,7 @@ import {
   commitEditing,
   deleteRegions,
   distributeRegions,
+  flash,
   insertArea,
   insertAtCaret,
   insertContents,
@@ -64,11 +65,6 @@ import {
 function fileName(path: string | null): string {
   if (!path) return localized(state.doc.meta?.title) || "Untitled";
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()!.replace(/\.quirez?$/i, "");
-}
-
-function flash(message: string) {
-  setState({ message });
-  setTimeout(() => state.message === message && setState({ message: null }), 4000);
 }
 
 // ---------------------------------------------------------------------------
