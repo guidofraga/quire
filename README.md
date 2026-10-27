@@ -74,7 +74,11 @@ To work on the UI in a browser, run `quire serve` (the same backend over localho
 | [quire-doc](crates/quire-doc) | Loads `.quire` bundles |
 | [quire-cli](crates/quire-cli) | The `quire` command |
 
-Installers for Windows (.msi/.exe), Linux (.AppImage/.deb/.rpm) and macOS (.dmg) are built by the **Release** GitHub Actions workflow: push a tag such as `v0.1.0`, or run it from the Actions tab, and it attaches them to a draft release. They aren't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn on first launch.
+Installers for Windows (.msi/.exe), Linux (.AppImage/.deb/.rpm) and macOS (.dmg) are built by the **Release** GitHub Actions workflow: push a tag such as `v0.1.0`, or run it from the Actions tab, and it attaches them to a draft release. They aren't code-signed yet, so the first launch shows a warning:
+
+- **macOS:** open Quire once and dismiss the "can't be verified" message, then choose **System Settings ▸ Privacy & Security ▸ Open Anyway** and confirm. Since macOS Sequoia (15), right-click ▸ Open no longer skips the check.
+- **Windows:** in the SmartScreen dialog, choose **More info ▸ Run anyway**.
+- **Linux:** no warning. Make the AppImage executable first (`chmod +x Quire_*.AppImage`), or install the `.deb` or `.rpm`.
 
 Build and try it (needs Rust; `rustup` installs it):
 
