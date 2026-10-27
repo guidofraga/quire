@@ -51,6 +51,67 @@ impl Outcome {
 }
 
 /// Every plain name in an expression (for function bodies, which run later).
+/// The defined name closest to a mistyped one: same letters in another case, `_` for `.`,
+/// or one edit away (two for longer names).
+fn nearest<'a>(name: &str, defined: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let fold = |s: &str| s.to_lowercase().replace('_', ".");
+    let budget = if name.chars().count() > 4 { 2 } else { 1 };
+    let mut best: Option<(usize, &str)> = None;
+    for d in defined {
+        if d == name {
+            continue;
+        }
+        let cost = if fold(d) == fold(name) { 0 } else { edit_distance(d, name) };
+        if cost <= budget && best.is_none_or(|(c, _)| cost < c) {
+            best = Some((cost, d));
+        }
+    }
+    best.map(|(_, d)| d)
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let next = (row[j + 1] + 1).min(row[j] + 1).min(prev + usize::from(ca != cb));
+            prev = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
+}
+
+/// `KN` → `kN`, `mpa` → `MPa`: the unit spelled with the fewest case changes.
+fn unit_in_other_case(name: &str, units: &UnitRegistry) -> Option<String> {
+    let chars: Vec<char> = name.chars().collect();
+    if chars.len() > 6 || !chars.iter().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    let mut best: Option<(u32, String)> = None;
+    for mask in 1u32..(1 << chars.len()) {
+        let variant: String = chars
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                if mask & (1 << i) == 0 {
+                    *c
+                } else if c.is_ascii_uppercase() {
+                    c.to_ascii_lowercase()
+                } else {
+                    c.to_ascii_uppercase()
+                }
+            })
+            .collect();
+        if units.lookup(&variant).is_some() && best.as_ref().is_none_or(|(n, _)| mask.count_ones() < *n) {
+            best = Some((mask.count_ones(), variant));
+        }
+    }
+    best.map(|(_, v)| v)
+}
+
 fn names(e: &Expr, out: &mut Vec<String>) {
     match e {
         Expr::Ident(n) => out.push(n.clone()),
@@ -186,10 +247,50 @@ impl Worksheet {
             }
         }
         let mut out: Vec<Outcome> = out.into_iter().map(|o| o.expect("every region evaluated")).collect();
+        self.explain_undefined(&parsed, &mut out);
         if self.settings.working_units {
             self.show_in_working_units(regions, &parsed, &mut out);
         }
         out
+    }
+
+    /// "x is not defined" says why when it can: x is defined further down the page, or
+    /// a name close to it is defined above, or it is a unit written in the wrong case.
+    fn explain_undefined(
+        &self,
+        parsed: &[std::result::Result<Expr, quire_ast::ParseError>],
+        out: &mut [Outcome],
+    ) {
+        let mut defined: Vec<(&str, usize, bool)> = Vec::new();
+        for (i, e) in parsed.iter().enumerate() {
+            let Ok(Expr::Define { lhs, global, .. }) = e else { continue };
+            let name = match lhs.as_ref() {
+                Expr::Ident(n) | Expr::Call(n, _) => n,
+                Expr::Index(b, _) => match b.as_ref() {
+                    Expr::Ident(n) => n,
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            defined.push((name, i, *global));
+        }
+        for (i, o) in out.iter_mut().enumerate() {
+            let Some(name) = o.error.as_deref().and_then(|m| m.strip_suffix(" is not defined")) else {
+                continue;
+            };
+            let hint = if defined.iter().any(|&(n, j, global)| n == name && j > i && !global) {
+                format!(
+                    "{name} is defined further down; move that definition above this one, or make it global with ~ (≡)"
+                )
+            } else if let Some(near) = nearest(name, defined.iter().filter(|d| d.1 < i || d.2).map(|d| d.0)) {
+                format!("{name} is not defined; did you mean {near}?")
+            } else if let Some(unit) = unit_in_other_case(name, &self.units) {
+                format!("{name} is not defined; did you mean the unit {unit}?")
+            } else {
+                continue;
+            };
+            o.error = Some(hint);
+        }
     }
 
     /// Re-display results in the units the author typed: first those of the definitions
@@ -484,9 +585,26 @@ mod tests {
     }
 
     #[test]
+    fn undefined_names_explain_themselves() {
+        let r =
+            shown(&["σ.max := 2", "A_net := 3", "sigma.max + 1", "A.net", "S.max", "q := 5 KN", "y := zzz"]);
+        assert_eq!(r[2], "sigma.max is not defined");
+        assert_eq!(r[3], "A.net is not defined; did you mean A_net?");
+        assert_eq!(r[4], "S.max is not defined; did you mean σ.max?");
+        assert_eq!(r[5], "KN is not defined; did you mean the unit kN?");
+        assert_eq!(r[6], "zzz is not defined");
+        // a global definition below is visible, so no "further down"
+        assert_eq!(shown(&["b + 1", "b ≡ 2"])[0], "3");
+    }
+
+    #[test]
     fn document_order_and_redefinition() {
         let r = shown(&["y := x + 1", "x := 1", "z := x + 1", "x := 10", "x + z"]);
-        assert_eq!(r, ["x is not defined", "1", "2", "10", "12"]);
+        assert_eq!(
+            r[0],
+            "x is defined further down; move that definition above this one, or make it global with ~ (≡)"
+        );
+        assert_eq!(r[1..], ["1", "2", "10", "12"]);
     }
 
     #[test]
