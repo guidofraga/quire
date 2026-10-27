@@ -9,3 +9,5 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# `.quirez`: the bundle as one ZIP file
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

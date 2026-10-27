@@ -164,6 +164,13 @@ pub fn call(name: &str, args: &[Value]) -> Option<Result<Value>> {
         "max" => extremum(name, args, true),
         "min" => extremum(name, args, false),
         "sum" if args.len() == 1 => sum_all(args),
+        "mean" => mean(args),
+        "sort" => sort(args),
+        "norm" => norm(args),
+        "dot" => dot(args),
+        "cross" => cross(args),
+        "lsolve" => lsolve(args),
+        "linterp" => linterp(args),
         "rows" | "cols" | "length" => size(name, args),
         "el" => el(args),
         "transpose" => transpose(args),
@@ -274,6 +281,114 @@ fn sum_all(args: &[Value]) -> Result<Value> {
         acc = if k == 0 { v.clone() } else { arith(BinaryOp::Add, &acc, v)? };
     }
     Ok(acc)
+}
+
+fn mean(args: &[Value]) -> Result<Value> {
+    let n = flatten(args).len();
+    if n == 0 {
+        bail!("mean needs at least one value");
+    }
+    arith(BinaryOp::Div, &sum_all(args)?, &Value::num(n as f64))
+}
+
+/// A vector's numbers and their common units.
+type Vector = (Vec<f64>, Dim);
+
+/// The numbers of a vector (row or column), all with the same units.
+fn vector(name: &str, v: &Value) -> Result<Vector> {
+    let m = matrix_arg(name, v)?;
+    if m.rows != 1 && m.cols != 1 {
+        bail!("{name} needs a vector, not a {}×{} matrix", m.rows, m.cols);
+    }
+    let mut dim = None;
+    let mut out = Vec::with_capacity(m.data.len());
+    for x in &m.data {
+        let q = x.as_num(&format!("an element of the {name} vector"))?;
+        match dim {
+            None => dim = Some(q.dim),
+            Some(d) => same_dim(d, q.dim, &format!("{name} a vector that mixes"))?,
+        }
+        out.push(q.v);
+    }
+    Ok((out, dim.unwrap_or(Dim::NONE)))
+}
+
+fn column(values: Vec<f64>, dim: Dim) -> Value {
+    let n = values.len();
+    Value::Matrix(Matrix::new(n, 1, values.into_iter().map(|v| Value::Num(Quantity::new(v, dim))).collect()))
+}
+
+fn sort(args: &[Value]) -> Result<Value> {
+    arity("sort", args, |n| n == 1, "1 argument")?;
+    let (mut v, dim) = vector("sort", &args[0])?;
+    v.sort_by(f64::total_cmp);
+    Ok(column(v, dim))
+}
+
+fn norm(args: &[Value]) -> Result<Value> {
+    arity("norm", args, |n| n == 1, "1 argument")?;
+    let (v, dim) = vector("norm", &args[0])?;
+    Ok(Value::Num(Quantity::new(v.iter().map(|x| x * x).sum::<f64>().sqrt(), dim)))
+}
+
+fn two_vectors(name: &str, args: &[Value]) -> Result<(Vector, Vector)> {
+    arity(name, args, |n| n == 2, "2 arguments")?;
+    let a = vector(name, &args[0])?;
+    let b = vector(name, &args[1])?;
+    if a.0.len() != b.0.len() {
+        bail!("{name} needs two vectors of the same length, not {} and {}", a.0.len(), b.0.len());
+    }
+    Ok((a, b))
+}
+
+fn dot(args: &[Value]) -> Result<Value> {
+    let ((a, da), (b, db)) = two_vectors("dot", args)?;
+    Ok(Value::Num(Quantity::new(a.iter().zip(&b).map(|(x, y)| x * y).sum(), da * db)))
+}
+
+fn cross(args: &[Value]) -> Result<Value> {
+    let ((a, da), (b, db)) = two_vectors("cross", args)?;
+    if a.len() != 3 {
+        bail!("cross needs two vectors of 3 elements");
+    }
+    let c = vec![a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    Ok(column(c, da * db))
+}
+
+/// `lsolve(A, b)`: the x that makes A·x = b.
+fn lsolve(args: &[Value]) -> Result<Value> {
+    arity("lsolve", args, |n| n == 2, "2 arguments")?;
+    let a = matrix_arg("lsolve", &args[0])?;
+    if a.rows != a.cols {
+        bail!("lsolve needs a square matrix, not {}×{}", a.rows, a.cols);
+    }
+    let rows = match &args[1] {
+        Value::Matrix(m) => m.rows,
+        _ => 1,
+    };
+    if rows != a.rows {
+        bail!("lsolve: b needs {} rows to match the matrix, not {rows}", a.rows);
+    }
+    let inv = ops::inverse(a).map_err(|_| crate::error::EvalError::new("lsolve: the matrix is singular"))?;
+    arith(BinaryOp::Mul, &inv, &args[1])
+}
+
+/// `linterp(xs, ys, x)`: straight lines between table points, extended past the ends.
+fn linterp(args: &[Value]) -> Result<Value> {
+    arity("linterp", args, |n| n == 3, "3 arguments")?;
+    let (xs, xd) = vector("linterp", &args[0])?;
+    let (ys, yd) = vector("linterp", &args[1])?;
+    if xs.len() != ys.len() || xs.len() < 2 {
+        bail!("linterp needs two vectors of the same length, with at least 2 points");
+    }
+    if xs.windows(2).any(|w| w[1] <= w[0]) {
+        bail!("linterp needs the x values in increasing order");
+    }
+    let x = args[2].as_num("the point to interpolate at")?;
+    same_dim(xd, x.dim, "interpolate between")?;
+    let i = xs.partition_point(|&v| v <= x.v).clamp(1, xs.len() - 1);
+    let t = (x.v - xs[i - 1]) / (xs[i] - xs[i - 1]);
+    Ok(Value::Num(Quantity::new(ys[i - 1] + t * (ys[i] - ys[i - 1]), yd)))
 }
 
 fn one_matrix<'a>(name: &str, args: &'a [Value]) -> Result<&'a Matrix> {

@@ -4,7 +4,7 @@ use quire_ast::{Expr, parse, print};
 use quire_units::{Unit, UnitRegistry};
 
 use crate::error::{EvalError, Result, bail};
-use crate::format::{DisplaySettings, DisplaySpec, format_value};
+use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value, format_value_in};
 use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, set_element};
 use crate::value::Value;
 
@@ -105,6 +105,29 @@ fn substitute(e: &Expr, params: &[String], args: &[Expr]) -> Expr {
     }
 }
 
+/// Units written with a marker: `'kN`.
+fn explicit_units(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Unit(n) => out.push(n.clone()),
+        Expr::Paren(x) | Expr::Unary(_, x) | Expr::Factorial(x) => explicit_units(x, out),
+        Expr::Binary(_, a, b) | Expr::Range(a, b) | Expr::Define { lhs: a, rhs: b, .. } => {
+            explicit_units(a, out);
+            explicit_units(b, out);
+        }
+        Expr::Compare(a, rest) => {
+            explicit_units(a, out);
+            rest.iter().for_each(|(_, x)| explicit_units(x, out));
+        }
+        Expr::Call(_, xs) => xs.iter().for_each(|x| explicit_units(x, out)),
+        Expr::Index(b, xs) => {
+            explicit_units(b, out);
+            xs.iter().for_each(|x| explicit_units(x, out));
+        }
+        Expr::Matrix(rows) => rows.iter().flatten().for_each(|x| explicit_units(x, out)),
+        Expr::Num(_) | Expr::Ident(_) | Expr::Str(_) | Expr::Placeholder => {}
+    }
+}
+
 pub struct Worksheet {
     used_units: std::collections::BTreeSet<String>,
     used_constants: std::collections::BTreeSet<String>,
@@ -162,7 +185,102 @@ impl Worksheet {
                 });
             }
         }
-        out.into_iter().map(|o| o.expect("every region evaluated")).collect()
+        let mut out: Vec<Outcome> = out.into_iter().map(|o| o.expect("every region evaluated")).collect();
+        if self.settings.working_units {
+            self.show_in_working_units(regions, &parsed, &mut out);
+        }
+        out
+    }
+
+    /// Re-display results in the units the author typed: first those of the definitions
+    /// the result depends on (nearest first), then the document's, most used first.
+    fn show_in_working_units(
+        &self,
+        regions: &[MathInput],
+        parsed: &[std::result::Result<Expr, quire_ast::ParseError>],
+        out: &mut [Outcome],
+    ) {
+        // units written in each region, and the names each region reads
+        let mut own: Vec<Vec<String>> = Vec::with_capacity(regions.len());
+        let mut reads: Vec<Vec<String>> = Vec::with_capacity(regions.len());
+        for (e, o) in parsed.iter().zip(out.iter()) {
+            let mut u = Vec::new();
+            let mut n = Vec::new();
+            if let Ok(e) = e {
+                explicit_units(e, &mut u);
+                match e {
+                    Expr::Define { rhs, .. } => names(rhs, &mut n),
+                    other => names(other, &mut n),
+                }
+            }
+            u.extend(o.units.iter().cloned());
+            own.push(u);
+            reads.push(n);
+        }
+        let usable =
+            |name: &str| self.units.lookup(name).filter(|u| u.offset == 0.0 && !u.dim.is_dimensionless());
+        // document-wide preference: most used first, ties in order of appearance
+        let mut counts: Vec<(&str, usize)> = Vec::new();
+        for n in own.iter().flatten() {
+            match counts.iter_mut().find(|(m, _)| *m == n) {
+                Some((_, c)) => *c += 1,
+                None => counts.push((n, 1)),
+            }
+        }
+        counts.sort_by_key(|c| std::cmp::Reverse(c.1));
+        let mut defined: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (i, (r, o)) in regions.iter().zip(out.iter_mut()).enumerate() {
+            if let Some(name) = &o.defines {
+                // `f(x)` defines f; `v[i]` defines v
+                let key = name.split('(').next().unwrap_or(name);
+                defined.insert(key.to_string(), i);
+            }
+            if !r.show || r.display.unit.is_some() || o.error.is_some() {
+                continue;
+            }
+            let Some(v) = &o.value else { continue };
+            // breadth-first through the definitions this result reads
+            let mut order: Vec<&str> = own[i].iter().map(String::as_str).collect();
+            let mut seen = vec![i];
+            let mut frontier: Vec<usize> = Vec::new();
+            for n in &reads[i] {
+                if let Some(&d) = defined.get(n.as_str())
+                    && !seen.contains(&d)
+                {
+                    seen.push(d);
+                    frontier.push(d);
+                }
+            }
+            while !frontier.is_empty() {
+                let mut next = Vec::new();
+                for d in frontier {
+                    order.extend(own[d].iter().map(String::as_str));
+                    for n in &reads[d] {
+                        if let Some(&e) = defined.get(n.as_str())
+                            && !seen.contains(&e)
+                            && e < d
+                        {
+                            seen.push(e);
+                            next.push(e);
+                        }
+                    }
+                }
+                frontier = next;
+            }
+            order.extend(counts.iter().map(|(n, _)| *n));
+            let mut vocab: Vec<WorkingUnit> = Vec::new();
+            for name in order {
+                if vocab.iter().any(|w| w.name == name) {
+                    continue;
+                }
+                if let Some(unit) = usable(name) {
+                    vocab.push(WorkingUnit { name: name.to_string(), unit });
+                }
+            }
+            if let Ok(text) = format_value_in(v, &r.display, &self.settings, &self.units, &vocab) {
+                o.shown = Some(text);
+            }
+        }
     }
 
     fn eval(&mut self, e: &Expr) -> Result<Value> {
@@ -315,7 +433,11 @@ mod tests {
     fn units_and_definitions() {
         assert_eq!(
             shown(&["L := 2 'm", "W := 30 'cm", "A := L*W", "A + 1"]),
-            ["2 'm", "0.3 'm", "0.6 'm^2", "cannot add [m^2] and a plain number: units don't match"]
+            ["2 'm", "0.3 'm", "0.6 'm^2", "cannot add an area (m^2) and a plain number: units don't match"]
+        );
+        assert_eq!(
+            shown(&["L := 6 'm", "q := 12 'kN/'m", "L + q"])[2],
+            "cannot add a length (m) and a force per length (N/m): units don't match"
         );
     }
 
@@ -391,6 +513,88 @@ mod tests {
         assert_eq!(r[3], "6");
         assert_eq!(r[5], "120");
         assert!(run(&["f(x) := x"])[0].error.is_none());
+    }
+
+    fn shown_working(lines: &[&str]) -> Vec<String> {
+        let regions: Vec<MathInput> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| MathInput {
+                id: i.to_string(),
+                expr: l.to_string(),
+                show: true,
+                display: DisplaySpec::default(),
+            })
+            .collect();
+        let settings = DisplaySettings { working_units: true, ..Default::default() };
+        Worksheet::new(settings)
+            .run(&regions)
+            .into_iter()
+            .map(|o| o.shown.or(o.error).unwrap_or_default())
+            .collect()
+    }
+
+    #[test]
+    fn results_in_the_units_the_author_typed() {
+        let r = shown_working(&[
+            "L := 6 m",
+            "q := 12 kN/m",
+            "M := q*L^2/8",
+            "V := q*L/2",
+            "b := 20 cm",
+            "h := 40 'cm",
+            "A := b*h",
+            "I := b*h^3/12",
+            "σ := M/(b*h^2/6)",
+            "f := 25 MPa",
+            "σ/f",
+            "T := 20 degC",
+        ]);
+        assert_eq!(r[2], "54 'kN*'m");
+        assert_eq!(r[3], "36 'kN");
+        assert_eq!(r[6], "800 'cm^2");
+        assert_eq!(r[7], "1.0667*10^5*'cm^4");
+        assert_eq!(r[8], "10.125 'MPa", "a single typed unit wins over a pair");
+        assert_eq!(r[10], "0.405");
+        assert_eq!(r[11], "293.15 'K", "offset units never become working units");
+        // without the setting, coherent SI as before
+        assert_eq!(shown(&["q := 12 kN/m", "q*(6 m)^2/8"])[1], "54000 'J");
+    }
+
+    #[test]
+    fn solving_and_vectors() {
+        let r = shown(&[
+            "f(x) := x^3 - 2*x - 5",
+            "root(f(x), x, 2, 3)",
+            "solve(x^2 == 2, x, 0, 10)",
+            "x := 1",
+            "solve(cos(x) == x, x)",
+            "P(d) := 10 'kN*d/(1 'm)",
+            "solve(P(d) == 25 'kN, d, 0, 10 'm)",
+            "A := [2, 1; 1, 3]",
+            "lsolve(A, [3; 5])",
+            "linterp([0; 10; 20], [0; 5; 20], 15)",
+            "mean([1, 2, 3, 4])",
+            "sort([3; 1; 2])",
+            "norm([3 'm, 4 'm])",
+            "dot([1, 2, 3], [4, 5, 6])",
+            "cross([1; 0; 0], [0; 1; 0])",
+            "root(x^2 + 1, x, -1, 1)",
+            "solve(t^2 == 2, t)",
+        ]);
+        assert_eq!(r[1], "2.0946");
+        assert_eq!(r[2], "1.4142");
+        assert_eq!(r[4], "0.7391");
+        assert_eq!(r[6], "2.5 'm");
+        assert_eq!(r[8], "[0.8; 1.4]");
+        assert_eq!(r[9], "12.5");
+        assert_eq!(r[10], "2.5");
+        assert_eq!(r[11], "[1; 2; 3]");
+        assert_eq!(r[12], "5 'm");
+        assert_eq!(r[13], "32");
+        assert_eq!(r[14], "[0; 0; 1]");
+        assert!(r[15].starts_with("no root between the limits"), "{}", r[15]);
+        assert!(r[16].starts_with("give t a starting value"), "{}", r[16]);
     }
 
     #[test]

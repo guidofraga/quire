@@ -1,12 +1,15 @@
-import { createEffect, on, onMount, Show } from "solid-js";
+import { createEffect, createRoot, on, onMount, Show } from "solid-js";
 import { reconcile, unwrap } from "solid-js/store";
 import {
   api,
   confirmDiscard,
+  confirmRestore,
+  documentPath,
   exportJob,
   guardClose,
   isTauri,
   onMenu,
+  onOpenFile,
   pickOpenPath,
   pickPdfPath,
   pickSavePath,
@@ -32,6 +35,7 @@ import { type Background, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
 import { directPdf, shrinkImages } from "./export";
+import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
 import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
 import { type Align, activeView, commands, run as runText } from "./richtext";
 import {
@@ -56,7 +60,7 @@ import {
 
 function fileName(path: string | null): string {
   if (!path) return localized(state.doc.meta?.title) || "Untitled";
-  return path.replace(/\/+$/, "").split("/").pop()!.replace(/\.quire$/, "");
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()!.replace(/\.quirez?$/i, "");
 }
 
 function flash(message: string) {
@@ -112,6 +116,24 @@ function loadAssets() {
 // File commands
 // ---------------------------------------------------------------------------
 
+/**
+ * While there are unsaved changes, keep a copy for crash recovery (a few seconds after
+ * the last edit); once the document is saved or replaced, drop it.
+ */
+function keepRecovery() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // started after the awaits in onMount, so it needs its own reactive root
+  createRoot(() =>
+    createEffect(
+      on([() => state.doc, () => state.dirty], ([doc, dirty]) => {
+        clearTimeout(timer);
+        if (!dirty) return void api.clearRecovery().catch(() => {});
+        timer = setTimeout(() => void api.saveRecovery(unwrap(doc), state.path).catch(() => {}), 3000);
+      }),
+    ),
+  );
+}
+
 async function guardUnsaved(): Promise<boolean> {
   return !state.dirty || (await confirmDiscard());
 }
@@ -125,8 +147,11 @@ export async function openPath(path: string) {
   try {
     const doc = await api.open(path);
     loadDoc(doc, path);
+    addRecent(path);
   } catch (e) {
-    flash(`Could not open ${path}: ${(e as Error).message}`);
+    flash(`Could not open ${fileName(path)}: ${(e as Error).message}`);
+    // a moved or deleted file shouldn't stay in Open Recent
+    forgetRecent(path);
   }
 }
 
@@ -140,12 +165,13 @@ async function save(as = false) {
   commitEditing();
   let path = state.path;
   if (!path || as) {
-    path = await pickSavePath(`${fileName(state.path)}.quire`);
+    path = await pickSavePath(fileName(state.path));
     if (!path) return;
   }
   try {
     await api.save(path, unwrap(state.doc), state.path);
     setState({ path, dirty: false });
+    addRecent(path);
     flash(`Saved ${fileName(path)}`);
   } catch (e) {
     flash(`Could not save: ${(e as Error).message}`);
@@ -251,7 +277,14 @@ function runCommand(id: string) {
   if (TEXT_FORMAT[id]) return activeView() ? TEXT_FORMAT[id]() : undefined;
   if (id.startsWith("fmt_align_")) return activeView() && runText(commands.align(id.slice(10) as Align));
   if (id.startsWith("arrange_")) return alignRegions(state.selection, id.slice(8) as AlignMode);
+  if (id.startsWith("recent:")) {
+    const path = recentList()[Number(id.slice(7))];
+    if (path) void guardUnsaved().then((ok) => (ok ? openPath(path) : undefined));
+    return;
+  }
   switch (id) {
+    case "recent_clear":
+      return clearRecent();
     case "distribute_x":
       return distributeRegions(state.selection, "x");
     case "distribute_y":
@@ -385,13 +418,25 @@ export function App() {
       });
     }
     void applyTheme();
+    syncRecent();
     await onMenu(runCommand);
-    await guardClose(() => state.dirty);
+    await guardClose(() => state.dirty, api.clearRecovery);
     window.addEventListener("keydown", browserShortcuts);
     if (exportJob) return runExportJob(exportJob);
-    const open = new URLSearchParams(location.search).get("open");
-    if (open) await openPath(open);
-    else loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+    await onOpenFile(async (path) => {
+      if (await guardUnsaved()) await openPath(path);
+    });
+    const requested = await api.takeOpenRequests().catch(() => [] as string[]);
+    const recovered = await api.takeRecovery().catch(() => null);
+    if (recovered?.doc && (await confirmRestore(fileName(recovered.path)))) {
+      loadDoc(recovered.doc, recovered.path);
+      setState({ dirty: true });
+    } else {
+      const open = requested.map(documentPath)[0] ?? new URLSearchParams(location.search).get("open");
+      if (open) await openPath(open);
+      else loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+    }
+    keepRecovery();
   });
 
   const regionCount = () => state.report?.regions.length ?? 0;

@@ -1,26 +1,17 @@
 //! Arithmetic on values with dimension checking.
 
 use quire_ast::{BinaryOp, CmpOp};
-use quire_units::{Dim, Rational, UnitRegistry};
+use quire_units::{Dim, Rational};
 
 use crate::error::{Result, bail};
+use crate::format::describe_dim;
 use crate::value::{Matrix, Quantity, Value};
 
 pub fn same_dim(a: Dim, b: Dim, verb: &str) -> Result<()> {
     if a != b {
-        bail!("cannot {verb} {} and {}: units don't match", show_dim(a), show_dim(b));
+        bail!("cannot {verb} {} and {}: units don't match", describe_dim(a), describe_dim(b));
     }
     Ok(())
-}
-
-fn show_dim(d: Dim) -> String {
-    if d.is_dimensionless() {
-        return "a plain number".to_string();
-    }
-    match UnitRegistry::named_si().iter().find(|(_, x)| *x == d) {
-        Some((name, _)) => format!("[{name}]"),
-        None => format!("[{d}]"),
-    }
 }
 
 fn check(v: f64, what: &str) -> Result<f64> {
@@ -32,14 +23,14 @@ fn check(v: f64, what: &str) -> Result<f64> {
 
 pub fn pow(x: Quantity, y: Quantity) -> Result<Quantity> {
     if !y.dim.is_dimensionless() {
-        bail!("an exponent must be dimensionless, but has units of {}", y.dim);
+        bail!("an exponent must be a plain number, but this one is {}", describe_dim(y.dim));
     }
     let dim = if x.dim.is_dimensionless() {
         Dim::NONE
     } else {
         match Rational::approx(y.v) {
             Some(r) => x.dim.pow(r),
-            None => bail!("cannot raise a value with units ({}) to the power {}", x.dim, y.v),
+            None => bail!("cannot raise {} to the power {}", describe_dim(x.dim), y.v),
         }
     };
     let v = if y.v.fract() == 0.0 && y.v.abs() < 1e9 { x.v.powi(y.v as i32) } else { x.v.powf(y.v) };

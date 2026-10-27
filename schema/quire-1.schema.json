@@ -27,6 +27,7 @@
             "exponentialThreshold": { "type": "integer", "minimum": 1 },
             "approxEqualDigits": { "type": "integer", "minimum": 1 },
             "trailingZeros": { "type": "boolean" },
+            "resultUnits": { "enum": ["si", "working"] },
             "fractions": { "enum": ["decimal", "fraction", "mixed"] },
             "decimalSeparator": { "enum": ["auto", ".", ","] }
           }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use serde_json::{Value as Json, json};
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, WebviewWindow, WebviewWindowBuilder, Wry};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, Wry};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -30,6 +30,39 @@ fn open_document(path: PathBuf) -> CmdResult<Json> {
 #[tauri::command]
 fn save_document(path: PathBuf, doc: Json, from: Option<PathBuf>) -> CmdResult<()> {
     quire_service::save(&path, &doc, from.as_deref()).map_err(err)
+}
+
+/// Unsaved work, kept in the app's data folder so a crash or power cut loses little.
+fn recovery_file(app: &AppHandle) -> CmdResult<PathBuf> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("recovery.json"))
+}
+
+#[tauri::command]
+fn save_recovery(app: AppHandle, doc: Json, path: Option<String>) -> CmdResult<()> {
+    let file = recovery_file(&app)?;
+    let tmp = file.with_extension("json.tmp");
+    let body = json!({ "path": path, "doc": doc });
+    std::fs::write(&tmp, body.to_string()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
+}
+
+/// The unsaved work left by the last session, if it ended without saving or discarding.
+#[tauri::command]
+fn take_recovery(app: AppHandle) -> CmdResult<Option<Json>> {
+    let file = recovery_file(&app)?;
+    let Ok(text) = std::fs::read_to_string(&file) else { return Ok(None) };
+    Ok(serde_json::from_str(&text).ok())
+}
+
+#[tauri::command]
+fn clear_recovery(app: AppHandle) -> CmdResult<()> {
+    let file = recovery_file(&app)?;
+    match std::fs::remove_file(file) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
 }
 
 #[tauri::command]
@@ -104,6 +137,39 @@ fn item(app: &AppHandle, id: &str, label: &str, accel: Option<&str>) -> tauri::R
     MenuItem::with_id(app, id, label, true, accel)
 }
 
+/// File ▸ Open Recent, refilled whenever the UI's list changes.
+struct RecentMenu(Submenu<Wry>);
+
+fn fill_recent(app: &AppHandle, menu: &Submenu<Wry>, paths: &[String]) -> tauri::Result<()> {
+    for item in menu.items()? {
+        menu.remove(&item)?;
+    }
+    if paths.is_empty() {
+        menu.append(&MenuItem::with_id(app, "recent_none", "No Recent Documents", false, None::<&str>)?)?;
+        return Ok(());
+    }
+    for (i, p) in paths.iter().enumerate() {
+        let path = std::path::Path::new(p.trim_end_matches(['/', '\\']));
+        let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
+        // the folder disambiguates two documents with the same name
+        let folder = path.parent().and_then(|d| d.file_name()).map(|d| d.to_string_lossy().into_owned());
+        let label = match folder {
+            Some(f) => format!("{name}  —  {f}"),
+            None => name,
+        };
+        menu.append(&MenuItem::with_id(app, format!("recent:{i}"), label, true, None::<&str>)?)?;
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "recent_clear", "Clear Menu", true, None::<&str>)?)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_recent(app: AppHandle, paths: Vec<String>) -> CmdResult<()> {
+    let menu = app.state::<RecentMenu>();
+    fill_recent(&app, &menu.0, &paths).map_err(|e| e.to_string())
+}
+
 /// Native menu bar. Custom items are forwarded to the UI as `menu` events carrying the item id;
 /// clipboard items are native so they work in text fields.
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
@@ -116,6 +182,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     // macOS keeps Settings and Quit in the app menu; elsewhere they live in File
     let mac = cfg!(target_os = "macos");
     let settings = item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?;
+    let recent = Submenu::with_id(app, "recent", "Open Recent", true)?;
+    fill_recent(app, &recent, &[])?;
+    app.manage(RecentMenu(recent.clone()));
     let file = Submenu::with_items(
         app,
         "File",
@@ -123,6 +192,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[
             &item(app, "new", "New", Some("CmdOrCtrl+N"))?,
             &item(app, "open", "Open…", Some("CmdOrCtrl+O"))?,
+            &recent,
             &sep()?,
             &item(app, "save", "Save", Some("CmdOrCtrl+S"))?,
             &item(app, "save_as", "Save As…", Some("CmdOrCtrl+Shift+S"))?,
@@ -259,13 +329,53 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     Menu::with_items(app, &[&file, &edit, &insert, &format, &arrange, &view, &window, &help])
 }
 
+/// Documents the system asked us to open (command line, Finder, Explorer) before the
+/// UI was ready to take them; afterwards they go straight to the UI as `open-file` events.
+#[derive(Default)]
+struct OpenRequests {
+    ready: bool,
+    pending: Vec<String>,
+}
+
+type Requests = std::sync::Mutex<OpenRequests>;
+
+fn is_document(path: &str) -> bool {
+    let p = path.to_ascii_lowercase();
+    p.ends_with(".quire") || p.ends_with(".quirez") || p.ends_with(".quire/") || p.ends_with("document.json")
+}
+
+fn request_open(app: &AppHandle, path: String) {
+    let state = app.state::<Requests>();
+    let mut r = state.lock().expect("open requests lock");
+    if r.ready {
+        let _ = app.emit("open-file", path);
+    } else {
+        r.pending.push(path);
+    }
+}
+
+/// Called once by the UI when it can open documents: hands over what arrived before.
+#[tauri::command]
+fn take_open_requests(state: tauri::State<'_, Requests>) -> Vec<String> {
+    let mut r = state.lock().expect("open requests lock");
+    r.ready = true;
+    std::mem::take(&mut r.pending)
+}
+
 fn main() {
     let job = export_job();
+    // Windows and Linux pass a double-clicked document as an argument
+    let launch_docs: Vec<String> = if job.is_some() {
+        Vec::new()
+    } else {
+        std::env::args().skip(1).filter(|a| !a.starts_with('-') && is_document(a)).collect()
+    };
     if std::env::args().any(|a| a == "--export-pdf") && job.is_none() {
         eprintln!("usage: quire-app --export-pdf <document.quire> <output.pdf>");
         std::process::exit(2);
     }
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .manage::<Requests>(std::sync::Mutex::new(OpenRequests { ready: false, pending: launch_docs }))
         .plugin(tauri_plugin_dialog::init())
         .menu(menu)
         .on_menu_event(|app, event| {
@@ -293,8 +403,26 @@ fn main() {
             stage_image,
             print_document,
             export_pdf,
-            finish_export
+            finish_export,
+            take_open_requests,
+            set_recent,
+            save_recovery,
+            take_recovery,
+            clear_recovery
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Quire");
+        .build(tauri::generate_context!())
+        .expect("error while starting Quire");
+    app.run(|handle, event| {
+        // macOS delivers Finder double-clicks and "Open With" as events, also at launch
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = event {
+            for url in urls {
+                if let Ok(path) = url.to_file_path() {
+                    request_open(handle, path.to_string_lossy().into_owned());
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = (handle, event, request_open);
+    });
 }

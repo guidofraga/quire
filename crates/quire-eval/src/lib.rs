@@ -16,7 +16,10 @@ mod worksheet;
 
 pub use constants::{CONSTANTS, Constant, constant};
 pub use error::{EvalError, Result};
-pub use format::{DisplaySettings, DisplaySpec, format_number, format_value, parse_unit_spec};
+pub use format::{
+    DisplaySettings, DisplaySpec, WorkingUnit, format_number, format_value, format_value_in, parse_unit_spec,
+    working_unit,
+};
 pub use interp::{Binding, Env, Interp, Scope};
 pub use value::{Matrix, Quantity, Value};
 pub use worksheet::{MathInput, Outcome, Worksheet};

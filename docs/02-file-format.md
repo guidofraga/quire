@@ -39,14 +39,15 @@ Report.quire/                 ← a directory; on macOS registered as a document
   "format": "quire/1",                 // required; major version gates readers
   "meta": {
     "title": "Calculation Report",     // or { "pt": "...", "en": "..." }
-    "authors": ["Claudio Andre"],
-    "company": "Gran Services",        // feeds {company} in headers/footers
-    "id": "942ca339-ef78-4fc0-971d-7cd44ac4532e",
+    "authors": ["A. Engineer"],
+    "company": "Example Engineering", // feeds {company} in headers/footers
+    "id": "6f1c2b0e-3d4a-4b8e-9a51-2c7d8e0f4a13",
     "lang": "pt-BR"                    // BCP-47; drives decimal separator, caption words
   },
   "settings": {
     "display": { "decimals": 4, "exponentialThreshold": 5, "approxEqualDigits": 3,
-                 "trailingZeros": false, "fractions": "decimal", "decimalSeparator": "auto" },
+                 "trailingZeros": false, "fractions": "decimal", "decimalSeparator": "auto",
+                 "resultUnits": "working" },  // results in the units you typed; "si" (default) for coherent SI
     "calc":    { "angle": "rad", "precision": "double" },
     "units":   { "system": "SI",
                  "prefer": { "force": "kN", "stress": "MPa", "moment": "kN*m" } }
@@ -66,7 +67,7 @@ Report.quire/                 ← a directory; on macOS registered as a document
     "header": { "center": "{date} {time} - {file}", "color": "#a9a9a9" },
     "footer": { "left": "{author} | {company}", "right": "{page} / {pages}", "color": "#a9a9a9" },
     "firstPage": { "header": false },  // different first page
-    "backgrounds": [{ "pages": "1", "src": "assets/4ff5ebd23f84665a.png", "fit": "margins" }],
+    "backgrounds": [{ "pages": "1", "src": "assets/0a1b2c3d4e5f6071.png", "fit": "margins" }],
     "pageNumber": { "start": 1, "style": "arabic" }
   },
   "requires": ["plot3d"],              // capabilities beyond core; readers warn if missing

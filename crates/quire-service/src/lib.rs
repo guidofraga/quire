@@ -73,6 +73,7 @@ pub fn settings_of(doc: &Document) -> DisplaySettings {
         decimals: d.decimals.unwrap_or(base.decimals),
         exponential_threshold: d.exponential_threshold.unwrap_or(base.exponential_threshold),
         trailing_zeros: d.trailing_zeros.unwrap_or(base.trailing_zeros),
+        working_units: d.result_units.as_deref() == Some("working"),
     }
 }
 
@@ -208,7 +209,7 @@ pub struct Gloss {
 }
 
 fn quantity_text(v: f64, dim: quire_units::Dim, units: &quire_units::UnitRegistry) -> String {
-    let settings = DisplaySettings { decimals: 10, exponential_threshold: 6, trailing_zeros: false };
+    let settings = DisplaySettings { decimals: 10, exponential_threshold: 6, ..Default::default() };
     quire_eval::format_value(
         &quire_eval::Value::Num(quire_eval::Quantity::new(v, dim)),
         &DisplaySpec::default(),
@@ -374,10 +375,35 @@ pub fn bundle_dir(path: &Path) -> PathBuf {
 
 /// Load a bundle's document as JSON (validated against the model first).
 pub fn open(path: &Path) -> Result<Json> {
+    if quire_doc::is_single_file(path) {
+        quire_doc::load(path)?;
+        let bytes = quire_doc::read_entry(path, "document.json")?.unwrap_or_default();
+        return Ok(serde_json::from_slice(&bytes)?);
+    }
     let dir = bundle_dir(path);
     quire_doc::load(&dir)?;
     let text = std::fs::read_to_string(dir.join("document.json"))?;
     Ok(serde_json::from_str(&text)?)
+}
+
+/// A scratch folder that removes itself.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Result<Self> {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("quire-{tag}-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        Ok(TempDir(dir))
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Write `document.json` canonically (regions sorted, fixed key order).
@@ -387,7 +413,30 @@ pub fn open(path: &Path) -> Result<Json> {
 /// copied along. Images inserted since opening are written from the staging area.
 pub fn save(path: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
     let _: Document = serde_json::from_value(doc.clone())?;
-    let dir = bundle_dir(path);
+    // images to carry over may sit inside a single file: unpack it first
+    let unpacked = match from {
+        Some(f) if quire_doc::is_single_file(f) && f.is_file() => {
+            let t = TempDir::new("from")?;
+            quire_doc::unpack(f, &t.0)?;
+            Some(t)
+        }
+        _ => None,
+    };
+    let from = unpacked.as_ref().map(|t| t.0.as_path()).or(from);
+    if quire_doc::is_single_file(path) {
+        let work = TempDir::new("save")?;
+        if let Some(results) = from.map(|f| bundle_dir(f).join("results.json")).filter(|p| p.is_file()) {
+            std::fs::copy(results, work.0.join("results.json"))?;
+        }
+        write_bundle(&work.0, doc, from)?;
+        quire_doc::pack(&work.0, path)?;
+        return Ok(());
+    }
+    write_bundle(&bundle_dir(path), doc, from)
+}
+
+fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
+    let dir = dir.to_path_buf();
     std::fs::create_dir_all(&dir)?;
     assets::write_into(&dir, doc, from.map(bundle_dir).as_deref())?;
     let mut doc = doc.clone();
@@ -430,6 +479,8 @@ pub fn read_asset(bundle: &Path, src: &str) -> Result<String> {
     let mime = assets::mime(src).ok_or_else(|| ServiceError(format!("{src} is not an image")))?;
     let bytes = match assets::staged(src) {
         Some(b) => b,
+        None if quire_doc::is_single_file(bundle) => quire_doc::read_entry(bundle, src)?
+            .ok_or_else(|| ServiceError(format!("{src} is missing from {}", bundle.display())))?,
         None => std::fs::read(bundle_dir(bundle).join(src))?,
     };
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
@@ -543,6 +594,30 @@ mod tests {
         assert!(read_asset(&dir, "assets/../../../x.png").is_err());
         assert!(read_asset(&dir, &src).unwrap().starts_with("data:image/png;base64,"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn single_file_documents_round_trip() {
+        let dir = fixture("single");
+        let doc = open(&dir).unwrap();
+        let src = doc["regions"][4]["src"].as_str().unwrap().to_string();
+        let file = std::env::temp_dir().join(format!("quire-single-{}.quirez", std::process::id()));
+        save(&file, &doc, Some(&dir)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(file.is_file());
+        assert_eq!(open(&file).unwrap(), doc);
+        assert!(read_asset(&file, &src).unwrap().starts_with("data:image/png;base64,"));
+        assert!(read_asset(&file, "assets/0000000000000000.png").is_err());
+        // saving over itself keeps the images; saving back out as a folder works too
+        save(&file, &doc, Some(&file)).unwrap();
+        assert!(read_asset(&file, &src).is_ok());
+        let back = std::env::temp_dir().join(format!("quire-unpacked-{}.quire", std::process::id()));
+        save(&back, &doc, Some(&file)).unwrap();
+        assert!(back.join(&src).is_file());
+        assert_eq!(report(&open(&file).unwrap()).unwrap().error_count, 0);
+        assert!(quire_doc::load(&file).is_ok());
+        std::fs::remove_file(&file).unwrap();
+        std::fs::remove_dir_all(&back).unwrap();
     }
 
     #[test]

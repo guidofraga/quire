@@ -1,7 +1,7 @@
 // PDF export helpers: images are embedded at the resolution they are printed at, not
 // at whatever resolution they were pasted in.
 
-const isMac = /Mac/.test(navigator.userAgent);
+import { isMac } from "./api";
 
 /** macOS writes the PDF itself; elsewhere the system print dialog saves it ("Save as PDF"). */
 export const directPdf = isMac;

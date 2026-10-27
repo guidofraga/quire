@@ -513,7 +513,44 @@ export function commitEditing() {
     redoStack.length = 0;
   }
   editSnapshot = null;
+  if (r && !empty) justCommitted = { id, until: Date.now() + 3000 };
   setState({ editing: null });
+}
+
+/** The region whose edit just ended: its new rendering may be taller than the editor was. */
+let justCommitted: { id: string; until: number } | null = null;
+
+/**
+ * A region just committed grew (a fraction, a matrix, an error line under it) into what
+ * sits below it: move everything below down, SMath-style, and the insertion point with it.
+ * Only the region just edited does this, so opening a document never shuffles it.
+ */
+export function regionGrew(id: string, before: number, after: number) {
+  if (!before || after <= before + 0.5 || justCommitted?.id !== id || Date.now() > justCommitted.until) return;
+  const p = layout().byId.get(id);
+  if (!p || p.parent) return;
+  const [x0, y] = p.region.at;
+  const x1 = x0 + (widths[id] ?? 40);
+  const oldBottom = y + before;
+  const newBottom = y + after;
+  const top = layout().list.filter((q) => !q.parent && q.region.id !== id && q.region.at[1] >= oldBottom - 0.5);
+  const overlaps = (q: Placed) => q.region.at[0] < x1 && q.region.at[0] + (widths[q.region.id] ?? 40) > x0;
+  const hit = top.filter((q) => q.region.at[1] < newBottom + GRID && overlaps(q));
+  const caret = state.caret;
+  const caretHit = caret && caret[1] >= oldBottom - 0.5 && caret[1] < newBottom + GRID && caret[0] < x1 && caret[0] >= x0 - GRID;
+  if (!hit.length && !caretHit) return;
+  const highest = Math.min(...hit.map((q) => q.region.at[1]), caretHit ? caret[1] : Infinity);
+  const dy = Math.ceil(newBottom / GRID) * GRID + GRID - highest;
+  if (dy <= 0) return;
+  if (top.length) {
+    moveTo(new Map(top.map((q) => [q.region.id, [q.region.at[0], q.region.at[1]] as [number, number]])), 0, dy);
+    touch();
+  }
+  if (caret && caret[1] >= oldBottom - 0.5) {
+    const moved: [number, number] = [caret[0], caret[1] + dy];
+    if (leftBox && leftBox.caret[0] === caret[0] && leftBox.caret[1] === caret[1]) leftBox.caret = moved;
+    setState({ caret: moved });
+  }
 }
 
 /** The box just left with Enter, and the insertion point placed under it: ↑ goes back. */

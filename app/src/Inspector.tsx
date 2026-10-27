@@ -317,6 +317,16 @@ function DocumentTab() {
         </Field>
       </Section>
       <Section title="Results">
+        <Field label="Units">
+          <Select
+            value={display().resultUnits === "working" ? "working" : "si"}
+            options={[
+              ["working", "As written (54 kN·m)"],
+              ["si", "SI (54000 J)"],
+            ]}
+            onChange={(v) => set(["settings", "display", "resultUnits"])(v === "working" ? "working" : undefined)}
+          />
+        </Field>
         <div class="insp-row">
           <Field label="Decimals">
             <Num value={display().decimals as number | undefined} placeholder="4" onCommit={set(["settings", "display", "decimals"])} />

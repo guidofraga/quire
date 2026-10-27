@@ -10,6 +10,10 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::{Map, Value as Json};
 
+mod single;
+
+pub use single::{SINGLE_FILE_EXT, is_single_file, pack, read_entry, unpack};
+
 pub const FORMAT_MAJOR: &str = "quire/1";
 
 #[derive(Debug)]
@@ -53,6 +57,8 @@ pub struct DisplaySettings {
     pub decimals: Option<u32>,
     pub exponential_threshold: Option<i32>,
     pub trailing_zeros: Option<bool>,
+    /// `"working"`: results in the document's own units; `"si"` (default): coherent SI.
+    pub result_units: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Json>,
 }
@@ -127,22 +133,40 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, DocError> {
     serde_json::from_str(&text).map_err(|e| DocError(format!("{}: {e}", path.display())))
 }
 
-/// Load a `.quire` directory bundle, or a bare `document.json`.
+fn parse_json<T: for<'de> Deserialize<'de>>(path: &Path, bytes: &[u8]) -> Result<T, DocError> {
+    serde_json::from_slice(bytes).map_err(|e| DocError(format!("{}: {e}", path.display())))
+}
+
+fn check_format(document: &Document, path: &Path) -> Result<(), DocError> {
+    if document.format != FORMAT_MAJOR && !document.format.starts_with(&format!("{FORMAT_MAJOR}.")) {
+        return Err(DocError(format!(
+            "{}: unsupported format \"{}\" (this build reads {FORMAT_MAJOR})",
+            path.display(),
+            document.format
+        )));
+    }
+    Ok(())
+}
+
+/// Load a `.quire` directory bundle, a single-file `.quirez`, or a bare `document.json`.
 pub fn load(path: impl AsRef<Path>) -> Result<Bundle, DocError> {
     let path = path.as_ref();
+    if is_single_file(path) {
+        let Some(doc) = read_entry(path, "document.json")? else {
+            return Err(DocError(format!("{}: no document.json inside", path.display())));
+        };
+        let document: Document = parse_json(path, &doc)?;
+        check_format(&document, path)?;
+        let results = read_entry(path, "results.json")?.map(|r| parse_json(path, &r)).transpose()?;
+        return Ok(Bundle { path: path.to_path_buf(), document, results });
+    }
     let (dir, doc_path) = if path.is_dir() {
         (path.to_path_buf(), path.join("document.json"))
     } else {
         (path.parent().unwrap_or(Path::new(".")).to_path_buf(), path.to_path_buf())
     };
     let document: Document = read_json(&doc_path)?;
-    if document.format != FORMAT_MAJOR && !document.format.starts_with(&format!("{FORMAT_MAJOR}.")) {
-        return Err(DocError(format!(
-            "{}: unsupported format \"{}\" (this build reads {FORMAT_MAJOR})",
-            doc_path.display(),
-            document.format
-        )));
-    }
+    check_format(&document, &doc_path)?;
     let results_path = dir.join("results.json");
     let results = if results_path.is_file() { Some(read_json(&results_path)?) } else { None };
     Ok(Bundle { path: dir, document, results })

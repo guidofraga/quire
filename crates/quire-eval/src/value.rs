@@ -82,7 +82,7 @@ impl Value {
     pub fn as_scalar(&self, what: &str) -> Result<f64> {
         let q = self.as_num(what)?;
         if !q.dim.is_dimensionless() {
-            bail!("{what} must be dimensionless, but has units of {}", q.dim);
+            bail!("{what} must be a plain number, but it is {}", crate::format::describe_dim(q.dim));
         }
         Ok(q.v)
     }

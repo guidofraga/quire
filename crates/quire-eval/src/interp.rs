@@ -321,6 +321,8 @@ impl<'u> Interp<'u> {
                 "indefinite integrals need symbolic evaluation, which isn't available yet",
             )),
             ("diff", 2 | 3) => self.differentiate(s, args),
+            ("root" | "solve", 4) => self.solve_in(s, args),
+            ("solve", 2) => self.solve_from(s, args),
             ("lim", _) => Err(EvalError::new("limits need symbolic evaluation, which isn't available yet")),
             _ => return None,
         })
@@ -480,6 +482,121 @@ impl<'u> Interp<'u> {
         }
         Ok(self.simpson(s, f, var, xdim, (a, m), (fa, flm, fm), left, eps / 2.0, depth - 1, fdim)?
             + self.simpson(s, f, var, xdim, (m, b), (fm, frm, fb), right, eps / 2.0, depth - 1, fdim)?)
+    }
+
+    /// `f(x)` as written, or `lhs - rhs` for an equation `lhs == rhs`.
+    fn residual(e: &Expr) -> Expr {
+        match e {
+            Expr::Compare(l, rest) if rest.len() == 1 && rest[0].0 == quire_ast::CmpOp::Eq => {
+                Expr::Binary(BinaryOp::Sub, l.clone(), Box::new(rest[0].1.clone()))
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// `root(f(x), x, a, b)` / `solve(x^2 == 2, x, a, b)`: a root between a and b.
+    /// Without a sign change at the ends, the range is scanned for one.
+    fn solve_in(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let var = ident(&args[1], "the unknown")?;
+        let a = self.eval(s, &args[2])?.as_num("the lower limit")?;
+        let b = self.eval(s, &args[3])?.as_num("the upper limit")?;
+        let dim = if a.v == 0.0 { b.dim } else { a.dim };
+        same_dim(dim, if b.v == 0.0 { dim } else { b.dim }, "search between")?;
+        let f = Self::residual(&args[0]);
+        let prev = s.get(var).cloned();
+        let mut fdim = None;
+        let r: Result<f64> = (|| {
+            let at = |t: f64| Quantity::new(t, dim);
+            let (mut lo, mut hi) = (a.v.min(b.v), a.v.max(b.v));
+            let mut flo = self.sample(s, &f, var, at(lo), &mut fdim)?;
+            let fhi = self.sample(s, &f, var, at(hi), &mut fdim)?;
+            if flo == 0.0 {
+                return Ok(lo);
+            }
+            if fhi == 0.0 {
+                return Ok(hi);
+            }
+            if flo.signum() == fhi.signum() {
+                // look for the first sign change from the lower end
+                const STEPS: usize = 200;
+                let step = (hi - lo) / STEPS as f64;
+                let mut found = None;
+                let mut x0 = lo;
+                for k in 1..=STEPS {
+                    let x1 = lo + step * k as f64;
+                    let f1 = self.sample(s, &f, var, at(x1), &mut fdim)?;
+                    if f1 == 0.0 {
+                        return Ok(x1);
+                    }
+                    if f1.signum() != flo.signum() {
+                        found = Some((x0, x1));
+                        break;
+                    }
+                    (x0, flo) = (x1, f1);
+                }
+                let Some((x0, x1)) = found else {
+                    bail!("no root between the limits: the expression doesn't change sign there")
+                };
+                (lo, hi) = (x0, x1);
+            }
+            for _ in 0..200 {
+                self.tick()?;
+                let mid = 0.5 * (lo + hi);
+                if mid == lo || mid == hi {
+                    break;
+                }
+                let fm = self.sample(s, &f, var, at(mid), &mut fdim)?;
+                if fm == 0.0 {
+                    return Ok(mid);
+                }
+                if fm.signum() == flo.signum() {
+                    (lo, flo) = (mid, fm);
+                } else {
+                    hi = mid;
+                }
+            }
+            Ok(0.5 * (lo + hi))
+        })();
+        s.restore(var, prev);
+        Ok(Value::Num(Quantity::new(r?, dim)))
+    }
+
+    /// `solve(f(x), x)`: a root near the current value of x (secant steps).
+    fn solve_from(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let var = ident(&args[1], "the unknown")?;
+        let x0 = match s.get(var) {
+            Some(Binding::Val(Value::Num(q))) => *q,
+            _ => bail!("give {var} a starting value first (or search a range: solve(…, {var}, a, b))"),
+        };
+        let f = Self::residual(&args[0]);
+        let prev = s.get(var).cloned();
+        let mut fdim = None;
+        let r: Result<f64> = (|| {
+            let at = |t: f64| Quantity::new(t, x0.dim);
+            let mut a = x0.v;
+            let mut b = if a == 0.0 { 1e-4 } else { a * (1.0 + 1e-4) };
+            let mut fa = self.sample(s, &f, var, at(a), &mut fdim)?;
+            let mut fb = self.sample(s, &f, var, at(b), &mut fdim)?;
+            for _ in 0..100 {
+                self.tick()?;
+                if fb == 0.0 || (b - a).abs() <= 1e-14 * b.abs().max(1e-300) {
+                    return Ok(b);
+                }
+                if fb == fa {
+                    break;
+                }
+                let c = b - fb * (b - a) / (fb - fa);
+                if !c.is_finite() {
+                    break;
+                }
+                (a, fa) = (b, fb);
+                b = c;
+                fb = self.sample(s, &f, var, at(b), &mut fdim)?;
+            }
+            bail!("no root found near {var} = {}; try a range: solve(…, {var}, a, b)", x0.v)
+        })();
+        s.restore(var, prev);
+        Ok(Value::Num(Quantity::new(r?, x0.dim)))
     }
 
     /// Numeric derivative `diff(f, x[, n])` at the current value of x.

@@ -3,7 +3,7 @@
 //! Output is linear syntax, so it can be parsed back (`results.json`).
 
 use quire_ast::{Expr, parse, print, quote_str};
-use quire_units::{BASE_UNITS, Dim, Rational, UnitRegistry, format_product};
+use quire_units::{BASE_UNITS, Dim, Rational, Unit, UnitRegistry, format_product};
 
 use crate::error::{Result, bail};
 use crate::interp::{Env, Interp, Scope};
@@ -15,12 +15,59 @@ pub struct DisplaySettings {
     /// Magnitudes ≥ 10^threshold are shown in scientific notation.
     pub exponential_threshold: i32,
     pub trailing_zeros: bool,
+    /// Show results in the units the document is written in (`54 kN*m`) rather than
+    /// coherent SI (`54000 J`). `"resultUnits": "working"` in a document.
+    pub working_units: bool,
 }
 
 impl Default for DisplaySettings {
     fn default() -> Self {
-        DisplaySettings { decimals: 4, exponential_threshold: 5, trailing_zeros: false }
+        DisplaySettings { decimals: 4, exponential_threshold: 5, trailing_zeros: false, working_units: false }
     }
+}
+
+/// A unit the document's author typed, in order of preference (most used first).
+#[derive(Debug, Clone)]
+pub struct WorkingUnit {
+    pub name: String,
+    pub unit: Unit,
+}
+
+/// The simplest way to write `dim` with the author's units: one unit (`MPa`), one unit
+/// to a power (`m^2`, `cm^4`) or two units (`kN*m`, `kN/m`). Returns (factor, linear text).
+pub fn working_unit(dim: Dim, vocab: &[WorkingUnit]) -> Option<(f64, String)> {
+    const POWERS: [i32; 8] = [1, 2, 3, 4, -1, -2, -3, -4];
+    let pow = |u: &WorkingUnit, k: i32| u.unit.dim.pow(Rational::int(k));
+    // ((complexity, preference rank), [(unit index, power)]): lower scores are better
+    type Candidate = ((i32, usize), Vec<(usize, i32)>);
+    let mut found: Vec<Candidate> = Vec::new();
+    for (i, a) in vocab.iter().enumerate() {
+        for ka in POWERS {
+            if pow(a, ka) == dim {
+                found.push(((ka.abs(), i), vec![(i, ka)]));
+            }
+        }
+        for (j, b) in vocab.iter().enumerate().skip(i + 1) {
+            if a.unit.dim == b.unit.dim {
+                continue; // `kN/N` is not a way to write anything
+            }
+            for ka in POWERS {
+                for kb in POWERS {
+                    if pow(a, ka) * pow(b, kb) == dim {
+                        found.push(((ka.abs() + kb.abs(), i + j), vec![(i, ka), (j, kb)]));
+                    }
+                }
+            }
+        }
+    }
+    let (_, mut best) = found.into_iter().min_by_key(|(score, _)| *score)?;
+    // `kN*m`, `kN/m`, `MPa*m`: lengths go after forces, stresses and the rest
+    let is_length = |i: usize| vocab[i].unit.dim == Dim::from_ints([1, 0, 0, 0, 0, 0, 0]);
+    best.sort_by_key(|&(i, _)| is_length(i));
+    let factor = best.iter().map(|&(i, k)| vocab[i].unit.factor.powi(k)).product();
+    let parts: Vec<(&str, Rational)> =
+        best.iter().map(|&(i, k)| (vocab[i].name.as_str(), Rational::int(k))).collect();
+    Some((factor, format_product(&parts, true)))
 }
 
 /// Per-region overrides (`"display": { "unit": "kgf", "decimals": 2 }`).
@@ -143,20 +190,63 @@ fn si_unit(dim: Dim) -> String {
     format_product(&base, true)
 }
 
+/// A dimension in words for messages: "a length (m)", "a stress (Pa)", "a quantity in kg*m".
+pub fn describe_dim(dim: Dim) -> String {
+    if dim.is_dimensionless() {
+        return "a plain number".to_string();
+    }
+    const NAMES: &[([i8; 7], &str)] = &[
+        ([1, 0, 0, 0, 0, 0, 0], "a length"),
+        ([2, 0, 0, 0, 0, 0, 0], "an area"),
+        ([3, 0, 0, 0, 0, 0, 0], "a volume"),
+        ([4, 0, 0, 0, 0, 0, 0], "a second moment of area"),
+        ([0, 1, 0, 0, 0, 0, 0], "a mass"),
+        ([0, 0, 1, 0, 0, 0, 0], "a time"),
+        ([0, 0, -1, 0, 0, 0, 0], "a frequency"),
+        ([1, 0, -1, 0, 0, 0, 0], "a speed"),
+        ([1, 0, -2, 0, 0, 0, 0], "an acceleration"),
+        ([1, 1, -2, 0, 0, 0, 0], "a force"),
+        ([0, 1, -2, 0, 0, 0, 0], "a force per length"),
+        ([-1, 1, -2, 0, 0, 0, 0], "a pressure or stress"),
+        ([-2, 1, -2, 0, 0, 0, 0], "a unit weight"),
+        ([2, 1, -2, 0, 0, 0, 0], "an energy or moment"),
+        ([2, 1, -3, 0, 0, 0, 0], "a power"),
+        ([-3, 1, 0, 0, 0, 0, 0], "a density"),
+        ([0, 0, 0, 1, 0, 0, 0], "an electric current"),
+        ([0, 0, 0, 0, 1, 0, 0], "a temperature"),
+    ];
+    let unit = si_unit(dim).replace('\'', "");
+    match NAMES.iter().find(|(d, _)| Dim::from_ints(*d) == dim) {
+        Some((_, name)) => format!("{name} ({unit})"),
+        None => format!("a quantity in {unit}"),
+    }
+}
+
 pub fn format_value(
     v: &Value,
     spec: &DisplaySpec,
     settings: &DisplaySettings,
     units: &UnitRegistry,
 ) -> Result<String> {
+    format_value_in(v, spec, settings, units, &[])
+}
+
+/// [`format_value`], preferring the author's units when `settings.working_units` is on.
+pub fn format_value_in(
+    v: &Value,
+    spec: &DisplaySpec,
+    settings: &DisplaySettings,
+    units: &UnitRegistry,
+    vocab: &[WorkingUnit],
+) -> Result<String> {
     match v {
-        Value::Num(q) => format_quantity(*q, spec, settings, units),
+        Value::Num(q) => format_quantity(*q, spec, settings, units, vocab),
         Value::Str(s) => Ok(quote_str(s)),
         Value::Matrix(m) => {
             let mut rows = Vec::with_capacity(m.rows);
             for r in 0..m.rows {
                 let cells = (0..m.cols)
-                    .map(|c| format_value(m.get(r, c), spec, settings, units))
+                    .map(|c| format_value_in(m.get(r, c), spec, settings, units, vocab))
                     .collect::<Result<Vec<_>>>()?;
                 rows.push(cells.join(", "));
             }
@@ -170,17 +260,23 @@ fn format_quantity(
     spec: &DisplaySpec,
     settings: &DisplaySettings,
     units: &UnitRegistry,
+    vocab: &[WorkingUnit],
 ) -> Result<String> {
     let d = spec.decimals.unwrap_or(settings.decimals);
     if let Some(u) = spec.unit.as_deref() {
         let us = parse_unit_spec(u, units)?;
         if us.dim != q.dim {
-            bail!("the display unit '{u}' doesn't fit this result, whose units are {}", q.dim);
+            bail!("the display unit {u} doesn't fit this result, which is {}", describe_dim(q.dim));
         }
         return Ok(join(format_number((q.v - us.offset) / us.factor, d, settings), &us.text));
     }
     if q.dim.is_dimensionless() {
         return Ok(format_number(q.v, d, settings));
+    }
+    if settings.working_units
+        && let Some((factor, text)) = working_unit(q.dim, vocab)
+    {
+        return Ok(join(format_number(q.v / factor, d, settings), &text));
     }
     Ok(join(format_number(q.v, d, settings), &si_unit(q.dim)))
 }

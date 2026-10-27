@@ -81,7 +81,7 @@ export const STRUCTURES: Category[] = [
   {
     id: "integral",
     title: "Integral",
-    items: [t("int", "int(?, x, ?, ?)", "Definite integral"), t("intx", "int(?, x)", "Indefinite integral")],
+    items: [t("int", "int(?, x, ?, ?)", "Definite integral")],
   },
   {
     id: "largeop",
@@ -91,7 +91,18 @@ export const STRUCTURES: Category[] = [
   {
     id: "calculus",
     title: "Calculus",
-    items: [t("diff", "diff(?, x)", "Derivative"), t("ddiff", "diff(?, x, 2)", "Second derivative"), t("lim", "lim(?, x, ?)", "Limit")],
+    items: [t("diff", "diff(?, x)", "Derivative"), t("ddiff", "diff(?, x, 2)", "Second derivative")],
+  },
+  {
+    id: "solve",
+    title: "Solve",
+    items: [
+      t("solve", "solve(? == ?, x, ?, ?)", "Solve an equation in a range"),
+      t("solvex", "solve(? == ?, x)", "Solve from the current value"),
+      t("rootf", "root(?, x, ?, ?)", "Root of an expression"),
+      t("lsolve", "lsolve(?, ?)", "Linear system A·x = b"),
+      t("linterp", "linterp(?, ?, ?)", "Interpolate in a table"),
+    ],
   },
   {
     id: "matrix",
@@ -101,6 +112,14 @@ export const STRUCTURES: Category[] = [
       t("col", "[?; ?]", "Column vector"),
       t("matrix", "[?, ?; ?, ?]", "2 × 2"),
       t("matrix3", "[?, ?, ?; ?, ?, ?; ?, ?, ?]", "3 × 3"),
+    ],
+  },
+  {
+    id: "vector",
+    title: "Vector",
+    items: [
+      t("vsum", "sum(?)", "Sum of elements"), t("mean", "mean(?)", "Mean"), t("sort", "sort(?)", "Sort"),
+      t("norm", "norm(?)", "Length"), t("dotp", "dot(?, ?)", "Dot product"), t("cross", "cross(?, ?)", "Cross product"),
     ],
   },
   {

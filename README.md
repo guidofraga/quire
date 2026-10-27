@@ -17,6 +17,8 @@
 - Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (the `x =` button).
 - **LaTeX shortcuts, Word-style:** `\Delta`, `\varepsilon`, `\therefore`, `\sqrt`, `\int`… convert on space or punctuation, with a completion list as you type. They work in math and in text. Structures insert templates; Tab and ⇧Tab move between their `?` slots.
 - **Equation ribbon:** a Structures gallery (fractions, scripts, radicals, integrals, large operators, calculus, matrices, functions, with typeset previews) and a Symbols library (Greek, operators, arrows, logic and sets, constants, units). Click to insert at the caret.
+- **Results in the units you work in:** with `q := 12 kN/m` and `L := 6 m`, `M := q*L^2/8 =` shows `54 kN·m`, not `54000 J`; stresses come out in MPa once you use MPa, areas in cm² when the dimensions are in cm. Inspector ▸ Results switches a document back to coherent SI.
+- **Functions and solving:** `f(x) := x^2`, `f(5) =`, `int(f(x), x, 0, 1) =`, `f(a) =` shows the body in terms of `a`. `solve(k*x == F, x, 0 m, 1 m)` finds a root in a range (or near the current value with `solve(…, x)`), `lsolve(A, b)` solves linear systems, `linterp(xs, ys, x)` interpolates tables; `mean`, `sort`, `norm`, `dot`, `cross` work on vectors.
 - **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
 - Click a selected box again (or double-click it) to edit with the caret where you clicked. With a text box selected but not being edited, the ribbon formats the whole box.
 
@@ -24,12 +26,14 @@
 - Drag to move (9 px grid, **smart guides** to other regions' edges and centres; hold ⌘ for free movement), drag handles to resize text width or images.
 - Select several (Shift-click or drag a frame) and **align** left/centre/right/top/middle/bottom or **distribute** them — format bar, Arrange menu or right-click.
 - Copy, cut, paste and duplicate regions (⌘C/⌘X/⌘V/⌘D); paste or drop images straight onto the page.
+- When a result grows (a fraction, a matrix, an error note), what is below it moves down instead of being covered.
 
 **Document**
 - **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. **Canvas** is the free, endless sheet.
 - Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
 - **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
 - **File ▸ Export as PDF…** (⌘E) writes exactly the page view with selectable text; on Windows and Linux it opens the system print dialog, where you choose Save as PDF / Print to File. Images are embedded at the resolution set in Settings ▸ PDF export. **Print…** (⌘P) opens the print dialog.
+- **Files:** a document is a `.quire` folder (shown as a single file in the Finder) or a `.quirez` single file, which is what Windows and Linux save and what to send by email. Both open by double-click; **File ▸ Open Recent** lists the last ten; unsaved work is kept aside and offered back if Quire quits unexpectedly.
 - Every change re-evaluates the whole worksheet in Rust (well under a millisecond for typical documents). Math is drawn as MathML for now; a dedicated Rust typesetter comes later.
 
 Run it during development:

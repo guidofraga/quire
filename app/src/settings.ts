@@ -89,7 +89,10 @@ export async function applyTheme() {
 /** Apply the new-document defaults to a fresh document from the engine. */
 export function withDefaults(doc: Doc): Doc {
   const d = structuredClone(doc);
-  d.settings = { ...(d.settings as object), display: { ...((d.settings as { display?: object })?.display ?? {}), decimals: prefs.decimals } };
+  d.settings = {
+    ...(d.settings as object),
+    display: { ...((d.settings as { display?: object })?.display ?? {}), decimals: prefs.decimals, resultUnits: "working" },
+  };
   d.page = { ...(d.page ?? {}), paper: prefs.paper, view: prefs.view };
   if (prefs.lang) d.meta = { ...(d.meta ?? {}), lang: prefs.lang };
   const body = { ...(prefs.font ? { font: prefs.font } : {}), ...(prefs.size !== 10 ? { size: prefs.size } : {}) };

@@ -26,6 +26,7 @@ import {
   PAGE_WIDTH,
   type Placed,
   revealRegion,
+  regionGrew,
   setHeights,
   setLive,
   setState,
@@ -675,7 +676,11 @@ export function RegionBox(props: RegionProps) {
   onMount(() => {
     const ro = new ResizeObserver(() => {
       const h = el.offsetHeight;
-      if (h && Math.abs((untrack(() => heights[r().id]) ?? 0) - h) > 0.5) setHeights(r().id, h);
+      const before = untrack(() => heights[r().id]) ?? 0;
+      if (h && Math.abs(before - h) > 0.5) {
+        setHeights(r().id, h);
+        regionGrew(r().id, before, h);
+      }
       const w = el.offsetWidth;
       if (w && Math.abs((untrack(() => widths[r().id]) ?? 0) - w) > 0.5) setWidths(r().id, w);
     });
