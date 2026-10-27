@@ -30,6 +30,7 @@ import { Canvas, clientToDoc, reveal, zoomCenter } from "./Canvas";
 import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
+import { insertTable, isSheet, tableCommand } from "./TableEditor";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
@@ -272,7 +273,10 @@ function showInspector(tab: "region" | "document" | "page") {
 }
 
 function runCommand(id: string) {
-  const editingField = !!state.editing;
+  if (tableCommand(id)) return;
+  // a table being edited (not a cell being typed in) undoes like the canvas
+  const inTable = isSheet(state.editing ? layout().byId.get(state.editing)?.region : undefined) && !(document.activeElement instanceof HTMLInputElement);
+  const editingField = !!state.editing && !inTable;
   if (TEXT_FORMAT[id]) return activeView() ? TEXT_FORMAT[id]() : undefined;
   if (id.startsWith("fmt_align_")) return activeView() && runText(commands.align(id.slice(10) as Align));
   if (id.startsWith("arrange_")) return alignRegions(state.selection, id.slice(8) as AlignMode);
@@ -303,6 +307,8 @@ function runCommand(id: string) {
       return duplicateSelection();
     case "insert_image":
       return insertImage().catch((e) => flash(`Could not insert the image: ${e.message ?? e}`));
+    case "insert_table":
+      return insertTable();
     case "insert_toc":
       return insertContents("headings");
     case "insert_figures":
@@ -364,7 +370,8 @@ function runCommand(id: string) {
 /** In a plain browser there is no native menu; map the same shortcuts. */
 function browserShortcuts(e: KeyboardEvent) {
   if (isTauri || !(e.metaKey || e.ctrlKey)) return;
-  const key = e.key.toLowerCase();
+  // ⌥ changes e.key on a Mac (⌥⌘F gives ƒ)
+  const key = e.altKey && e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
   const map: Record<string, string> = {
     s: e.shiftKey ? "save_as" : "save",
     o: "open",
@@ -378,6 +385,7 @@ function browserShortcuts(e: KeyboardEvent) {
     "0": "zoom_reset",
     "'": "next_error",
     f: e.altKey ? "find_replace" : "find",
+    t: e.altKey ? "insert_table" : "",
     "?": "help",
     "/": e.shiftKey ? "help" : "",
     // Ctrl+G is Greek in math
@@ -477,6 +485,9 @@ export function App() {
           </button>
           <button onClick={() => runCommand("insert_image")} title="Insert image">
             <span class="glyph">▣</span> Image
+          </button>
+          <button onClick={() => insertTable()} title="Insert table (⌥⌘T)">
+            <span class="glyph">▦</span> Table
           </button>
           <button onClick={insertArea} title="Insert area">
             <span class="glyph">▤</span> Area

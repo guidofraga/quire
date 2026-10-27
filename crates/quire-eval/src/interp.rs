@@ -54,11 +54,11 @@ impl<'e> Scope<'e> {
     }
 
     /// Bind a loop/summation variable, returning what it shadowed in the frame.
-    fn bind(&mut self, name: &str, v: Value) -> Option<Binding> {
+    pub(crate) fn bind(&mut self, name: &str, v: Value) -> Option<Binding> {
         self.frames.last_mut().expect("scope has a frame").insert(name.to_string(), Binding::Val(v))
     }
 
-    fn restore(&mut self, name: &str, prev: Option<Binding>) {
+    pub(crate) fn restore(&mut self, name: &str, prev: Option<Binding>) {
         let frame = self.frames.last_mut().expect("scope has a frame");
         match prev {
             Some(b) => frame.insert(name.to_string(), b),

@@ -16,7 +16,7 @@ use std::time::Instant;
 use base64::Engine;
 use quire_ast::{Expr, parse};
 use quire_doc::Document;
-use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Outcome, Worksheet};
+use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Outcome, TableInput, Worksheet};
 use serde::Serialize;
 use serde_json::{Value as Json, json};
 
@@ -84,6 +84,46 @@ fn display_of(r: &quire_doc::Region) -> DisplaySpec {
     }
 }
 
+/// A literal table (`"rows"`): cells are text, values or `=` formulas.
+fn table_input(r: &quire_doc::Region) -> TableInput {
+    let cell = |v: &Json| match v {
+        Json::String(s) => s.clone(),
+        Json::Null => String::new(),
+        other => other.to_string(),
+    };
+    let rows = r.extra["rows"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| row.as_array().map(|c| c.iter().map(cell).collect()).unwrap_or_default())
+                .collect()
+        })
+        .unwrap_or_default();
+    let columns = r
+        .extra
+        .get("columns")
+        .and_then(Json::as_array)
+        .map(|cols| {
+            cols.iter()
+                .map(|c| DisplaySpec {
+                    unit: c
+                        .get("unit")
+                        .and_then(Json::as_str)
+                        .filter(|u| !u.trim().is_empty())
+                        .map(String::from),
+                    decimals: c.get("decimals").and_then(Json::as_u64).map(|d| d as u32),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    TableInput {
+        name: r.extra.get("name").and_then(Json::as_str).map(String::from),
+        rows,
+        columns,
+        display: display_of(r),
+    }
+}
+
 /// Trailing `=` asks for the result (`` $`A =` `` inside text).
 fn split_show(expr: &str) -> (String, bool) {
     let t = expr.trim_end();
@@ -114,6 +154,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         expr: expr.clone(),
                         show,
                         display: display_of(r),
+                        table: None,
                     });
                 }
             }
@@ -126,8 +167,19 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         expr,
                         show,
                         display: DisplaySpec::default(),
+                        table: None,
                     });
                 }
+            }
+            // a spreadsheet table always runs: it may define a variable for the math below
+            "table" if r.extra.get("rows").is_some_and(Json::is_array) => {
+                out.push(MathInput {
+                    id: r.id.clone(),
+                    expr: String::new(),
+                    show: false,
+                    display: display_of(r),
+                    table: Some(table_input(r)),
+                });
             }
             "table" if tables => {
                 if let Some(src) = r.extra.get("source").and_then(Json::as_str) {
@@ -136,6 +188,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         expr: src.to_string(),
                         show: true,
                         display: display_of(r),
+                        table: None,
                     });
                 }
             }
@@ -181,6 +234,18 @@ pub struct RegionView {
     pub shadowing: Vec<String>,
     /// The name this region defines (`L`, `f(x)`), for the editor's knowledge of variables.
     pub defines: Option<String>,
+    /// A spreadsheet table's cells, row-major.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cells: Option<Vec<Vec<CellView>>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellView {
+    /// The value, for 2D rendering; `None` for text and blank cells.
+    pub result: Option<Expr>,
+    pub error: Option<String>,
+    pub formula: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -304,6 +369,38 @@ pub fn report(doc_json: &Json) -> Result<Report> {
     let mut regions = Vec::with_capacity(ev.inputs.len());
     let mut error_count = 0;
     for (input, o) in ev.inputs.iter().zip(&ev.outcomes) {
+        if input.table.is_some() {
+            if o.error.is_some() {
+                error_count += 1;
+            }
+            let cells = o
+                .cells
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|c| CellView {
+                            result: c.shown.as_deref().and_then(|s| parse(s).ok()),
+                            error: c.error.clone(),
+                            formula: c.formula,
+                        })
+                        .collect()
+                })
+                .collect();
+            regions.push(RegionView {
+                id: input.id.clone(),
+                input: None,
+                result: None,
+                result_text: None,
+                error: o.error.clone(),
+                syntax_error: false,
+                units: o.units.clone(),
+                constants: o.constants.clone(),
+                shadowing: Vec::new(),
+                defines: o.defines.clone(),
+                cells: Some(cells),
+            });
+            continue;
+        }
         let parsed = parse(&input.expr);
         let syntax_error = parsed.is_err();
         if o.error.is_some() {
@@ -320,6 +417,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             constants: o.constants.clone(),
             shadowing: o.shadowing.clone(),
             defines: o.defines.clone(),
+            cells: None,
         });
     }
 

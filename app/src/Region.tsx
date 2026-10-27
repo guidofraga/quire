@@ -1,5 +1,6 @@
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
+import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
 import { createEffect, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { produce } from "solid-js/store";
@@ -513,33 +514,38 @@ function TableBody(props: { p: Placed }) {
     const res = view()?.result;
     return res?.t === "Matrix" ? res.c : null;
   };
+  const BoundTable = () => (
+        <Show
+          when={rows()}
+          fallback={
+            <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 300}px` }}>
+              Table of <code>{r().source ?? "—"}</code>
+              <Show when={view()?.error}>
+                <div class="err">{view()!.error}</div>
+              </Show>
+            </div>
+          }
+        >
+          <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
+            <tbody>
+              <For each={rows()!}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </Show>
+  );
   return (
     <figure class="figure">
       <Show when={r().caption?.position === "above"}>
         <Caption p={props.p} />
       </Show>
-      <Show
-        when={rows()}
-        fallback={
-          <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 300}px` }}>
-            Table of <code>{r().source ?? "—"}</code>
-            <Show when={view()?.error}>
-              <div class="err">{view()!.error}</div>
-            </Show>
-          </div>
-        }
-      >
-        <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
-          <tbody>
-            <For each={rows()!}>
-              {(row) => (
-                <tr>
-                  <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+      <Show when={isSheet(r())} fallback={BoundTable()}>
+        <SheetGrid p={props.p} />
       </Show>
       <Show when={r().caption?.position !== "above"}>
         <Caption p={props.p} />
@@ -709,7 +715,9 @@ export function RegionBox(props: RegionProps) {
         if (editing()) return e.stopPropagation();
         props.onDragStart(r().id, e);
       }}
-      onDblClick={(e) => startEditing(r().id, [e.clientX, e.clientY])}
+      onDblClick={(e) =>
+        r().kind === "table" ? editTableAt(r().id, [e.clientX, e.clientY]) : startEditing(r().id, [e.clientX, e.clientY])
+      }
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation(); // the canvas has its own menu

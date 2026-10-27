@@ -6,6 +6,7 @@ use quire_units::{Unit, UnitRegistry};
 use crate::error::{EvalError, Result, bail};
 use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value, format_value_in};
 use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, set_element};
+use crate::sheet::{CellOutcome, TableInput, cell_label};
 use crate::value::Value;
 
 /// One math region, already in document (reading) order.
@@ -16,6 +17,8 @@ pub struct MathInput {
     /// Render `= result` (`"show": "value"`).
     pub show: bool,
     pub display: DisplaySpec,
+    /// A spreadsheet table instead of an expression (`expr` is then unused).
+    pub table: Option<TableInput>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +36,8 @@ pub struct Outcome {
     pub constants: Vec<String>,
     /// Your variables here whose names are also a built-in constant.
     pub shadowing: Vec<String>,
+    /// A table's cells, row-major.
+    pub cells: Vec<Vec<CellOutcome>>,
 }
 
 impl Outcome {
@@ -46,6 +51,7 @@ impl Outcome {
             units: Vec::new(),
             constants: Vec::new(),
             shadowing: Vec::new(),
+            cells: Vec::new(),
         }
     }
 }
@@ -167,7 +173,7 @@ fn substitute(e: &Expr, params: &[String], args: &[Expr]) -> Expr {
 }
 
 /// Units written with a marker: `'kN`.
-fn explicit_units(e: &Expr, out: &mut Vec<String>) {
+pub(crate) fn explicit_units(e: &Expr, out: &mut Vec<String>) {
     match e {
         Expr::Unit(n) => out.push(n.clone()),
         Expr::Paren(x) | Expr::Unary(_, x) | Expr::Factorial(x) => explicit_units(x, out),
@@ -237,7 +243,9 @@ impl Worksheet {
             }
         }
         for (i, r) in regions.iter().enumerate() {
-            if out[i].is_none() {
+            if let Some(t) = &r.table {
+                out[i] = Some(self.step_table(r, t));
+            } else if out[i].is_none() {
                 out[i] = Some(match &parsed[i] {
                     Ok(e) => self.step(r, e),
                     Err(err) => {
@@ -396,6 +404,47 @@ impl Worksheet {
         r
     }
 
+    fn step_table(&mut self, r: &MathInput, t: &TableInput) -> Outcome {
+        let mut out = Outcome::new(&r.id);
+        let globals = Rc::clone(&self.globals);
+        let mut interp = Interp::new(&self.units);
+        let mut scope = Scope::new(&globals);
+        let (cells, value, written) = crate::sheet::evaluate(t, &mut interp, &mut scope, &self.settings);
+        let mut units: std::collections::BTreeSet<String> = std::mem::take(&mut interp.unit_idents);
+        units.extend(written);
+        out.units = units.into_iter().collect();
+        out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
+        drop(scope);
+        let errors: Vec<(String, &str)> = cells
+            .iter()
+            .enumerate()
+            .flat_map(|(i, row)| {
+                row.iter()
+                    .enumerate()
+                    .filter_map(move |(j, c)| c.error.as_deref().map(|e| (cell_label(i, j), e)))
+            })
+            .collect();
+        out.error = match errors.as_slice() {
+            [] => None,
+            [(at, e)] => Some(format!("{at}: {e}")),
+            [(at, e), rest @ ..] => {
+                let more = if rest.len() == 1 {
+                    "1 more cell".to_string()
+                } else {
+                    format!("{} more cells", rest.len())
+                };
+                Some(format!("{at}: {e} (and {more})"))
+            }
+        };
+        if let Some(name) = t.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            out.defines = Some(name.to_string());
+            self.bind(name.to_string(), Binding::Val(value.clone()));
+        }
+        out.value = Some(value);
+        out.cells = cells;
+        out
+    }
+
     fn bind(&mut self, key: String, b: Binding) {
         Rc::make_mut(&mut self.globals).insert(key, b);
     }
@@ -521,6 +570,7 @@ mod tests {
                 expr: l.to_string(),
                 show: true,
                 display: DisplaySpec::default(),
+                table: None,
             })
             .collect();
         Worksheet::new(DisplaySettings::default()).run(&regions)
@@ -585,6 +635,49 @@ mod tests {
     }
 
     #[test]
+    fn tables_read_and_define_variables() {
+        let math = |id: &str, e: &str| MathInput {
+            id: id.into(),
+            expr: e.into(),
+            show: true,
+            display: DisplaySpec::default(),
+            table: None,
+        };
+        let table = |id: &str, name: &str, rows: &[&[&str]]| MathInput {
+            id: id.into(),
+            expr: String::new(),
+            show: false,
+            display: DisplaySpec::default(),
+            table: Some(TableInput {
+                name: Some(name.into()),
+                rows: rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect(),
+                ..Default::default()
+            }),
+        };
+        let regions = [
+            math("a", "γ := 1.4"),
+            table(
+                "t",
+                "loads",
+                &[&["Dead", "12 kN", "=B1*γ"], &["Live", "8 kN", "=B2*1.5"], &["", "", "=SUM(C1:C2)"]],
+            ),
+            math("b", "loads[3, 3]"),
+            table("u", "check", &[&["=loads!C3", "=IF(A1 < 40 kN, \"OK\", \"NO\")"]]),
+            table("v", "bad", &[&["=1/0", "=A1"]]),
+        ];
+        let settings = DisplaySettings { working_units: true, ..Default::default() };
+        let out = Worksheet::new(settings).run(&regions);
+        let cell = |o: &Outcome, r: usize, c: usize| o.cells[r][c].shown.clone().unwrap_or_default();
+        assert_eq!(cell(&out[1], 0, 2), "16.8 'kN");
+        assert_eq!(cell(&out[1], 2, 2), "28.8 'kN");
+        assert_eq!(out[1].defines.as_deref(), Some("loads"));
+        assert_eq!(out[2].shown.as_deref(), Some("28.8 'kN"));
+        assert_eq!(cell(&out[3], 0, 1), "\"OK\"");
+        assert!(out[4].error.as_deref().unwrap().starts_with("A1: "), "{:?}", out[4].error);
+        assert!(out[4].error.as_deref().unwrap().ends_with("(and 1 more cell)"));
+    }
+
+    #[test]
     fn undefined_names_explain_themselves() {
         let r =
             shown(&["σ.max := 2", "A_net := 3", "sigma.max + 1", "A.net", "S.max", "q := 5 KN", "y := zzz"]);
@@ -642,6 +735,7 @@ mod tests {
                 expr: l.to_string(),
                 show: true,
                 display: DisplaySpec::default(),
+                table: None,
             })
             .collect();
         let settings = DisplaySettings { working_units: true, ..Default::default() };
@@ -786,12 +880,14 @@ mod tests {
                 expr: "T := 20 '°C".into(),
                 show: true,
                 display: DisplaySpec::default(),
+                table: None,
             },
             MathInput {
                 id: "b".into(),
                 expr: "2 'tf".into(),
                 show: true,
                 display: DisplaySpec { unit: Some("kN".into()), decimals: Some(3) },
+                table: None,
             },
         ];
         let out = ws.run(&regions);

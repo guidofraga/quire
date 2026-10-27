@@ -35,6 +35,15 @@ export interface RegionView {
   /** Your variables here that hide a built-in constant. */
   shadowing: string[];
   defines: string | null;
+  /** A spreadsheet table's cells. */
+  cells?: CellView[][];
+}
+
+/** quire_service::CellView */
+export interface CellView {
+  result: Expr | null;
+  error: string | null;
+  formula: boolean;
 }
 
 /** quire_service::Gloss */

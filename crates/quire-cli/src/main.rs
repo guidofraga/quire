@@ -73,7 +73,17 @@ fn cmd_eval(path: &str) -> CmdResult {
     for (name, msg) in &ev.unit_errors {
         println!("✗ unit {name}: {msg}");
     }
-    let exprs: Vec<String> = ev.inputs.iter().map(|i| clip(&i.expr, 64)).collect();
+    let exprs: Vec<String> = ev
+        .inputs
+        .iter()
+        .map(|i| match &i.table {
+            Some(t) => {
+                let size = format!("{}×{}", t.rows.len(), t.rows.iter().map(Vec::len).max().unwrap_or(0));
+                t.name.as_ref().map_or(format!("table {size}"), |n| format!("table {n} ({size})"))
+            }
+            None => clip(&i.expr, 64),
+        })
+        .collect();
     let w = exprs.iter().map(|e| width(e)).max().unwrap_or(0);
     let mut errors = 0;
     for (expr, o) in exprs.iter().zip(&ev.outcomes) {
@@ -208,7 +218,7 @@ fn cmd_calc(args: &[String]) -> CmdResult {
         }
     }
     let expr = expr.ok_or("missing expression")?;
-    let input = MathInput { id: "calc".into(), expr, show: true, display };
+    let input = MathInput { id: "calc".into(), expr, show: true, display, table: None };
     let out = Worksheet::new(DisplaySettings::default()).run(&[input]).remove(0);
     match (out.error, out.shown) {
         (Some(e), _) => {

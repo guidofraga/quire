@@ -100,7 +100,9 @@ export function mutate(fn: (d: Doc) => void, history = true) {
 
 function restore(json: string) {
   setState("doc", reconcile(JSON.parse(json) as Doc, { key: "id" }));
-  setState({ editing: null });
+  // a table stays open across undo (its cells are plain data); text editors don't
+  const editing = state.editing ? layout().byId.get(state.editing)?.region : undefined;
+  if (editing?.kind !== "table") setState({ editing: null });
   touch();
 }
 
@@ -457,10 +459,12 @@ export let editClickPoint: [number, number] | null = null;
 export function startEditing(id: string, at?: [number, number]) {
   editClickPoint = at ?? null;
   const p = layout().byId.get(id);
-  if (!p || !["math", "text"].includes(p.region.kind)) return;
+  const table = p?.region.kind === "table" && Array.isArray(p.region.rows);
+  if (!p || !(["math", "text"].includes(p.region.kind) || table)) return;
   if (state.editing && state.editing !== id) commitEditing();
   if (state.editing === id) return;
-  editSnapshot = snapshot();
+  // a table records each change to its cells as its own undo step
+  editSnapshot = table ? null : snapshot();
   setState({ editing: id, selection: [id], caret: null, editingFresh: false });
 }
 
@@ -512,7 +516,8 @@ export function commitEditing() {
   const id = state.editing;
   if (!id) return;
   const r = layout().byId.get(id)?.region;
-  const empty = !r || (r.kind === "math" ? !(r.expr ?? "").trim() : !editText(r).trim());
+  const empty =
+    !r || (r.kind === "math" ? !(r.expr ?? "").trim() : r.kind === "text" ? !editText(r).trim() : false);
   if (r && empty) {
     setState(
       "doc",

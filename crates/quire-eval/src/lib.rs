@@ -11,6 +11,7 @@ mod error;
 mod format;
 mod interp;
 mod ops;
+mod sheet;
 mod value;
 mod worksheet;
 
@@ -21,5 +22,6 @@ pub use format::{
     working_unit,
 };
 pub use interp::{Binding, Env, Interp, Scope};
+pub use sheet::{CellOutcome, TableInput, cell_label, column_name, parse_ref};
 pub use value::{Matrix, Quantity, Value};
 pub use worksheet::{MathInput, Outcome, Worksheet};

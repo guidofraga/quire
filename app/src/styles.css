@@ -1924,3 +1924,151 @@ ms.str::after {
   font-family: inherit;
   font-weight: 500;
 }
+
+/* Spreadsheet tables */
+.sheet-wrap {
+  outline: none;
+}
+
+.sheet {
+  border-collapse: collapse;
+  font: 9pt -apple-system, system-ui, sans-serif;
+  color: var(--ink);
+}
+
+.sheet td {
+  min-width: 44px;
+  height: 22px;
+  padding: 3px 8px;
+  border: 1px solid #9aa3af;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.sheet.head-row tbody tr:first-child td,
+.sheet.head-col tbody td:first-of-type {
+  font-weight: 600;
+  background: #f5f7fa;
+}
+
+.sheet td math {
+  font-size: 1.1em;
+}
+
+.sheet .cell-err {
+  color: var(--error);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.sheet td.err {
+  background: rgba(209, 48, 42, 0.06);
+}
+
+.sheet.editing td {
+  cursor: cell;
+}
+
+.sheet td.sel {
+  background: rgba(47, 111, 223, 0.1) !important;
+}
+
+.sheet td.active {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: #fff !important;
+}
+
+.sheet th {
+  padding: 0 4px;
+  border: 1px solid #d7d9de;
+  background: #f3f4f6;
+  color: #6b7280;
+  font: 500 10px -apple-system, system-ui, sans-serif;
+  user-select: none;
+}
+
+.sheet th.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sheet .col-head {
+  position: relative;
+  height: 18px;
+  cursor: s-resize;
+}
+
+.sheet .row-head {
+  min-width: 22px;
+  text-align: center;
+  cursor: e-resize;
+}
+
+.sheet .corner {
+  width: 22px;
+}
+
+.sheet .col-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 7px;
+  z-index: 1;
+  cursor: col-resize;
+}
+
+.sheet .cell-input {
+  width: 100%;
+  min-width: 80px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: 12px var(--mono);
+}
+
+.sheet-bar {
+  display: flex;
+  gap: 10px;
+  max-width: 560px;
+  margin-bottom: 4px;
+  padding: 3px 8px;
+  border: 1px solid #d7d9de;
+  border-radius: 5px;
+  background: #f6f7f9;
+  color: #1f2328;
+  font: 11px var(--mono);
+  user-select: text;
+}
+
+.sheet-ref {
+  min-width: 34px;
+  color: #6b7280;
+}
+
+.sheet-raw {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-raw.error {
+  color: var(--error);
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+.insp-sub {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.insp-subtitle {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}

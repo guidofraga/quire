@@ -2,6 +2,7 @@
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
 import { latex } from "./latex";
+import { insertTable, isSheet, parseTsv, tableMenuItems } from "./TableEditor";
 import { prettyValue } from "./math";
 import { closeMenu, type MenuItems, setRegionMenuBuilder } from "./menu";
 import type { Background } from "./pages";
@@ -131,6 +132,16 @@ export async function onPaste(e: ClipboardEvent) {
   if (!text) return;
   e.preventDefault();
   commitEditing();
+  // cells copied from a spreadsheet become a table
+  if (text.includes("\t")) {
+    const rows = parseTsv(text);
+    const id = insertTable(rows);
+    const numeric = (s: string) => /^[-+]?[\d.,]+/.test(s.trim());
+    if (rows.length > 1 && rows[0].every((c) => !numeric(c)) && rows.slice(1).some((r) => r.some(numeric)))
+      updateRegion(id, { header: { row: true } });
+    else updateRegion(id, { header: undefined });
+    return;
+  }
   const [x, y] = state.caret ?? [GRID * 4, GRID * 4];
   const id = newId();
   mutate((d) => {
@@ -255,6 +266,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Math", run: go("insert_math") },
         { label: "Insert Text", run: go("insert_text") },
         { label: "Insert Image…", run: go("insert_image") },
+        { label: "Insert Table", run: go("insert_table") },
         { label: "Insert Area", run: go("insert_area") },
         null,
         { label: "Table of Contents", run: go("insert_toc") },
@@ -268,7 +280,9 @@ export function installContextMenus(run: (command: string) => void) {
     const r = layout().byId.get(id)?.region;
     const many = state.selection.length > 1;
     const items: MenuItems = [];
-    if (!many && r && (r.kind === "math" || r.kind === "text")) items.push({ label: "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
+    if (!many && r && isSheet(r) && state.editing === id) items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
+    else if (!many && r && (r.kind === "math" || r.kind === "text" || isSheet(r)))
+      items.push({ label: isSheet(r) ? "Edit Table" : "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
     items.push(
       { label: "Cut", shortcut: "⌘X", run: () => (closeMenu(), copyToInternal(), document.execCommand("cut") || deleteRegions(state.selection)) },
       { label: "Copy", shortcut: "⌘C", run: () => (closeMenu(), copyToInternal(), document.execCommand("copy")) },

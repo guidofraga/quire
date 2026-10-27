@@ -1,4 +1,5 @@
 // Inspector: properties of the selected region, the document and its pages.
+import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEditor";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { type Background, PX_PER_MM, toPx } from "./pages";
 import { commitEditing, layout, localized, state, updateDoc, updateRegion } from "./store";
@@ -70,6 +71,51 @@ export function Select<T extends string>(props: { value: T; options: [T, string]
     <select class="insp-input" value={props.value} onChange={(e) => props.onChange(e.currentTarget.value as T)}>
       <For each={props.options}>{([v, label]) => <option value={v}>{label}</option>}</For>
     </select>
+  );
+}
+
+/** The selected column of a table being edited (or the first one). */
+function ColumnFields(props: { r: Region }) {
+  const c = () => (state.editing === props.r.id ? activeCell().c : 0);
+  const col = (): Column => columnsOf(props.r)[c()] ?? {};
+  const set = (patch: Partial<Column>) =>
+    updateRegion(props.r.id, (d) => {
+      const list = [...((d.columns as Column[] | undefined) ?? [])];
+      while (list.length <= c()) list.push({});
+      const next: Column = { ...list[c()], ...patch };
+      for (const k of Object.keys(next) as (keyof Column)[]) if (next[k] === undefined || next[k] === "") delete next[k];
+      list[c()] = next;
+      d.columns = list;
+    });
+  return (
+    <div class="insp-sub">
+      <div class="insp-subtitle">Column {colName(c())}</div>
+      <div class="insp-row">
+        <Field label="Align">
+          <Select<string>
+            value={col().align ?? ""}
+            options={[
+              ["", "Automatic"],
+              ["left", "Left"],
+              ["center", "Centre"],
+              ["right", "Right"],
+            ]}
+            onChange={(v) => set({ align: (v || undefined) as Column["align"] })}
+          />
+        </Field>
+        <Field label="Width">
+          <Num value={col().width} placeholder="auto" onCommit={(v) => set({ width: v })} />
+        </Field>
+      </div>
+      <div class="insp-row">
+        <Field label="Unit" hint="e.g. kN, MPa">
+          <Text value={col().unit} mono placeholder="automatic" onCommit={(v) => set({ unit: v.trim() || undefined })} />
+        </Field>
+        <Field label="Decimals">
+          <Num value={col().decimals} placeholder="table" onCommit={(v) => set({ decimals: v })} />
+        </Field>
+      </div>
+    </div>
   );
 }
 
@@ -213,6 +259,40 @@ function RegionTab() {
                     <Num value={r().size?.[1]} onCommit={(v) => v && updateRegion(r().id, { size: [r().size?.[0] ?? v, v] })} />
                   </Field>
                 </div>
+              </Match>
+              <Match when={isSheet(r())}>
+                <Field label="Name" hint="Math below can use it: name[row, column]; other tables: name!B2">
+                  <Text
+                    value={r().name as string | undefined}
+                    mono
+                    placeholder="none"
+                    onCommit={(v) => updateRegion(r().id, { name: v.trim() || undefined })}
+                  />
+                </Field>
+                <Check
+                  checked={!!r().header?.row}
+                  label="First row is a header"
+                  onChange={(on) => updateRegion(r().id, { header: { ...r().header, row: on } })}
+                />
+                <Check
+                  checked={!!r().header?.column}
+                  label="First column is a header"
+                  onChange={(on) => updateRegion(r().id, { header: { ...r().header, column: on } })}
+                />
+                <div class="insp-row">
+                  <Field label="Decimals" hint="For the whole table">
+                    <Num
+                      value={r().display?.decimals}
+                      placeholder="doc"
+                      onCommit={(v) => updateRegion(r().id, (d) => {
+                        d.display = { ...d.display, decimals: v };
+                        if (d.display.decimals === undefined) delete d.display.decimals;
+                        if (!Object.keys(d.display).length) delete d.display;
+                      })}
+                    />
+                  </Field>
+                </div>
+                <ColumnFields r={r()} />
               </Match>
               <Match when={r().kind === "table"}>
                 <Field label="Matrix shown" hint="Any expression giving a matrix">
