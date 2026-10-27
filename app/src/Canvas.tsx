@@ -86,7 +86,9 @@ setRevealHandler(reveal);
  * transform: WebKit draws a scaled scene as a bitmap while a text field inside it has the
  * caret, so editing went blurry, and switching between the two on every edit flickered.
  * Engines that report zoomed boxes differently from transforms keep the transform (checked
- * once).
+ * once). The scene is also kept on a layer of its own: WebKit spaces text slightly
+ * differently inside one, and a text field with the caret otherwise moved it on and off
+ * a layer, so text that wasn't even being edited shifted on every edit.
  */
 const zoomKeepsCoordinates = (() => {
   const outer = document.createElement("div");
@@ -102,7 +104,8 @@ const zoomKeepsCoordinates = (() => {
 
 function sceneStyle(): Record<string, string> {
   const { x, y, zoom } = state.view;
-  if (zoomKeepsCoordinates && !state.printing) return { transform: `translate(${x / zoom}px, ${y / zoom}px)`, zoom: String(zoom) };
+  if (zoomKeepsCoordinates && !state.printing)
+    return { transform: `translate(${x / zoom}px, ${y / zoom}px)`, zoom: String(zoom), "will-change": "transform" };
   return { transform: `translate(${x}px, ${y}px) scale(${zoom})` };
 }
 
