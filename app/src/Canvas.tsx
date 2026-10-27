@@ -82,10 +82,11 @@ export function reveal(id: string) {
 setRevealHandler(reveal);
 
 /**
- * WebKit draws a scene scaled with `transform` as a bitmap while a text field inside it
- * has the caret, so zoomed-in editing goes blurry. CSS `zoom` lays the scene out at size
- * instead and stays sharp, but re-lays it out on every zoom step: use it while editing,
- * where engines report zoomed boxes the way they do for transforms (checked once).
+ * The scene is zoomed with CSS `zoom`, which lays it out at size, rather than a scale
+ * transform: WebKit draws a scaled scene as a bitmap while a text field inside it has the
+ * caret, so editing went blurry, and switching between the two on every edit flickered.
+ * Engines that report zoomed boxes differently from transforms keep the transform (checked
+ * once).
  */
 const zoomKeepsCoordinates = (() => {
   const outer = document.createElement("div");
@@ -101,8 +102,7 @@ const zoomKeepsCoordinates = (() => {
 
 function sceneStyle(): Record<string, string> {
   const { x, y, zoom } = state.view;
-  if (zoomKeepsCoordinates && state.editing && zoom !== 1 && !state.printing)
-    return { transform: `translate(${x / zoom}px, ${y / zoom}px)`, zoom: String(zoom) };
+  if (zoomKeepsCoordinates && !state.printing) return { transform: `translate(${x / zoom}px, ${y / zoom}px)`, zoom: String(zoom) };
   return { transform: `translate(${x}px, ${y}px) scale(${zoom})` };
 }
 
