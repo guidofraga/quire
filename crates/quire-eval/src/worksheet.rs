@@ -4,7 +4,7 @@ use quire_ast::{Expr, parse, print};
 use quire_units::{Unit, UnitRegistry};
 
 use crate::error::{EvalError, Result, bail};
-use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value, format_value_in};
+use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value_in};
 use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, set_element};
 use crate::sheet::{CellOutcome, TableInput, cell_label};
 use crate::value::Value;
@@ -472,7 +472,7 @@ impl Worksheet {
             Ok(None) => {} // function definition: nothing to display
             Ok(Some(v)) => {
                 if r.show {
-                    match format_value(&v, &r.display, &self.settings, &self.units) {
+                    match crate::format::format_shown(&v, &r.display, &self.settings, &self.units) {
                         Ok(s) => out.shown = Some(s),
                         Err(err) => out.error = Some(err.message),
                     }

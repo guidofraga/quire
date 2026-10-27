@@ -496,7 +496,13 @@ export function setLive(id: string, text: string) {
     const r = findDraft(d, id);
     if (!r) return;
     if (r.kind === "math") {
-      const { expr, show, unit } = splitShow(text);
+      let { expr, show, unit } = splitShow(text);
+      typedUnit = { id, unit };
+      // `c` on the way to `cm`: keep the result as it was rather than flash "unknown unit";
+      // what was typed is applied when the edit ends
+      const choices = state.views[id]?.unitChoices ?? [];
+      if (unit && !choices.some((c) => c.unit === unit) && choices.some((c) => c.unit.startsWith(unit!)))
+        unit = r.display?.unit;
       r.expr = expr;
       if (show) r.show = "value";
       else delete r.show;
@@ -517,9 +523,25 @@ export function setLive(id: string, text: string) {
   }, false);
 }
 
+/** The unit typed after `=` in the math being edited, which may not be shown yet. */
+let typedUnit: { id: string; unit: string | undefined } | null = null;
+
 export function commitEditing() {
   const id = state.editing;
   if (!id) return;
+  if (typedUnit?.id === id) {
+    const unit = typedUnit.unit;
+    typedUnit = null;
+    const r = layout().byId.get(id)?.region;
+    if (r?.kind === "math" && r.show && (r.display?.unit ?? undefined) !== unit)
+      mutate((d) => {
+        const draft = findDraft(d, id);
+        if (!draft) return;
+        draft.display = { ...draft.display, unit };
+        if (!unit) delete draft.display.unit;
+        if (!Object.keys(draft.display).length) delete draft.display;
+      }, false);
+  }
   const r = layout().byId.get(id)?.region;
   const empty =
     !r || (r.kind === "math" ? !(r.expr ?? "").trim() : r.kind === "text" ? !editText(r).trim() : false);

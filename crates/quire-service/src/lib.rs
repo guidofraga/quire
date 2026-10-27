@@ -238,6 +238,52 @@ pub struct RegionView {
     /// A spreadsheet table's cells, row-major.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cells: Option<Vec<Vec<CellView>>>,
+    /// Units the result can be shown in, with the result in each (`30 'cm`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unit_choices: Vec<UnitChoice>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnitChoice {
+    /// What to type after `=` (`kN*m`).
+    pub unit: String,
+    /// The result in it, linear syntax.
+    pub text: String,
+}
+
+/// Units offered for a result, smallest first within each kind; only those of the
+/// result's kind are shown.
+const UNIT_CHOICES: &[&str] = &[
+    "mm", "cm", "m", "km", "in", "ft", "mm^2", "cm^2", "m^2", "ft^2", "mm^3", "cm^3", "L", "m^3", "mm^4",
+    "cm^4", "m^4", "g", "kg", "t", "lb", "N", "kN", "MN", "kgf", "tf", "lbf", "kip", "N/m", "kN/m", "kgf/m",
+    "tf/m", "N/m^2", "kN/m^2", "kgf/m^2", "tf/m^2", "Pa", "kPa", "MPa", "GPa", "N/mm^2", "kgf/cm^2", "bar",
+    "psi", "ksi", "N/m^3", "kN/m^3", "kgf/m^3", "kg/m^3", "t/m^3", "N*m", "kN*m", "kgf*m", "tf*m", "kN*cm",
+    "J", "kJ", "kW*h", "W", "kW", "hp", "s", "min", "h", "day", "m/s", "km/h", "m/s^2", "Hz", "K", "°C",
+    "°F",
+];
+
+fn unit_choices(
+    value: Option<&quire_eval::Value>,
+    spec: &DisplaySpec,
+    settings: &DisplaySettings,
+    units: &quire_units::UnitRegistry,
+    candidates: &[(&'static str, quire_units::Dim)],
+) -> Vec<UnitChoice> {
+    let Some(v @ quire_eval::Value::Num(q)) = value else { return Vec::new() };
+    if q.dim.is_dimensionless() {
+        return Vec::new();
+    }
+    candidates
+        .iter()
+        .filter(|(_, d)| *d == q.dim)
+        .filter_map(|(u, _)| {
+            let spec = DisplaySpec { unit: Some((*u).to_string()), decimals: spec.decimals };
+            quire_eval::format_value(v, &spec, settings, units)
+                .ok()
+                .map(|text| UnitChoice { unit: (*u).to_string(), text })
+        })
+        .collect()
 }
 
 #[derive(Debug, Serialize)]
@@ -369,6 +415,11 @@ fn localized<'a>(v: &'a Json, lang: Option<&str>) -> Option<&'a str> {
 pub fn report(doc_json: &Json) -> Result<Report> {
     let doc: Document = serde_json::from_value(doc_json.clone())?;
     let ev = run(&doc, true);
+    let units = ev.worksheet.units();
+    let candidates: Vec<(&'static str, quire_units::Dim)> = UNIT_CHOICES
+        .iter()
+        .filter_map(|u| quire_eval::parse_unit_spec(u, units).ok().map(|s| (*u, s.dim)))
+        .collect();
     let mut regions = Vec::with_capacity(ev.inputs.len());
     let mut error_count = 0;
     for (input, o) in ev.inputs.iter().zip(&ev.outcomes) {
@@ -402,6 +453,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 shadowing: Vec::new(),
                 defines: o.defines.clone(),
                 cells: Some(cells),
+                unit_choices: Vec::new(),
             });
             continue;
         }
@@ -422,6 +474,11 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             shadowing: o.shadowing.clone(),
             defines: o.defines.clone(),
             cells: None,
+            unit_choices: if input.show && o.error.is_none() {
+                unit_choices(o.value.as_ref(), &input.display, ev.worksheet.settings(), units, &candidates)
+            } else {
+                Vec::new()
+            },
         });
     }
 
@@ -446,7 +503,6 @@ pub fn report(doc_json: &Json) -> Result<Report> {
     let document_errors = ev.unit_errors.iter().map(|(n, m)| format!("unit {n}: {m}")).collect();
     // keyed by meaning ("unit:g", "constant:g"): one name can mean both in different places
     let mut glossary = BTreeMap::new();
-    let units = ev.worksheet.units();
     for v in &regions {
         for name in &v.units {
             if let Some(g) = unit_gloss(name, units) {
@@ -593,6 +649,30 @@ mod tests {
     use super::*;
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfake";
+
+    #[test]
+    fn results_offer_the_units_they_can_be_shown_in() {
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                { "id": "a", "kind": "math", "at": [0, 0], "expr": "d:=30 cm" },
+                { "id": "b", "kind": "math", "at": [0, 30], "expr": "d", "show": "value" },
+                { "id": "c", "kind": "math", "at": [0, 60], "expr": "2*3", "show": "value" },
+                { "id": "e", "kind": "math", "at": [0, 90], "expr": "F:=10 N", "show": "value", "display": { "unit": "kg" } }
+            ]
+        });
+        let r = report(&doc).unwrap();
+        let view = |id: &str| r.regions.iter().find(|v| v.id == id).unwrap();
+        let choices: Vec<(&str, &str)> =
+            view("b").unit_choices.iter().map(|c| (c.unit.as_str(), c.text.as_str())).collect();
+        assert_eq!(&choices[..3], [("mm", "300 'mm"), ("cm", "30 'cm"), ("m", "0.3 'm")]);
+        assert!(choices.iter().all(|(u, _)| !u.contains('N')), "only lengths: {choices:?}");
+        assert!(view("c").unit_choices.is_empty(), "plain numbers have no units to pick");
+        assert!(view("a").unit_choices.is_empty(), "only shown results");
+        // a unit of another kind keeps the rest in SI
+        assert_eq!(view("e").result_text.as_deref(), Some("10 'kg*'m/'s^2"));
+        assert!(view("e").unit_choices.iter().any(|c| c.unit == "kN"));
+    }
 
     /// A small saved bundle with text, math, inline math and an image, in a temp folder.
     fn fixture(tag: &str) -> PathBuf {

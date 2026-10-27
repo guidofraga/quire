@@ -2308,3 +2308,38 @@ ms.str::after {
 .fb-pop {
   max-width: calc(100vw - 16px);
 }
+
+/* A result's unit can be clicked to show the result in another unit */
+.region.math:not(.editing) .res .u {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.region.math:not(.editing) .res .u:hover {
+  background: var(--accent-soft);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.app.printing .res .u {
+  background: none !important;
+  text-decoration: none !important;
+}
+
+.completion-head {
+  padding: 2px 8px 4px;
+  color: var(--muted);
+  font: 600 10.5px -apple-system, system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.completion.units .completion-glyph {
+  min-width: 52px;
+  font: 14px var(--math-font);
+  color: var(--unit);
+}
+
+.completion.units .completion-name {
+  font-variant-numeric: tabular-nums;
+}

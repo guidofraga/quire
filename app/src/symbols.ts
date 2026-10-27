@@ -9,6 +9,8 @@ export interface Sym {
   label?: string;
   /** Not understood by the calculator: fine in text, an error in math. */
   textOnly?: boolean;
+  /** Shown instead of `\name` (unit suggestions show the converted result). */
+  note?: string;
 }
 
 export interface Category {

@@ -255,6 +255,30 @@ pub fn format_value_in(
     }
 }
 
+/// A result shown in the unit its region asks for. A unit of another kind keeps the rest
+/// in SI, as SMath does: a force shown in kg reads `9.81 kg*m/s^2`.
+pub fn format_shown(
+    v: &Value,
+    spec: &DisplaySpec,
+    settings: &DisplaySettings,
+    units: &UnitRegistry,
+) -> Result<String> {
+    if let (Value::Num(q), Some(u)) = (v, spec.unit.as_deref()) {
+        let us = parse_unit_spec(u, units)?;
+        if us.dim != q.dim && us.offset == 0.0 && !us.text.is_empty() {
+            let d = spec.decimals.unwrap_or(settings.decimals);
+            let rest = si_unit(q.dim / us.dim);
+            let text = match rest.strip_prefix("1/") {
+                Some(denominator) => format!("{}/{denominator}", us.text),
+                None if rest.is_empty() => us.text.clone(),
+                None => format!("{}*{rest}", us.text),
+            };
+            return Ok(join(format_number(q.v / us.factor, d, settings), &text));
+        }
+    }
+    format_value(v, spec, settings, units)
+}
+
 fn format_quantity(
     q: Quantity,
     spec: &DisplaySpec,
@@ -316,5 +340,13 @@ mod tests {
         let temp = Value::Num(Quantity::new(293.15, Dim::from_ints([0, 0, 0, 0, 1, 0, 0])));
         assert_eq!(format_value(&temp, &spec("°C"), &s, &r).unwrap(), "20 '°C");
         assert!(format_value(&temp, &spec("m"), &s, &r).is_err());
+        // shown in a unit of another kind, the rest stays in SI (SMath)
+        assert_eq!(format_shown(&force, &spec("kg"), &s, &r).unwrap(), "17651.97 'kg*'m/'s^2");
+        assert_eq!(format_shown(&moment, &spec("kN"), &s, &r).unwrap(), "0.01 'kN*'m");
+        assert_eq!(format_shown(&line, &spec("kN"), &s, &r).unwrap(), "0.01 'kN/'m");
+        assert!(
+            format_shown(&force, &spec("°C"), &s, &r).is_err(),
+            "a scale with an offset can't carry other units"
+        );
     }
 }

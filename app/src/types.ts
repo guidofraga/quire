@@ -37,6 +37,16 @@ export interface RegionView {
   defines: string | null;
   /** A spreadsheet table's cells. */
   cells?: CellView[][];
+  /** Units the result can be shown in, with the result in each. */
+  unitChoices?: UnitChoice[];
+}
+
+/** quire_service::UnitChoice */
+export interface UnitChoice {
+  /** What to type after `=` (`kN*m`). */
+  unit: string;
+  /** The result in it, linear syntax (`54 'kN*'m`). */
+  text: string;
 }
 
 /** quire_service::CellView */

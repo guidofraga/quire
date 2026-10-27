@@ -2,13 +2,13 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
-import { createEffect, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { createEffect, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { produce } from "solid-js/store";
 import { api } from "./api";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
 import { cellHtml, mathml, prettyValue } from "./math";
 import { completions, exact, isTemplate, type Sym } from "./symbols";
-import { openRegionMenu } from "./menu";
+import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
 import { createEditor, placeCaret, plainText, releaseEditor } from "./richtext";
 import {
   AREA_COLLAPSED_HEIGHT,
@@ -33,9 +33,11 @@ import {
   setLive,
   setState,
   setWidths,
+  splitShow,
   startEditing,
   state,
   toggleArea,
+  updateRegion,
   widths,
 } from "./store";
 import type { Expr, Region } from "./types";
@@ -207,12 +209,37 @@ function MathEditor(props: { r: Region }) {
 
   const updateCompletion = () => {
     const m = latexBefore();
-    if (!m) return hideCompletions();
+    if (!m) return unitSuggestions();
     const caret = input.selectionStart ?? 0;
     const items = m[1] ? completions(m[1]) : POPULAR;
     const [x, y] = caretPoint(input);
     showCompletions(x, y, items, (sym) => applySymbol(input, sym, caret - m[0].length, caret));
   };
+
+  // after `=`, the units the result can be shown in, each with the result in it (SMath's
+  // unit placeholder); typing narrows the list, ↑↓ and Tab pick, Enter still finishes
+  const unitSuggestions = () => {
+    const { show, unit } = splitShow(input.value);
+    const choices = state.views[props.r.id]?.unitChoices ?? [];
+    if (!show || !atEnd() || !choices.length) return hideCompletions();
+    const typed = (unit ?? "").toLowerCase();
+    const items: Sym[] = choices
+      .filter((c) => c.unit.toLowerCase().startsWith(typed))
+      .map((c) => ({ name: c.unit, insert: c.unit, label: prettyValue(`'${c.unit.replace(/\*/g, "*'").replace(/\//g, "/'")}`), note: prettyValue(c.text) }));
+    if (!items.length || (items.length === 1 && items[0].name === unit)) return hideCompletions();
+    // below the whole box, so the live result stays in view
+    const [x] = caretPoint(input);
+    const y = (input.closest(".region")?.getBoundingClientRect().bottom ?? caretPoint(input)[1]) + 6;
+    showCompletions(x, y, items, (sym) => {
+      const v = input.value;
+      const start = unit ? v.length - unit.length : v.length;
+      input.focus();
+      input.setSelectionRange(start, v.length);
+      document.execCommand("insertText", false, `${unit || v.endsWith(" ") ? "" : " "}${sym.insert}`);
+    }, true);
+  };
+  // the choices arrive with the next evaluation after `=` is typed
+  createEffect(on(() => state.views[props.r.id]?.unitChoices, () => document.activeElement === input && updateCompletion(), { defer: true }));
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (completionKey(e)) {
@@ -656,6 +683,31 @@ function ResizeHandle(props: { p: Placed }) {
   );
 }
 
+/** The units a result can be shown in, as a menu at the clicked unit. */
+function openUnitMenu(e: MouseEvent, r: Region) {
+  const choices = state.views[r.id]?.unitChoices ?? [];
+  const current = r.display?.unit;
+  const setUnit = (unit: string | undefined) => {
+    closeMenu();
+    updateRegion(r.id, (d) => {
+      d.display = { ...d.display, unit };
+      if (!unit) delete d.display.unit;
+      if (!Object.keys(d.display).length) delete d.display;
+    });
+  };
+  const items: MenuItems = choices.map((c) => ({ label: prettyValue(c.text), checked: c.unit === current, run: () => setUnit(c.unit) }));
+  items.push(null, { label: "Automatic", checked: !current, run: () => setUnit(undefined) });
+  items.push({
+    label: "Other Unit…",
+    run: () => {
+      closeMenu();
+      startEditing(r.id);
+    },
+  });
+  const box = (e.target as Element).closest(".res")!.getBoundingClientRect();
+  setMenu({ x: box.left, y: box.bottom + 4, items });
+}
+
 const KIND_LABEL: Record<string, string> = {
   plot2d: "2D plot — arrives in phase P4",
   plot3d: "3D plot — arrives in phase P4",
@@ -713,6 +765,13 @@ export function RegionBox(props: RegionProps) {
       onPointerDown={(e) => {
         // inside the region being edited, clicks belong to the editor, not the canvas
         if (editing()) return e.stopPropagation();
+        // a result's unit: pick another one
+        if (e.button === 0 && !e.shiftKey && (e.target as Element).closest?.(".res .u") && state.views[r().id]?.unitChoices?.length) {
+          e.stopPropagation();
+          e.preventDefault();
+          setState({ selection: [r().id], caret: null });
+          return openUnitMenu(e, r());
+        }
         props.onDragStart(r().id, e);
       }}
       onDblClick={(e) =>

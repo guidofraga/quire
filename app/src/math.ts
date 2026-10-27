@@ -144,7 +144,7 @@ export function mathml(input: Expr, result?: Expr | null, units: readonly string
   const parts = [m(input)];
   unitNames = new Set();
   constantNames = new Set();
-  if (result) parts.push(mo("="), m(result));
+  if (result) parts.push(mo("="), `<mrow class="res">${m(result)}</mrow>`);
   return `<math>${row(...parts)}</math>`;
 }
 
