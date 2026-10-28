@@ -1,5 +1,5 @@
 import { createEffect, createRoot, on, onMount, Show } from "solid-js";
-import { reconcile, unwrap } from "solid-js/store";
+import { unwrap } from "solid-js/store";
 import {
   api,
   confirmDiscard,
@@ -57,7 +57,9 @@ import {
   loadDoc,
   localized,
   redo,
+  releaseErrors,
   selectAll,
+  showReport,
   setState,
   state,
   togglePageView,
@@ -85,8 +87,7 @@ function scheduleReport() {
     try {
       const report = await api.report(unwrap(state.doc));
       if (seq !== requestSeq) return;
-      setState("report", report);
-      setState("views", reconcile(Object.fromEntries(report.regions.map((v) => [v.id, v]))));
+      showReport(report);
     } catch (e) {
       flash(String(e));
     } finally {
@@ -94,6 +95,9 @@ function scheduleReport() {
     }
   }, 30);
 }
+
+// whatever an edit held back shows as soon as it ends
+createRoot(() => createEffect(on(() => state.editing, releaseErrors, { defer: true })));
 
 const loadingAssets = new Set<string>();
 
@@ -253,7 +257,7 @@ async function runExportJob(job: { open: string; pdf: string }) {
 }
 
 function nextError() {
-  const errors = (state.report?.regions ?? []).filter((v) => v.error);
+  const errors = Object.values(state.views).filter((v) => v.error);
   if (!errors.length) return;
   const current = errors.findIndex((v) => v.id === state.selection[0]);
   reveal(errors[(current + 1) % errors.length].id);

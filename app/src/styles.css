@@ -361,6 +361,11 @@ math {
   font: 11px -apple-system, system-ui, sans-serif;
 }
 
+/* the line being edited: an error found after a pause is a hint, not an alarm */
+.region.editing .err {
+  color: var(--muted);
+}
+
 .math-input,
 .text-input {
   display: block;

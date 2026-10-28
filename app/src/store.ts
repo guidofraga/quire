@@ -490,8 +490,54 @@ export function editText(r: Region): string {
   return localized(r.text, state.doc.meta?.lang);
 }
 
+// ---------------------------------------------------------------------------
+// Errors wait while you type: `D`, `D:=` and `D/` are unfinished, not wrong. The line
+// being edited shows its error once you pause or press Enter; lines that break only
+// because of the edit keep their last result until the edit ends.
+// ---------------------------------------------------------------------------
+
+const PAUSE_MS = 1500;
+let latest: Report | null = null;
+let typing = false;
+let pauseTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Show an engine report, holding back the errors the edit in progress would cause. */
+export function showReport(report: Report) {
+  latest = report;
+  const editing = state.editing;
+  let hidden = 0;
+  const views = report.regions.map((v): RegionView => {
+    if (!editing || !v.error) return v;
+    if (v.id === editing) {
+      if (!typing) return v;
+      hidden++;
+      return { ...v, error: null, syntaxError: false };
+    }
+    const before = state.views[v.id];
+    if (!before || before.error) return v;
+    hidden++;
+    return structuredClone(unwrap(before));
+  });
+  setState("report", { ...report, errorCount: Math.max(0, report.errorCount - hidden) });
+  setState("views", reconcile(Object.fromEntries(views.map((v) => [v.id, v]))));
+}
+
+/** The edit ended or paused: show what was held back. */
+export function releaseErrors() {
+  clearTimeout(pauseTimer);
+  typing = false;
+  if (latest) showReport(latest);
+}
+
+function typed() {
+  typing = true;
+  clearTimeout(pauseTimer);
+  pauseTimer = setTimeout(releaseErrors, PAUSE_MS);
+}
+
 /** Live update while typing (not an undo step on its own). */
 export function setLive(id: string, text: string) {
+  typed();
   mutate((d) => {
     const r = findDraft(d, id);
     if (!r) return;
