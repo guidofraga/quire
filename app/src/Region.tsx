@@ -30,6 +30,7 @@ import {
   editClickPoint,
   editText,
   findDraft,
+  flash,
   GRID,
   heights,
   layout,
@@ -492,7 +493,8 @@ export function forceUnit(name: string) {
   const input = activeMathInput;
   if (!input) return;
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`(?<![\\p{L}\\p{N}_.'])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
+  // a whole name, also straight after a number (`2g`)
+  const re = new RegExp(`(?<![\\p{L}_.'])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
   const next = input.value.replace(re, `'${name}`);
   if (next === input.value) return;
   input.focus();
@@ -506,10 +508,11 @@ function useVariable(name: string) {
   const input = activeMathInput;
   if (!input) return;
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // a number (or a vector's closing bracket) followed by spaces and the name, as a whole word
-  const re = new RegExp(`([\\p{N}\\]])\\s+${escaped}(?![\\p{L}\\p{N}_.])`, "gu");
+  // a number (or a vector's closing bracket), then the name as a whole word: `10 m`, `10m`
+  const re = new RegExp(`([\\p{N}\\]])\\s*${escaped}(?![\\p{L}\\p{N}_.])`, "gu");
   const next = input.value.replace(re, `$1*${name}`);
-  if (next === input.value) return;
+  // inside a unit (`100 km/h` with a variable h) there is no number to split from
+  if (next === input.value) return flash(`Write *${name} where you mean your variable ${name}`);
   input.focus();
   input.select();
   document.execCommand("insertText", false, next);
