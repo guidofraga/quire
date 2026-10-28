@@ -80,7 +80,9 @@ SwiftUI gives the most native feel, but:
   - Running them as **separate processes over a JSON-RPC pipe** keeps licensing clean and crash isolation free. A Giac crash or a 30-second integral never freezes the UI.
 - ❌ Rejected: **GiNaC** (GPL, C++, no integration either). **Symbolica** (excellent Rust CAS, but its license is source-available/commercial for non-hobby use; re-evaluate if licensing fits). **Pyodide in the WebView** (startup time and memory are too high for a lightweight app).
 
-> ✅ **Licensing decided (provisional):** engine crates are MIT OR Apache-2.0 and use SymEngine. The desktop app is GPL-3.0-or-later, so a `giac` backend crate can link Giac in-process **in the app tier only**. See README.
+> ✅ **Licensing:** engine crates are MIT OR Apache-2.0; the desktop app is GPL-3.0-or-later, so a `giac` backend crate can link Giac in-process **in the app tier only**. See README.
+>
+> **Status (0.1.7):** symbolic math (`→`) ships as a small built-in rewrite engine in `quire-eval` (simplify, expand, `diff`, `int` for common integrands, `solve` up to degree two). SymEngine and the out-of-process backends above remain the plan for heavier work (series, harder integrals, systems).
 
 ### 2.2 Units & dimensional analysis (`quire-units`)
 Generic unit crates (`uom`, `dimensioned`) check units at Rust *compile time*, which is useless for a notebook where users type units at runtime. We build our own:
@@ -160,9 +162,9 @@ The **`quire-cli`** is a first-class deliverable: it lets CI pipelines re-run en
 |---|---|---|
 | **P1 Core** ✅ | `quire-ast` + `quire-units` + `quire-eval` (numeric kernel included) + `quire-doc` + `quire-cli` + SMath importer | **Met:** `quire check` reproduces all 44 SMath results of a real-world report exactly; 689/689 corpus expressions round-trip |
 | **P2 Canvas MVP** ✅ | Tauri shell, free-form canvas, math editor, text regions, images, live evaluation | **Met:** a real report opens, renders, edits, re-evaluates and saves byte-identically. Interim choices: linear-text math input with live 2D preview, MathML rendering (Rust typesetter and structural editor still to come) |
-| **P3 Document** ✅ | Page view, headers/footers, auto numbering, captions, cross-refs, tables, PDF export | **Met:** a real report exports to a 7-page A4 PDF with its cover form, live header/footer fields and keep-together pagination. Interim choice: PDF comes from WebKit's print engine rendering the page view (vector text, selectable), not yet from the Rust typesetter + krilla. Cross-references are still to do |
+| **P3 Document** ✅ | Page view, headers/footers, auto numbering, captions, cross-refs, tables, PDF export | **Met:** a real report exports to a 7-page A4 PDF with its cover form, live header/footer fields and keep-together pagination. Interim choice: PDF comes from WebKit's print engine rendering the page view (vector text, selectable), not yet from the Rust typesetter + krilla. Cross-references followed in 0.1.7 |
 | **P3.5 Editor polish** ✅ | Units without markers, implicit multiplication, word→text typing, rich text (ProseMirror ↔ Djot), format bar, inspector, align/distribute, smart guides, resize, contents lists, clipboard and images | Verified end to end in the browser and through PDF export |
 | **P3.6 Writing math** ✅ | Ribbon v2 (Text / Paragraph / Equation / Arrange), structures and symbols galleries, LaTeX shortcuts with completion, built-in constants, positional unit/constant/variable resolution with hover glossary and disambiguation notes, click-to-edit at the pointer | Verified in the browser, through PDF export and 44/44 SMath results unchanged |
-| **P4 Visualization & data** | 2D/3D plots, CSV/JSON/clipboard import/export, data regions | — |
-| **P5 Symbolic** | `→`, diff/int/solve/series via SymEngine and the CAS plugin | — |
+| **P4 Visualization & data** (in progress) | 2D/3D plots, CSV/JSON/clipboard import/export, data regions | 2D plots done (0.1.7): functions and data, units on the axes, editing on the page, vector PDF. Still to do: 3D plots, file import/export, data regions |
+| **P5 Symbolic** (started) | `→`, diff/int/solve/series via SymEngine and the CAS plugin | `→` with simplify, expand, diff, int and solve (degree ≤ 2) built in (0.1.7). Still to do: series, harder integrals, SymEngine/CAS backends |
 | **P6 Ecosystem** | Plugin API (WASM-sandboxed functions/units), web viewer (core → WASM) | — |

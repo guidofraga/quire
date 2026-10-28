@@ -1,4 +1,4 @@
-# Quire — a modern successor to SMath Studio (design phase)
+# Quire — a modern successor to SMath Studio
 
 | | |
 |---|---|
@@ -14,7 +14,7 @@
 **Writing**
 - **Click anywhere and type.** Math is the default: `L:=2 m` defines L as 2 metres (units need no marker; a variable with the same name always wins). `:` becomes `:=`, a trailing `=` shows the result, Ctrl+G turns the letter before the cursor into Greek.
 - **A word followed by a space becomes text** (`The span…`); typing `:` or `=` right after a single word turns it back into a definition.
-- Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (the `x =` button).
+- Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (⇧⌘M, `\math`, or `$t = $`).
 - **LaTeX shortcuts, Word-style:** `\Delta`, `\varepsilon`, `\therefore`, `\sqrt`, `\int`… convert on space or punctuation, with a completion list as you type. They work in math and in text. Structures insert templates; Tab and ⇧Tab move between their `?` slots.
 - **Equation ribbon:** a Structures gallery (fractions, scripts, radicals, integrals, large operators, calculus, matrices, functions, with typeset previews) and a Symbols library (Greek, operators, arrows, logic and sets, constants, units). Click to insert at the caret.
 - **Results in the units you work in:** with `q := 12 kN/m` and `L := 6 m`, `M := q*L^2/8 =` shows `54 kN·m`, not `54000 J`; stresses come out in MPa once you use MPa, areas in cm² when the dimensions are in cm. Type a unit after `=` to choose it (`M = kgf*m`), as in SMath: typing `=` lists the units that fit with the result in each, and clicking the unit of any result switches it. A unit of another kind keeps the rest in SI (a force shown in `kg` reads `kg·m/s²`). Inspector ▸ Results switches a document back to coherent SI.
@@ -67,15 +67,16 @@ npm --prefix app run tauri build -- --bundles app
 
 To work on the UI in a browser, run `quire serve` (the same backend over localhost) and `npm --prefix app run dev`, then open `http://localhost:5173/?open=<path to a .quire>`.
 
-## Engine (Phase P1 — done)
+## Engine
 
 | Crate | What it does |
 |---|---|
 | [quire-ast](crates/quire-ast) | Linear math syntax: lexer, parser, canonical printer |
 | [quire-units](crates/quire-units) | Dimensions (rational exponents), unit table with SI prefixes, kgf/tonnef/psi/°C… |
-| [quire-eval](crates/quire-eval) | Numeric kernel, built-in functions, `sum`/`int`/`diff`/`for`/`if`, worksheet semantics |
+| [quire-eval](crates/quire-eval) | Numeric kernel, built-in functions, `sum`/`int`/`diff`/`for`/`if`, worksheet semantics, spreadsheet tables, plot sampling and symbolic math (`→`) |
 | [quire-doc](crates/quire-doc) | Loads `.quire` bundles |
-| [quire-cli](crates/quire-cli) | The `quire` command |
+| [quire-service](crates/quire-service) | What the app asks the engine: evaluated views of a document, rendered text, templates |
+| [quire-cli](crates/quire-cli) | The `quire` command, and `quire serve` for working on the UI in a browser |
 
 Installers for Windows (.msi/.exe), Linux (.AppImage/.deb/.rpm) and macOS (.dmg) are built by the **Release** GitHub Actions workflow: push a tag such as `v0.1.0`, or run it from the Actions tab, and it attaches them to a draft release. They aren't code-signed yet, so the first launch shows a warning:
 
