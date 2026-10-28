@@ -2,6 +2,7 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { nameAt, setCaretName, trace } from "./trace";
 import { paletteOpen } from "./Palette";
+import { fillRefs } from "./xref";
 import { DEFAULT_SIZE, editPlot, PlotBody } from "./Plot";
 import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
@@ -83,6 +84,11 @@ function Html(props: { html: string | undefined; class?: string }) {
     el.innerHTML = props.html ?? "";
     applyDjotAttributes(el);
     fillInlineMath(el);
+  });
+  // references follow the numbering without re-rendering the text
+  createEffect(() => {
+    void props.html;
+    fillRefs(el);
   });
   return <div ref={el} class={props.class} />;
 }

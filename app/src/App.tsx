@@ -41,7 +41,9 @@ import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
+import { RefPicker, setRefPickerOpen } from "./RefPicker";
 import { installTrace } from "./trace";
+import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
 import { directPdf, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
@@ -328,6 +330,10 @@ function runCommand(id: string) {
       return insertTable();
     case "insert_plot":
       return insertPlot();
+    case "insert_ref":
+      // a reference goes into text, at the caret
+      if (activeView()) return setRefPickerOpen(true);
+      return flash("Click in text where the reference should go, then choose Insert ▸ Cross-Reference…");
     case "insert_toc":
       return insertContents("headings");
     case "insert_figures":
@@ -407,6 +413,7 @@ function browserShortcuts(e: KeyboardEvent) {
     "'": "next_error",
     f: e.altKey ? "find_replace" : "find",
     m: e.shiftKey ? "insert_math" : "",
+    r: e.shiftKey ? "insert_ref" : "",
     t: e.altKey ? "insert_table" : "",
     "?": "help",
     "/": e.shiftKey ? "help" : "",
@@ -434,6 +441,7 @@ export function App() {
   onMount(async () => {
     installContextMenus(runCommand);
     installTrace();
+    installRefs(reveal);
     // ⌘K from anywhere, the math being edited included (it keeps its keys to itself)
     window.addEventListener(
       "keydown",
@@ -583,6 +591,7 @@ export function App() {
       <SettingsDialog />
       <HelpDialog />
       <Palette runCommand={runCommand} />
+      <RefPicker />
       <TemplatesDialog
         onOpen={async (doc, origin) => {
           if (!(await guardUnsaved())) return false;

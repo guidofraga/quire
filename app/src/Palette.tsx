@@ -46,6 +46,7 @@ const COMMANDS: [string, string, string][] = [
   ["insert_table", "Insert Table", `${mod}${alt}T`],
   ["insert_plot", "Insert Plot", `${mod}${alt}P`],
   ["insert_area", "Insert Area", ""],
+  ["insert_ref", "Insert Cross-Reference…", `${mod}${shift}R`],
   ["insert_toc", "Insert Table of Contents", ""],
   ["insert_figures", "Insert List of Figures", ""],
   ["insert_tables", "Insert List of Tables", ""],

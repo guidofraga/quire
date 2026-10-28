@@ -2655,3 +2655,70 @@ ms.str::after {
   border-radius: 5px;
   background: none;
 }
+
+/* cross-references: plain text on paper, a hint of a link on screen */
+a.xref {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px dotted color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+a.xref:hover {
+  color: var(--accent);
+}
+
+a.xref-missing {
+  color: var(--error);
+  border-bottom-color: var(--error);
+  cursor: default;
+}
+
+.app.printing a.xref {
+  border-bottom: none;
+}
+
+.qref-chip {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: default;
+  user-select: none;
+}
+
+.qref-chip.missing {
+  background: none;
+  color: var(--error);
+  text-decoration: underline wavy;
+}
+
+.ref-styles {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.ref-styles-label {
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ref-style {
+  padding: 2px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: 12px -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.ref-style.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}

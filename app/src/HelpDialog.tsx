@@ -73,6 +73,7 @@ const KEYS: Row[] = [
   [`${mod}D`, "duplicate; in a table, fill down"],
   [`${alt}${mod}T`, "insert a table; paste cells from a spreadsheet"],
   [`${alt}${mod}P`, "insert a plot; with a function selected, plots it"],
+  [`${shift}${mod}R in text`, "cross-reference to a heading, figure or table; renumbers itself"],
   ["Enter / F2, Esc", "edit a table cell / leave the table"],
   [`${shift}${mod}N`, "new from template"],
   [`${shift}${mod}M / ${shift}${mod}T`, "insert math / text"],

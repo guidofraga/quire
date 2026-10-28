@@ -16,7 +16,8 @@ import {
 import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirror-schema-list";
 import { type Command, EditorState, TextSelection } from "prosemirror-state";
 import { EditorView, type NodeView } from "prosemirror-view";
-import { createSignal } from "solid-js";
+import { createEffect, createRoot, createSignal } from "solid-js";
+import { type RefStyle, refStyleOf, refText } from "./xref";
 import { prefs } from "./settings";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
 import { completions, exact, isTemplate, type Sym } from "./symbols";
@@ -87,6 +88,22 @@ export const schema = new Schema({
       attrs: { expr: { default: "" } },
       parseDOM: [{ tag: "span.qmath", getAttrs: (d) => ({ expr: (d as HTMLElement).dataset.expr ?? "" }) }],
       toDOM: (n) => ["span", { class: "qmath-edit" }, n.attrs.expr],
+    },
+    xref: {
+      inline: true,
+      group: "inline",
+      atom: true,
+      attrs: { id: { default: "" }, style: { default: "" } },
+      parseDOM: [
+        {
+          tag: 'a[href^="#ref:"]',
+          getAttrs: (d) => {
+            const a = d as HTMLElement;
+            return { id: a.getAttribute("href")!.slice(5), style: refStyleOf(a) };
+          },
+        },
+      ],
+      toDOM: (n) => ["span", { class: "qref-edit" }, String(n.attrs.id)],
     },
   },
   marks: {
@@ -194,6 +211,8 @@ function inline(node: PMNode): string {
       const expr = String(child.attrs.expr);
       const fence = expr.includes("`") ? "``" : "`";
       out += `$${fence}${expr}${fence}`;
+    } else if (child.type === N.xref) {
+      out += `[](#ref:${child.attrs.id})${child.attrs.style ? `{.${child.attrs.style}}` : ""}`;
     } else if (child.isText) out += wrapMarks(escapeText(child.text ?? ""), child);
   });
   // a block must not start with something Djot reads as list/heading syntax
@@ -337,6 +356,11 @@ export const commands = {
   style: setStyle,
   bulletList: toggleList(N.bullet_list),
   orderedList: toggleList(N.ordered_list),
+  /** A cross-reference to a heading, figure or table, at the caret. */
+  insertRef: (id: string, style: RefStyle): Command => (state, dispatch) => {
+    dispatch?.(state.tr.replaceSelectionWith(N.xref.create({ id, style })).scrollIntoView());
+    return true;
+  },
   insertMath: ((state, dispatch) => {
     const node = N.math.create({ expr: "" });
     dispatch?.(state.tr.replaceSelectionWith(node).scrollIntoView());
@@ -425,6 +449,40 @@ function dollarMath(view: EditorView, from: number, to: number): boolean {
   const tr = view.state.tr.replaceWith(start, to, N.math.create({ expr: m[2].trim() }));
   view.dispatch(tr.setSelection(TextSelection.create(tr.doc, start + 1)).scrollIntoView());
   return true;
+}
+
+/** A cross-reference inside the text being edited: shows what it reads, kept current. */
+class RefChip implements NodeView {
+  dom: HTMLElement;
+  private dispose: () => void;
+
+  constructor(node: PMNode) {
+    this.dom = document.createElement("span");
+    this.dom.className = "qref-chip";
+    this.dom.contentEditable = "false";
+    const id = String(node.attrs.id);
+    const style = node.attrs.style as RefStyle;
+    this.dispose = createRoot((dispose) => {
+      createEffect(() => {
+        const text = refText(id, style);
+        this.dom.textContent = text ?? "missing reference";
+        this.dom.classList.toggle("missing", text === null);
+      });
+      return dispose;
+    });
+  }
+
+  destroy() {
+    this.dispose();
+  }
+
+  stopEvent() {
+    return false;
+  }
+
+  ignoreMutation() {
+    return true;
+  }
 }
 
 class MathChip implements NodeView {
@@ -581,7 +639,7 @@ export function createEditor(host: HTMLElement, content: string | { text: string
   });
   const view = new EditorView(host, {
     state,
-    nodeViews: { math: (node, v, getPos) => new MathChip(node, v, getPos) },
+    nodeViews: { math: (node, v, getPos) => new MathChip(node, v, getPos), xref: (node) => new RefChip(node) },
     handleTextInput: (v, from, to, text) => (text === "$" ? dollarMath(v, from, to) : false),
     handleKeyDown: (v, e) => {
       if (completionKey(e)) return true;

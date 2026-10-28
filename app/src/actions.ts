@@ -283,7 +283,11 @@ export function installContextMenus(run: (command: string) => void) {
     const many = state.selection.length > 1;
     const items: MenuItems = [];
     if (!many && r?.kind === "text" && state.editing === id)
-      items.push({ label: "Insert Math", shortcut: "⇧⌘M", run: go("insert_math") }, null);
+      items.push(
+        { label: "Insert Math", shortcut: "⇧⌘M", run: go("insert_math") },
+        { label: "Insert Cross-Reference…", shortcut: "⇧⌘R", run: go("insert_ref") },
+        null,
+      );
     if (!many && r && isSheet(r) && state.editing === id) items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
     else if (!many && r?.kind === "plot2d") items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))

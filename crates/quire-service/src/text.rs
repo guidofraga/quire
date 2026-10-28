@@ -142,6 +142,15 @@ mod tests {
     }
 
     #[test]
+    fn cross_references_are_empty_fragment_links() {
+        assert_eq!(render_djot("See [](#ref:b12b)."), "<p>See <a href=\"#ref:b12b\"></a>.</p>\n");
+        assert_eq!(
+            render_djot("on [](#ref:t1){.page}"),
+            "<p>on <a href=\"#ref:t1\" class=\"page\"></a></p>\n"
+        );
+    }
+
+    #[test]
     fn inline_math_becomes_live_placeholders() {
         let src = "*$`C := 5.1 'm`  X $`L := 2 'm =`*";
         assert_eq!(super::inline_math(src), ["C := 5.1 'm", "L := 2 'm ="]);

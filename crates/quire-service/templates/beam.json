@@ -11,7 +11,7 @@
   },
   "regions": [
     { "id": "b00", "kind": "text", "at": [0, 0], "text": "{.title}\n# Simply supported steel beam" },
-    { "id": "b01", "kind": "text", "at": [0, 54], "width": 640, "text": "Bending and deflection of a simply supported beam under a uniform load. Change the data and everything below follows." },
+    { "id": "b01", "kind": "text", "at": [0, 54], "width": 640, "text": "Bending and deflection of a simply supported beam under a uniform load. Change the data and everything below follows: the bending moment is plotted in [](#ref:b12b) and the checks are summarised in [](#ref:b17)." },
     { "id": "b02", "kind": "text", "at": [0, 108], "text": "# Data" },
     { "id": "b03", "kind": "math", "at": [0, 144], "expr": "L:=6 m", "note": "span" },
     { "id": "b04", "kind": "math", "at": [0, 180], "expr": "E:=210 GPa" },

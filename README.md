@@ -41,6 +41,7 @@
 **Document**
 - **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. **Canvas** is the free, endless sheet.
 - Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
+- **Cross-references** (Insert ▸ Cross-Reference…, ⇧⌘R, while writing text): "see Figure 2", "Table 1", "Section 2.1" or "page 4", renumbered as the document changes; click one to go there.
 - **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
 - **File ▸ Export as PDF…** (⌘E) writes exactly the page view with selectable text; on Windows and Linux it opens the system print dialog, where you choose Save as PDF / Print to File. Images are embedded at the resolution set in Settings ▸ PDF export. **Print…** (⌘P) opens the print dialog.
 - **Templates:** File ▸ New from Template… (⇧⌘N) starts from a calculation report, a beam check or a load-combination sheet, or from your own: File ▸ Save as Template… keeps page setup, headers, styles, regions and images.
