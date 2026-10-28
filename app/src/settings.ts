@@ -4,6 +4,7 @@ import { createStore } from "solid-js/store";
 import type { Doc } from "./types";
 
 export type Theme = "system" | "light" | "dark";
+export type CanvasPattern = "dots" | "grid" | "lines" | "plain";
 
 export interface Prefs {
   theme: Theme;
@@ -13,6 +14,10 @@ export interface Prefs {
   nameNotes: boolean;
   /** Unit fractions on one line (`80 km/h`), in math and results. */
   flatUnits: boolean;
+  /** The free canvas's background. */
+  canvasPattern: CanvasPattern;
+  /** On the free canvas, show the printable column and where pages break. */
+  pageBreaks: boolean;
   /** Hover explanations for units and constants. */
   tooltips: boolean;
   /** Enter / Backspace on empty space open or close a line, moving what is below. */
@@ -35,6 +40,8 @@ const DEFAULTS: Prefs = {
   latex: true,
   nameNotes: true,
   flatUnits: true,
+  canvasPattern: "dots",
+  pageBreaks: true,
   tooltips: true,
   shiftContent: true,
   exportDpi: 300,

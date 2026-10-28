@@ -56,6 +56,8 @@ const COMMANDS: [string, string, string][] = [
   ["zoom_in", "Zoom In", `${mod}=`],
   ["zoom_out", "Zoom Out", `${mod}-`],
   ["zoom_reset", "Actual Size", `${mod}0`],
+  ["zoom_fit_width", "Zoom to Width", ""],
+  ["zoom_fit_page", "Zoom to Page", ""],
   ["next_error", "Next Error", `${mod}'`],
   ["help", "Quire Help", isMac ? "⌘?" : "F1"],
   ["check_updates", "Check for Updates…", ""],

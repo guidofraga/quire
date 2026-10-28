@@ -332,6 +332,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "zoom_in", "Zoom In", Some("CmdOrCtrl+="))?,
             &item(app, "zoom_out", "Zoom Out", Some("CmdOrCtrl+-"))?,
             &item(app, "zoom_reset", "Actual Size", Some("CmdOrCtrl+0"))?,
+            &item(app, "zoom_fit_width", "Zoom to Width", None)?,
+            &item(app, "zoom_fit_page", "Zoom to Page", None)?,
             &sep()?,
             &item(app, "next_error", "Next Error", Some("CmdOrCtrl+'"))?,
             &sep()?,

@@ -40,7 +40,7 @@
 - When a result grows (a fraction, a matrix, an error note), what is below it moves down instead of being covered.
 
 **Document**
-- **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. **Canvas** is the free, endless sheet.
+- **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. Pages stay centred and in view, with "Page 2 of 5" while you scroll. **Canvas** is the free, endless sheet: it shows the printable width and where pages will break (exactly as in the page view and the PDF), has a dots, grid, ruled or plain background (Settings ▸ Appearance), and offers a way back when you scroll off into empty space. Switching views keeps your place; click the zoom percentage for common sizes, Fit Page Width and Fit Whole Page.
 - Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
 - **Cross-references** (Insert ▸ Cross-Reference…, ⇧⌘R, while writing text): "see Figure 2", "Table 1", "Section 2.1" or "page 4", renumbered as the document changes; click one to go there.
 - **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).

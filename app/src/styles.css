@@ -179,9 +179,28 @@ body {
   flex: 1;
   overflow: hidden;
   background-color: var(--paper);
-  background-image: radial-gradient(circle, var(--grid) 0.9px, transparent 1.1px);
   cursor: default;
   color: var(--ink);
+}
+
+/* the free canvas's background (Settings ▸ Appearance) */
+.viewport.pattern-dots {
+  background-image: radial-gradient(circle, var(--grid) 0.9px, transparent 1.1px);
+}
+
+/* lines read stronger than dots of the same colour */
+.viewport.pattern-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--grid) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--grid) 70%, transparent) 1px, transparent 1px);
+}
+
+.viewport.pattern-lines {
+  background-image: linear-gradient(transparent calc(100% - 1px), color-mix(in srgb, var(--grid) 70%, transparent) calc(100% - 1px));
+}
+
+.viewport.pattern-plain {
+  background-image: none;
 }
 
 .viewport.panning,
@@ -196,19 +215,38 @@ body {
   transform-origin: 0 0;
 }
 
-.page-break {
+/* the free canvas: the printable column and where pages break, as in the page view and PDF */
+.page-column {
   position: absolute;
+  top: 0;
   left: 0;
-  border-top: 1px dashed #c4cad3;
+  border-right: 1px dashed color-mix(in srgb, var(--accent) 22%, transparent);
   pointer-events: none;
 }
 
-.page-break span {
+.page-break {
   position: absolute;
-  right: -64px;
-  top: -8px;
-  font-size: 10px;
-  color: #9aa3af;
+  left: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  pointer-events: none;
+}
+
+/* to the right of the printable column, in what is the page's margin */
+.page-label {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: -9px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  font: 10px -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.app.printing .page-column,
+.app.printing .page-break {
+  display: none;
 }
 
 .caret {
@@ -2919,5 +2957,40 @@ a.xref-missing {
 }
 
 .app.printing .update-banner {
+  display: none;
+}
+
+/* "Page 2 of 5" while scrolling pages; the way back from empty canvas */
+.view-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 5;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 14px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  font: 12px -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.page-hint {
+  pointer-events: none;
+  animation: fade-in 120ms ease-out;
+}
+
+.back-to-doc {
+  cursor: pointer;
+}
+
+.back-to-doc:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app.printing .view-pill {
   display: none;
 }

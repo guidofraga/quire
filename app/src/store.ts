@@ -202,7 +202,7 @@ export interface Layout {
 
 const DEFAULT_HEIGHT = 22;
 
-function computeLayout(doc: Doc, measured: Record<string, number>, pageView: boolean, printing: boolean): Layout {
+export function computeLayout(doc: Doc, measured: Record<string, number>, pageView: boolean, printing: boolean): Layout {
   const list: Placed[] = [];
   const walk = (regions: Region[], ox: number, oy: number, parent: Region | null, hidden: boolean) => {
     for (const r of regions) {
@@ -307,6 +307,11 @@ function computeLayout(doc: Doc, measured: Record<string, number>, pageView: boo
 
 export const layout = createRoot(() =>
   createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing)),
+);
+
+/** How the document falls into pages, also while it is shown as a free canvas. */
+export const pagedLayout = createRoot(() =>
+  createMemo(() => (isPageView() ? layout() : computeLayout(state.doc, heights, true, false))),
 );
 
 export function contentBottom(): number {

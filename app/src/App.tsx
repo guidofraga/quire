@@ -27,7 +27,7 @@ import {
   onCopy,
   onPaste,
 } from "./actions";
-import { Canvas, clientToDoc, reveal, zoomCenter } from "./Canvas";
+import { Canvas, clientToDoc, reveal, zoomCenter, zoomToFit } from "./Canvas";
 import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
@@ -42,6 +42,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
+import { closeMenu, setMenu } from "./menu";
 import { PagePopover } from "./Popover";
 import { checkForUpdates, UpdateBanner } from "./Updates";
 import { installTrace } from "./trace";
@@ -267,6 +268,26 @@ async function runExportJob(job: { open: string; pdf: string }) {
   }
 }
 
+/** The toolbar's zoom percentage: common sizes, and fitting the page to the window. */
+function openZoomMenu(e: MouseEvent) {
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const to = (z: number) => () => (closeMenu(), zoomCenter(z / state.view.zoom));
+  const pages = layout().pageView;
+  setMenu({
+    x: box.right - 180,
+    y: box.bottom + 4,
+    items: [
+      ...[50, 75, 100, 125, 150, 200].map((p) => ({ label: `${p}%`, checked: Math.round(state.view.zoom * 100) === p, run: to(p / 100) })),
+      null,
+      { label: pages ? "Fit Page Width" : "Fit Printable Width", run: () => (closeMenu(), zoomToFit("width")) },
+      ...(pages ? [{ label: "Fit Whole Page", run: () => (closeMenu(), zoomToFit("page")) }] : []),
+      null,
+      { label: "Zoom In", shortcut: "⌘=", run: () => (closeMenu(), zoomCenter(1.2)) },
+      { label: "Zoom Out", shortcut: "⌘-", run: () => (closeMenu(), zoomCenter(1 / 1.2)) },
+    ],
+  });
+}
+
 function nextError() {
   const errors = Object.values(state.views).filter((v) => v.error);
   if (!errors.length) return;
@@ -393,6 +414,10 @@ function runCommand(id: string) {
       return zoomCenter(1 / 1.2);
     case "zoom_reset":
       return zoomCenter("reset");
+    case "zoom_fit_width":
+      return zoomToFit("width");
+    case "zoom_fit_page":
+      return zoomToFit("page");
     case "next_error":
       return nextError();
     case "page_view":
@@ -584,7 +609,7 @@ export function App() {
               <path d="M10 2.5v11" />
             </svg>
           </button>
-          <button class="zoom" onClick={() => zoomCenter("reset")} title="Actual size (⌘0)">
+          <button class="zoom" onClick={(e) => openZoomMenu(e)} title="Zoom">
             {Math.round(state.view.zoom * 100)}%
           </button>
         </div>

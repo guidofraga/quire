@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
 import { openRegionMenu } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping, RegionBox } from "./Region";
@@ -14,6 +14,7 @@ import {
   GRID,
   insertAtCaret,
   LINE,
+  pagedLayout,
   shiftBelow,
   returnToLeftBox,
   type Placed,
@@ -21,7 +22,6 @@ import {
   moveTo,
   nudge,
   originsOf,
-  PAGE_WIDTH,
   heights,
   setRevealHandler,
   widths,
@@ -52,6 +52,54 @@ export function zoomCenter(factor: number | "reset") {
   const rect = viewportEl.getBoundingClientRect();
   const f = factor === "reset" ? 1 / state.view.zoom : factor;
   zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 3, f);
+}
+
+/** Room around the pages in page view. */
+const PAGE_PAD = 32;
+
+const [viewportSize, setViewportSize] = createSignal({ w: 0, h: 0 });
+
+/** The page view's pages, stacked: width and height in scene px. */
+function pagesExtent() {
+  const l = layout();
+  return { w: l.geom.paperW, h: l.pages * (l.geom.paperH + SHEET_GAP) - SHEET_GAP };
+}
+
+/**
+ * Page view: the pages centred while they fit across the window, and never scrolled off;
+ * the free canvas goes on in every direction.
+ */
+function clampView(v: { x: number; y: number; zoom: number }) {
+  const { w, h } = viewportSize();
+  if (!layout().pageView || !w) return v;
+  const e = pagesExtent();
+  const sw = e.w * v.zoom;
+  const sh = e.h * v.zoom;
+  const within = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+  return {
+    ...v,
+    x: sw + 2 * PAGE_PAD <= w ? (w - sw) / 2 : within(v.x, w - sw - PAGE_PAD, PAGE_PAD),
+    y: sh + 2 * PAGE_PAD <= h ? PAGE_PAD : within(v.y, h - sh - PAGE_PAD, PAGE_PAD),
+  };
+}
+
+/** View ▸ Zoom to Width / Zoom to Page: the page (or the canvas's printable column) fills the window. */
+export function zoomToFit(kind: "width" | "page") {
+  const { w, h } = viewportSize();
+  if (!w) return;
+  const l = layout();
+  const { zoom, y } = state.view;
+  const width = l.pageView ? l.geom.paperW : l.geom.contentW + 96;
+  let z = (w - 2 * PAGE_PAD) / width;
+  if (kind === "page" && l.pageView) z = Math.min(z, (h - 2 * PAGE_PAD) / l.geom.paperH);
+  z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+  // keep the same part of the document at the top of the window
+  let top = -y / zoom;
+  if (kind === "page" && l.pageView) {
+    const stride = l.geom.paperH + SHEET_GAP;
+    top = Math.round(Math.max(0, top + h / 3 / zoom) / stride - 0.5) * stride;
+  }
+  setState("view", { zoom: z, x: l.pageView ? 0 : 48 * z, y: (kind === "page" && l.pageView ? PAGE_PAD : 0) - top * z });
 }
 
 /** A window point in document coordinates (for drops). */
@@ -178,24 +226,6 @@ function smartSnap(ids: Set<string>, origins: Map<string, [number, number]>, dx:
   return { dx: bestX ? dx + bestX.d : null, dy: bestY ? dy + bestY.d : null };
 }
 
-/** Paper size in px (96/in) from the document's page settings, for page-break guides. */
-function pageContentHeight(): number | null {
-  const page = state.doc.page;
-  if (!page) return null;
-  const toPx = (v: string | number | undefined, fallback: number) => {
-    if (typeof v === "number") return v;
-    const m = /^([\d.]+)(mm|cm|in|pt|px)?$/.exec(v ?? "");
-    if (!m) return fallback;
-    const n = parseFloat(m[1]);
-    return { mm: (n * 96) / 25.4, cm: (n * 96) / 2.54, in: n * 96, pt: (n * 96) / 72, px: n }[m[2] ?? "px"] ?? fallback;
-  };
-  const heights: Record<string, number> = { A4: 297, A3: 420, A5: 210, Letter: 279.4, Legal: 355.6 };
-  const paperH =
-    typeof page.paper === "string" ? ((heights[page.paper] ?? 297) * 96) / 25.4 : toPx(page.paper?.[1], 1122.5);
-  const h = paperH - toPx(page.margins?.top, 96) - toPx(page.margins?.bottom, 96);
-  return h > 100 ? h : null;
-}
-
 export function Canvas() {
   const [marquee, setMarquee] = createSignal<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [panning, setPanning] = createSignal(false);
@@ -232,13 +262,20 @@ export function Canvas() {
     return [(cx - rect.left - state.view.x) / state.view.zoom, (cy - rect.top - state.view.y) / state.view.zoom];
   };
 
+  // canvas view: where each page starts, from the same layout as the page view and the
+  // PDF (keep-together pushes included), and the printable column they share
   const pageBreaks = createMemo(() => {
-    if (layout().pageView) return [];
-    const h = pageContentHeight();
-    if (!h) return [];
-    const count = Math.max(1, Math.ceil(contentBottom() / h));
-    return Array.from({ length: count }, (_, i) => (i + 1) * h);
+    const l = layout();
+    if (l.pageView || !prefs.pageBreaks || !state.doc.page) return [];
+    const paged = pagedLayout();
+    const starts: number[] = [];
+    for (let k = 1; k < paged.pages; k++) {
+      const first = paged.list.filter((p) => p.page === k && !p.hidden && !p.parent).sort((a, b) => a.y - b.y)[0];
+      if (first) starts.push(l.toScene(0, first.y)[1] - GRID);
+    }
+    return starts;
   });
+  const columnHeight = () => Math.max(contentBottom(), pageBreaks().at(-1) ?? 0) + layout().geom.contentH / 3;
 
   function startPan(e: PointerEvent) {
     const start = { x: e.clientX, y: e.clientY, vx: state.view.x, vy: state.view.y };
@@ -438,6 +475,72 @@ export function Canvas() {
     return byPage;
   });
 
+  // the window's size, for centring pages and fitting the zoom
+  onMount(() => {
+    const ro = new ResizeObserver(() => setViewportSize({ w: viewportEl!.clientWidth, h: viewportEl!.clientHeight }));
+    ro.observe(viewportEl!);
+    onCleanup(() => ro.disconnect());
+  });
+  createEffect(() => {
+    const v = state.view;
+    const c = clampView(v);
+    if (c.x !== v.x || c.y !== v.y) setState("view", { x: c.x, y: c.y });
+  });
+
+  // switching between pages and canvas keeps what was in front of you in place
+  createEffect(
+    on(layout, (l, prev) => {
+      if (!prev || prev.pageView === l.pageView) return;
+      const { w, h } = viewportSize();
+      const { x, y, zoom } = state.view;
+      const doc = prev.fromScene((w / 2 - x) / zoom, (h / 3 - y) / zoom);
+      const [sx, sy] = l.toScene(doc[0], doc[1]);
+      setState("view", { x: w / 2 - sx * zoom, y: h / 3 - sy * zoom });
+    }),
+  );
+
+  // page view: "Page 2 of 5" while scrolling
+  const [pageHint, setPageHint] = createSignal<string | null>(null);
+  let hintTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(
+      () => [state.view.y, state.view.zoom] as const,
+      () => {
+        const l = layout();
+        // the spare blank page shown while editing doesn't count
+        const total = l.pages - (state.printing ? 0 : 1);
+        if (!l.pageView || total < 2) return;
+        const middle = (viewportSize().h / 2 - state.view.y) / state.view.zoom;
+        const k = Math.min(total, Math.max(1, Math.floor(middle / (l.geom.paperH + SHEET_GAP)) + 1));
+        setPageHint(`Page ${k} of ${total}`);
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => setPageHint(null), 1200);
+      },
+      { defer: true },
+    ),
+  );
+
+  // the free canvas: a way back after panning off into empty space
+  const contentTop = () => Math.min(...layout().list.filter((p) => !p.hidden).map((p) => p.top));
+  const lost = createMemo(() => {
+    const l = layout();
+    const { w, h } = viewportSize();
+    if (l.pageView || !w) return false;
+    const visible = l.list.filter((p) => !p.hidden);
+    if (!visible.length) return false;
+    const { x, y, zoom } = state.view;
+    const [vx0, vy0, vx1, vy1] = [-x / zoom, -y / zoom, (w - x) / zoom, (h - y) / zoom];
+    return !visible.some((p) => {
+      const pw = widths[p.region.id] ?? 40;
+      const ph = heights[p.region.id] ?? 20;
+      return p.left < vx1 && p.left + pw > vx0 && p.top < vy1 && p.top + ph > vy0;
+    });
+  });
+  const backToDocument = () => {
+    const z = state.view.zoom;
+    setState("view", { x: 48, y: 24 - contentTop() * z });
+  };
+
   const caretScene = () => (state.caret ? layout().toScene(state.caret[0], state.caret[1]) : null);
 
   const gridStyle = () => {
@@ -454,7 +557,7 @@ export function Canvas() {
     <div
       ref={viewportEl}
       class="viewport"
-      classList={{ panning: panning(), "page-view": layout().pageView }}
+      classList={{ panning: panning(), "page-view": layout().pageView, [`pattern-${prefs.canvasPattern}`]: !layout().pageView }}
       style={gridStyle()}
       onPointerDown={onBackgroundDown}
       onScroll={(e) => {
@@ -477,10 +580,17 @@ export function Canvas() {
         class="scene"
         style={sceneStyle()}
       >
+        <Show when={!layout().pageView && prefs.pageBreaks && state.doc.page}>
+          <div class="page-column" style={{ width: `${layout().geom.contentW}px`, height: `${columnHeight()}px` }}>
+            <span class="page-label" style={{ top: "0px" }}>
+              Page 1
+            </span>
+          </div>
+        </Show>
         <For each={pageBreaks()}>
           {(y, i) => (
-            <div class="page-break" style={{ top: `${y}px`, width: `${PAGE_WIDTH}px` }}>
-              <span>page {i() + 2}</span>
+            <div class="page-break" style={{ top: `${y}px`, width: `${layout().geom.contentW}px` }}>
+              <span class="page-label">Page {i() + 2}</span>
             </div>
           )}
         </For>
@@ -517,6 +627,14 @@ export function Canvas() {
           onCompositionEnd={takeSink}
         />
       </div>
+      <Show when={pageHint()}>
+        <div class="view-pill page-hint">{pageHint()}</div>
+      </Show>
+      <Show when={lost()}>
+        <button class="view-pill back-to-doc" onPointerDown={(e) => e.stopPropagation()} onClick={backToDocument}>
+          ↖ Back to your document
+        </button>
+      </Show>
       <Show when={marquee()}>
         {(m) => {
           const rect = () => viewportEl!.getBoundingClientRect();

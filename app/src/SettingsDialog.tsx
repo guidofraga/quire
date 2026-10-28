@@ -2,7 +2,7 @@
 import { onCleanup, onMount, Show } from "solid-js";
 import { directPdf } from "./export";
 import { Check, Field, LANGS, Num, Section, Select, Text } from "./Inspector";
-import { type Prefs, prefs, resetPrefs, setPref, setSettingsOpen, settingsOpen, type Theme } from "./settings";
+import { type CanvasPattern, type Prefs, prefs, resetPrefs, setPref, setSettingsOpen, settingsOpen, type Theme } from "./settings";
 
 const PAPERS: [string, string][] = ["A4", "A3", "A5", "Letter", "Legal"].map((p) => [p, p]);
 
@@ -49,6 +49,19 @@ function Dialog() {
               />
             </Field>
             <Check checked={prefs.flatUnits} label="Write units on one line (80 km/h, not a fraction)" onChange={toggle("flatUnits")} />
+            <Field label="Canvas background">
+              <Select<CanvasPattern>
+                value={prefs.canvasPattern}
+                options={[
+                  ["dots", "Dots"],
+                  ["grid", "Grid"],
+                  ["lines", "Ruled lines"],
+                  ["plain", "Plain"],
+                ]}
+                onChange={(v) => setPref("canvasPattern", v)}
+              />
+            </Field>
+            <Check checked={prefs.pageBreaks} label="Show page breaks on the canvas" onChange={toggle("pageBreaks")} />
           </Section>
           <Section title="Editing">
             <Check checked={prefs.latex} label="Convert LaTeX names as you type (\alpha → α)" onChange={toggle("latex")} />
