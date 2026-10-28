@@ -169,7 +169,7 @@ fn join(num: String, unit: &str) -> String {
 
 /// Coherent SI spelling for a dimension: a named unit (N, Pa, J…), a named unit
 /// times a power of metres (N*m, N/m), or base units.
-fn si_unit(dim: Dim) -> String {
+pub(crate) fn si_unit(dim: Dim) -> String {
     let named = UnitRegistry::named_si();
     if let Some((n, _)) = named.iter().find(|(_, d)| *d == dim) {
         return format!("'{n}");

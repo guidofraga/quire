@@ -72,6 +72,7 @@ const KEYS: Row[] = [
   [`${mod}'`, "next error"],
   [`${mod}D`, "duplicate; in a table, fill down"],
   [`${alt}${mod}T`, "insert a table; paste cells from a spreadsheet"],
+  [`${alt}${mod}P`, "insert a plot; with a function selected, plots it"],
   ["Enter / F2, Esc", "edit a table cell / leave the table"],
   [`${shift}${mod}N`, "new from template"],
   [`${shift}${mod}M / ${shift}${mod}T`, "insert math / text"],

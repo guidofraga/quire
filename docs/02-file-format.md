@@ -233,6 +233,17 @@ A spreadsheet table runs in reading order with the math regions:
   "legend": "top-right"
 }
 ```
+
+| Field | Notes |
+|---|---|
+| `series[].y` | What is plotted: an expression in the variable (`M(x)`), or, without a `range`, a vector of values (data). |
+| `series[].x` | With a `range`: the variable's name (default `x`). Without: a vector of x values (default 1, 2, 3…). |
+| `series[].range` | `start..end`; the expression is sampled at 241 evenly spaced points. A point that fails to evaluate is a gap in the line. |
+| `axes.x` / `axes.y` | `unit` (otherwise the units the document works in, as for results), `label`, `min`, `max`. |
+| `extrema` | `true` marks and labels each series' maximum and minimum. |
+
+Series are evaluated where the plot sits in reading order, so they see the definitions above it. All series share one y axis, so they must have the same kind of unit.
+
 `plot3d` adds `surface: "f(x, y)"` (or `parametric: [x(u,v), y(u,v), z(u,v)]`), `x`/`y` ranges and a `camera: { "azimuth": 30, "elevation": 25, "distance": 3 }` that is saved when the user stops orbiting.
 
 ### 4.8 `data` (CSV / JSON import)

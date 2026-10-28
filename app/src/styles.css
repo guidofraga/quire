@@ -2482,3 +2482,177 @@ ms.str::after {
   padding: 14px;
   color: var(--muted);
 }
+
+/* 2D plots: drawn on the page, so ink colours stay those of paper in either theme */
+.plot {
+  position: relative;
+  font: 11px -apple-system, system-ui, sans-serif;
+  color: #3d3d3a;
+}
+
+.plot svg {
+  display: block;
+  overflow: visible;
+}
+
+.plot-grid line {
+  stroke: #e6e5e1;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.plot-axis line {
+  stroke: #9b9a95;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.plot-axis line.zero {
+  stroke: #b9b8b3;
+}
+
+.plot-ticks text {
+  fill: #52514e;
+  font-variant-numeric: tabular-nums;
+}
+
+.plot-titles text {
+  fill: #3d3d3a;
+  font-size: 11.5px;
+}
+
+.plot-line {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.plot-dot,
+.plot-extremum circle,
+.plot-hover circle {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.plot-extremum text {
+  fill: #0b0b0b;
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.plot-hover line {
+  stroke: #9b9a95;
+  stroke-width: 1;
+}
+
+.plot-legend {
+  position: absolute;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #0b0b0b;
+  pointer-events: none;
+}
+
+.plot-key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 16px;
+}
+
+.plot-swatch {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.plot-tip {
+  position: absolute;
+  z-index: 2;
+  min-width: 120px;
+  padding: 6px 8px;
+  border: 1px solid #dddcd7;
+  border-radius: 6px;
+  background: #fff;
+  color: #0b0b0b;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.plot-tip-x {
+  margin-bottom: 3px;
+  color: #52514e;
+}
+
+.plot-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 17px;
+}
+
+.plot-tip-name {
+  flex: 1;
+}
+
+.plot-tip-val {
+  margin-left: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.plot-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #8a8984;
+}
+
+.plot-figure {
+  margin: 0;
+}
+
+.app.printing .plot-tip,
+.app.printing .plot-hover {
+  display: none;
+}
+
+.insp-sub.plot-series .insp-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.insp-mini {
+  margin-left: auto;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.insp-mini:hover {
+  color: var(--chrome-ink);
+}
+
+.insp-add {
+  margin: 4px 0 10px;
+}
+
+.insp-color {
+  width: 100%;
+  height: 26px;
+  padding: 0 2px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 5px;
+  background: none;
+}

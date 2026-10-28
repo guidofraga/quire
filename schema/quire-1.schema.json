@@ -72,6 +72,15 @@
     "regions": { "$ref": "#/$defs/regionList" }
   },
   "$defs": {
+    "plotAxis": {
+      "type": "object",
+      "properties": {
+        "unit": { "type": "string" },
+        "label": { "type": "string" },
+        "min": { "type": "number" },
+        "max": { "type": "number" }
+      }
+    },
     "length": {
       "oneOf": [
         { "type": "number" },
@@ -270,8 +279,15 @@
               },
               "surface": { "type": "string" },
               "parametric": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
-              "axes": { "type": ["boolean", "object"] },
+              "axes": {
+                "type": ["boolean", "object"],
+                "properties": {
+                  "x": { "$ref": "#/$defs/plotAxis" },
+                  "y": { "$ref": "#/$defs/plotAxis" }
+                }
+              },
               "grid": { "type": "boolean" },
+              "extrema": { "type": "boolean" },
               "legend": { "enum": ["none", "top-left", "top-right", "bottom-left", "bottom-right"] },
               "render": { "type": "string" },
               "camera": {

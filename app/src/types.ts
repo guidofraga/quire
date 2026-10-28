@@ -41,6 +41,17 @@ export interface RegionView {
   unitChoices?: UnitChoice[];
   /** A one-click repair for `error`. */
   fix?: Fix;
+  /** A 2D plot's series, in its axis units. */
+  plot?: PlotView;
+}
+
+/** quire_service::PlotView */
+export interface PlotView {
+  /** Axis units (`kN*m`); empty for plain numbers. */
+  xUnit: string;
+  yUnit: string;
+  /** `null` marks a gap (a point that could not be computed). */
+  series: { xs: (number | null)[]; ys: (number | null)[]; error: string | null }[];
 }
 
 /** quire_service::FixView */

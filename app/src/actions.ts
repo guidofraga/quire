@@ -267,6 +267,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Text", run: go("insert_text") },
         { label: "Insert Image…", run: go("insert_image") },
         { label: "Insert Table", run: go("insert_table") },
+        { label: "Insert Plot", run: go("insert_plot") },
         { label: "Insert Area", run: go("insert_area") },
         null,
         { label: "Table of Contents", run: go("insert_toc") },
@@ -320,7 +321,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Exclude from Calculation", checked: !!r.disabled, run: () => (closeMenu(), updateRegion(id, { disabled: r.disabled ? undefined : true })) },
         null,
       );
-    } else if (r && ["image", "table"].includes(r.kind)) {
+    } else if (r && ["image", "table", "plot2d"].includes(r.kind)) {
       items.push(
         {
           label: r.caption ? "Remove Caption" : "Add Caption",

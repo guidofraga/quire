@@ -3,6 +3,7 @@ import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEdi
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { type Background, PX_PER_MM, toPx } from "./pages";
 import { commitEditing, layout, localized, state, updateDoc, updateRegion } from "./store";
+import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import type { Doc, Region } from "./types";
 
 type Tab = "region" | "document" | "page";
@@ -177,7 +178,7 @@ function RegionTab() {
     >
       {(r) => (
         <>
-          <Section title={{ math: "Math", text: "Text", image: "Image", table: "Table", area: "Area", toc: "Contents" }[r().kind] ?? r().kind}>
+          <Section title={{ math: "Math", text: "Text", image: "Image", table: "Table", area: "Area", toc: "Contents", plot2d: "Plot" }[r().kind] ?? r().kind}>
             <div class="insp-row">
               <Field label="X">
                 <Num value={r().at[0]} onCommit={(v) => updateRegion(r().id, { at: [v ?? 0, r().at[1]] })} />
@@ -317,6 +318,17 @@ function RegionTab() {
                   <Num value={r().height} onCommit={(v) => updateRegion(r().id, { height: v })} />
                 </Field>
                 <Check checked={!!r().collapsed} label="Collapsed" onChange={(on) => updateRegion(r().id, { collapsed: on || undefined })} />
+              </Match>
+              <Match when={r().kind === "plot2d"}>
+                <div class="insp-row">
+                  <Field label="Width">
+                    <Num value={(r().size ?? DEFAULT_SIZE)[0]} onCommit={(v) => v && updateRegion(r().id, { size: [v, (r().size ?? DEFAULT_SIZE)[1]] })} />
+                  </Field>
+                  <Field label="Height">
+                    <Num value={(r().size ?? DEFAULT_SIZE)[1]} onCommit={(v) => v && updateRegion(r().id, { size: [(r().size ?? DEFAULT_SIZE)[0], v] })} />
+                  </Field>
+                </div>
+                <PlotFields r={r()} />
               </Match>
               <Match when={r().kind === "toc"}>
                 <Field label="Lists">

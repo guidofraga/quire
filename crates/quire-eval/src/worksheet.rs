@@ -6,8 +6,14 @@ use quire_units::{Unit, UnitRegistry};
 use crate::error::{EvalError, Result, bail};
 use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value_in};
 use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, set_element};
+use crate::plot::{Axis, PlotInput, PlotOutcome, Sampled, SeriesOutcome};
 use crate::sheet::{CellOutcome, TableInput, cell_label};
 use crate::value::Value;
+
+/// SI spelling of a dimension without unit markers (`N*m`).
+fn si_text(dim: quire_units::Dim) -> String {
+    crate::format::si_unit(dim).replace('\'', "")
+}
 
 /// One math region, already in document (reading) order.
 #[derive(Debug, Clone)]
@@ -19,6 +25,8 @@ pub struct MathInput {
     pub display: DisplaySpec,
     /// A spreadsheet table instead of an expression (`expr` is then unused).
     pub table: Option<TableInput>,
+    /// A 2D plot instead of an expression (`expr` is then unused).
+    pub plot: Option<PlotInput>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +48,10 @@ pub struct Outcome {
     pub cells: Vec<Vec<CellOutcome>>,
     /// What would fix `error`, when the engine can tell.
     pub fix: Option<Fix>,
+    /// A plot's series, in its axis units.
+    pub plot: Option<PlotOutcome>,
+    /// A plot's samples in SI, kept until its axis units are chosen.
+    samples: Vec<std::result::Result<Sampled, String>>,
 }
 
 /// A one-click repair for an error.
@@ -64,6 +76,8 @@ impl Outcome {
             shadowing: Vec::new(),
             cells: Vec::new(),
             fix: None,
+            plot: None,
+            samples: Vec::new(),
         }
     }
 }
@@ -257,6 +271,8 @@ impl Worksheet {
         for (i, r) in regions.iter().enumerate() {
             if let Some(t) = &r.table {
                 out[i] = Some(self.step_table(r, t));
+            } else if let Some(p) = &r.plot {
+                out[i] = Some(self.step_plot(r, p));
             } else if out[i].is_none() {
                 out[i] = Some(match &parsed[i] {
                     Ok(e) => self.step(r, e),
@@ -336,6 +352,15 @@ impl Worksheet {
             let mut n = Vec::new();
             if let Some(t) = &r.table {
                 n = crate::sheet::reads(t, &self.units);
+            } else if let Some(p) = &r.plot {
+                for s in &p.series {
+                    for part in [Some(&s.y), s.range.as_ref()].into_iter().flatten() {
+                        if let Ok(e) = parse(part) {
+                            explicit_units(&e, &mut u);
+                            names(&e, &mut n);
+                        }
+                    }
+                }
             } else if let Ok(e) = e {
                 explicit_units(e, &mut u);
                 match e {
@@ -367,6 +392,7 @@ impl Worksheet {
             }
             let table = r.table.as_ref();
             if table.is_none()
+                && r.plot.is_none()
                 && (!r.show || r.display.unit.is_some() || o.error.is_some() || o.value.is_none())
             {
                 continue;
@@ -411,7 +437,14 @@ impl Worksheet {
                     vocab.push(WorkingUnit { name: name.to_string(), unit });
                 }
             }
-            if let Some(t) = table {
+            if let Some(p) = &r.plot {
+                let pick = |dim: quire_units::Dim| {
+                    crate::format::working_unit(dim, &vocab).map(|(_, text)| text.replace('\'', ""))
+                };
+                let x = p.x_unit.clone().or_else(|| o.plot.as_ref().and_then(|q| pick(q.x.dim)));
+                let y = p.y_unit.clone().or_else(|| o.plot.as_ref().and_then(|q| pick(q.y.dim)));
+                self.finish_plot(o, x, y);
+            } else if let Some(t) = table {
                 crate::sheet::reformat(t, &mut o.cells, &self.settings, &self.units, &vocab);
             } else if let Some(v) = &o.value
                 && let Ok(text) = format_value_in(v, &r.display, &self.settings, &self.units, &vocab)
@@ -472,6 +505,62 @@ impl Worksheet {
         out.value = Some(value);
         out.cells = cells;
         out
+    }
+
+    fn step_plot(&mut self, r: &MathInput, p: &PlotInput) -> Outcome {
+        let mut out = Outcome::new(&r.id);
+        let globals = Rc::clone(&self.globals);
+        let mut interp = Interp::new(&self.units);
+        let mut scope = Scope::new(&globals);
+        out.samples = p
+            .series
+            .iter()
+            .map(|s| crate::plot::sample(s, &mut interp, &mut scope).map_err(|e| e.message))
+            .collect();
+        out.units = std::mem::take(&mut interp.unit_idents).into_iter().collect();
+        out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
+        drop(scope);
+        self.finish_plot(&mut out, p.x_unit.clone(), p.y_unit.clone());
+        out
+    }
+
+    /// Put a plot's samples in its axis units: the ones given, or SI.
+    fn finish_plot(&self, out: &mut Outcome, x_unit: Option<String>, y_unit: Option<String>) {
+        let ok = || out.samples.iter().filter_map(|s| s.as_ref().ok());
+        let x_dim = ok().find_map(|s| s.xs.first()).map(|q| q.dim).unwrap_or_default();
+        let y_dim = ok().find_map(|s| s.ys.first()).map(|q| q.dim).unwrap_or_default();
+        let axis = |unit: Option<String>, dim: quire_units::Dim| Axis {
+            unit: unit
+                .map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty())
+                .unwrap_or_else(|| if dim.is_dimensionless() { String::new() } else { si_text(dim) }),
+            dim,
+        };
+        let (x, y) = (axis(x_unit, x_dim), axis(y_unit, y_dim));
+        let series: Vec<SeriesOutcome> = out
+            .samples
+            .iter()
+            .map(|s| {
+                let converted = s.as_ref().map_err(Clone::clone).and_then(|s| {
+                    let xs = crate::plot::in_unit(&s.xs, &x.unit, &self.units)
+                        .map_err(|e| format!("x axis: {}", e.message))?;
+                    let ys = crate::plot::in_unit(&s.ys, &y.unit, &self.units).map_err(|e| e.message)?;
+                    Ok((xs, ys))
+                });
+                match converted {
+                    Ok((xs, ys)) => SeriesOutcome { xs, ys, error: None },
+                    Err(e) => SeriesOutcome { error: Some(e), ..Default::default() },
+                }
+            })
+            .collect();
+        let errors: Vec<(usize, &String)> =
+            series.iter().enumerate().filter_map(|(i, s)| s.error.as_ref().map(|e| (i, e))).collect();
+        out.error = match errors.as_slice() {
+            [] => None,
+            [(_, e)] if series.len() == 1 => Some((*e).clone()),
+            [(i, e), ..] => Some(format!("series {}: {e}", i + 1)),
+        };
+        out.plot = Some(PlotOutcome { x, y, series });
     }
 
     fn bind(&mut self, key: String, b: Binding) {
@@ -600,6 +689,7 @@ mod tests {
                 show: true,
                 display: DisplaySpec::default(),
                 table: None,
+                plot: None,
             })
             .collect();
         Worksheet::new(DisplaySettings::default()).run(&regions)
@@ -671,6 +761,7 @@ mod tests {
             show: true,
             display: DisplaySpec::default(),
             table: None,
+            plot: None,
         };
         let table = |id: &str, name: &str, rows: &[&[&str]]| MathInput {
             id: id.into(),
@@ -682,6 +773,7 @@ mod tests {
                 rows: rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect(),
                 ..Default::default()
             }),
+            plot: None,
         };
         let regions = [
             math("a", "γ := 1.4"),
@@ -725,6 +817,50 @@ mod tests {
         assert_eq!(r[6], "zzz is not defined");
         // a global definition below is visible, so no "further down"
         assert_eq!(shown(&["b + 1", "b ≡ 2"])[0], "3");
+    }
+
+    #[test]
+    fn plots_sample_functions_and_data_in_working_units() {
+        use crate::plot::{PlotInput, SAMPLES, SeriesInput};
+        let math = |id: &str, e: &str| MathInput {
+            id: id.into(),
+            expr: e.into(),
+            show: false,
+            display: DisplaySpec::default(),
+            table: None,
+            plot: None,
+        };
+        let plot = |id: &str, series: Vec<SeriesInput>, y_unit: Option<&str>| MathInput {
+            id: id.into(),
+            expr: String::new(),
+            show: false,
+            display: DisplaySpec::default(),
+            table: None,
+            plot: Some(PlotInput { series, x_unit: None, y_unit: y_unit.map(Into::into) }),
+        };
+        let over = |y: &str, range: &str| SeriesInput { y: y.into(), x: None, range: Some(range.into()) };
+        let regions = [
+            math("q", "q := 10 kN/m"),
+            math("L", "L := 6 m"),
+            math("M", "M(x) := q*x*(L - x)/2"),
+            plot("p", vec![over("M(x)", "0 m..L")], None),
+            math("v", "v := [1; 4; 9]"),
+            plot("d", vec![SeriesInput { y: "v".into(), ..Default::default() }], None),
+            plot("bad", vec![over("M(x)", "0 m..L")], Some("MPa")),
+            plot("u", vec![over("zz(x)", "0..1")], None),
+        ];
+        let settings = DisplaySettings { working_units: true, ..Default::default() };
+        let out = Worksheet::new(settings).run(&regions);
+        let p = out[3].plot.as_ref().unwrap();
+        assert_eq!((p.x.unit.as_str(), p.y.unit.as_str()), ("m", "kN*m"));
+        let s = &p.series[0];
+        assert_eq!(s.xs.len(), SAMPLES + 1);
+        assert!((s.xs[SAMPLES / 2] - 3.0).abs() < 1e-9 && (s.ys[SAMPLES / 2] - 45.0).abs() < 1e-9);
+        let d = &out[5].plot.as_ref().unwrap().series[0];
+        assert_eq!((d.xs.clone(), d.ys.clone()), (vec![1.0, 2.0, 3.0], vec![1.0, 4.0, 9.0]));
+        assert!(out[6].error.as_deref().unwrap().ends_with("but the axis is in MPa"), "{:?}", out[6].error);
+        assert!(out[7].error.is_some());
+        assert_eq!(out[3].error, None);
     }
 
     #[test]
@@ -783,6 +919,7 @@ mod tests {
                 show: true,
                 display: DisplaySpec::default(),
                 table: None,
+                plot: None,
             })
             .collect();
         let settings = DisplaySettings { working_units: true, ..Default::default() };
@@ -928,6 +1065,7 @@ mod tests {
                 show: true,
                 display: DisplaySpec::default(),
                 table: None,
+                plot: None,
             },
             MathInput {
                 id: "b".into(),
@@ -935,6 +1073,7 @@ mod tests {
                 show: true,
                 display: DisplaySpec { unit: Some("kN".into()), decimals: Some(3) },
                 table: None,
+                plot: None,
             },
         ];
         let out = ws.run(&regions);

@@ -17,7 +17,9 @@ use std::time::Instant;
 use base64::Engine;
 use quire_ast::{Expr, parse};
 use quire_doc::Document;
-use quire_eval::{DisplaySettings, DisplaySpec, Fix, MathInput, Outcome, TableInput, Worksheet};
+use quire_eval::{
+    DisplaySettings, DisplaySpec, Fix, MathInput, Outcome, PlotInput, SeriesInput, TableInput, Worksheet,
+};
 use serde::Serialize;
 use serde_json::{Value as Json, json};
 
@@ -125,6 +127,29 @@ fn table_input(r: &quire_doc::Region) -> TableInput {
     }
 }
 
+/// A `plot2d` region's series and axis units (docs/02-file-format.md §4.7).
+fn plot_input(r: &quire_doc::Region) -> PlotInput {
+    let text = |v: Option<&Json>| {
+        v.and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from)
+    };
+    let series = r
+        .extra
+        .get("series")
+        .and_then(Json::as_array)
+        .map(|list| {
+            list.iter()
+                .map(|s| SeriesInput {
+                    y: text(s.get("y")).unwrap_or_default(),
+                    x: text(s.get("x")),
+                    range: text(s.get("range")),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let axis = |a: &str| text(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
+    PlotInput { series, x_unit: axis("x"), y_unit: axis("y") }
+}
+
 /// Trailing `=` asks for the result (`` $`A =` `` inside text).
 fn split_show(expr: &str) -> (String, bool) {
     let t = expr.trim_end();
@@ -156,6 +181,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         show,
                         display: display_of(r),
                         table: None,
+                        plot: None,
                     });
                 }
             }
@@ -169,6 +195,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         show,
                         display: DisplaySpec::default(),
                         table: None,
+                        plot: None,
                     });
                 }
             }
@@ -180,6 +207,17 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     show: false,
                     display: display_of(r),
                     table: Some(table_input(r)),
+                    plot: None,
+                });
+            }
+            "plot2d" => {
+                out.push(MathInput {
+                    id: r.id.clone(),
+                    expr: String::new(),
+                    show: false,
+                    display: DisplaySpec::default(),
+                    table: None,
+                    plot: Some(plot_input(r)),
                 });
             }
             "table" if tables => {
@@ -190,6 +228,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         show: true,
                         display: display_of(r),
                         table: None,
+                        plot: None,
                     });
                 }
             }
@@ -244,6 +283,34 @@ pub struct RegionView {
     /// A one-click repair for `error`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fix: Option<FixView>,
+    /// A 2D plot's series, in its axis units.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plot: Option<PlotView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlotView {
+    /// Axis units (`kN*m`), empty for plain numbers.
+    pub x_unit: String,
+    pub y_unit: String,
+    pub series: Vec<SeriesView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesView {
+    /// `null` where a point could not be computed (a gap in the line).
+    pub xs: Vec<f64>,
+    pub ys: Vec<f64>,
+    pub error: Option<String>,
+}
+
+fn fix_view(f: &Fix, inputs: &[MathInput]) -> FixView {
+    match f {
+        Fix::Rename { from, to } => FixView::Rename { from: from.clone(), to: to.clone() },
+        Fix::DefinedBelow { index } => FixView::DefinedBelow { id: inputs[*index].id.clone() },
+    }
 }
 
 /// quire_eval::Fix, with regions named by id.
@@ -436,6 +503,36 @@ pub fn report(doc_json: &Json) -> Result<Report> {
     let mut regions = Vec::with_capacity(ev.inputs.len());
     let mut error_count = 0;
     for (input, o) in ev.inputs.iter().zip(&ev.outcomes) {
+        if let Some(p) = &o.plot {
+            if o.error.is_some() {
+                error_count += 1;
+            }
+            regions.push(RegionView {
+                id: input.id.clone(),
+                input: None,
+                result: None,
+                result_text: None,
+                error: o.error.clone(),
+                syntax_error: false,
+                units: o.units.clone(),
+                constants: o.constants.clone(),
+                shadowing: Vec::new(),
+                defines: None,
+                cells: None,
+                unit_choices: Vec::new(),
+                fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
+                plot: Some(PlotView {
+                    x_unit: p.x.unit.clone(),
+                    y_unit: p.y.unit.clone(),
+                    series: p
+                        .series
+                        .iter()
+                        .map(|s| SeriesView { xs: s.xs.clone(), ys: s.ys.clone(), error: s.error.clone() })
+                        .collect(),
+                }),
+            });
+            continue;
+        }
         if input.table.is_some() {
             if o.error.is_some() {
                 error_count += 1;
@@ -468,6 +565,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 cells: Some(cells),
                 unit_choices: Vec::new(),
                 fix: None,
+                plot: None,
             });
             continue;
         }
@@ -493,10 +591,8 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             } else {
                 Vec::new()
             },
-            fix: o.fix.as_ref().map(|f| match f {
-                Fix::Rename { from, to } => FixView::Rename { from: from.clone(), to: to.clone() },
-                Fix::DefinedBelow { index } => FixView::DefinedBelow { id: ev.inputs[*index].id.clone() },
-            }),
+            fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
+            plot: None,
         });
     }
 

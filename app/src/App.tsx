@@ -32,6 +32,7 @@ import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
 import { insertTable, isSheet, tableCommand } from "./TableEditor";
+import { insertPlot } from "./Plot";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
@@ -325,6 +326,8 @@ function runCommand(id: string) {
       return insertImage().catch((e) => flash(`Could not insert the image: ${e.message ?? e}`));
     case "insert_table":
       return insertTable();
+    case "insert_plot":
+      return insertPlot();
     case "insert_toc":
       return insertContents("headings");
     case "insert_figures":
@@ -394,7 +397,7 @@ function browserShortcuts(e: KeyboardEvent) {
     o: "open",
     n: e.shiftKey ? "new_from_template" : "",
     z: e.shiftKey ? "redo" : "undo",
-    p: e.shiftKey ? "page_view" : "print",
+    p: e.altKey ? "insert_plot" : e.shiftKey ? "page_view" : "print",
     e: "export_pdf",
     d: "duplicate",
     i: e.altKey ? "toggle_inspector" : "",
@@ -520,6 +523,9 @@ export function App() {
           </button>
           <button onClick={() => insertTable()} title="Insert table (⌥⌘T)">
             <span class="glyph">▦</span> <span class="tool-label">Table</span>
+          </button>
+          <button onClick={() => insertPlot()} title="Insert plot (⌥⌘P)">
+            <span class="glyph">∿</span> <span class="tool-label">Plot</span>
           </button>
           <button onClick={insertArea} title="Insert area">
             <span class="glyph">▤</span> <span class="tool-label">Area</span>

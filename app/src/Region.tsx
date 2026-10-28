@@ -2,6 +2,7 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { nameAt, setCaretName, trace } from "./trace";
 import { paletteOpen } from "./Palette";
+import { DEFAULT_SIZE, PlotBody } from "./Plot";
 import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
@@ -562,6 +563,28 @@ function ImageBody(props: { p: Placed }) {
   );
 }
 
+/** A plot as a figure: captioned like an image, with its error below. */
+function PlotFigure(props: { p: Placed }) {
+  const r = () => props.p.region;
+  const error = () => state.views[r().id]?.error;
+  return (
+    <figure class="figure plot-figure" style={{ width: `${(r().size ?? DEFAULT_SIZE)[0]}px` }}>
+      <Show when={r().caption?.position === "above"}>
+        <Caption p={props.p} />
+      </Show>
+      <PlotBody r={r()} />
+      <Show when={error()}>
+        <div class="err" title={error()!}>
+          <span class="err-text">{error()}</span>
+        </div>
+      </Show>
+      <Show when={r().caption?.position !== "above"}>
+        <Caption p={props.p} />
+      </Show>
+    </figure>
+  );
+}
+
 function AreaBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const height = () => (r().collapsed ? AREA_COLLAPSED_HEIGHT : (r().height ?? 90));
@@ -705,7 +728,8 @@ function ResizeHandle(props: { p: Placed }) {
     const id = r().id;
     const startX = e.clientX;
     const startY = e.clientY;
-    const w0 = r().kind === "image" ? (r().size?.[0] ?? 200) : (r().width ?? widths[id] ?? 200);
+    const sized = r().kind === "image" || r().kind === "plot2d";
+    const w0 = sized ? (r().size?.[0] ?? 200) : (r().width ?? widths[id] ?? 200);
     const h0 = r().size?.[1] ?? 150;
     const ratio = h0 / w0;
     checkpoint();
@@ -718,6 +742,7 @@ function ResizeHandle(props: { p: Placed }) {
           const reg = findDraft(d, id);
           if (!reg) return;
           if (reg.kind === "image") reg.size = [w, ev.shiftKey ? free : Math.round(w * ratio)];
+          else if (reg.kind === "plot2d") reg.size = [Math.max(160, w), Math.max(120, free)];
           else reg.width = w;
         }),
       );
@@ -731,7 +756,7 @@ function ResizeHandle(props: { p: Placed }) {
     window.addEventListener("pointerup", up);
   };
   return (
-    <div class="resize-handle" classList={{ corner: r().kind === "image" }} onPointerDown={onDown} title="Drag to resize" />
+    <div class="resize-handle" classList={{ corner: r().kind === "image" || r().kind === "plot2d" }} onPointerDown={onDown} title="Drag to resize" />
   );
 }
 
@@ -761,7 +786,6 @@ function openUnitMenu(e: MouseEvent, r: Region) {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  plot2d: "2D plot — arrives in phase P4",
   plot3d: "3D plot — arrives in phase P4",
   data: "Data import — arrives in phase P4",
   legacy: "Unconverted SMath region",
@@ -868,10 +892,13 @@ export function RegionBox(props: RegionProps) {
         <Match when={r().kind === "toc"}>
           <ContentsBody p={placed()} />
         </Match>
+        <Match when={r().kind === "plot2d"}>
+          <PlotFigure p={placed()} />
+        </Match>
       </Switch>
       <Show
         when={
-          selected() && state.selection.length === 1 && !editing() && !state.printing && ["text", "image"].includes(r().kind)
+          selected() && state.selection.length === 1 && !editing() && !state.printing && ["text", "image", "plot2d"].includes(r().kind)
         }
       >
         <ResizeHandle p={placed()} />
