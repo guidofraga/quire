@@ -59,10 +59,14 @@ const PAGE_PAD = 32;
 
 const [viewportSize, setViewportSize] = createSignal({ w: 0, h: 0 });
 
-/** The page view's pages, stacked: width and height in scene px. */
+/** Height of the + New page button under the last page. */
+const NEW_PAGE_H = 44;
+
+/** The page view's pages, stacked (and the + New page button): width and height in scene px. */
 function pagesExtent() {
   const l = layout();
-  return { w: l.geom.paperW, h: l.pages * (l.geom.paperH + SHEET_GAP) - SHEET_GAP };
+  const button = state.printing ? 0 : SHEET_GAP + NEW_PAGE_H;
+  return { w: l.geom.paperW, h: l.pages * (l.geom.paperH + SHEET_GAP) - SHEET_GAP + button };
 }
 
 /**
@@ -507,8 +511,7 @@ export function Canvas() {
       () => [state.view.y, state.view.zoom] as const,
       () => {
         const l = layout();
-        // the spare blank page shown while editing doesn't count
-        const total = l.pages - (state.printing ? 0 : 1);
+        const total = l.pages;
         if (!l.pageView || total < 2) return;
         const middle = (viewportSize().h / 2 - state.view.y) / state.view.zoom;
         const k = Math.min(total, Math.max(1, Math.floor(middle / (l.geom.paperH + SHEET_GAP)) + 1));
@@ -540,6 +543,20 @@ export function Canvas() {
     const z = state.view.zoom;
     setState("view", { x: 48, y: 24 - contentTop() * z });
   };
+
+  /** + New page: a blank page after the last one, with the insertion point at its top. */
+  function addPage() {
+    const k = layout().pages;
+    setState({ pagesWanted: k + 1, selection: [] });
+    const l = layout();
+    const { margins } = l.geom;
+    const stride = l.geom.paperH + SHEET_GAP;
+    const [x, y] = l.fromScene(margins.left, k * stride + margins.top);
+    setState({ caret: [Math.max(0, snap(x)), Math.max(0, snap(y))] });
+    // the new page's top in view
+    setState("view", { y: PAGE_PAD - (k * stride - 16) * state.view.zoom });
+    sink.focus({ preventScroll: true });
+  }
 
   const caretScene = () => (state.caret ? layout().toScene(state.caret[0], state.caret[1]) : null);
 
@@ -605,6 +622,16 @@ export function Canvas() {
           <div class="pages" style={{ gap: `${SHEET_GAP}px` }}>
             {/* keyed by page number: a sheet stays mounted while its contents change */}
             <Index each={sheets()}>{(regions, k) => <Sheet k={k} regions={regions()} onDragStart={onRegionDown} />}</Index>
+            <Show when={!state.printing}>
+              <button
+                class="new-page"
+                style={{ width: `${layout().geom.paperW}px` }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={addPage}
+              >
+                + New page
+              </button>
+            </Show>
           </div>
         </Show>
         <Show when={guides().v}>

@@ -33,8 +33,10 @@ interface State {
   view: Viewport;
   assets: Record<string, string>;
   message: string | null;
-  /** Rendering for print/PDF: page view, no selection chrome, no spare page. */
+  /** Rendering for print/PDF: page view, no selection chrome, no added blank pages. */
   printing: boolean;
+  /** Page view: pages shown even if the content does not reach them yet (+ New page). */
+  pagesWanted: number;
   /** The region being edited was just created by typing (enables math ⇄ text switching). */
   editingFresh: boolean;
   inspector: boolean;
@@ -57,6 +59,7 @@ export const [state, setState] = createStore<State>({
   assets: {},
   message: null,
   printing: false,
+  pagesWanted: 0,
   editingFresh: false,
   inspector: false,
 });
@@ -140,6 +143,7 @@ export function loadDoc(doc: Doc, path: string | null, origin: string | null = n
     caret: doc.regions.length ? null : [36, 36],
     view: { x: 48, y: 24, zoom: state.view.zoom },
     assets: {},
+    pagesWanted: 0,
   });
 }
 
@@ -193,7 +197,10 @@ export interface Layout {
   byId: Map<string, Placed>;
   pageView: boolean;
   geom: PageGeom;
+  /** Pages shown: those the content fills, and blank ones added with + New page. */
   pages: number;
+  /** Pages the content fills: what prints, and what {pages} counts. */
+  contentPages: number;
   /** Document point → scene point (where it is drawn). */
   toScene(x: number, y: number): [number, number];
   /** Scene point → document point. */
@@ -202,7 +209,13 @@ export interface Layout {
 
 const DEFAULT_HEIGHT = 22;
 
-export function computeLayout(doc: Doc, measured: Record<string, number>, pageView: boolean, printing: boolean): Layout {
+export function computeLayout(
+  doc: Doc,
+  measured: Record<string, number>,
+  pageView: boolean,
+  printing: boolean,
+  wanted = 0,
+): Layout {
   const list: Placed[] = [];
   const walk = (regions: Region[], ox: number, oy: number, parent: Region | null, hidden: boolean) => {
     for (const r of regions) {
@@ -264,7 +277,8 @@ export function computeLayout(doc: Doc, measured: Record<string, number>, pageVi
   } else {
     for (const p of list) p.top = p.y - p.shift;
   }
-  const pages = lastPage + 1 + (pageView && !printing ? 1 : 0);
+  const contentPages = lastPage + 1;
+  const pages = pageView && !printing ? Math.max(contentPages, wanted) : contentPages;
   while (pushAt.length < pages) pushAt.push(push);
 
   const pageOfEff = (eff: number) => {
@@ -302,11 +316,11 @@ export function computeLayout(doc: Doc, measured: Record<string, number>, pageVi
       p.number = String(r.kind === "table" ? ++tables : ++figures);
     }
   }
-  return { list, byId: new Map(list.map((p) => [p.region.id, p])), pageView, geom, pages, toScene, fromScene };
+  return { list, byId: new Map(list.map((p) => [p.region.id, p])), pageView, geom, pages, contentPages, toScene, fromScene };
 }
 
 export const layout = createRoot(() =>
-  createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing)),
+  createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing, state.pagesWanted)),
 );
 
 /** How the document falls into pages, also while it is shown as a free canvas. */

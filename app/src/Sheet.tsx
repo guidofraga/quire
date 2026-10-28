@@ -39,8 +39,8 @@ export function Sheet(props: { k: number; regions: Placed[]; onDragStart: (id: s
   const footer = () => (first().footer === false ? undefined : (page().footer as HeaderFooter | undefined));
   const backgrounds = () => ((page().backgrounds as Background[] | undefined) ?? []).filter((b) => pageMatches(b.pages, props.k + 1));
   const m = () => g().margins;
-  // the spare blank page shown while editing doesn't count
-  const total = () => layout().pages - (state.printing ? 0 : 1);
+  // what's on screen while editing; on paper, only pages with something on them
+  const total = () => (state.printing ? layout().contentPages : layout().pages);
 
   return (
     <div

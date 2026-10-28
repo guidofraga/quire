@@ -2994,3 +2994,26 @@ a.xref-missing {
 .app.printing .view-pill {
   display: none;
 }
+
+/* page view: add a page after the last one */
+.new-page {
+  height: 44px;
+  border: 1.5px dashed color-mix(in srgb, var(--muted) 45%, transparent);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: 13px -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.new-page:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--accent);
+}
+
+@media print {
+  .new-page {
+    display: none;
+  }
+}
