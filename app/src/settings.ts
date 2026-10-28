@@ -11,6 +11,8 @@ export interface Prefs {
   latex: boolean;
   /** Notes under the math being edited when a name could mean something else. */
   nameNotes: boolean;
+  /** Unit fractions on one line (`80 km/h`), in math and results. */
+  flatUnits: boolean;
   /** Hover explanations for units and constants. */
   tooltips: boolean;
   /** Enter / Backspace on empty space open or close a line, moving what is below. */
@@ -32,6 +34,7 @@ const DEFAULTS: Prefs = {
   theme: "system",
   latex: true,
   nameNotes: true,
+  flatUnits: true,
   tooltips: true,
   shiftContent: true,
   exportDpi: 300,

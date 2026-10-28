@@ -48,6 +48,7 @@ function Dialog() {
                 onChange={(v) => setPref("theme", v)}
               />
             </Field>
+            <Check checked={prefs.flatUnits} label="Write units on one line (80 km/h, not a fraction)" onChange={toggle("flatUnits")} />
           </Section>
           <Section title="Editing">
             <Check checked={prefs.latex} label="Convert LaTeX names as you type (\alpha → α)" onChange={toggle("latex")} />

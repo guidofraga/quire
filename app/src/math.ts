@@ -1,6 +1,7 @@
 // AST → MathML. WebKit and Chromium both implement MathML Core, which gives real
 // fractions, radicals, stretchy fences and matrices. This is the interim renderer
 // until the Rust typesetter (quire-layout) lands; see docs/01-architecture.md §3.
+import { prefs } from "./settings";
 import type { BinaryOp, CmpOp, Expr } from "./types";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -43,6 +44,44 @@ function isUnitTerm(e: Expr): boolean {
   return isUnit(e) || (e.t === "Binary" && e.c[0] === "Pow" && isUnit(e.c[1]));
 }
 
+/** Units alone: `km`, `s^2`, `kN*m`, `(kg*m)`. */
+function unitsOnly(e: Expr): boolean {
+  switch (e.t) {
+    case "Unit":
+      return true;
+    case "Ident":
+      return unitNames.has(e.c);
+    case "Paren":
+      return unitsOnly(e.c);
+    case "Binary": {
+      const [op, a, b] = e.c;
+      if (op === "Pow") return unitsOnly(a) && b.t === "Num";
+      return (op === "Mul" || op === "Juxt" || op === "Div") && unitsOnly(a) && unitsOnly(b);
+    }
+    default:
+      return false;
+  }
+}
+
+/** A quantity's value side: `80 km`, `5`, `kN`. */
+function quantity(e: Expr): boolean {
+  if (e.t === "Num" || unitsOnly(e)) return true;
+  return e.t === "Binary" && (e.c[0] === "Mul" || e.c[0] === "Juxt") && e.c[1].t === "Num" && unitsOnly(e.c[2]);
+}
+
+const tight = (s: string) => mo(s, ' lspace="0" rspace="0"');
+
+/** Units written tight, products with a dot: `(m·s)`, `s²`. */
+function unitRow(e: Expr): string {
+  if (e.t === "Paren") return row(mo("(", ' lspace="0" rspace="0" stretchy="false"'), unitRow(e.c), mo(")", ' lspace="0" rspace="0" stretchy="false"'));
+  if (e.t === "Binary" && (e.c[0] === "Mul" || e.c[0] === "Juxt")) return row(unitRow(e.c[1]), tight("·"), unitRow(e.c[2]));
+  if (e.t === "Binary" && e.c[0] === "Div") return row(unitRow(e.c[1]), tight("/"), unitRow(e.c[2]));
+  return m(e);
+}
+
+/** `80 km/h` on one line rather than as a fraction (Settings ▸ Appearance). */
+const flatUnits = (a: Expr, b: Expr) => prefs.flatUnits && unitsOnly(b) && quantity(a);
+
 const BIN: Partial<Record<BinaryOp, string>> = { Add: "+", Sub: "−", PlusMinus: "±", Mod: "mod", And: "∧", Or: "∨" };
 const CMP: Record<CmpOp, string> = { Eq: "=", Ne: "≠", Lt: "<", Le: "≤", Gt: ">", Ge: "≥" };
 
@@ -54,6 +93,7 @@ function binary(op: BinaryOp, a: Expr, b: Expr): string {
       // numbers and units sit side by side (5.1 m, 2·900 kgf); everything else gets a dot
       return isUnitTerm(b) ? row(m(a), space(0.2), m(b)) : row(m(a), mo("·"), m(b));
     case "Div":
+      if (flatUnits(a, b)) return row(m(a), tight("/"), unitRow(b));
       return `<mfrac>${m(unparen(a))}${m(unparen(b))}</mfrac>`;
     case "Pow": {
       const exp = m(unparen(b));
