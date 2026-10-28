@@ -361,7 +361,8 @@ function runCommand(id: string) {
       commitEditing();
       return setSettingsOpen(true);
     case "insert_math":
-      return insertAtCaret("math");
+      // inside text: live math at the caret; elsewhere a math region
+      return activeView() ? runText(commands.insertMath) : insertAtCaret("math");
     case "insert_text":
       return insertAtCaret("text");
     case "insert_area":
@@ -402,6 +403,7 @@ function browserShortcuts(e: KeyboardEvent) {
     "0": "zoom_reset",
     "'": "next_error",
     f: e.altKey ? "find_replace" : "find",
+    m: e.shiftKey ? "insert_math" : "",
     t: e.altKey ? "insert_table" : "",
     "?": "help",
     "/": e.shiftKey ? "help" : "",
@@ -504,7 +506,7 @@ export function App() {
           </Show>
         </div>
         <div class="tools">
-          <button onClick={() => insertAtCaret("math")} title="Insert math (⇧⌘M)">
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => runCommand("insert_math")} title="Insert math (⇧⌘M); inside text, math in the line">
             <span class="glyph math-glyph">
               x<sup>2</sup>
             </span>

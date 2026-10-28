@@ -269,7 +269,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         "Insert",
         true,
         &[
-            &item(app, "insert_math", "Math Region", Some("CmdOrCtrl+Shift+M"))?,
+            &item(app, "insert_math", "Math", Some("CmdOrCtrl+Shift+M"))?,
             &item(app, "insert_text", "Text Region", Some("CmdOrCtrl+Shift+T"))?,
             &item(app, "insert_image", "Image…", Some("CmdOrCtrl+Shift+I"))?,
             &item(app, "insert_table", "Table", Some("CmdOrCtrl+Alt+T"))?,

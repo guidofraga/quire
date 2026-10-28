@@ -408,6 +408,25 @@ export function plainText(view: EditorView): string {
 // Inline math as an editable chip inside the text
 // ---------------------------------------------------------------------------
 
+/**
+ * `$expr$` typed in text becomes live math. As in Pandoc, the opening $ must be followed
+ * and the closing one preceded by a non-space (or `= `, which shows the result), so prices
+ * ($5 and $10) stay text.
+ */
+const DOLLAR_MATH = /(^|[^\\\p{L}\p{N}$])\$([^\s$\ufffc](?:[^$\ufffc]*[^\s$\ufffc])?|[^\s$\ufffc][^$\ufffc]*=\s+)$/u;
+
+function dollarMath(view: EditorView, from: number, to: number): boolean {
+  const $from = view.state.doc.resolve(from);
+  if (!$from.parent.inlineContent || from !== to) return false;
+  const before = $from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc");
+  const m = DOLLAR_MATH.exec(before);
+  if (!m) return false;
+  const start = from - m[2].length - 1;
+  const tr = view.state.tr.replaceWith(start, to, N.math.create({ expr: m[2].trim() }));
+  view.dispatch(tr.setSelection(TextSelection.create(tr.doc, start + 1)).scrollIntoView());
+  return true;
+}
+
 class MathChip implements NodeView {
   dom: HTMLElement;
   input: HTMLInputElement;
@@ -563,6 +582,7 @@ export function createEditor(host: HTMLElement, content: string | { text: string
   const view = new EditorView(host, {
     state,
     nodeViews: { math: (node, v, getPos) => new MathChip(node, v, getPos) },
+    handleTextInput: (v, from, to, text) => (text === "$" ? dollarMath(v, from, to) : false),
     handleKeyDown: (v, e) => {
       if (completionKey(e)) return true;
       // `\Delta` followed by a space or punctuation becomes Δ

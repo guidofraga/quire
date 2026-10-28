@@ -280,8 +280,10 @@ export function installContextMenus(run: (command: string) => void) {
     const r = layout().byId.get(id)?.region;
     const many = state.selection.length > 1;
     const items: MenuItems = [];
+    if (!many && r?.kind === "text" && state.editing === id)
+      items.push({ label: "Insert Math", shortcut: "⇧⌘M", run: go("insert_math") }, null);
     if (!many && r && isSheet(r) && state.editing === id) items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
-    else if (!many && r && (r.kind === "math" || r.kind === "text" || isSheet(r)))
+    else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({ label: isSheet(r) ? "Edit Table" : "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
     items.push(
       { label: "Cut", shortcut: "⌘X", run: () => (closeMenu(), copyToInternal(), document.execCommand("cut") || deleteRegions(state.selection)) },

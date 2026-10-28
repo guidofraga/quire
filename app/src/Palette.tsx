@@ -40,7 +40,7 @@ const COMMANDS: [string, string, string][] = [
   ["select_all", "Select All", `${mod}A`],
   ["find", "Find…", `${mod}F`],
   ["find_replace", "Find and Replace…", `${mod}${alt}F`],
-  ["insert_math", "Insert Math Region", `${mod}${shift}M`],
+  ["insert_math", "Insert Math", `${mod}${shift}M`],
   ["insert_text", "Insert Text Region", `${mod}${shift}T`],
   ["insert_image", "Insert Image…", `${mod}${shift}I`],
   ["insert_table", "Insert Table", `${mod}${alt}T`],

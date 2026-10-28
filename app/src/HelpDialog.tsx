@@ -14,6 +14,7 @@ const WRITING: Row[] = [
   ["Click anywhere and type", "starts a math region at the red cross"],
   ["A word and a space", "turns it into text (The span…)"],
   ["\"", "starts a text region straight away"],
+  [`$t = $ or ${shift}${mod}M in text`, "live math inside a sentence, with its result"],
   ["Return", "ends the region; the next one goes below"],
   ["Tab / ⇧Tab", "moves between the ? slots of a template"],
   ["Ctrl+G", "turns the letter before the caret into Greek (a → α)"],
