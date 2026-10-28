@@ -4,7 +4,7 @@ import { api } from "./api";
 import { mathml } from "./math";
 import { insertIntoMath } from "./Region";
 import { activeView, insertMathChip, insertText } from "./richtext";
-import { insertAtCaret, state } from "./store";
+import { insertAtCaret } from "./store";
 import { STRUCTURES } from "./symbols";
 import type { Doc, Library } from "./types";
 
@@ -66,9 +66,3 @@ export function loadLibrary() {
 }
 
 export { prettyValue as valueText } from "./math";
-
-export function insertingInto(): "math" | "text" | "new" {
-  if (state.editing && document.activeElement?.classList.contains("math-input")) return "math";
-  if (activeView()) return "text";
-  return "new";
-}

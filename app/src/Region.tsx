@@ -900,8 +900,8 @@ function openUnitMenu(e: MouseEvent, r: Region) {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  plot3d: "3D plot — arrives in phase P4",
-  data: "Data import — arrives in phase P4",
+  plot3d: "3D plot (not supported in this version yet)",
+  data: "Data import (not supported in this version yet)",
   legacy: "Unconverted SMath region",
   pagebreak: "Page break",
 };

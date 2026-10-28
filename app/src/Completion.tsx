@@ -26,7 +26,6 @@ export function hideCompletions() {
   setPopup(null);
 }
 
-export const completionOpen = () => popup() !== null;
 
 /** Arrow keys, Enter/Tab and Escape while the list is open. Returns true when handled. */
 export function completionKey(e: KeyboardEvent): boolean {
