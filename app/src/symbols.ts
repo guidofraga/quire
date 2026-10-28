@@ -122,6 +122,10 @@ export const STRUCTURES: Category[] = [
       t("lsolve", "lsolve(?, ?)", "Linear system A·x = b"),
       t("rkfixed", "rkfixed(?, 0, ?, 100, D)", "ODE y′ = D(t, y), fixed steps"),
       t("Rkadapt", "Rkadapt(?, 0, ?, 100, D)", "ODE y′ = D(t, y), adaptive steps"),
+      t("roots", "roots(? == ?, x, ?)", "roots: equation near a guess"),
+      t("rootsys", "roots(sys(? == ?, ? == ?, 2, 1), [x; y], [?; ?])", "roots: system of equations"),
+      t("sys", "sys(?, ?, 2, 1)", "sys: system (brace)"),
+      t("polyroots", "polyroots(?)", "polyroots: polynomial roots (constant first)"),
     ],
   },
   {
@@ -130,6 +134,7 @@ export const STRUCTURES: Category[] = [
     items: [
       t("linterp", "linterp(?, ?, ?)", "Interpolate in a table"),
       t("cspline", "interp(cspline(?, ?), ?, ?, ?)", "Cubic spline through a table"),
+      t("cinterp", "cinterp(?, ?, ?)", "Cubic spline interpolation (SMath)"),
       t("slope", "slope(?, ?)", "Slope of the best-fit line"),
       t("intercept", "intercept(?, ?)", "Intercept of the best-fit line"),
       t("corr", "corr(?, ?)", "Correlation coefficient"),
@@ -150,6 +155,17 @@ export const STRUCTURES: Category[] = [
       t("col", "[?; ?]", "Column vector"),
       t("matrix", "[?, ?; ?, ?]", "2 × 2"),
       t("matrix3", "[?, ?, ?; ?, ?, ?; ?, ?, ?]", "3 × 3"),
+      t("zeros", "matrix(?, ?)", "Zero matrix r × c"),
+      t("colof", "col(?, ?)", "Column j of a matrix"),
+      t("rowof", "row(?, ?)", "Row i of a matrix"),
+      t("submatrix", "submatrix(?, ?, ?, ?, ?)", "Submatrix rows r1..r2, cols c1..c2"),
+      t("diag", "diag(?)", "Diagonal matrix / diagonal"),
+      t("trace", "trace(?)", "Trace"), t("rank", "rank(?)", "Rank"), t("invert", "invert(?)", "Inverse"),
+      t("eigenvals", "eigenvals(?)", "Eigenvalues"), t("eigenvecs", "eigenvecs(?)", "Eigenvectors"),
+      t("csort", "csort(?, ?)", "Sort rows by a column"), t("rsort", "rsort(?, ?)", "Sort columns by a row"),
+      t("norme", "norme(?)", "Euclidean (Frobenius) norm"),
+      t("vlookup", "vlookup(?, ?, ?)", "Rows whose first column matches"),
+      t("lookup", "lookup(?, ?, ?)", "Matching elements of another vector"),
     ],
   },
   {
@@ -158,6 +174,30 @@ export const STRUCTURES: Category[] = [
     items: [
       t("vsum", "sum(?)", "Sum of elements"), t("mean", "mean(?)", "Mean"), t("sort", "sort(?)", "Sort"),
       t("norm", "norm(?)", "Length"), t("dotp", "dot(?, ?)", "Dot product"), t("cross", "cross(?, ?)", "Cross product"),
+      t("product", "product(?)", "Product of elements"), t("last", "last(?)", "Last index"),
+      t("reverse", "reverse(?)", "Reverse order"),
+    ],
+  },
+  {
+    // SMath's text functions; positions start at 0 as in SMath
+    id: "text",
+    title: "Text",
+    items: [
+      t("strlen", "strlen(?)", "Length of a text"), t("substr", "substr(?, ?, ?)", "Part of a text"),
+      t("findstr", "findstr(?, ?)", "Position of a text (−1 if absent)"), t("strrep", "strrep(?, ?, ?)", "Replace"),
+      t("insert", "insert(?, ?, ?)", "Insert text at a position"), t("num2str", "num2str(?)", "Number → text"),
+      t("str2num", "str2num(?)", "Text → number"), t("concat", "concat(?, ?)", "Join texts"),
+      t("error", "error(\"?\")", "Stop with a message"), t("IsDefined", "IsDefined(?)", "Is the name defined?"),
+    ],
+  },
+  {
+    id: "numbers",
+    title: "Numbers",
+    items: [
+      t("gcd", "gcd(?, ?)", "Greatest common divisor"), t("lcm", "lcm(?, ?)", "Least common multiple"),
+      t("perm", "perm(?, ?)", "Permutations"), t("comb", "comb(?, ?)", "Combinations"),
+      t("gammafn", "Gamma(?)", "Gamma function"), t("erf", "erf(?)", "Error function"),
+      t("random", "random(?)", "Random number up to"), t("UnitsOf", "UnitsOf(?)", "Units of a value"),
     ],
   },
   {

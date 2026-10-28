@@ -7,6 +7,7 @@ use quire_units::{Dim, Unit, UnitRegistry};
 use crate::builtins::{self, dim_pow};
 use crate::constants::constant;
 use crate::error::{EvalError, Result, bail};
+use crate::fn_solve;
 use crate::ops::{self, arith, compare, same_dim};
 use crate::value::{Matrix, Quantity, Value};
 
@@ -110,6 +111,17 @@ fn quantity_like(e: &Expr) -> bool {
 
 fn parse_num(t: &str) -> Result<f64> {
     t.parse::<f64>().map_err(|_| EvalError::new(format!("'{t}' is not a valid number")))
+}
+
+/// A program statement rather than a value: a definition, a control construct, break/continue.
+/// `line(…)` of statements is SMath's program block; `line(vx, vy)` is a line fit.
+pub(crate) fn is_statement(e: &Expr) -> bool {
+    match e {
+        Expr::Define { .. } => true,
+        Expr::Ident(n) => n == "break" || n == "continue",
+        Expr::Call(n, _) => matches!(n.as_str(), "if" | "while" | "for" | "line" | "block"),
+        _ => false,
+    }
 }
 
 fn ident<'a>(e: &'a Expr, what: &str) -> Result<&'a str> {
@@ -342,6 +354,8 @@ impl<'u> Interp<'u> {
     fn lazy(&mut self, s: &mut Scope, name: &str, args: &[Expr]) -> Option<Result<Value>> {
         Some(match (name, args.len()) {
             ("if", 2 | 3) => self.if_(s, args),
+            // two plain expressions: Mathcad's straight-line fit line(vx, vy) (stats.rs)
+            ("line", 2) if !args.iter().any(is_statement) => return None,
             ("block" | "line", _) => self.block(s, args),
             ("for", 3) => self.for_in(s, args),
             ("for", 4) => self.for_c(s, args),
@@ -363,6 +377,9 @@ impl<'u> Interp<'u> {
                 Err(EvalError::new(format!("{name} takes 5 arguments: {name}(y0, t0, t1, n, D)")))
             }
             ("linfit", _) => Err(EvalError::new("linfit takes 3 arguments: linfit(vx, vy, F)")),
+            ("roots", 2 | 3) => self.roots(s, args),
+            ("polyroots", 1) => self.polyroots(s, args),
+            ("IsDefined", 1) => self.is_defined(s, args),
             ("lim", _) => Err(EvalError::new("a limit is symbolic: end the line with → instead of =")),
             _ => return None,
         })
@@ -554,6 +571,132 @@ impl<'u> Interp<'u> {
             }
             other => other.clone(),
         }
+    }
+
+    /// The equations of a system: a vector `[f1; f2]` or SMath's `sys(f1, f2, …, n, 1)`.
+    fn system(e: &Expr) -> Option<Vec<Expr>> {
+        match e {
+            Expr::Matrix(rows) if rows.iter().map(Vec::len).sum::<usize>() > 1 => {
+                Some(rows.iter().flatten().cloned().collect())
+            }
+            Expr::Call(name, items) if name == "sys" && items.len() >= 3 => {
+                Some(items[..items.len() - 2].to_vec())
+            }
+            _ => None,
+        }
+    }
+
+    /// `roots(f(x), x)` / `roots(f(x), x, guess)` (SMath): a root near the guess, or near
+    /// the current value of x (0 when x has none); `roots([f1; f2], [x; y], [x0; y0])`
+    /// and `roots(sys(…), …)` solve a system.
+    fn roots(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        if let Some(eqs) = Self::system(&args[0]) {
+            return self.roots_system(s, &eqs, args);
+        }
+        let var = ident(&args[1], "the unknown")?;
+        let x0 = match args.get(2) {
+            Some(g) => self.eval(s, g)?.as_num("the guess")?,
+            None => match s.get(var) {
+                Some(Binding::Val(Value::Num(q))) => *q,
+                _ => Quantity::scalar(0.0),
+            },
+        };
+        let f = Self::residual(&args[0]);
+        let prev = s.get(var).cloned();
+        let mut fdim = None;
+        let r = fn_solve::root_near(
+            &mut |t| {
+                self.tick()?;
+                self.sample(s, &f, var, Quantity::new(t, x0.dim), &mut fdim)
+            },
+            x0.v,
+        );
+        s.restore(var, prev);
+        match r? {
+            Ok(x) => Ok(Value::Num(Quantity::new(x, x0.dim))),
+            Err(_) => bail!("roots found no root near the guess for {var}; try another guess"),
+        }
+    }
+
+    fn roots_system(&mut self, s: &mut Scope, eqs: &[Expr], args: &[Expr]) -> Result<Value> {
+        let vars: Vec<&str> = match &args[1] {
+            Expr::Matrix(rows) => {
+                rows.iter().flatten().map(|e| ident(e, "an unknown")).collect::<Result<_>>()?
+            }
+            e => vec![ident(e, "the unknown")?],
+        };
+        if vars.len() != eqs.len() {
+            bail!("roots: {} equations but {} unknowns", eqs.len(), vars.len());
+        }
+        let x0: Vec<Quantity> = match args.get(2) {
+            Some(g) => match self.eval(s, g)? {
+                Value::Matrix(m) => m.data.iter().map(|v| v.as_num("a guess")).collect::<Result<_>>()?,
+                v => vec![v.as_num("the guess")?],
+            },
+            None => vars
+                .iter()
+                .map(|v| match s.get(v) {
+                    Some(Binding::Val(Value::Num(q))) => *q,
+                    _ => Quantity::scalar(0.0),
+                })
+                .collect(),
+        };
+        if x0.len() != vars.len() {
+            bail!("roots: {} unknowns but {} guesses", vars.len(), x0.len());
+        }
+        let fs: Vec<Expr> = eqs.iter().map(Self::residual).collect();
+        let prevs: Vec<Option<Binding>> = vars.iter().map(|v| s.get(v).cloned()).collect();
+        let start: Vec<f64> = x0.iter().map(|q| q.v).collect();
+        let r = fn_solve::newton_system(
+            &mut |x: &[f64]| {
+                self.tick()?;
+                for (k, v) in vars.iter().enumerate() {
+                    s.bind(v, Value::Num(Quantity::new(x[k], x0[k].dim)));
+                }
+                fs.iter().map(|f| Ok(self.eval(s, f)?.as_num("an equation")?.v)).collect()
+            },
+            &start,
+        );
+        for (v, p) in vars.iter().zip(prevs).rev() {
+            s.restore(v, p);
+        }
+        match r? {
+            Ok(x) => Ok(Value::Matrix(Matrix::column(
+                x.iter().zip(&x0).map(|(v, q)| Value::Num(Quantity::new(*v, q.dim))).collect(),
+            ))),
+            Err(fn_solve::Fail::Singular) => {
+                bail!("roots: the system is singular near the guess; try another guess")
+            }
+            Err(fn_solve::Fail::NoConvergence) => {
+                bail!("roots found no solution near the guess; try another guess")
+            }
+        }
+    }
+
+    /// `polyroots(v)` (SMath): the real roots of v[1] + v[2]·x + v[3]·x² + …, ascending.
+    fn polyroots(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let c: Vec<f64> = match self.eval(s, &args[0])? {
+            Value::Matrix(m) => m.data.iter().map(|v| v.as_scalar("a coefficient")).collect::<Result<_>>()?,
+            _ => bail!("polyroots needs a vector of coefficients, constant term first"),
+        };
+        match fn_solve::poly_roots(&c) {
+            Ok(r) => Ok(Value::Matrix(Matrix::column(r.into_iter().map(Value::num).collect()))),
+            Err((real, complex)) => {
+                let real: Vec<String> = real.iter().map(|x| format!("{x}")).collect();
+                bail!(
+                    "polyroots: {} roots are complex, which is not supported yet (real roots: {})",
+                    complex.len(),
+                    if real.is_empty() { "none".to_string() } else { real.join(", ") }
+                )
+            }
+        }
+    }
+
+    /// `IsDefined(x)` (SMath): 1 when x is a variable or function defined here, else 0.
+    fn is_defined(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let name = ident(&args[0], "the argument of IsDefined")?;
+        let defined = |b: Option<&Binding>| matches!(b, Some(Binding::Val(_) | Binding::Func(_)));
+        Ok(Value::bool(defined(s.get(name)) || (0..=16).any(|n| defined(s.get(&func_key(name, n))))))
     }
 
     /// `root(f(x), x, a, b)` / `solve(x^2 == 2, x, a, b)`: a root between a and b.

@@ -1164,6 +1164,42 @@ mod tests {
     }
 
     #[test]
+    fn smath_functions_as_typed_in_a_worksheet() {
+        let r = shown(&[
+            "k := 200 'kN/'m",
+            "roots(k*x == 50 'kN, x, 1 'm)",
+            "roots(x^2 - 2, x, 1)",
+            "roots([x + y == 3; x - y == 1], [x; y], [0; 0])",
+            "roots(sys(x + y == 3, x - y == 1, 2, 1), [x; y], [0; 0])",
+            "polyroots([2; -3; 1])",
+            "IsDefined(k)",
+            "IsDefined(zz)",
+            "M := [1, 2; 3, 4]",
+            "col(M, 2)",
+            "submatrix(M, 2, 2, 1, 2)",
+            "strlen(\"Quire\")",
+            "substr(\"SMath Studio\", 6, 6)",
+            "gcd(12, 18)",
+            "UnitsOf(5 'kN)",
+            "if(1 > 2, 0, error(\"custom stop\"))",
+        ]);
+        assert_eq!(r[1], "0.25 'm");
+        assert_eq!(r[2], "1.4142");
+        assert_eq!(r[3], "[2; 1]");
+        assert_eq!(r[4], "[2; 1]", "SMath's sys(…) form");
+        assert_eq!(r[5], "[1; 2]");
+        assert_eq!(r[6], "1");
+        assert_eq!(r[7], "0");
+        assert_eq!(r[9], "[2; 4]");
+        assert_eq!(r[10], "[3, 4]");
+        assert_eq!(r[11], "5");
+        assert_eq!(r[12], "\"Studio\"");
+        assert_eq!(r[13], "6");
+        assert_eq!(r[14], "1 'N");
+        assert_eq!(r[15], "custom stop");
+    }
+
+    #[test]
     fn strings_comparisons_and_conditionals() {
         let r = shown(&[
             "F := 900 'kgf",

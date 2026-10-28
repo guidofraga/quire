@@ -64,8 +64,14 @@ const FUNCTIONS: Row[] = [
   ["interp(cspline(vx, vy), vx, vy, x)", "cubic spline (pspline, lspline: other ends)"],
   ["median, percentile(v, p), var, stdev", "statistics; Var, Stdev (or var.s, stdev.s) for a sample"],
   ["Ceil(x, y), Floor, Round, Trunc", "to a multiple: Ceil(1.23 m, 5 cm) = 1.25 m"],
+  ["roots(e, x, guess), roots(sys(…), [x; y], [x0; y0]), polyroots(v)", "equations and systems, as in SMath"],
   ["det, inverse, transpose, identity, rows, cols", "matrices"],
-  ["mean, sort, norm, dot, cross, length, stack, augment", "vectors"],
+  ["col, row, submatrix, diag, trace, rank, eigenvals, eigenvecs, csort, rsort", "more matrix functions"],
+  ["mean, sort, norm, dot, cross, length, stack, augment, product, reverse", "vectors"],
+  ["cinterp, lookup, vlookup, hlookup", "spline interpolation and table lookup"],
+  ["strlen, substr, findstr, strrep, insert, str2num, num2str, concat", "text (positions start at 0)"],
+  ["gcd, lcm, perm, comb, Gamma, erf, random, UnitsOf, IsDefined, error(\"…\")", "numbers and checks"],
+  ["line(…), if(c, a, b), while(c, …), for(i, 1..n, …), break, continue", "programming, drawn as blocks"],
 ];
 
 const TABLES: Row[] = [

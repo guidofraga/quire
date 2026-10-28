@@ -123,9 +123,19 @@ const body = (e: Expr) =>
   lines((e.t === "Call" && (e.c[0] === "block" || e.c[0] === "line") ? e.c[1] : [e]).map(m), "prog");
 const head = (word: string, ...xs: string[]) => row(kw(word), space(0.3), ...xs);
 
+/** A program statement (as in interp.rs): `line(vx, vy)` of plain values is the line fit instead. */
+const isStatement = (e: Expr) =>
+  e.t === "Define" ||
+  (e.t === "Ident" && (e.c === "break" || e.c === "continue")) ||
+  (e.t === "Call" && ["if", "while", "for", "line", "block"].includes(e.c[0]));
+
 function program(name: string, args: Expr[]): string | null {
   const [x, y, z, w] = args;
+  if (name === "line" && args.length === 2 && !args.some(isStatement)) return null;
   if (name === "block" || name === "line") return lines(args.map(m), "prog");
+  // SMath's system: the equations under a brace (the last two arguments are its size)
+  if (name === "sys" && args.length >= 3)
+    return row(mo("{", ' stretchy="true" symmetric="true"'), lines(args.slice(0, -2).map(m), "sys"));
   switch (`${name}/${args.length}`) {
     case "if/3":
       return lines([head("if", m(x)), body(y), kw("else"), body(z)], "prog-head");
@@ -196,7 +206,8 @@ function m(e: Expr): string {
     case "Unit":
       return unit(e.c);
     case "Str":
-      return `<ms class="str">${esc(e.c)}</ms>`;
+      // quotes written out: Chromium (WebView2 on Windows) lays <ms> out over several lines
+      return `<mtext class="str">"${esc(e.c)}"</mtext>`;
     case "Placeholder":
       return `<mi class="ph">□</mi>`;
     case "Paren":

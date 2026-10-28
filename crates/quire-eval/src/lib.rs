@@ -8,6 +8,9 @@
 mod builtins;
 mod constants;
 mod error;
+mod fn_matrix;
+mod fn_solve;
+mod fn_text;
 mod format;
 mod interp;
 mod numeric;

@@ -184,7 +184,12 @@ pub fn call(name: &str, args: &[Value]) -> Option<Result<Value>> {
         "num2str" => num2str(args),
         "concat" => concat(args),
         "eval" => arity(name, args, |n| n == 1, "1 argument").map(|_| args[0].clone()),
-        _ => return crate::stats::call(name, args),
+        // SMath functions, one module per family (fn_matrix.rs, fn_text.rs)
+        _ => {
+            return crate::stats::call(name, args)
+                .or_else(|| crate::fn_matrix::call(name, args))
+                .or_else(|| crate::fn_text::call(name, args));
+        }
     };
     Some(r)
 }

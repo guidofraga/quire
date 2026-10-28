@@ -381,7 +381,8 @@ math {
 }
 
 mtable.prog,
-mtable.prog-head {
+mtable.prog-head,
+mtable.sys {
   vertical-align: middle;
 }
 
@@ -391,7 +392,8 @@ mtable.prog {
 }
 
 mtable.prog > mtr > mtd,
-mtable.prog-head > mtr > mtd {
+mtable.prog-head > mtr > mtd,
+mtable.sys > mtr > mtd {
   padding: 0.1em 0.15em;
   text-align: left;
 }
