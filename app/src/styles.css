@@ -761,7 +761,8 @@ ms.str::after {
     gap: 0 !important;
   }
 
-  .sheet {
+  /* page sheets only: spreadsheet tables are <table class="sheet"> */
+  div.sheet {
     /* a hair under the paper height so rounding never spills onto an extra page */
     height: calc(var(--sheet-h) - 1px) !important;
     box-shadow: none !important;
@@ -770,8 +771,12 @@ ms.str::after {
     break-inside: avoid;
   }
 
-  .sheet:last-child {
+  div.sheet:last-child {
     break-after: auto;
+  }
+
+  table.sheet {
+    box-shadow: none !important;
   }
 
   .area {
