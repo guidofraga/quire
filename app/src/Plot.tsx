@@ -3,16 +3,18 @@
 // values in the axis units; this file only lays them out.
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { prettyValue } from "./math";
-import { Check, Field, Num, Text } from "./Inspector";
-import { contentBottom, heights, insertRegion, layout, LINE, setState, snap, state, updateRegion } from "./store";
+import { Check, Field, Num, Select, Text } from "./Inspector";
+import { contentBottom, flash, heights, insertRegion, layout, LINE, setState, snap, state, updateRegion } from "./store";
 import type { PlotView, Region } from "./types";
+
+type Style = NonNullable<Series["style"]>;
 
 export interface Series {
   y: string;
   x?: string;
   range?: string;
   label?: string;
-  style?: { color?: string; width?: number };
+  style?: { color?: string; width?: number; dash?: "dashed" | "dotted"; draw?: "line" | "points" | "line+points" };
 }
 
 interface AxisSpec {
@@ -132,6 +134,10 @@ export function PlotBody(props: { r: Region }) {
     const within = (v: number, [a, b]: [number, number]) => v >= Math.min(a, b) - 1e-9 * Math.abs(b - a) && v <= Math.max(a, b) + 1e-9 * Math.abs(b - a);
     return x !== null && y !== null && Number.isFinite(x) && Number.isFinite(y) && within(x, L.x) && within(y, L.y);
   };
+  /** How a series is drawn: a line (solid, dashed, dotted), points, or both. */
+  const drawAs = (i: number) => series()[i]?.style?.draw ?? (isData(i) ? "line+points" : "line");
+  const DASHES: Record<string, string> = { dashed: "7 5", dotted: "1.5 4" };
+  const dash = (i: number) => DASHES[series()[i]?.style?.dash ?? ""];
   const color = (i: number) => series()[i]?.style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length];
   const name = (i: number) => series()[i]?.label || series()[i]?.y || `Series ${i + 1}`;
   const isData = (i: number) => !series()[i]?.range;
@@ -254,13 +260,21 @@ export function PlotBody(props: { r: Region }) {
           <For each={drawn()}>
             {(s) => (
               <>
-                <path class="plot-line" d={path(s.xs, s.ys)} stroke={color(s.i)} stroke-width={series()[s.i]?.style?.width ?? 2} />
+                <Show when={drawAs(s.i) !== "points"}>
+                  <path
+                    class="plot-line"
+                    d={path(s.xs, s.ys)}
+                    stroke={color(s.i)}
+                    stroke-width={series()[s.i]?.style?.width ?? 2}
+                    stroke-dasharray={dash(s.i)}
+                  />
+                </Show>
               </>
             )}
           </For>
         </g>
         {/* data points, whole even on the edge of the plot */}
-        <For each={drawn().filter((s) => isData(s.i) && s.xs.length <= 200)}>
+        <For each={drawn().filter((s) => drawAs(s.i) !== "line" && s.xs.length <= 400)}>
           {(s) => (
             <For each={s.xs}>
               {(x, k) => (
@@ -297,6 +311,36 @@ export function PlotBody(props: { r: Region }) {
             )}
           </For>
         </Show>
+        {/* legend: inside the drawing, so copied images and PDFs keep it */}
+        <Show when={drawn().length > 1 && r().legend !== "none"}>
+          {(() => {
+            const rows = () => drawn();
+            const boxW = () => 30 + Math.max(...rows().map((s) => name(s.i).length)) * 6.3;
+            const boxH = () => rows().length * 16 + 8;
+            const pos = () => {
+              const L = layout();
+              const where = (r().legend as string | undefined) ?? "top-left";
+              const x = where.endsWith("right") ? L.w - L.right - boxW() - 8 : L.left + 8;
+              const y = where.startsWith("bottom") ? L.h - L.bottom - boxH() - 6 : L.top + 6;
+              return { x, y };
+            };
+            return (
+              <g class="plot-legend" transform={`translate(${pos().x} ${pos().y})`}>
+                <rect width={boxW()} height={boxH()} rx={4} />
+                <For each={rows()}>
+                  {(s, k) => (
+                    <g transform={`translate(8 ${12 + k() * 16})`}>
+                      <line x1={0} x2={14} y1={0} y2={0} stroke={color(s.i)} stroke-width={2.5} stroke-dasharray={dash(s.i)} />
+                      <text x={20} y={4}>
+                        {name(s.i)}
+                      </text>
+                    </g>
+                  )}
+                </For>
+              </g>
+            );
+          })()}
+        </Show>
         {/* hover */}
         <Show when={readout()}>
           {(h) => (
@@ -309,18 +353,6 @@ export function PlotBody(props: { r: Region }) {
           )}
         </Show>
       </svg>
-      <Show when={drawn().length > 1 && r().legend !== "none"}>
-        <div class="plot-legend" style={{ left: `${layout().left + 8}px`, top: `${layout().top + 6}px` }}>
-          <For each={drawn()}>
-            {(s) => (
-              <div class="plot-key">
-                <span class="plot-swatch" style={{ background: color(s.i) }} />
-                {name(s.i)}
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
       <Show when={readout()}>
         {(h) => {
           const L = layout();
@@ -467,6 +499,23 @@ export function PlotFields(props: { r: Region }) {
                 />
               </Field>
             </div>
+            <Field label="Draw as">
+              <Select<string>
+                value={`${s().style?.draw ?? (s().range ? "line" : "line+points")}${s().style?.dash ? `:${s().style!.dash}` : ""}`}
+                options={[
+                  ["line", "Line"],
+                  ["line:dashed", "Dashed line"],
+                  ["line:dotted", "Dotted line"],
+                  ["points", "Points"],
+                  ["line+points", "Line and points"],
+                ]}
+                onChange={(v) => {
+                  const [draw, dash] = v.split(":") as [Style["draw"], Style["dash"]];
+                  const style = tidy({ ...s().style, draw, dash });
+                  setSeries(i, { style: Object.keys(style).length ? style : undefined });
+                }}
+              />
+            </Field>
             <Show when={view()?.series[i]?.error}>
               <div class="err">{view()!.series[i].error}</div>
             </Show>
@@ -505,8 +554,70 @@ export function PlotFields(props: { r: Region }) {
         )}
       </For>
       <Check checked={r().grid !== false} label="Grid" onChange={(on) => updateRegion(r().id, { grid: on ? true : false })} />
-      <Check checked={r().legend !== "none"} label="Legend (two or more series)" onChange={(on) => updateRegion(r().id, { legend: on ? undefined : "none" })} />
+      <Field label="Legend" hint="Shown with two or more series">
+        <Select<string>
+          value={(r().legend as string | undefined) ?? "top-left"}
+          options={[
+            ["top-left", "Top left"],
+            ["top-right", "Top right"],
+            ["bottom-left", "Bottom left"],
+            ["bottom-right", "Bottom right"],
+            ["none", "None"],
+          ]}
+          onChange={(v) => updateRegion(r().id, { legend: v === "top-left" ? undefined : v })}
+        />
+      </Field>
       <Check checked={!!r().extrema} label="Mark maximum and minimum" onChange={(on) => updateRegion(r().id, { extrema: on || undefined })} />
     </>
   );
+}
+
+/** Double-click or Enter on a plot: its series, ready to type in. */
+export function editPlot(id: string) {
+  setState({ selection: [id], caret: null, inspector: true });
+  setTimeout(() => document.querySelector<HTMLInputElement>(".plot-series input")?.focus(), 30);
+}
+
+const INLINED = ["fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linejoin", "stroke-linecap", "paint-order", "font-size", "font-family", "font-weight", "opacity"];
+
+/** Right-click ▸ Copy as Image: the plot as a PNG at twice its size, for Word or e-mail. */
+export async function copyPlotImage(id: string) {
+  const svg = document.querySelector<SVGSVGElement>(`[data-region="${CSS.escape(id)}"] .plot svg`);
+  if (!svg) return;
+  const copy = svg.cloneNode(true) as SVGSVGElement;
+  copy.querySelector(".plot-hover")?.remove();
+  // the page's stylesheet does not travel with the image: copy the computed styles in
+  const from = [svg, ...svg.querySelectorAll("*")];
+  const to = [copy, ...copy.querySelectorAll("*")];
+  from.forEach((el, k) => {
+    const cs = getComputedStyle(el);
+    const style = INLINED.map((p) => `${p}:${cs.getPropertyValue(p)}`).join(";");
+    to[k]?.setAttribute("style", style);
+  });
+  copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const [w, h] = [svg.width.baseVal.value, svg.height.baseVal.value];
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
+  // drawn inside the clipboard item, so the write starts while the click still counts
+  const png = (async () => {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = w * scale;
+    canvas.height = h * scale;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("no image"))), "image/png"));
+  })();
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+    flash("Copied the plot as an image");
+  } catch (e) {
+    flash(`Could not copy the plot: ${(e as Error).message}`);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

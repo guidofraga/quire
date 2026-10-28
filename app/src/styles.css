@@ -2553,20 +2553,14 @@ ms.str::after {
   stroke-width: 1;
 }
 
-.plot-legend {
-  position: absolute;
-  padding: 3px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.85);
-  color: #0b0b0b;
-  pointer-events: none;
+.plot-legend rect {
+  fill: rgba(255, 255, 255, 0.88);
+  stroke: #e6e5e1;
 }
 
-.plot-key {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  line-height: 16px;
+.plot-legend text {
+  fill: #0b0b0b;
+  font-size: 11px;
 }
 
 .plot-swatch {

@@ -1,4 +1,5 @@
 // Document actions that span the UI: clipboard, images, duplicate, context menus.
+import { copyPlotImage, editPlot } from "./Plot";
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
 import { latex } from "./latex";
@@ -284,6 +285,7 @@ export function installContextMenus(run: (command: string) => void) {
     if (!many && r?.kind === "text" && state.editing === id)
       items.push({ label: "Insert Math", shortcut: "⇧⌘M", run: go("insert_math") }, null);
     if (!many && r && isSheet(r) && state.editing === id) items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
+    else if (!many && r?.kind === "plot2d") items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({ label: isSheet(r) ? "Edit Table" : "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
     items.push(
@@ -322,6 +324,7 @@ export function installContextMenus(run: (command: string) => void) {
         null,
       );
     } else if (r && ["image", "table", "plot2d"].includes(r.kind)) {
+      if (r.kind === "plot2d") items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlotImage(id)) });
       items.push(
         {
           label: r.caption ? "Remove Caption" : "Add Caption",

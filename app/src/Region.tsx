@@ -2,7 +2,7 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { nameAt, setCaretName, trace } from "./trace";
 import { paletteOpen } from "./Palette";
-import { DEFAULT_SIZE, PlotBody } from "./Plot";
+import { DEFAULT_SIZE, editPlot, PlotBody } from "./Plot";
 import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
@@ -858,7 +858,11 @@ export function RegionBox(props: RegionProps) {
         props.onDragStart(r().id, e);
       }}
       onDblClick={(e) =>
-        r().kind === "table" ? editTableAt(r().id, [e.clientX, e.clientY]) : startEditing(r().id, [e.clientX, e.clientY])
+        r().kind === "table"
+          ? editTableAt(r().id, [e.clientX, e.clientY])
+          : r().kind === "plot2d"
+            ? editPlot(r().id)
+            : startEditing(r().id, [e.clientX, e.clientY])
       }
       onContextMenu={(e) => {
         e.preventDefault();

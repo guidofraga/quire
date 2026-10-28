@@ -3,6 +3,7 @@ import { openRegionMenu } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping, RegionBox } from "./Region";
 import { nearestRegion, stepRegion } from "./nav";
+import { editPlot } from "./Plot";
 import { Sheet } from "./Sheet";
 import { prefs } from "./settings";
 import {
@@ -376,7 +377,8 @@ export function Canvas() {
     }
     if (e.key === "Enter" && sel.length === 1) {
       e.preventDefault();
-      startEditing(sel[0]);
+      if (layout().byId.get(sel[0])?.region.kind === "plot2d") editPlot(sel[0]);
+      else startEditing(sel[0]);
       return;
     }
     if (e.key === "Escape") {
