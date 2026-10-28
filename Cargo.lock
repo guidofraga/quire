@@ -2670,7 +2670,7 @@ dependencies = [
 
 [[package]]
 name = "quire-app"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "flate2",
  "jpeg-encoder",
@@ -2691,14 +2691,14 @@ dependencies = [
 
 [[package]]
 name = "quire-ast"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "quire-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "quire-ast",
  "quire-doc",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "quire-doc"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -2719,7 +2719,7 @@ dependencies = [
 
 [[package]]
 name = "quire-eval"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "quire-ast",
  "quire-units",
@@ -2727,7 +2727,7 @@ dependencies = [
 
 [[package]]
 name = "quire-service"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "jotdown",
@@ -2742,7 +2742,7 @@ dependencies = [
 
 [[package]]
 name = "quire-units"
-version = "0.1.8"
+version = "0.1.9"
 
 [[package]]
 name = "quote"
