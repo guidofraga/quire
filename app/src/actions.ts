@@ -276,6 +276,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Table of Contents", run: go("insert_toc") },
         { label: "List of Figures", run: go("insert_figures") },
         { label: "List of Tables", run: go("insert_tables") },
+        { label: "Summary of Checks", run: go("insert_checks") },
         null,
         { label: "Page View", checked: layout().pageView, run: go("page_view") },
         { label: "Document Settings…", run: go("document_settings") },

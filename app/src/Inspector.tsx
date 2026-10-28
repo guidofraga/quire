@@ -334,11 +334,12 @@ function RegionTab() {
               <Match when={r().kind === "toc"}>
                 <Field label="Lists">
                   <Select
-                    value={(r().of as "headings" | "figures" | "tables") ?? "headings"}
+                    value={(r().of as "headings" | "figures" | "tables" | "checks") ?? "headings"}
                     options={[
                       ["headings", "Headings (table of contents)"],
                       ["figures", "Figures"],
                       ["tables", "Tables"],
+                      ["checks", "Checks (pass / fail)"],
                     ]}
                     onChange={(v) => updateRegion(r().id, { of: v })}
                   />

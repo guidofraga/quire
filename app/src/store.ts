@@ -841,12 +841,12 @@ export function distributeRegions(ids: string[], axis: "x" | "y") {
 // Inserting structure
 // ---------------------------------------------------------------------------
 
-export type ContentsKind = "headings" | "figures" | "tables";
+export type ContentsKind = "headings" | "figures" | "tables" | "checks";
 
 export function insertContents(of: ContentsKind) {
   commitEditing();
   const [x, y] = state.caret ?? [0, snap(contentBottom() + GRID)];
-  const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables" }[of];
+  const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables", checks: "Summary of Checks" }[of];
   mutate((d) => {
     d.regions.push({ id: newId(), kind: "toc", at: [x, y], of, title });
   });

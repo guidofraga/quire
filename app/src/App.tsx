@@ -43,6 +43,7 @@ import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
 import { closeMenu, setMenu } from "./menu";
+import { checks, failing, tableName } from "./checks";
 import { PagePopover } from "./Popover";
 import { checkForUpdates, UpdateBanner } from "./Updates";
 import { setWelcomeOpen, Welcome } from "./Welcome";
@@ -289,6 +290,44 @@ function openZoomMenu(e: MouseEvent) {
   });
 }
 
+/** One line of a status menu: what the region says, shortened. */
+function regionText(id: string): string {
+  const r = layout().byId.get(id)?.region;
+  const text = r?.kind === "math" ? (r.expr ?? "") : r?.kind === "table" ? tableName(r) : r?.kind ?? "";
+  return text.length > 34 ? `${text.slice(0, 33)}…` : text;
+}
+
+/** The toolbar's error count: every error, in reading order; click one to go there. */
+function openErrorsMenu(e: MouseEvent) {
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const errors = layout().list.filter((p) => !p.hidden && state.views[p.region.id]?.error);
+  setMenu({
+    x: box.left,
+    y: box.bottom + 4,
+    items: errors.map((p) => {
+      const msg = state.views[p.region.id]!.error!;
+      return {
+        label: `${regionText(p.region.id)} — ${msg.length > 60 ? `${msg.slice(0, 59)}…` : msg}`,
+        run: () => (closeMenu(), reveal(p.region.id)),
+      };
+    }),
+  });
+}
+
+/** The toolbar's checks: failing ones first, each one click away. */
+function openChecksMenu(e: MouseEvent) {
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const list = [...failing(), ...checks().filter((c) => c.pass)];
+  setMenu({
+    x: box.left,
+    y: box.bottom + 4,
+    items: list.map((c) => ({
+      label: `${c.pass ? "✓" : "✗"}  ${c.cell ? `${regionText(c.id)} · ${c.row || `row ${c.cell[0] + 1}`}` : regionText(c.id)}`,
+      run: () => (closeMenu(), reveal(c.id)),
+    })),
+  });
+}
+
 function nextError() {
   const errors = Object.values(state.views).filter((v) => v.error);
   if (!errors.length) return;
@@ -371,6 +410,8 @@ function runCommand(id: string) {
       return insertContents("figures");
     case "insert_tables":
       return insertContents("tables");
+    case "insert_checks":
+      return insertContents("checks");
     case "toggle_inspector":
       return setState({ inspector: !state.inspector });
     case "region_properties":
@@ -591,12 +632,18 @@ export function App() {
         </div>
         <div class="status" data-tauri-drag-region>
           <Show when={(state.report?.errorCount ?? 0) > 0}>
-            <button class="errors" onClick={nextError} title="Go to next error (⌘')">
+            <button class="errors" onClick={openErrorsMenu} title="List the errors (⌘' goes to the next one)">
               {state.report!.errorCount} {state.report!.errorCount === 1 ? "error" : "errors"}
             </button>
           </Show>
-          <span class="muted" data-tauri-drag-region>
-            {regionCount()} math · {(state.report?.elapsedMs ?? 0).toFixed(2)} ms
+          <Show when={checks().length}>
+            <button class="checks-pill" classList={{ failing: failing().length > 0 }} onClick={openChecksMenu} title="List the checks">
+              {failing().length ? `✗ ${failing().length} of ${checks().length} failing` : `✓ ${checks().length} ${checks().length === 1 ? "check" : "checks"}`}
+            </button>
+          </Show>
+          <span class="muted" data-tauri-drag-region title={`Evaluated in ${(state.report?.elapsedMs ?? 0).toFixed(2)} ms`}>
+            {regionCount()} math
+            {layout().pageView ? ` · ${layout().contentPages} ${layout().contentPages === 1 ? "page" : "pages"}` : ""}
           </span>
           <div class="segmented" role="group" aria-label="View">
             <button classList={{ on: !layout().pageView }} onClick={() => layout().pageView && togglePageView()} title="Free canvas">

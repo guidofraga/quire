@@ -3,6 +3,7 @@ import { hitIds } from "./find";
 import { nameAt, setCaretName, trace } from "./trace";
 import { paletteOpen } from "./Palette";
 import { fillRefs } from "./xref";
+import { type Check, checks, failing, isComparison, mathCheck, tableName } from "./checks";
 import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
 import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
@@ -15,7 +16,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, S
 import { produce } from "solid-js/store";
 import { api } from "./api";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
-import { cellHtml, mathml, prettyValue } from "./math";
+import { cellHtml, esc, mathml, prettyValue } from "./math";
 import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
 import { createEditor, placeCaret, plainText, releaseEditor } from "./richtext";
@@ -619,18 +620,30 @@ function FixButton(props: { id: string; fix: Fix }) {
 function MathBody(props: { r: Region }) {
   const view = () => state.views[props.r.id];
   const editing = () => state.editing === props.r.id;
+  // a check: a comparison reads ✓ / ✗ instead of = 1 / = 0; an OK / FAIL result is coloured
+  const check = () => mathCheck(props.r, view());
+  const comparison = () => check() !== null && isComparison(view()?.input);
   const rendered = () => {
     const v = view();
-    return v?.input ? mathml(v.input, props.r.show ? v.result : null, v.units, v.constants, props.r.show === "symbolic") : null;
+    const result = props.r.show && !comparison() ? v?.result : null;
+    return v?.input ? mathml(v.input, result, v.units, v.constants, props.r.show === "symbolic") : null;
   };
   return (
     <>
       <Show when={editing()}>
         <MathEditor r={props.r} />
       </Show>
-      <div class="math-line" classList={{ preview: editing() }}>
+      <div
+        class="math-line"
+        classList={{ preview: editing(), "check-pass": check() === true, "check-fail": check() === false }}
+      >
         <Show when={rendered()} fallback={<code class="raw">{props.r.expr || " "}</code>}>
           <span class="m" innerHTML={rendered()!} />
+        </Show>
+        <Show when={comparison()}>
+          <span class="check-badge" classList={{ pass: check() === true, fail: check() === false }} title={check() ? "This check passes" : "This check fails"}>
+            {check() ? "✓" : "✗ fails"}
+          </span>
         </Show>
         <Show when={props.r.note && !editing()}>
           <Html html={state.report?.html[`${props.r.id}:note`]} class="note" />
@@ -803,6 +816,51 @@ const headingOf = (html: string | undefined) => {
 };
 
 /** Table of contents / list of figures / list of tables — always current. */
+/** Insert ▸ Summary of Checks: every check, ✓ or ✗, kept current. */
+function ChecksBody(props: { p: Placed }) {
+  const r = () => props.p.region;
+  const start = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
+  const label = (c: Check) => {
+    const v = state.views[c.id];
+    const region = layout().byId.get(c.id)?.region;
+    if (c.cell && region) return esc(`${tableName(region)} · ${c.row || `row ${c.cell[0] + 1}`}`);
+    // the comparison itself, typeset, and its note if it has one
+    const input = v?.input?.t === "Define" ? v.input.c.rhs : v?.input;
+    const math = input ? mathml(input, null, v!.units, v!.constants) : esc(region?.expr ?? "");
+    const note = region?.note ? ` <span class="checks-note">${esc(String(region.note))}</span>` : "";
+    return math + note;
+  };
+  const summary = () => {
+    const f = failing().length;
+    const n = checks().length;
+    return f ? `${f} of ${n} failing` : n === 1 ? "1 check, passing" : `All ${n} checks pass`;
+  };
+  return (
+    <div class="contents checks-summary" style={{ width: `${Math.min(availableWidth(props.p.x), 640)}px` }}>
+      <div class="contents-title">{String(r().title ?? "Summary of Checks")}</div>
+      <Show when={checks().length} fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}>
+        <div class="checks-total" classList={{ failing: failing().length > 0 }}>
+          {summary()}
+        </div>
+        <For each={checks()}>
+          {(c) => (
+            <div class="contents-row" onPointerDown={(ev) => ev.stopPropagation()} onClick={() => revealRegion(c.id)} title="Go to">
+              <span class="checks-mark" classList={{ pass: c.pass, fail: !c.pass }}>
+                {c.pass ? "✓" : "✗"}
+              </span>
+              <span class="contents-label" innerHTML={label(c)} />
+              <span class="contents-dots" />
+              <Show when={layout().pageView}>
+                <span class="contents-page">{c.page + start()}</span>
+              </Show>
+            </div>
+          )}
+        </For>
+      </Show>
+    </div>
+  );
+}
+
 function ContentsBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const of = () => (r().of as string | undefined) ?? "headings";
@@ -1029,6 +1087,9 @@ export function RegionBox(props: RegionProps) {
         </Match>
         <Match when={r().kind === "table"}>
           <TableBody p={placed()} />
+        </Match>
+        <Match when={r().kind === "toc" && r().of === "checks"}>
+          <ChecksBody p={placed()} />
         </Match>
         <Match when={r().kind === "toc"}>
           <ContentsBody p={placed()} />

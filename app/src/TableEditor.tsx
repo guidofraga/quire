@@ -2,6 +2,7 @@
 // The engine evaluates them (crates/quire-eval/src/sheet.rs); this is the grid you edit.
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
 import { esc, prettyValue } from "./math";
+import { verdictOf } from "./checks";
 import { commitEditing, contentBottom, flash, insertRegion, layout, type Placed, LINE, redo, setState, snap, startEditing, state, undo, updateRegion } from "./store";
 import type { Region } from "./types";
 
@@ -641,6 +642,8 @@ export function SheetGrid(props: { p: Placed }) {
                         active: active(i, j),
                         err: !!view(i, j)?.error,
                         formula: !!view(i, j)?.formula,
+                        "check-pass": !view(i, j)?.error && verdictOf(view(i, j)?.text) === true,
+                        "check-fail": !view(i, j)?.error && verdictOf(view(i, j)?.text) === false,
                       }}
                       style={{ "text-align": align(i, j) }}
                       title={view(i, j)?.error ?? undefined}

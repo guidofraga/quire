@@ -279,6 +279,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "insert_toc", "Table of Contents", None)?,
             &item(app, "insert_figures", "List of Figures", None)?,
             &item(app, "insert_tables", "List of Tables", None)?,
+            &item(app, "insert_checks", "Summary of Checks", None)?,
             &sep()?,
             &item(app, "insert_ref", "Cross-Reference…", Some("CmdOrCtrl+Shift+R"))?,
         ],

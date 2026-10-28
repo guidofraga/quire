@@ -3166,3 +3166,103 @@ a.xref-missing {
   color: var(--chrome-ink);
   font: inherit;
 }
+
+/* design checks: ✓ passes, ✗ fails; colours print too */
+.check-badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font: 600 11px -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.check-badge.pass {
+  background: #e3f4e8;
+  color: #1a7f37;
+}
+
+.check-badge.fail {
+  background: #fde7e7;
+  color: #c62828;
+}
+
+.math-line.check-pass .res ms,
+.math-line.check-pass .res .str {
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+.math-line.check-fail .res ms,
+.math-line.check-fail .res .str {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.sheet td.check-pass {
+  color: #1a7f37;
+  font-weight: 600;
+  background: rgba(26, 127, 55, 0.07);
+}
+
+.sheet td.check-fail {
+  color: #c62828;
+  font-weight: 600;
+  background: rgba(198, 40, 40, 0.08);
+}
+
+.checks-pill {
+  padding: 2px 9px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(26, 127, 55, 0.14);
+  color: #1a7f37;
+  font: 600 11.5px -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.checks-pill.failing {
+  background: rgba(198, 40, 40, 0.16);
+  color: #d33;
+}
+
+@media (prefers-color-scheme: dark) {
+  .checks-pill {
+    color: #5fd17a;
+  }
+}
+
+.checks-total {
+  margin: -2px 0 8px;
+  color: #1a7f37;
+  font: 600 12px -apple-system, system-ui, sans-serif;
+}
+
+.checks-total.failing {
+  color: #c62828;
+}
+
+.checks-mark {
+  flex: none;
+  width: 16px;
+  font-weight: 700;
+}
+
+.checks-mark.pass {
+  color: #1a7f37;
+}
+
+.checks-mark.fail {
+  color: #c62828;
+}
+
+.checks-summary .contents-label math {
+  font-size: 1.05em;
+}
+
+.checks-note {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
