@@ -104,6 +104,10 @@ Convert any SMath file:
 python3 -I tools/sm2quire.py "path/to/file.sm" out.quire
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md): setup, the checks to run, commit and pull-request conventions, and how releases are made.
+
 ## Licensing
 
 - Engine crates and the file-format spec and schema: **MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`).
