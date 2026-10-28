@@ -101,12 +101,8 @@ Convert any SMath file:
 python3 -I tools/sm2quire.py "path/to/file.sm" out.quire
 ```
 
-## Licensing (provisional; revisit before the first public release)
+## Licensing
 
-- Engine crates and the file-format spec/schema: **MIT OR Apache-2.0**.
-- Desktop app (Tauri shell, canvas, editor): **GPL-3.0-or-later**.
-- One rule applies from day one: engine crates never depend on GPL code. Giac, if used, lives only in the app tier.
-
-Trademark, App Store distribution, the plugin exception and contributor terms wait until there's a working app and outside contributors.
-
-Reference material (not part of the project): `SMathStudioDesktop.1_5_0_9678.*` installers and the original `.sm` file.
+- Engine crates and the file-format spec and schema: **MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`).
+- Desktop app (`app/`: the Tauri shell, canvas and editor): **GPL-3.0-or-later** (`app/LICENSE`).
+- Engine crates never depend on GPL code, so they can be used anywhere.
