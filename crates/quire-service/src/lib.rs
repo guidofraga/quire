@@ -150,6 +150,12 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
     PlotInput { series, x_unit: axis("x"), y_unit: axis("y") }
 }
 
+/// Trailing `→` (or `->`) inside text asks for the expression worked out symbolically.
+fn split_symbolic(expr: &str) -> Option<String> {
+    let t = expr.trim_end();
+    t.strip_suffix('→').or_else(|| t.strip_suffix("->")).map(|rest| rest.trim_end().to_string())
+}
+
 /// Trailing `=` asks for the result (`` $`A =` `` inside text).
 fn split_show(expr: &str) -> (String, bool) {
     let t = expr.trim_end();
@@ -174,7 +180,8 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
         match r.kind.as_str() {
             "math" => {
                 if let Some(expr) = &r.expr {
-                    let show = r.show.is_some();
+                    let symbolic = r.show.as_deref() == Some("symbolic");
+                    let show = r.show.is_some() && !symbolic;
                     out.push(MathInput {
                         id: r.id.clone(),
                         expr: expr.clone(),
@@ -182,13 +189,19 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         display: display_of(r),
                         table: None,
                         plot: None,
+                        symbolic,
                     });
                 }
             }
             "text" => {
                 let Some(text) = r.extra.get("text").and_then(|t| localized(t, lang)) else { continue };
                 for (n, m) in inline_math(text).into_iter().enumerate() {
-                    let (expr, show) = split_show(&m);
+                    let symbolic = split_symbolic(&m);
+                    let (expr, show) = match &symbolic {
+                        Some(e) => (e.clone(), false),
+                        None => split_show(&m),
+                    };
+                    let symbolic = symbolic.is_some();
                     out.push(MathInput {
                         id: format!("{}:m{n}", r.id),
                         expr,
@@ -196,6 +209,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         display: DisplaySpec::default(),
                         table: None,
                         plot: None,
+                        symbolic,
                     });
                 }
             }
@@ -208,6 +222,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     display: display_of(r),
                     table: Some(table_input(r)),
                     plot: None,
+                    symbolic: false,
                 });
             }
             "plot2d" => {
@@ -218,6 +233,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     display: DisplaySpec::default(),
                     table: None,
                     plot: Some(plot_input(r)),
+                    symbolic: false,
                 });
             }
             "table" if tables => {
@@ -229,6 +245,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         display: display_of(r),
                         table: None,
                         plot: None,
+                        symbolic: false,
                     });
                 }
             }
@@ -286,6 +303,9 @@ pub struct RegionView {
     /// A 2D plot's series, in its axis units.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plot: Option<PlotView>,
+    /// The result is the expression worked out symbolically (shown after `→`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub symbolic: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -530,6 +550,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                         .map(|s| SeriesView { xs: s.xs.clone(), ys: s.ys.clone(), error: s.error.clone() })
                         .collect(),
                 }),
+                symbolic: false,
             });
             continue;
         }
@@ -566,6 +587,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 unit_choices: Vec::new(),
                 fix: None,
                 plot: None,
+                symbolic: false,
             });
             continue;
         }
@@ -593,6 +615,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             },
             fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
             plot: None,
+            symbolic: input.symbolic,
         });
     }
 

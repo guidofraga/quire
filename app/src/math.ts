@@ -180,13 +180,19 @@ function m(e: Expr): string {
 }
 
 /** One `<math>` element for an input, optionally followed by `= result`. */
-export function mathml(input: Expr, result?: Expr | null, units: readonly string[] = [], constants: readonly string[] = []): string {
+export function mathml(
+  input: Expr,
+  result?: Expr | null,
+  units: readonly string[] = [],
+  constants: readonly string[] = [],
+  symbolic = false,
+): string {
   unitNames = new Set(units);
   constantNames = new Set(constants);
   const parts = [m(input)];
   unitNames = new Set();
   constantNames = new Set();
-  if (result) parts.push(mo("="), `<mrow class="res">${m(result)}</mrow>`);
+  if (result) parts.push(mo(symbolic ? "→" : "="), `<mrow class="res${symbolic ? " sym" : ""}">${m(result)}</mrow>`);
   return `<math>${row(...parts)}</math>`;
 }
 

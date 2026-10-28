@@ -43,6 +43,8 @@ export interface RegionView {
   fix?: Fix;
   /** A 2D plot's series, in its axis units. */
   plot?: PlotView;
+  /** The result is symbolic (`→`). */
+  symbolic?: boolean;
 }
 
 /** quire_service::PlotView */

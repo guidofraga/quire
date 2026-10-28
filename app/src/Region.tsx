@@ -74,7 +74,7 @@ function fillInlineMath(el: HTMLElement) {
     const v = state.views[span.dataset.math!];
     span.classList.toggle("inline-error", !!v?.error);
     span.title = v?.error ?? "";
-    span.innerHTML = v?.input ? mathml(v.input, v.result, v.units, v.constants) : `<code class="raw">?</code>`;
+    span.innerHTML = v?.input ? mathml(v.input, v.result, v.units, v.constants, v.symbolic) : `<code class="raw">?</code>`;
   }
 }
 
@@ -236,7 +236,7 @@ function MathEditor(props: { r: Region }) {
   const unitSuggestions = () => {
     const { show, unit } = splitShow(input.value);
     const choices = state.views[props.r.id]?.unitChoices ?? [];
-    if (!show || !atEnd() || !choices.length) return hideCompletions();
+    if (show !== "value" || !atEnd() || !choices.length) return hideCompletions();
     const typed = (unit ?? "").toLowerCase();
     const items: Sym[] = choices
       .filter((c) => c.unit.toLowerCase().startsWith(typed))
@@ -310,6 +310,10 @@ function MathEditor(props: { r: Region }) {
       // a word and a space: this is prose, not math
       e.preventDefault();
       convertEditing("text", `${input.value} `);
+    } else if (e.ctrlKey && e.key === ".") {
+      // SMath's key for symbolic evaluation
+      e.preventDefault();
+      document.execCommand("insertText", false, " →");
     } else if (e.ctrlKey && e.key.toLowerCase() === "g") {
       e.preventDefault();
       const i = input.selectionStart ?? 0;
@@ -490,7 +494,7 @@ function MathBody(props: { r: Region }) {
   const editing = () => state.editing === props.r.id;
   const rendered = () => {
     const v = view();
-    return v?.input ? mathml(v.input, props.r.show ? v.result : null, v.units, v.constants) : null;
+    return v?.input ? mathml(v.input, props.r.show ? v.result : null, v.units, v.constants, props.r.show === "symbolic") : null;
   };
   return (
     <>

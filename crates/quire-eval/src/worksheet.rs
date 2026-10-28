@@ -27,6 +27,8 @@ pub struct MathInput {
     pub table: Option<TableInput>,
     /// A 2D plot instead of an expression (`expr` is then unused).
     pub plot: Option<PlotInput>,
+    /// Show the expression worked out symbolically (`→`) rather than its value.
+    pub symbolic: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -568,6 +570,9 @@ impl Worksheet {
     }
 
     fn step(&mut self, r: &MathInput, e: &Expr) -> Outcome {
+        if r.symbolic {
+            return self.step_symbolic(r, e);
+        }
         let mut out = Outcome::new(&r.id);
         self.used_units.clear();
         self.used_constants.clear();
@@ -600,6 +605,42 @@ impl Worksheet {
         out.units = std::mem::take(&mut self.used_units).into_iter().collect();
         out.constants = std::mem::take(&mut self.used_constants).into_iter().collect();
         out.shadowing = std::mem::take(&mut self.used_shadowing).into_iter().collect();
+        out
+    }
+
+    /// `expr →`: worked out symbolically. A definition still defines (a function as
+    /// usual, a variable when its value can be computed) and shows its right-hand side.
+    fn step_symbolic(&mut self, r: &MathInput, e: &Expr) -> Outcome {
+        let mut out = Outcome::new(&r.id);
+        let shown_of = match e {
+            Expr::Define { lhs, rhs, .. } => {
+                if let Expr::Call(..) = lhs.as_ref() {
+                    let _ = self.define(&mut out, lhs, rhs);
+                } else if let Expr::Ident(name) = lhs.as_ref() {
+                    out.defines = Some(name.clone());
+                    match self.eval(rhs) {
+                        Ok(v) => self.bind(name.clone(), Binding::Val(v)),
+                        Err(_) => self.bind(
+                            name.clone(),
+                            Binding::Failed(format!(
+                                "{name} is symbolic (→): it has no value to compute with"
+                            )),
+                        ),
+                    }
+                }
+                rhs.as_ref()
+            }
+            other => other,
+        };
+        let globals = Rc::clone(&self.globals);
+        let functions = |name: &str, arity: usize| match globals.get(&func_key(name, arity)) {
+            Some(Binding::Func(f)) => Some((f.params.clone(), f.body.clone())),
+            _ => None,
+        };
+        match crate::symbolic::evaluate(shown_of, &functions) {
+            Ok(text) => out.shown = Some(text),
+            Err(msg) => out.error = Some(msg),
+        }
         out
     }
 
@@ -690,6 +731,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                symbolic: false,
             })
             .collect();
         Worksheet::new(DisplaySettings::default()).run(&regions)
@@ -762,6 +804,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            symbolic: false,
         };
         let table = |id: &str, name: &str, rows: &[&[&str]]| MathInput {
             id: id.into(),
@@ -774,6 +817,7 @@ mod tests {
                 ..Default::default()
             }),
             plot: None,
+            symbolic: false,
         };
         let regions = [
             math("a", "γ := 1.4"),
@@ -829,6 +873,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            symbolic: false,
         };
         let plot = |id: &str, series: Vec<SeriesInput>, y_unit: Option<&str>| MathInput {
             id: id.into(),
@@ -837,6 +882,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: Some(PlotInput { series, x_unit: None, y_unit: y_unit.map(Into::into) }),
+            symbolic: false,
         };
         let over = |y: &str, range: &str| SeriesInput { y: y.into(), x: None, range: Some(range.into()) };
         let regions = [
@@ -861,6 +907,33 @@ mod tests {
         assert!(out[6].error.as_deref().unwrap().ends_with("but the axis is in MPa"), "{:?}", out[6].error);
         assert!(out[7].error.is_some());
         assert_eq!(out[3].error, None);
+    }
+
+    #[test]
+    fn arrows_work_symbolically_with_the_documents_functions() {
+        let line = |id: &str, e: &str, symbolic: bool| MathInput {
+            id: id.into(),
+            expr: e.into(),
+            show: false,
+            display: DisplaySpec::default(),
+            table: None,
+            plot: None,
+            symbolic,
+        };
+        let out = Worksheet::new(DisplaySettings::default()).run(&[
+            line("q", "q := 10 'kN/'m", false),
+            line("M", "M(x) := q*x*(L - x)/2", false),
+            line("V", "diff(M(x), x)", true),
+            line("A", "int(M(x), x, 0, L)", true),
+            line("y", "y := expand((a + 1)^2)", true),
+            line("bad", "[1, 2]", true),
+        ]);
+        let shown = |i: usize| out[i].shown.clone().or(out[i].error.clone()).unwrap_or_default();
+        assert_eq!(shown(2), "q*(L - 2*x)/2");
+        assert_eq!(shown(3), "L^3*q/12");
+        assert_eq!(shown(4), "a^2 + 2*a + 1");
+        assert_eq!(out[4].defines.as_deref(), Some("y"));
+        assert!(out[5].error.is_some());
     }
 
     #[test]
@@ -920,6 +993,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                symbolic: false,
             })
             .collect();
         let settings = DisplaySettings { working_units: true, ..Default::default() };
@@ -1066,6 +1140,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                symbolic: false,
             },
             MathInput {
                 id: "b".into(),
@@ -1074,6 +1149,7 @@ mod tests {
                 display: DisplaySpec { unit: Some("kN".into()), decimals: Some(3) },
                 table: None,
                 plot: None,
+                symbolic: false,
             },
         ];
         let out = ws.run(&regions);

@@ -13,6 +13,7 @@ mod interp;
 mod ops;
 mod plot;
 mod sheet;
+mod symbolic;
 mod value;
 mod worksheet;
 

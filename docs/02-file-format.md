@@ -138,6 +138,7 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 | Matrix | `[1, 2; 3, 4]`; multi-line allowed | 2D matrix |
 | Range | `1..10`, or `range(0, 1, 0.1)` for a step | |
 | Empty slot | `?` (an unfinished expression; evaluating it is an error) | placeholder box |
+| Symbolic evaluation | stored as `"show": "symbolic"` (typed as a trailing `→` or `->`, or Ctrl+.). Names stay symbols and the document's functions are expanded; `diff(e, x)`, `diff(e, x, n)`, `int(e, x)`, `int(e, x, a, b)`, `expand(e)`, `simplify(e)` and `solve(a == b, x)` (degree one or two) work symbolically. Inline math in text takes a trailing `→` too | `→ result` |
 | Calculus | `diff(f(x), x)`, `diff(f, x, 2)`, `int(f, x)`, `int(f, x, a, b)`, `sum(e, i, 1, n)`, `prod(...)`, `lim(e, x, a)` | 2D operators |
 | Roots / abs | `sqrt(x)`, `root(x, n)`, `abs(x)` | √x, ⁿ√x, \|x\| |
 | Programming | `if(c, a, b)`, `block(...)`, `for(i, range, body)`, `while(c, body)` | SMath program blocks |

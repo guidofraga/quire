@@ -477,16 +477,22 @@ export function startEditing(id: string, at?: [number, number]) {
  * Split SMath-style `=` ("show the result") from the typed text, with the unit to show it
  * in when one follows (`M = kN*m`).
  */
-export function splitShow(text: string): { expr: string; show: boolean; unit?: string } {
+/** What a line asks to show: `= value` (in a unit, `= kN`) or `→` symbolically (`->` too). */
+export function splitShow(text: string): { expr: string; show: false | "value" | "symbolic"; unit?: string } {
   const t = text.trimEnd();
-  if (t.endsWith("=") && !/(==|:=|<=|>=|!=|≠=)$/.test(t)) return { expr: t.slice(0, -1).trimEnd(), show: true };
+  const arrow = /\s*(→|->)$/.exec(t);
+  if (arrow) return { expr: t.slice(0, arrow.index).trimEnd(), show: "symbolic" };
+  if (t.endsWith("=") && !/(==|:=|<=|>=|!=|≠=)$/.test(t)) return { expr: t.slice(0, -1).trimEnd(), show: "value" };
   const m = /^(.*[^=<>!:≠\s])\s*=\s*([\p{L}\p{N}_*/^()·.'°%\s-]*\p{L}[\p{L}\p{N}_*/^()·.'°%\s-]*)$/u.exec(t);
-  if (m && !/=/.test(m[2])) return { expr: m[1].trimEnd(), show: true, unit: m[2].trim() };
+  if (m && !/=/.test(m[2])) return { expr: m[1].trimEnd(), show: "value", unit: m[2].trim() };
   return { expr: text, show: false };
 }
 
 export function editText(r: Region): string {
-  if (r.kind === "math") return (r.expr ?? "") + (r.show ? ` =${r.display?.unit ? ` ${r.display.unit}` : ""}` : "");
+  if (r.kind === "math") {
+    if (r.show === "symbolic") return `${r.expr ?? ""} →`;
+    return (r.expr ?? "") + (r.show ? ` =${r.display?.unit ? ` ${r.display.unit}` : ""}` : "");
+  }
   return localized(r.text, state.doc.meta?.lang);
 }
 
@@ -560,7 +566,7 @@ export function setLive(id: string, text: string) {
       if (unit && !choices.some((c) => c.unit === unit) && choices.some((c) => c.unit.startsWith(unit!)))
         unit = r.display?.unit;
       r.expr = expr;
-      if (show) r.show = "value";
+      if (show) r.show = show;
       else delete r.show;
       if (unit) r.display = { ...r.display, unit };
       else if (r.display?.unit) {
@@ -692,7 +698,7 @@ export function insertAtCaret(kind: "math" | "text", initial = "") {
   let region: Region;
   if (kind === "math") {
     const { expr, show } = splitShow(initial);
-    region = { id, kind: "math", at: [x, y], expr, ...(show ? { show: "value" as const } : {}) };
+    region = { id, kind: "math", at: [x, y], expr, ...(show ? { show } : {}) };
   } else {
     region = { id, kind: "text", at: [x, y], text: initial };
   }
@@ -719,7 +725,7 @@ export function convertEditing(kind: "math" | "text", text: string) {
         delete r.text;
         const { expr, show } = splitShow(text);
         r.expr = expr;
-        if (show) r.show = "value";
+        if (show) r.show = show;
       }
     }),
   );
