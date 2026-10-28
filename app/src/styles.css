@@ -3266,3 +3266,20 @@ a.xref-missing {
   color: var(--muted);
   font-size: 0.92em;
 }
+
+/* a table's column edges, draggable on the page */
+.sheet-wrap {
+  position: relative;
+}
+
+.col-grip {
+  position: absolute;
+  top: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.col-grip:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}

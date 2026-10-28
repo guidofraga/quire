@@ -204,6 +204,49 @@ function fill(dir: "down" | "right") {
   });
 }
 
+/**
+ * Sort the rows by the active cell's column, by value: numbers by size, text alphabetically,
+ * empty cells last. A header row, and rows that add up a range (a Total row, =SUM(B2:B4)),
+ * stay where they are; the other rows are reordered among themselves, and every reference
+ * in the table follows the row it pointed at, so =B2*C2 and the totals stay right.
+ */
+function sortRows(descending: boolean) {
+  const t = editingTable();
+  if (!t) return;
+  const c = sel().c;
+  const first = t.header?.row ? 1 : 0;
+  const cells = state.views[t.id]?.cells ?? [];
+  const key = (i: number): number | string | null => {
+    const text = cells[i]?.[c]?.text ?? null;
+    if (!text) return null;
+    const n = parseFloat(text);
+    return Number.isFinite(n) && !text.startsWith('"') ? n : text.replace(/^"|"$/g, "").toLowerCase();
+  };
+  editRows(t.id, (rows) => {
+    const sums = (i: number) => rows[i].some((cell) => cell.startsWith("=") && /[A-Z]+\$?\d+:\$?[A-Z]+\$?\d+/i.test(cell));
+    const movable = rows.map((_, i) => i).filter((i) => i >= first && !sums(i));
+    const sorted = [...movable].sort((a, b) => {
+      const ka = key(a);
+      const kb = key(b);
+      if (ka === null || kb === null) return ka === kb ? 0 : ka === null ? 1 : -1;
+      const cmp = typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb), undefined, { numeric: true });
+      return descending ? -cmp : cmp;
+    });
+    // where each row ends up (rows are 1-based in references)
+    const newRow = new Map<number, number>();
+    sorted.forEach((from, k) => newRow.set(from + 1, movable[k] + 1));
+    const follow = (formula: string) =>
+      formula.replace(/(^|[^A-Za-z0-9_!.$])(\$?[A-Z]{1,3})(\$?)(\d+)(?![\w(])/g, (m, pre: string, col: string, abs: string, row: string) => {
+        const to = newRow.get(Number(row));
+        return to ? `${pre}${col}${abs}${to}` : m;
+      });
+    const next = rows.map((row) => row.map((cell) => (cell.startsWith("=") ? `=${follow(cell.slice(1))}` : cell)));
+    const result = next.map((row) => [...row]);
+    sorted.forEach((from, k) => (result[movable[k]] = next[from]));
+    rows.splice(0, rows.length, ...result);
+  });
+}
+
 /** Insert or delete whole rows/columns at the selection; formulas follow. */
 export function structure(op: "row_above" | "row_below" | "col_left" | "col_right" | "delete_rows" | "delete_cols") {
   const t = editingTable();
@@ -327,6 +370,9 @@ export function tableMenuItems(run: (fn: () => void) => () => void) {
     null,
     { label: "Delete Rows", run: run(() => structure("delete_rows")) },
     { label: "Delete Columns", run: run(() => structure("delete_cols")) },
+    null,
+    { label: "Sort Ascending by This Column", run: run(() => sortRows(false)) },
+    { label: "Sort Descending by This Column", run: run(() => sortRows(true)) },
     null,
     { label: "Fill Down", shortcut: "⌘D", run: run(() => fill("down")) },
     { label: "Fill Right", run: run(() => fill("right")) },
@@ -513,6 +559,46 @@ export function SheetGrid(props: { p: Placed }) {
     }
   };
 
+  // column edges on the page (not editing): measured when the pointer comes over the table
+  let tableEl!: HTMLTableElement;
+  const [edges, setEdges] = createSignal<{ j: number; x: number; h: number }[]>([]);
+  const measureEdges = () => {
+    if (editing() || !tableEl.rows[0]) return;
+    const box = tableEl.getBoundingClientRect();
+    const z = state.view.zoom;
+    setEdges([...tableEl.rows[0].cells].map((td, j) => ({ j, x: (td.getBoundingClientRect().right - box.left) / z, h: box.height / z })));
+  };
+  const setColumnWidth = (j: number, w: number | undefined) =>
+    updateRegion(r().id, (reg) => {
+      const list = [...((reg.columns as Column[] | undefined) ?? [])];
+      while (list.length <= j) list.push({});
+      list[j] = { ...list[j], width: w };
+      if (w === undefined) delete list[j].width;
+      reg.columns = list;
+    });
+  const dragEdge = (e: PointerEvent, j: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const col = tableEl.querySelectorAll("col")[j] as HTMLTableColElement | undefined;
+    const cell = tableEl.rows[0]?.cells[j];
+    if (!col || !cell) return;
+    const startW = cell.getBoundingClientRect().width / state.view.zoom;
+    const x0 = e.clientX;
+    let w = startW;
+    const move = (ev: PointerEvent) => {
+      w = Math.max(28, Math.round(startW + (ev.clientX - x0) / state.view.zoom));
+      col.style.width = `${w}px`;
+      measureEdges();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setColumnWidth(j, w);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   // column widths: drag the edge of a column letter
   const startResize = (e: PointerEvent, j: number) => {
     e.preventDefault();
@@ -578,7 +664,12 @@ export function SheetGrid(props: { p: Placed }) {
           </span>
         </div>
       </Show>
-      <table class="sheet" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column, editing: editing() }}>
+      <table
+        ref={tableEl}
+        class="sheet"
+        classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column, editing: editing() }}
+        onPointerEnter={measureEdges}
+      >
         <colgroup>
           <Show when={editing()}>
             <col class="row-head-col" />
@@ -677,6 +768,23 @@ export function SheetGrid(props: { p: Placed }) {
           </For>
         </tbody>
       </table>
+      {/* outside editing: drag a column's edge to resize it, double-click to fit its contents */}
+      <Show when={!editing() && !state.printing}>
+        <For each={edges()}>
+          {(e) => (
+            <div
+              class="col-grip"
+              style={{ left: `${e.x - 3}px`, height: `${e.h}px` }}
+              title="Drag to resize · double-click to fit"
+              onPointerDown={(ev) => dragEdge(ev, e.j)}
+              onDblClick={(ev) => {
+                ev.stopPropagation();
+                setColumnWidth(e.j, undefined);
+              }}
+            />
+          )}
+        </For>
+      </Show>
     </div>
   );
 }
