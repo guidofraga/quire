@@ -138,6 +138,16 @@ export function PlotBody(props: { r: Region }) {
   const drawAs = (i: number) => series()[i]?.style?.draw ?? (isData(i) ? "line+points" : "line");
   const DASHES: Record<string, string> = { dashed: "7 5", dotted: "1.5 4" };
   const dash = (i: number) => DASHES[series()[i]?.style?.dash ?? ""];
+  /**
+   * Which samples get a marker: every data point, but only about 20 evenly spaced ones
+   * along a function (its 241 samples as dots read as a heavy beaded line).
+   */
+  const markers = (s: { i: number; xs: (number | null)[]; ys: (number | null)[] }) => {
+    const all = s.xs.map((_, k) => k).filter((k) => inside(s.xs[k], s.ys[k]));
+    if (isData(s.i)) return all;
+    const step = Math.max(1, Math.round(all.length / 20));
+    return all.filter((_, n) => n % step === 0 || n === all.length - 1);
+  };
   const color = (i: number) => series()[i]?.style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length];
   const name = (i: number) => series()[i]?.label || series()[i]?.y || `Series ${i + 1}`;
   const isData = (i: number) => !series()[i]?.range;
@@ -273,14 +283,19 @@ export function PlotBody(props: { r: Region }) {
             )}
           </For>
         </g>
-        {/* data points, whole even on the edge of the plot */}
-        <For each={drawn().filter((s) => drawAs(s.i) !== "line" && s.xs.length <= 400)}>
+        {/* points, whole even on the edge of the plot */}
+        <For each={drawn().filter((s) => drawAs(s.i) !== "line")}>
           {(s) => (
-            <For each={s.xs}>
-              {(x, k) => (
-                <Show when={inside(x, s.ys[k()])}>
-                  <circle class="plot-dot" cx={layout().sx(x as number)} cy={layout().sy(s.ys[k()] as number)} r={4} fill={color(s.i)} />
-                </Show>
+            <For each={markers(s)}>
+              {(k) => (
+                <circle
+                  class="plot-dot"
+                  classList={{ dense: markers(s).length > 40 }}
+                  cx={layout().sx(s.xs[k] as number)}
+                  cy={layout().sy(s.ys[k] as number)}
+                  r={markers(s).length > 40 ? 2.5 : 3.5}
+                  fill={color(s.i)}
+                />
               )}
             </For>
           )}

@@ -19,6 +19,9 @@ const WRITING: Row[] = [
   ["Tab / ⇧Tab", "moves between the ? slots of a template"],
   ["Ctrl+G", "turns the letter before the caret into Greek (a → α)"],
   ["\\alpha, \\sqrt, \\int…", "LaTeX names convert on space"],
+  ["\\text, \\plot, \\table", "in math: switch to text, plot this function, insert a table"],
+  ["\\math, \\ref", "in text: live math, cross-reference"],
+  [`${shift}${mod}T while typing math`, "turns the line into text; right-click converts any region"],
 ];
 
 const SYNTAX: Row[] = [

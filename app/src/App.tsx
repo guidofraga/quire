@@ -53,8 +53,11 @@ import {
   type AlignMode,
   alignRegions,
   commitEditing,
+  convertEditing,
   deleteRegions,
   distributeRegions,
+  editText,
+  setAppCommand,
   flash,
   insertArea,
   insertAtCaret,
@@ -372,8 +375,12 @@ function runCommand(id: string) {
     case "insert_math":
       // inside text: live math at the caret; elsewhere a math region
       return activeView() ? runText(commands.insertMath) : insertAtCaret("math");
-    case "insert_text":
+    case "insert_text": {
+      // while typing math, the line becomes text instead
+      const editing = state.editing ? layout().byId.get(state.editing)?.region : undefined;
+      if (editing?.kind === "math") return convertEditing("text", editText(editing));
       return insertAtCaret("text");
+    }
     case "insert_area":
       return insertArea();
     case "zoom_in":
@@ -440,6 +447,7 @@ export function App() {
 
   onMount(async () => {
     installContextMenus(runCommand);
+    setAppCommand(runCommand);
     installTrace();
     installRefs(reveal);
     // ⌘K from anywhere, the math being edited included (it keeps its keys to itself)

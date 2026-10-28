@@ -2532,11 +2532,20 @@ ms.str::after {
   stroke-linecap: round;
 }
 
-.plot-dot,
 .plot-extremum circle,
 .plot-hover circle {
   stroke: #fff;
   stroke-width: 2;
+}
+
+/* a thin ring keeps neighbouring points apart without making them look heavy */
+.plot-dot {
+  stroke: #fff;
+  stroke-width: 1.25;
+}
+
+.plot-dot.dense {
+  stroke: none;
 }
 
 .plot-extremum text {

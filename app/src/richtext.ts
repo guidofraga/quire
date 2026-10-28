@@ -19,8 +19,9 @@ import { EditorView, type NodeView } from "prosemirror-view";
 import { createEffect, createRoot, createSignal } from "solid-js";
 import { type RefStyle, refStyleOf, refText } from "./xref";
 import { prefs } from "./settings";
+import { runAppCommand } from "./store";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
-import { completions, exact, isTemplate, type Sym } from "./symbols";
+import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -558,6 +559,13 @@ function latexBefore(view: EditorView): RegExpExecArray | null {
 
 /** Put a symbol (text) or a structure (an inline math chip) at the selection. */
 function insertSym(view: EditorView, sym: Sym, from: number, to: number) {
+  if (sym.command) {
+    // a `\` command: the typed `\ref` goes, then the command runs at the caret
+    view.dispatch(view.state.tr.delete(from, to));
+    view.focus();
+    runAppCommand(sym.command);
+    return;
+  }
   const tr = view.state.tr;
   if (isTemplate(sym)) tr.replaceWith(from, to, N.math.create({ expr: sym.insert }));
   else tr.insertText(sym.insert, from, to);
@@ -570,7 +578,7 @@ function updateCompletion(view: EditorView) {
   if (!m) return hideCompletions();
   const at = view.state.selection.from;
   const coords = view.coordsAtPos(at);
-  const items = m[1] ? completions(m[1]) : completions("", 0);
+  const items = m[1] ? completions(m[1], 8, "text") : commandsFor("text");
   if (!items.length) return hideCompletions();
   showCompletions(coords.left, coords.bottom + 4, items, (sym) => insertSym(view, sym, at - m[0].length, at));
 }
@@ -646,7 +654,7 @@ export function createEditor(host: HTMLElement, content: string | { text: string
       // `\Delta` followed by a space or punctuation becomes Δ
       if (e.key.length === 1 && !/[A-Za-z\\]/.test(e.key) && !e.metaKey && !e.ctrlKey) {
         const m = latexBefore(v);
-        const sym = m?.[1] ? exact(m[1]) : undefined;
+        const sym = m?.[1] ? exact(m[1], "text") : undefined;
         if (m && sym) {
           const at = v.state.selection.from;
           insertSym(v, sym, at - m[0].length, at);

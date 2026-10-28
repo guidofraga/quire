@@ -732,6 +732,34 @@ export function convertEditing(kind: "math" | "text", text: string) {
   touch();
 }
 
+// The app's commands (App.tsx), for code that cannot import it: `\` commands.
+let appCommand: (id: string) => void = () => {};
+export const runAppCommand = (id: string) => appCommand(id);
+export function setAppCommand(run: (id: string) => void) {
+  appCommand = run;
+}
+
+/** Right-click ▸ Convert to Text / Convert to Math, for a region not being edited. */
+export function convertRegion(id: string, kind: "math" | "text") {
+  const r = layout().byId.get(id)?.region;
+  if (!r || r.kind === kind) return;
+  const text = kind === "text" ? editText(r) : localized(r.text, state.doc.meta?.lang).replace(/\\(.)/g, "$1");
+  updateRegion(id, (d) => {
+    d.kind = kind;
+    delete d.show;
+    if (kind === "text") {
+      delete d.expr;
+      delete d.display;
+      d.text = text;
+    } else {
+      delete d.text;
+      const { expr, show } = splitShow(text.trim());
+      d.expr = expr;
+      if (show) d.show = show;
+    }
+  });
+}
+
 /** Names defined anywhere in the document (variables and functions), from the last evaluation. */
 export function definedNames(): Set<string> {
   const names = new Set<string>();

@@ -13,7 +13,7 @@ import { produce } from "solid-js/store";
 import { api } from "./api";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
 import { cellHtml, mathml, prettyValue } from "./math";
-import { completions, exact, isTemplate, type Sym } from "./symbols";
+import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
 import { createEditor, placeCaret, plainText, releaseEditor } from "./richtext";
 import {
@@ -35,6 +35,7 @@ import {
   type Placed,
   regionGrew,
   renameIn,
+  runAppCommand,
   revealRegion,
   setHeights,
   setLive,
@@ -153,6 +154,23 @@ export function insertIntoMath(template: string): boolean {
 }
 
 const WORD = /^[\p{L}][\p{L}]+$/u;
+const WORDS = /^[\p{L}][\p{L}\p{N}_.]*(?:\s+[\p{L}][\p{L}\p{N}_.]*)*\s+(\p{L}{3,})$/u;
+const KEYWORDS = new Set(["and", "or", "not", "mod"]);
+
+/**
+ * Is what was typed at the start of a new region prose? A single word that is not a
+ * variable (`Area`), or words ending in a real word that is not a variable, unit or
+ * keyword (`A medida`); `x y` and `F kN` stay math.
+ */
+function looksLikeProse(value: string, id: string): boolean {
+  const names = definedNames();
+  if (WORD.test(value)) return !names.has(value);
+  const m = WORDS.exec(value);
+  if (!m) return false;
+  const last = m[1];
+  const units = state.views[id]?.units ?? [];
+  return !names.has(last) && !units.includes(last) && !KEYWORDS.has(last.toLowerCase());
+}
 
 const LATEX_BEFORE = /\\([A-Za-z]*)$/;
 const POPULAR = ["alpha", "beta", "gamma", "delta", "Delta", "theta", "lambda", "mu", "sigma", "omega", "phi", "sqrt", "frac", "sum", "int"]
@@ -192,6 +210,13 @@ function offsetAt(input: HTMLInputElement, x: number): number {
 function applySymbol(input: HTMLInputElement, sym: Sym, start: number, end: number) {
   input.focus();
   input.setSelectionRange(start, end);
+  if (sym.command) {
+    // a `\` command: the typed `\text` goes, then the command runs
+    if (start !== end) document.execCommand("delete");
+    if (sym.command === "to_text") convertEditing("text", input.value.trimEnd() ? `${input.value.trimEnd()} ` : "");
+    else runAppCommand(sym.command);
+    return;
+  }
   document.execCommand("insertText", false, sym.insert);
   const hole = input.value.indexOf("?", start);
   if (isTemplate(sym) && hole >= 0 && hole < start + sym.insert.length) input.setSelectionRange(hole, hole + 1);
@@ -226,7 +251,7 @@ function MathEditor(props: { r: Region }) {
     const m = latexBefore();
     if (!m) return unitSuggestions();
     const caret = input.selectionStart ?? 0;
-    const items = m[1] ? completions(m[1]) : POPULAR;
+    const items = m[1] ? completions(m[1], 8, "math") : [...commandsFor("math"), ...POPULAR];
     const [x, y] = caretPoint(input);
     showCompletions(x, y, items, (sym) => applySymbol(input, sym, caret - m[0].length, caret));
   };
@@ -264,7 +289,7 @@ function MathEditor(props: { r: Region }) {
     // `\Delta` followed by a space or an operator becomes Δ (Word's equation autocorrect)
     if (e.key.length === 1 && !/[A-Za-z\\]/.test(e.key) && !e.metaKey && !e.ctrlKey) {
       const m = latexBefore();
-      const sym = m?.[1] ? exact(m[1]) : undefined;
+      const sym = m?.[1] ? exact(m[1], "math") : undefined;
       if (m && sym) {
         const caret = input.selectionStart ?? 0;
         applySymbol(input, sym, caret - m[0].length, caret);
@@ -304,10 +329,9 @@ function MathEditor(props: { r: Region }) {
       e.key === " " &&
       state.editingFresh &&
       atEnd() &&
-      WORD.test(input.value) &&
-      !definedNames().has(input.value)
+      looksLikeProse(input.value, props.r.id)
     ) {
-      // a word and a space: this is prose, not math
+      // a word and a space, or words ending in a real word: this is prose, not math
       e.preventDefault();
       convertEditing("text", `${input.value} `);
     } else if (e.ctrlKey && e.key === ".") {

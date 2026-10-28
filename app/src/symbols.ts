@@ -11,7 +11,23 @@ export interface Sym {
   textOnly?: boolean;
   /** Shown instead of `\name` (unit suggestions show the converted result). */
   note?: string;
+  /** A `\` command (`\text`, `\ref`) instead of something to insert: the app command it runs. */
+  command?: string;
 }
+
+/** Where the `\` menu is open: in math being typed, or in text. */
+export type Where = "math" | "text";
+
+/** `\` commands, listed before symbols where they apply. */
+const COMMANDS: (Sym & { where: Where })[] = [
+  { name: "text", insert: "", label: "¶", note: "\\text  write text instead", command: "to_text", where: "math" },
+  { name: "plot", insert: "", label: "∿", note: "\\plot  plot this function", command: "insert_plot", where: "math" },
+  { name: "table", insert: "", label: "▦", note: "\\table  insert a table", command: "insert_table", where: "math" },
+  { name: "math", insert: "", label: "x²", note: "\\math  live math in the sentence", command: "insert_math", where: "text" },
+  { name: "ref", insert: "", label: "§", note: "\\ref  cross-reference…", command: "insert_ref", where: "text" },
+];
+
+export const commandsFor = (where: Where) => COMMANDS.filter((c) => c.where === where);
 
 export interface Category {
   id: string;
@@ -149,14 +165,16 @@ const BY_NAME = new Map(ALL.map((x) => [x.name, x]));
 
 export const isTemplate = (x: Sym) => x.insert.includes("?");
 
-export function exact(name: string): Sym | undefined {
-  return BY_NAME.get(name);
+export function exact(name: string, where?: Where): Sym | undefined {
+  return (where && commandsFor(where).find((c) => c.name === name)) || BY_NAME.get(name);
 }
 
-/** Commands starting with `prefix`; exact match first, then shorter names. */
-export function completions(prefix: string, limit = 8): Sym[] {
+/** Symbols (and, with `where`, commands) starting with `prefix`; exact match first, then shorter names. */
+export function completions(prefix: string, limit = 8, where?: Where): Sym[] {
   const lower = prefix.toLowerCase();
+  const commands = where ? commandsFor(where).filter((c) => c.name.startsWith(lower)) : [];
   const starts = ALL.filter((x) => x.name.startsWith(prefix));
   const loose = ALL.filter((x) => !x.name.startsWith(prefix) && x.name.toLowerCase().startsWith(lower));
-  return [...starts, ...loose].sort((a, b) => Number(b.name === prefix) - Number(a.name === prefix) || a.name.length - b.name.length).slice(0, limit);
+  const symbols = [...starts, ...loose].sort((a, b) => Number(b.name === prefix) - Number(a.name === prefix) || a.name.length - b.name.length);
+  return [...commands, ...symbols].slice(0, limit + commands.length);
 }

@@ -10,6 +10,7 @@ import type { Background } from "./pages";
 import {
   availableWidth,
   commitEditing,
+  convertRegion,
   deleteRegions,
   flash,
   GRID,
@@ -325,8 +326,11 @@ export function installContextMenus(run: (command: string) => void) {
         null,
         { label: "Show Result", checked: !!r.show, run: () => (closeMenu(), updateRegion(id, { show: r.show ? undefined : "value" })) },
         { label: "Exclude from Calculation", checked: !!r.disabled, run: () => (closeMenu(), updateRegion(id, { disabled: r.disabled ? undefined : true })) },
+        { label: "Convert to Text", run: () => (closeMenu(), commitEditing(), convertRegion(id, "text")) },
         null,
       );
+    } else if (!many && r?.kind === "text" && state.editing !== id) {
+      items.push({ label: "Convert to Math", run: () => (closeMenu(), convertRegion(id, "math")) }, null);
     } else if (r && ["image", "table", "plot2d"].includes(r.kind)) {
       if (r.kind === "plot2d") items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlotImage(id)) });
       items.push(
