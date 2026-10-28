@@ -45,6 +45,7 @@ import { RefPicker, setRefPickerOpen } from "./RefPicker";
 import { closeMenu, setMenu } from "./menu";
 import { PagePopover } from "./Popover";
 import { checkForUpdates, UpdateBanner } from "./Updates";
+import { setWelcomeOpen, Welcome } from "./Welcome";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
@@ -356,6 +357,8 @@ function runCommand(id: string) {
       return insertTable();
     case "insert_plot":
       return insertPlot();
+    case "welcome":
+      return setWelcomeOpen(true);
     case "check_updates":
       return void checkForUpdates(true);
     case "insert_ref":
@@ -538,8 +541,13 @@ export function App() {
       setState({ dirty: true });
     } else {
       const open = requested.map(documentPath)[0] ?? new URLSearchParams(location.search).get("open");
+      const last = prefs.onLaunch === "last" ? recentList()[0] : undefined;
       if (open) await openPath(open);
-      else loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+      else if (last) await openPath(last).catch(() => undefined);
+      if (!open && (!last || !state.path)) {
+        loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+        if (prefs.onLaunch === "welcome") setWelcomeOpen(true);
+      }
     }
     keepRecovery();
   });
@@ -633,6 +641,15 @@ export function App() {
       <RefPicker />
       <PagePopover />
       <UpdateBanner beforeRestart={guardUnsaved} />
+      <Welcome
+        openPath={openPath}
+        openDialog={() => runCommand("open")}
+        openTemplate={async (doc, origin) => {
+          if (!(await guardUnsaved())) return false;
+          loadDoc(doc, null, origin);
+          return true;
+        }}
+      />
       <TemplatesDialog
         onOpen={async (doc, origin) => {
           if (!(await guardUnsaved())) return false;

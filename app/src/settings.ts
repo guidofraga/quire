@@ -18,6 +18,8 @@ export interface Prefs {
   canvasPattern: CanvasPattern;
   /** On the free canvas, show the printable column and where pages break. */
   pageBreaks: boolean;
+  /** What Quire shows when it starts. */
+  onLaunch: "welcome" | "last" | "blank";
   /** Hover explanations for units and constants. */
   tooltips: boolean;
   /** Enter / Backspace on empty space open or close a line, moving what is below. */
@@ -42,6 +44,7 @@ const DEFAULTS: Prefs = {
   flatUnits: true,
   canvasPattern: "dots",
   pageBreaks: true,
+  onLaunch: "welcome",
   tooltips: true,
   shiftContent: true,
   exportDpi: 300,

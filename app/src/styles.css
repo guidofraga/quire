@@ -3017,3 +3017,152 @@ a.xref-missing {
     display: none;
   }
 }
+
+/* the welcome screen at launch */
+.welcome-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.22);
+  animation: fade-in 140ms ease-out;
+}
+
+.welcome {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  border-radius: 14px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+  font: 13px -apple-system, system-ui, sans-serif;
+}
+
+.welcome-head {
+  padding: 26px 28px 8px;
+}
+
+.welcome-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.welcome-sub {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.welcome-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 28px;
+  padding: 8px 28px 16px;
+}
+
+@media (max-width: 640px) {
+  .welcome-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.welcome h3 {
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.welcome-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.welcome-item:hover,
+.welcome-item:focus-visible {
+  border-color: var(--chrome-border);
+  background: var(--button-hover);
+  outline: none;
+}
+
+.welcome-item b {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome-item small {
+  display: block;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome-item > span:last-child {
+  min-width: 0;
+}
+
+.welcome-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--button);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.welcome-item.primary .welcome-icon {
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+}
+
+.welcome-empty {
+  margin: 4px 10px;
+  color: var(--muted);
+}
+
+.welcome-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 28px 16px;
+  border-top: 1px solid var(--chrome-border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.welcome-foot select {
+  margin-left: 8px;
+  padding: 2px 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 5px;
+  background: var(--button);
+  color: var(--chrome-ink);
+  font: inherit;
+}

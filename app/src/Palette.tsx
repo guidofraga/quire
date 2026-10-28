@@ -60,6 +60,7 @@ const COMMANDS: [string, string, string][] = [
   ["zoom_fit_page", "Zoom to Page", ""],
   ["next_error", "Next Error", `${mod}'`],
   ["help", "Quire Help", isMac ? "⌘?" : "F1"],
+  ["welcome", "Welcome Screen", ""],
   ["check_updates", "Check for Updates…", ""],
 ];
 
