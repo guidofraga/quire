@@ -113,7 +113,37 @@ function binary(op: BinaryOp, a: Expr, b: Expr): string {
 
 const d = mi("d", true);
 
+// Programming, drawn as SMath does: a keyword line, then the body behind a vertical bar,
+// one statement per line (`line`/`block`); `if` always takes the block form, as in SMath.
+const kw = (s: string) => `<mtext class="kw">${s}</mtext>`;
+const lines = (rows: string[], cls: string) =>
+  `<mtable class="${cls}" columnalign="left">${rows.map((r) => `<mtr><mtd>${r}</mtd></mtr>`).join("")}</mtable>`;
+/** A body: a block's statements, or a single statement, behind the bar. */
+const body = (e: Expr) =>
+  lines((e.t === "Call" && (e.c[0] === "block" || e.c[0] === "line") ? e.c[1] : [e]).map(m), "prog");
+const head = (word: string, ...xs: string[]) => row(kw(word), space(0.3), ...xs);
+
+function program(name: string, args: Expr[]): string | null {
+  const [x, y, z, w] = args;
+  if (name === "block" || name === "line") return lines(args.map(m), "prog");
+  switch (`${name}/${args.length}`) {
+    case "if/3":
+      return lines([head("if", m(x)), body(y), kw("else"), body(z)], "prog-head");
+    case "if/2":
+      return lines([head("if", m(x)), body(y)], "prog-head");
+    case "while/2":
+      return lines([head("while", m(x)), body(y)], "prog-head");
+    case "for/3":
+      return lines([head("for", m(x), mo("∈"), m(y)), body(z)], "prog-head");
+    case "for/4":
+      return lines([head("for", m(x), mo(","), m(y), mo(","), m(z)), body(w)], "prog-head");
+  }
+  return null;
+}
+
 function call(name: string, args: Expr[]): string {
+  const prog = program(name, args);
+  if (prog !== null) return prog;
   const [x, y, z, w] = args;
   switch (`${name}/${args.length}`) {
     case "sqrt/1":
@@ -162,7 +192,7 @@ function m(e: Expr): string {
     case "Num":
       return `<mn>${esc(grouping ? groupDigits(e.c) : e.c)}</mn>`;
     case "Ident":
-      return ident(e.c);
+      return e.c === "break" || e.c === "continue" ? kw(e.c) : ident(e.c);
     case "Unit":
       return unit(e.c);
     case "Str":

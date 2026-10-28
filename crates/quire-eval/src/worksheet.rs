@@ -1143,6 +1143,27 @@ mod tests {
     }
 
     #[test]
+    fn smath_programming_line_break_continue() {
+        let r = shown(&[
+            "line(a := 1, while(a < 100, a := 2*a), a)",
+            "line(s := 0, for(k, 1..10, line(if(k > 4, break, 0), s := s + k)), s)",
+            "line(s := 0, for(k, 1..6, line(if(mod(k, 2) == 0, continue, 0), s := s + k)), s)",
+            "line(s := 0, for(k := 1, k ≤ 10, k := k + 1, if(k > 3, break, s := s + k)), s)",
+            "f(n) := line(i := 0, while(1, line(i := i + 1, if(i ≥ n, break, 0))), i)",
+            "line(t := 0, for(j, 1..3, t := t + f(5)), t)",
+        ]);
+        assert_eq!(r[0], "128");
+        assert_eq!(r[1], "10", "break leaves the loop");
+        assert_eq!(r[2], "9", "continue skips the even k");
+        assert_eq!(r[3], "6", "break in the four-part for");
+        assert_eq!(r[5], "15", "a break inside f stays inside f");
+        let r =
+            shown(&["line(s := 0, for(k, 1..10, line(if(k > 4, break), s := s + k)), s)", "if(1 > 2, 5)"]);
+        assert_eq!(r[0], "10", "if without else");
+        assert_eq!(r[1], "0");
+    }
+
+    #[test]
     fn strings_comparisons_and_conditionals() {
         let r = shown(&[
             "F := 900 'kgf",

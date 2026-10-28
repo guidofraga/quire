@@ -76,10 +76,19 @@ impl<'e> Scope<'e> {
 const MAX_DEPTH: usize = 256;
 const MAX_STEPS: u64 = 20_000_000;
 
+/// `break` / `continue` met in a program (SMath's Programming palette): the enclosing
+/// block stops, and the innermost loop ends or moves on to its next pass.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Flow {
+    Break,
+    Continue,
+}
+
 pub struct Interp<'u> {
     pub units: &'u UnitRegistry,
     depth: usize,
     steps: u64,
+    flow: Option<Flow>,
     /// Plain names that resolved to units (`2 m`): the editor colours them as units.
     pub unit_idents: BTreeSet<String>,
     /// Plain names that resolved to built-in constants (`g`, `c`, `R`).
@@ -116,6 +125,7 @@ impl<'u> Interp<'u> {
             units,
             depth: 0,
             steps: 0,
+            flow: None,
             unit_idents: BTreeSet::new(),
             constant_idents: BTreeSet::new(),
             shadowing: BTreeSet::new(),
@@ -138,6 +148,10 @@ impl<'u> Interp<'u> {
     pub fn eval(&mut self, s: &mut Scope, e: &Expr) -> Result<Value> {
         match e {
             Expr::Num(t) => Ok(Value::num(parse_num(t)?)),
+            Expr::Ident(name) if matches!(name.as_str(), "break" | "continue") && s.get(name).is_none() => {
+                self.flow = Some(if name == "break" { Flow::Break } else { Flow::Continue });
+                Ok(Value::num(0.0))
+            }
             Expr::Ident(name) => self.lookup(s, name),
             Expr::Unit(name) => {
                 let u = self.unit(name)?;
@@ -319,14 +333,16 @@ impl<'u> Interp<'u> {
         self.depth += 1;
         let r = self.eval(&mut scope, &f.body);
         self.depth -= 1;
+        // a `break` outside any loop ends the function's program, not its caller's loop
+        self.flow = None;
         r
     }
 
     /// Constructs that control evaluation of their own arguments. `None` = not lazy.
     fn lazy(&mut self, s: &mut Scope, name: &str, args: &[Expr]) -> Option<Result<Value>> {
         Some(match (name, args.len()) {
-            ("if", 3) => self.if_(s, args),
-            ("block", _) => self.block(s, args),
+            ("if", 2 | 3) => self.if_(s, args),
+            ("block" | "line", _) => self.block(s, args),
             ("for", 3) => self.for_in(s, args),
             ("for", 4) => self.for_c(s, args),
             ("while", 2) => self.while_(s, args),
@@ -352,17 +368,30 @@ impl<'u> Interp<'u> {
         })
     }
 
+    /// `if(c, a, b)`; in a program `if(c, a)` without else, as in SMath (0 when c fails).
     fn if_(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
         let c = self.eval(s, &args[0])?.truthy()?;
-        self.eval(s, &args[if c { 1 } else { 2 }])
+        match args.get(if c { 1 } else { 2 }) {
+            Some(branch) => self.eval(s, branch),
+            None => Ok(Value::num(0.0)),
+        }
     }
 
     fn block(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
         let mut last = Value::num(0.0);
         for a in args {
-            last = self.eval(s, a)?;
+            let v = self.eval(s, a)?;
+            if self.flow.is_some() {
+                break;
+            }
+            last = v;
         }
         Ok(last)
+    }
+
+    /// After a loop's body: whether to leave the loop (`break`); `continue` just goes on.
+    fn leave_loop(&mut self) -> bool {
+        self.flow.take() == Some(Flow::Break)
     }
 
     fn for_in(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
@@ -376,6 +405,9 @@ impl<'u> Interp<'u> {
             self.tick()?;
             s.set(var, Binding::Val(item));
             last = self.eval(s, &args[2])?;
+            if self.leave_loop() {
+                break;
+            }
         }
         Ok(last)
     }
@@ -386,6 +418,9 @@ impl<'u> Interp<'u> {
         while self.eval(s, &args[1])?.truthy()? {
             self.tick()?;
             last = self.eval(s, &args[3])?;
+            if self.leave_loop() {
+                break;
+            }
             self.eval(s, &args[2])?;
         }
         Ok(last)
@@ -396,6 +431,9 @@ impl<'u> Interp<'u> {
         while self.eval(s, &args[0])?.truthy()? {
             self.tick()?;
             last = self.eval(s, &args[1])?;
+            if self.leave_loop() {
+                break;
+            }
         }
         Ok(last)
     }

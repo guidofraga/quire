@@ -169,6 +169,21 @@ export const STRUCTURES: Category[] = [
       t("max", "max(?, ?)", "Maximum"), t("min", "min(?, ?)", "Minimum"), t("if", "if(?, ?, ?)", "Condition"),
     ],
   },
+  {
+    // SMath's Programming palette; drawn as blocks (math.ts)
+    id: "program",
+    title: "Programming",
+    items: [
+      t("line", "line(?, ?)", "line: block of statements"),
+      t("ifthen", "if(?, ?)", "if"),
+      t("ifelse", "if(?, ?, ?)", "if … else"),
+      t("while", "while(?, ?)", "while"),
+      t("for", "for(i, 1..n, ?)", "for i ∈ range"),
+      t("forc", "for(i := 1, i ≤ n, i := i + 1, ?)", "for (start, condition, step)"),
+      t("break", "break", "break: leave the loop"),
+      t("continue", "continue", "continue: next pass of the loop"),
+    ],
+  },
 ];
 
 export const SYMBOLS: Category[] = [

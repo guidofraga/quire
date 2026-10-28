@@ -375,6 +375,31 @@ math {
   color: #9aa3af;
 }
 
+/* programming blocks (math.ts): keyword lines, and bodies behind a bar as in SMath */
+.kw {
+  font-weight: bold;
+}
+
+mtable.prog,
+mtable.prog-head {
+  vertical-align: middle;
+}
+
+mtable.prog {
+  border-left: 1.5px solid currentColor;
+  padding-left: 0.25em;
+}
+
+mtable.prog > mtr > mtd,
+mtable.prog-head > mtr > mtd {
+  padding: 0.1em 0.15em;
+  text-align: left;
+}
+
+mtable.prog-head > mtr:not(:first-child, :nth-child(3)) > mtd {
+  padding-left: 0.9em;
+}
+
 .math-line {
   display: flex;
   align-items: baseline;
