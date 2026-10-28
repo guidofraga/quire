@@ -4,8 +4,10 @@
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { prettyValue } from "./math";
 import { Check, Field, Num, Select, Text } from "./Inspector";
+import { closePopover, openPopover } from "./Popover";
 import { contentBottom, flash, heights, insertRegion, layout, LINE, setState, snap, state, updateRegion } from "./store";
 import type { PlotView, Region } from "./types";
+import type { Placed } from "./store";
 
 type Style = NonNullable<Series["style"]>;
 
@@ -219,6 +221,25 @@ export function PlotBody(props: { r: Region }) {
           setHoverX(px >= L.left && px <= L.w - L.right ? px : null);
         }}
         onPointerLeave={() => setHoverX(null)}
+        onDblClick={(e) => {
+          // empty space: the nearest curve if one is close, else the whole plot
+          const box = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+          const L = layout();
+          const px = ((e.clientX - box.left) / box.width) * L.w;
+          const py = ((e.clientY - box.top) / box.height) * L.h;
+          let best: [number, number] | null = null;
+          for (const d of drawn()) {
+            d.xs.forEach((x, k) => {
+              const y = d.ys[k];
+              if (x === null || y === null || !Number.isFinite(x) || !Number.isFinite(y)) return;
+              const dist = Math.hypot(L.sx(x) - px, L.sy(y) - py);
+              if (!best || dist < best[0]) best = [dist, d.i];
+            });
+          }
+          const near = best as [number, number] | null;
+          if (near && near[0] < 18) editSeries(e, r().id, near[1]);
+          else editWholePlot(e, r().id);
+        }}
       >
         {/* grid and axes */}
         <g class="plot-grid">
@@ -238,6 +259,23 @@ export function PlotBody(props: { r: Region }) {
             <line class="zero" x1={layout().left} x2={layout().w - layout().right} y1={layout().sy(0)} y2={layout().sy(0)} />
           </Show>
         </g>
+        {/* double-click an axis (its numbers or title) to edit it */}
+        <rect
+          class="plot-axis-hit"
+          x={layout().left}
+          y={layout().h - layout().bottom}
+          width={layout().w - layout().left - layout().right}
+          height={layout().bottom}
+          onDblClick={(e) => editAxis(e, r().id, "x")}
+        />
+        <rect
+          class="plot-axis-hit"
+          x={0}
+          y={layout().top}
+          width={layout().left}
+          height={layout().h - layout().top - layout().bottom}
+          onDblClick={(e) => editAxis(e, r().id, "y")}
+        />
         <g class="plot-ticks">
           <For each={layout().xTicks}>
             {(t) => (
@@ -255,10 +293,19 @@ export function PlotBody(props: { r: Region }) {
           </For>
         </g>
         <g class="plot-titles">
-          <text x={(layout().left + layout().w - layout().right) / 2} y={layout().h - 6} text-anchor="middle">
+          <text
+            x={(layout().left + layout().w - layout().right) / 2}
+            y={layout().h - 6}
+            text-anchor="middle"
+            onDblClick={(e) => editAxis(e, r().id, "x")}
+          >
             {xTitle()}
           </text>
-          <text transform={`translate(11 ${(layout().top + layout().h - layout().bottom) / 2}) rotate(-90)`} text-anchor="middle">
+          <text
+            transform={`translate(11 ${(layout().top + layout().h - layout().bottom) / 2}) rotate(-90)`}
+            text-anchor="middle"
+            onDblClick={(e) => editAxis(e, r().id, "y")}
+          >
             {yTitle()}
           </text>
         </g>
@@ -279,6 +326,8 @@ export function PlotBody(props: { r: Region }) {
                     stroke-dasharray={dash(s.i)}
                   />
                 </Show>
+                {/* a wide invisible stroke: double-click the curve to edit its series */}
+                <path class="plot-hit" d={path(s.xs, s.ys)} onDblClick={(e) => editSeries(e, r().id, s.i)} />
               </>
             )}
           </For>
@@ -344,7 +393,7 @@ export function PlotBody(props: { r: Region }) {
                 <rect width={boxW()} height={boxH()} rx={4} />
                 <For each={rows()}>
                   {(s, k) => (
-                    <g transform={`translate(8 ${12 + k() * 16})`}>
+                    <g transform={`translate(8 ${12 + k() * 16})`} onDblClick={(e) => editSeries(e, r().id, s.i)}>
                       <line x1={0} x2={14} y1={0} y2={0} stroke={color(s.i)} stroke-width={2.5} stroke-dasharray={dash(s.i)} />
                       <text x={20} y={4}>
                         {name(s.i)}
@@ -424,9 +473,20 @@ function guessRange(definition: string, param: string): string {
 }
 
 /** Insert ▸ Plot: below the selected function (plotting it), or at the insertion point. */
+const FUNCTION = /^\s*([\p{L}][\p{L}\p{N}_.]*)\(\s*([\p{L}][\p{L}\p{N}_.]*)\s*\)\s*(?::=|≔)/u;
+
+/** The function defined nearest above a point, for Insert ▸ Plot with nothing selected. */
+function functionAbove(y: number): Placed | undefined {
+  return layout()
+    .list.filter((q) => q.region.kind === "math" && q.y <= y && FUNCTION.test(q.region.expr ?? ""))
+    .at(-1);
+}
+
 export function insertPlot() {
-  const p = state.selection.length === 1 ? layout().byId.get(state.selection[0]) : undefined;
-  const fn = p?.region.kind === "math" ? /^\s*([\p{L}][\p{L}\p{N}_.]*)\(\s*([\p{L}][\p{L}\p{N}_.]*)\s*\)\s*(?::=|≔)/u.exec(p.region.expr ?? "") : null;
+  const selected = state.selection.length === 1 ? layout().byId.get(state.selection[0]) : undefined;
+  const below = state.caret?.[1] ?? contentBottom();
+  const p = selected ?? functionAbove(below);
+  const fn = p?.region.kind === "math" ? FUNCTION.exec(p.region.expr ?? "") : null;
   // a vector (`d := [0; 4; 15] m`) is plotted as data
   const vector = p?.region.kind === "math" ? /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)\s*(?:\[|range\()/u.exec(p.region.expr ?? "") : null;
   const series: Series[] = fn
@@ -434,11 +494,11 @@ export function insertPlot() {
     : vector
       ? [{ y: vector[1] }]
       : [{ y: "sin(x)", x: "x", range: "0..2*π" }];
-  const at: [number, number] = p
-    ? [p.x, snap(p.y + (heights[p.region.id] ?? 20) + LINE)]
+  // under the selected line; otherwise at the insertion point
+  const at: [number, number] = selected
+    ? [selected.x, snap(selected.y + (heights[selected.region.id] ?? 20) + LINE)]
     : (state.caret ?? [36, snap(contentBottom() + LINE)]);
   insertRegion({ kind: "plot2d", at, size: [...DEFAULT_SIZE], series, grid: true });
-  setState({ inspector: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -451,124 +511,143 @@ function tidy<T extends object>(o: T): T {
   return o;
 }
 
-export function PlotFields(props: { r: Region }) {
-  const r = () => props.r;
-  const setSeries = (i: number, patch: Partial<Series>) =>
-    updateRegion(r().id, (d) => {
-      const list = seriesOf(d).map((s) => ({ ...s }));
-      list[i] = tidy({ ...list[i], ...patch });
-      d.series = list;
-    });
-  const removeSeries = (i: number) =>
-    updateRegion(r().id, (d) => {
-      d.series = seriesOf(d).filter((_, k) => k !== i);
-    });
-  const addSeries = () =>
-    updateRegion(r().id, (d) => {
-      const list = seriesOf(d);
-      const first = list.find((s) => s.range);
-      d.series = [...list, first ? { y: "", x: first.x, range: first.range } : { y: "" }];
-    });
-  const setAxis = (a: "x" | "y", patch: Partial<AxisSpec>) =>
-    updateRegion(r().id, (d) => {
-      const axes = { ...axesOf(d) };
-      axes[a] = tidy({ ...axes[a], ...patch });
-      if (!Object.keys(axes[a]!).length) delete axes[a];
-      if (Object.keys(axes).length) d.axes = axes;
-      else delete d.axes;
-    });
-  const view = () => state.views[r().id]?.plot as PlotView | undefined;
+// Edits, shared by the Inspector and the panels opened on the plot itself
+
+const regionOf = (id: string) => layout().byId.get(id)?.region;
+
+function setSeries(id: string, i: number, patch: Partial<Series>) {
+  updateRegion(id, (d) => {
+    const list = seriesOf(d).map((s) => ({ ...s }));
+    list[i] = tidy({ ...list[i], ...patch });
+    d.series = list;
+  });
+}
+
+function removeSeries(id: string, i: number) {
+  updateRegion(id, (d) => {
+    d.series = seriesOf(d).filter((_, k) => k !== i);
+  });
+}
+
+/** A new series over the same range as the first function, ready to type in. */
+function addSeries(id: string): number {
+  let index = 0;
+  updateRegion(id, (d) => {
+    const list = seriesOf(d);
+    const first = list.find((s) => s.range);
+    d.series = [...list, first ? { y: "", x: first.x, range: first.range } : { y: "" }];
+    index = list.length;
+  });
+  return index;
+}
+
+function setAxis(id: string, a: "x" | "y", patch: Partial<AxisSpec>) {
+  updateRegion(id, (d) => {
+    const axes = { ...axesOf(d) };
+    axes[a] = tidy({ ...axes[a], ...patch });
+    if (!Object.keys(axes[a]!).length) delete axes[a];
+    if (Object.keys(axes).length) d.axes = axes;
+    else delete d.axes;
+  });
+}
+
+const viewOf = (id: string) => state.views[id]?.plot as PlotView | undefined;
+
+/** One series: what is plotted, over what, and how it looks. */
+export function SeriesEditor(props: { id: string; i: number; title?: boolean }) {
+  const s = () => seriesOf(regionOf(props.id) ?? ({} as Region))[props.i] ?? { y: "" };
+  const set = (patch: Partial<Series>) => setSeries(props.id, props.i, patch);
+  const colour = () => s().style?.color ?? SERIES_COLORS[props.i % SERIES_COLORS.length];
+  return (
+    <div class="insp-sub plot-series">
+      <Show when={props.title !== false}>
+        <div class="insp-subtitle">
+          <span class="plot-swatch" style={{ background: colour() }} />
+          Series {props.i + 1}
+          <button class="insp-mini" title="Remove this series" onClick={() => removeSeries(props.id, props.i)}>
+            ✕
+          </button>
+        </div>
+      </Show>
+      <Field label="Plot" hint="An expression in the variable, like M(x), or a vector of values">
+        <Text value={s().y} mono placeholder="M(x)" onCommit={(v) => set({ y: v })} />
+      </Field>
+      <div class="insp-row">
+        <Field label={s().range ? "Variable" : "x values"}>
+          <Text value={s().x} mono placeholder={s().range ? "x" : "1, 2, 3…"} onCommit={(v) => set({ x: v || undefined })} />
+        </Field>
+        <Field label="Range" hint="start..end; empty plots data">
+          <Text value={s().range} mono placeholder="data" onCommit={(v) => set({ range: v || undefined })} />
+        </Field>
+      </div>
+      <div class="insp-row">
+        <Field label="Label">
+          <Text value={s().label} placeholder={s().y || "Series"} onCommit={(v) => set({ label: v || undefined })} />
+        </Field>
+        <Field label="Colour">
+          <input class="insp-color" type="color" value={colour()} onChange={(e) => set({ style: { ...s().style, color: e.currentTarget.value } })} />
+        </Field>
+      </div>
+      <Field label="Draw as">
+        <Select<string>
+          value={`${s().style?.draw ?? (s().range ? "line" : "line+points")}${s().style?.dash ? `:${s().style!.dash}` : ""}`}
+          options={[
+            ["line", "Line"],
+            ["line:dashed", "Dashed line"],
+            ["line:dotted", "Dotted line"],
+            ["points", "Points"],
+            ["line+points", "Line and points"],
+          ]}
+          onChange={(v) => {
+            const [draw, dash] = v.split(":") as [Style["draw"], Style["dash"]];
+            const style = tidy({ ...s().style, draw, dash });
+            set({ style: Object.keys(style).length ? style : undefined });
+          }}
+        />
+      </Field>
+      <Show when={viewOf(props.id)?.series[props.i]?.error}>
+        <div class="err">{viewOf(props.id)!.series[props.i].error}</div>
+      </Show>
+    </div>
+  );
+}
+
+/** One axis: its title, unit and limits. */
+export function AxisEditor(props: { id: string; axis: "x" | "y"; title?: boolean }) {
+  const spec = () => axesOf(regionOf(props.id) ?? ({} as Region))[props.axis];
+  const set = (patch: Partial<AxisSpec>) => setAxis(props.id, props.axis, patch);
+  const unit = () => (props.axis === "x" ? viewOf(props.id)?.xUnit : viewOf(props.id)?.yUnit);
+  return (
+    <div class="insp-sub">
+      <Show when={props.title !== false}>
+        <div class="insp-subtitle">{props.axis === "x" ? "Horizontal axis" : "Vertical axis"}</div>
+      </Show>
+      <div class="insp-row">
+        <Field label="Title">
+          <Text value={spec()?.label} placeholder="automatic" onCommit={(v) => set({ label: v || undefined })} />
+        </Field>
+        <Field label="Unit" hint="e.g. m, kN*m">
+          <Text value={spec()?.unit} mono placeholder={unit() || "automatic"} onCommit={(v) => set({ unit: v || undefined })} />
+        </Field>
+      </div>
+      <div class="insp-row">
+        <Field label="From">
+          <Num value={spec()?.min} placeholder="auto" step={0.1} onCommit={(v) => set({ min: v })} />
+        </Field>
+        <Field label="To">
+          <Num value={spec()?.max} placeholder="auto" step={0.1} onCommit={(v) => set({ max: v })} />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+/** Grid, legend and the maximum/minimum labels. */
+export function OptionsEditor(props: { id: string }) {
+  const r = () => regionOf(props.id) ?? ({} as Region);
   return (
     <>
-      <Index each={seriesOf(r())}>
-        {(s, i) => (
-          <div class="insp-sub plot-series">
-            <div class="insp-subtitle">
-              <span class="plot-swatch" style={{ background: s().style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length] }} />
-              Series {i + 1}
-              <button class="insp-mini" title="Remove this series" onClick={() => removeSeries(i)}>
-                ✕
-              </button>
-            </div>
-            <Field label="Plot" hint="An expression in the variable, like M(x), or a vector of values">
-              <Text value={s().y} mono placeholder="M(x)" onCommit={(v) => setSeries(i, { y: v })} />
-            </Field>
-            <div class="insp-row">
-              <Field label={s().range ? "Variable" : "x values"}>
-                <Text value={s().x} mono placeholder={s().range ? "x" : "1, 2, 3…"} onCommit={(v) => setSeries(i, { x: v || undefined })} />
-              </Field>
-              <Field label="Range" hint="start..end; empty plots data">
-                <Text value={s().range} mono placeholder="data" onCommit={(v) => setSeries(i, { range: v || undefined })} />
-              </Field>
-            </div>
-            <div class="insp-row">
-              <Field label="Label">
-                <Text value={s().label} placeholder={s().y || "Series"} onCommit={(v) => setSeries(i, { label: v || undefined })} />
-              </Field>
-              <Field label="Colour">
-                <input
-                  class="insp-color"
-                  type="color"
-                  value={s().style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length]}
-                  onChange={(e) => setSeries(i, { style: { ...s().style, color: e.currentTarget.value } })}
-                />
-              </Field>
-            </div>
-            <Field label="Draw as">
-              <Select<string>
-                value={`${s().style?.draw ?? (s().range ? "line" : "line+points")}${s().style?.dash ? `:${s().style!.dash}` : ""}`}
-                options={[
-                  ["line", "Line"],
-                  ["line:dashed", "Dashed line"],
-                  ["line:dotted", "Dotted line"],
-                  ["points", "Points"],
-                  ["line+points", "Line and points"],
-                ]}
-                onChange={(v) => {
-                  const [draw, dash] = v.split(":") as [Style["draw"], Style["dash"]];
-                  const style = tidy({ ...s().style, draw, dash });
-                  setSeries(i, { style: Object.keys(style).length ? style : undefined });
-                }}
-              />
-            </Field>
-            <Show when={view()?.series[i]?.error}>
-              <div class="err">{view()!.series[i].error}</div>
-            </Show>
-          </div>
-        )}
-      </Index>
-      <button class="btn insp-add" onClick={addSeries}>
-        Add Series
-      </button>
-      <For each={["x", "y"] as const}>
-        {(a) => (
-          <div class="insp-sub">
-            <div class="insp-subtitle">{a === "x" ? "Horizontal axis" : "Vertical axis"}</div>
-            <div class="insp-row">
-              <Field label="Unit" hint="e.g. m, kN*m">
-                <Text
-                  value={axesOf(r())[a]?.unit}
-                  mono
-                  placeholder={(a === "x" ? view()?.xUnit : view()?.yUnit) || "automatic"}
-                  onCommit={(v) => setAxis(a, { unit: v || undefined })}
-                />
-              </Field>
-              <Field label="Title">
-                <Text value={axesOf(r())[a]?.label} placeholder="automatic" onCommit={(v) => setAxis(a, { label: v || undefined })} />
-              </Field>
-            </div>
-            <div class="insp-row">
-              <Field label="From">
-                <Num value={axesOf(r())[a]?.min} placeholder="auto" step={0.1} onCommit={(v) => setAxis(a, { min: v })} />
-              </Field>
-              <Field label="To">
-                <Num value={axesOf(r())[a]?.max} placeholder="auto" step={0.1} onCommit={(v) => setAxis(a, { max: v })} />
-              </Field>
-            </div>
-          </div>
-        )}
-      </For>
-      <Check checked={r().grid !== false} label="Grid" onChange={(on) => updateRegion(r().id, { grid: on ? true : false })} />
+      <Check checked={r().grid !== false} label="Grid" onChange={(on) => updateRegion(props.id, { grid: on ? true : false })} />
       <Field label="Legend" hint="Shown with two or more series">
         <Select<string>
           value={(r().legend as string | undefined) ?? "top-left"}
@@ -579,12 +658,73 @@ export function PlotFields(props: { r: Region }) {
             ["bottom-right", "Bottom right"],
             ["none", "None"],
           ]}
-          onChange={(v) => updateRegion(r().id, { legend: v === "top-left" ? undefined : v })}
+          onChange={(v) => updateRegion(props.id, { legend: v === "top-left" ? undefined : v })}
         />
       </Field>
-      <Check checked={!!r().extrema} label="Mark maximum and minimum" onChange={(on) => updateRegion(r().id, { extrema: on || undefined })} />
+      <Check checked={!!r().extrema} label="Mark maximum and minimum" onChange={(on) => updateRegion(props.id, { extrema: on || undefined })} />
     </>
   );
+}
+
+/** Inspector ▸ Plot: everything at once. */
+export function PlotFields(props: { r: Region }) {
+  return (
+    <>
+      <Index each={seriesOf(props.r)}>{(_, i) => <SeriesEditor id={props.r.id} i={i} />}</Index>
+      <button class="btn insp-add" onClick={() => addSeries(props.r.id)}>
+        Add Series
+      </button>
+      <AxisEditor id={props.r.id} axis="x" />
+      <AxisEditor id={props.r.id} axis="y" />
+      <OptionsEditor id={props.r.id} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Editing on the plot: double-click an axis, the legend, a curve or the plot
+// ---------------------------------------------------------------------------
+
+export function editAxis(e: MouseEvent, id: string, axis: "x" | "y") {
+  openPopover(e, axis === "x" ? "Horizontal axis" : "Vertical axis", () => <AxisEditor id={id} axis={axis} title={false} />);
+}
+
+export function editSeries(e: MouseEvent, id: string, i: number) {
+  const name = () => seriesOf(regionOf(id) ?? ({} as Region))[i]?.label || `Series ${i + 1}`;
+  openPopover(e, name(), () => (
+    <>
+      <SeriesEditor id={id} i={i} title={false} />
+      <button
+        class="btn insp-add"
+        onClick={() => {
+          removeSeries(id, i);
+          closePopover();
+        }}
+      >
+        Remove Series
+      </button>
+    </>
+  ));
+}
+
+/** The whole plot: its series (each opens on a click), a new one, and the options. */
+export function editWholePlot(e: MouseEvent, id: string) {
+  openPopover(e, "Plot", () => (
+    <>
+      <Index each={seriesOf(regionOf(id) ?? ({} as Region))}>
+        {(s, i) => (
+          <button class="plot-series-link" onClick={(ev) => editSeries(ev, id, i)}>
+            <span class="plot-swatch" style={{ background: s().style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length] }} />
+            {s().label || s().y || `Series ${i + 1}`}
+          </button>
+        )}
+      </Index>
+      <button class="btn insp-add" onClick={(ev) => editSeries(ev, id, addSeries(id))}>
+        Add Series
+      </button>
+      <OptionsEditor id={id} />
+    </>
+  ));
 }
 
 /** Double-click or Enter on a plot: its series, ready to type in. */

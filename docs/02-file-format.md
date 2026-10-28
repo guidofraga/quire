@@ -57,8 +57,8 @@ Report.quire/                 ← a directory; on macOS registered as a document
     "body": { "font": "Arial", "size": 8 },
     "math": { "font": "STIX Two Math", "size": 8 },
     "h1":   { "size": 10, "bold": true },
-    "numbering": { "headings": "1.1", "figures": "Figura {n} –", "tables": "Tabela {n} –" }
-  },
+    "numbering": { "headings": "1.1", "figures": "Figura {n} –", "tables": "Tabela {n} –", "sections": "Seção {n}" }
+  },                                   // numbering words default to the document's language
   "page": {
     "view": "pages",                   // "pages" (paginated) | "canvas" (infinite)
     "paper": "A4",                     // or ["210mm", "297mm"]

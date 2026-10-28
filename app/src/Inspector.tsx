@@ -4,6 +4,7 @@ import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { type Background, PX_PER_MM, toPx } from "./pages";
 import { commitEditing, layout, localized, state, updateDoc, updateRegion } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
+import { defaultLabel } from "./labels";
 import type { Doc, Region } from "./types";
 
 type Tab = "region" | "document" | "page";
@@ -443,11 +444,14 @@ function DocumentTab() {
           label="Number headings (1, 1.1, 1.1.1)"
           onChange={(on) => set(["styles", "numbering", "headings"])(on ? "1.1" : "")}
         />
-        <Field label="Figure label" hint="{n} is the number">
-          <Text value={numbering().figures ?? "Figure {n} –"} onCommit={set(["styles", "numbering", "figures"])} />
+        <Field label="Figure captions" hint="{n} is the number; empty follows the language">
+          <Text value={numbering().figures} placeholder={defaultLabel("figure")} onCommit={(v) => set(["styles", "numbering", "figures"])(v || undefined)} />
         </Field>
-        <Field label="Table label">
-          <Text value={numbering().tables ?? "Table {n} –"} onCommit={set(["styles", "numbering", "tables"])} />
+        <Field label="Table captions">
+          <Text value={numbering().tables} placeholder={defaultLabel("table")} onCommit={(v) => set(["styles", "numbering", "tables"])(v || undefined)} />
+        </Field>
+        <Field label="References to headings" hint="How a cross-reference to a heading reads">
+          <Text value={numbering().sections} placeholder={defaultLabel("section")} onCommit={(v) => set(["styles", "numbering", "sections"])(v || undefined)} />
         </Field>
       </Section>
     </>

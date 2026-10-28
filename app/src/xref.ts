@@ -1,6 +1,7 @@
 // Cross-references: "see Figure 2", "Table 1", "Section 2.1", "on page 4", kept current as
 // the document changes. In text they are empty links to a region, `[](#ref:<id>)`, with
 // an optional style class: `{.num}` (2.1), `{.page}` (page 4) or `{.title}` (its caption).
+import { refLabel } from "./labels";
 import { layout, localized, state, type Placed } from "./store";
 
 export type RefStyle = "" | "num" | "page" | "title";
@@ -42,13 +43,7 @@ export function targets(): Target[] {
     .filter((t): t is Target => t !== null);
 }
 
-/** "Figure", "Table", "Section": the word the document's numbering uses. */
-function word(kind: Target["kind"]): string {
-  const numbering = state.doc.styles?.numbering;
-  if (kind === "heading") return "Section";
-  const pattern = (kind === "table" ? numbering?.tables : numbering?.figures) ?? (kind === "table" ? "Table {n} –" : "Figure {n} –");
-  return pattern.split("{n}")[0].trim() || (kind === "table" ? "Table" : "Figure");
-}
+const label = (t: Target) => refLabel(t.kind === "heading" ? "section" : t.kind, t.number);
 
 /** What a reference reads, or null when its target is gone. */
 export function refText(id: string, style: RefStyle = ""): string | null {
@@ -62,9 +57,9 @@ export function refText(id: string, style: RefStyle = ""): string | null {
     case "page":
       return t.page ? `page ${t.page}` : "page ?";
     case "title":
-      return t.title || `${word(t.kind)} ${t.number}`;
+      return t.title || label(t);
     default:
-      return t.kind === "heading" && !headingsNumbered ? `“${t.title}”` : `${word(t.kind)} ${t.number}`;
+      return t.kind === "heading" && !headingsNumbered ? `“${t.title}”` : label(t);
   }
 }
 

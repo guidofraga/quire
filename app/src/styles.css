@@ -2731,3 +2731,125 @@ a.xref-missing {
   background: var(--accent);
   color: #fff;
 }
+
+/* editing on the page: a small panel at the pointer */
+.page-popover {
+  position: fixed;
+  z-index: 120;
+  width: 290px;
+  max-height: 72vh;
+  overflow-y: auto;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+  font: 12px -apple-system, system-ui, sans-serif;
+}
+
+.page-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.page-popover-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.page-popover .insp-hint {
+  color: var(--muted);
+}
+
+/* what can be double-clicked on a plot or caption shows it */
+.caption-num,
+.plot-titles text,
+.plot-legend g,
+.plot-hit {
+  cursor: pointer;
+}
+
+.plot-titles text:hover,
+.plot-legend g:hover text {
+  fill: var(--accent);
+}
+
+.caption-num:hover {
+  color: var(--accent);
+}
+
+.plot-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+}
+
+.plot-axis-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.app.printing .plot-hit,
+.app.printing .plot-axis-hit {
+  display: none;
+}
+
+/* ∿ Plot next to a function definition; the gap belongs to the button, so the pointer
+   can cross it without the button disappearing */
+.plot-this {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  display: none;
+  transform: translateY(-50%);
+  padding: 0 0 0 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.plot-this > span {
+  display: block;
+  padding: 1px 7px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--accent);
+  font: 11px -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.region:hover > .plot-this,
+.region.selected > .plot-this {
+  display: block;
+}
+
+.plot-this:hover > span {
+  background: var(--accent);
+  color: #fff;
+}
+
+.plot-series-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plot-series-link:hover {
+  background: var(--button-hover);
+}

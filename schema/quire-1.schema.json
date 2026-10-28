@@ -61,7 +61,8 @@
           "properties": {
             "headings": { "type": ["string", "null"] },
             "figures": { "type": ["string", "null"] },
-            "tables": { "type": ["string", "null"] }
+            "tables": { "type": ["string", "null"] },
+            "sections": { "type": ["string", "null"] }
           }
         }
       },

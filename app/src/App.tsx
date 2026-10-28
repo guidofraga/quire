@@ -42,6 +42,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
+import { PagePopover } from "./Popover";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
@@ -600,6 +601,7 @@ export function App() {
       <HelpDialog />
       <Palette runCommand={runCommand} />
       <RefPicker />
+      <PagePopover />
       <TemplatesDialog
         onOpen={async (doc, origin) => {
           if (!(await guardUnsaved())) return false;

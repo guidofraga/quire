@@ -141,7 +141,7 @@ export interface Doc {
   styles?: {
     body?: TextStyle;
     math?: TextStyle;
-    numbering?: { headings?: string; figures?: string; tables?: string };
+    numbering?: { headings?: string; figures?: string; tables?: string; sections?: string };
     [key: string]: unknown;
   };
   page?: { paper?: string | [string, string]; margins?: Record<string, string | number>; [key: string]: unknown };

@@ -3,7 +3,10 @@ import { hitIds } from "./find";
 import { nameAt, setCaretName, trace } from "./trace";
 import { paletteOpen } from "./Palette";
 import { fillRefs } from "./xref";
-import { DEFAULT_SIZE, editPlot, PlotBody } from "./Plot";
+import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
+import { openPopover } from "./Popover";
+import { Field, Text as InspText } from "./Inspector";
+import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
@@ -45,6 +48,7 @@ import {
   startEditing,
   state,
   toggleArea,
+  updateDoc,
   updateRegion,
   widths,
 } from "./store";
@@ -95,16 +99,37 @@ function Html(props: { html: string | undefined; class?: string }) {
 }
 
 function captionPrefix(r: Region, number: string | undefined): string {
-  const numbering = state.doc.styles?.numbering;
-  const pattern = (r.kind === "table" ? numbering?.tables : numbering?.figures) ?? (r.kind === "table" ? "Table {n} –" : "Figure {n} –");
-  return number ? pattern.replace("{n}", number) + " " : "";
+  return number ? `${captionLabel(r.kind === "table" ? "table" : "figure", number)} ` : "";
+}
+
+/** Double-click a caption's "Figure 3 –": what every figure (or table) caption says. */
+function editCaptionLabel(e: MouseEvent, kind: "figure" | "table") {
+  const key = labelKey(kind);
+  const set = (v: string) =>
+    updateDoc((d) => {
+      d.styles = { ...d.styles, numbering: { ...d.styles?.numbering, [key]: v || undefined } };
+    });
+  openPopover(e, kind === "table" ? "Table captions" : "Figure captions", () => (
+    <>
+      <Field label="Every caption reads" hint="{n} is the number, e.g. Figura {n} –">
+        <InspText value={labelPattern(kind)} placeholder={defaultLabel(kind)} onCommit={set} />
+      </Field>
+      <div class="insp-hint">Empty follows the document's language. Also in Document ▸ Numbering.</div>
+    </>
+  ));
 }
 
 function Caption(props: { p: Placed }) {
   return (
     <Show when={props.p.region.caption}>
       <div class="caption">
-        <span class="caption-num">{captionPrefix(props.p.region, props.p.number)}</span>
+        <span
+          class="caption-num"
+          title="Double-click to change what every caption of this kind says"
+          onDblClick={(e) => editCaptionLabel(e, props.p.region.kind === "table" ? "table" : "figure")}
+        >
+          {captionPrefix(props.p.region, props.p.number)}
+        </span>
         <Html html={state.report?.html[`${props.p.region.id}:caption`]} class="caption-text" />
       </div>
     </Show>
@@ -940,6 +965,21 @@ export function RegionBox(props: RegionProps) {
         }
       >
         <ResizeHandle p={placed()} />
+      </Show>
+      {/* a function definition can be plotted in one click (shown on hover or when selected) */}
+      <Show when={r().kind === "math" && !editing() && !state.printing && /\(/.test(state.views[r().id]?.defines ?? "")}>
+        <button
+          class="plot-this"
+          title="Plot this function below it"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setState({ selection: [r().id], caret: null });
+            insertPlot();
+          }}
+        >
+          <span>∿ Plot</span>
+        </button>
       </Show>
     </div>
   );
