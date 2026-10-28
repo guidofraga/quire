@@ -478,15 +478,19 @@ const FUNCTION = /^\s*([\p{L}][\p{L}\p{N}_.]*)\(\s*([\p{L}][\p{L}\p{N}_.]*)\s*\)
 /** The function defined nearest above a point, for Insert ▸ Plot with nothing selected. */
 function functionAbove(y: number): Placed | undefined {
   return layout()
-    .list.filter((q) => q.region.kind === "math" && q.y <= y && FUNCTION.test(q.region.expr ?? ""))
+    .list.filter((q) => q.region.kind === "math" && q.y <= y + 1 && FUNCTION.test(q.region.expr ?? ""))
+    .sort((a, b) => a.y - b.y)
     .at(-1);
 }
 
 export function insertPlot() {
   const selected = state.selection.length === 1 ? layout().byId.get(state.selection[0]) : undefined;
-  const below = state.caret?.[1] ?? contentBottom();
-  const p = selected ?? functionAbove(below);
-  const fn = p?.region.kind === "math" ? FUNCTION.exec(p.region.expr ?? "") : null;
+  // the selected line if it defines a function; otherwise (nothing selected, another
+  // region, or the empty line `\plot` was typed on) the nearest function above
+  const isFunction = (q: Placed | undefined) => q?.region.kind === "math" && FUNCTION.test(q.region.expr ?? "");
+  const below = selected ? selected.y + (heights[selected.region.id] ?? 0) : (state.caret?.[1] ?? contentBottom());
+  const p = isFunction(selected) ? selected : functionAbove(below);
+  const fn = p ? FUNCTION.exec(p.region.expr ?? "") : null;
   // a vector (`d := [0; 4; 15] m`) is plotted as data
   const vector = p?.region.kind === "math" ? /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)\s*(?:\[|range\()/u.exec(p.region.expr ?? "") : null;
   const series: Series[] = fn
@@ -542,12 +546,24 @@ function addSeries(id: string): number {
 }
 
 function setAxis(id: string, a: "x" | "y", patch: Partial<AxisSpec>) {
+  // the x axis limits lead: functions are drawn across them (edit a series' own range
+  // afterwards to cut it short)
+  const unit = axesOf(regionOf(id) ?? ({} as Region)).x?.unit || viewOf(id)?.xUnit || "";
+  const end = (v: number) => (unit ? `${v} ${unit}` : String(v));
   updateRegion(id, (d) => {
     const axes = { ...axesOf(d) };
     axes[a] = tidy({ ...axes[a], ...patch });
     if (!Object.keys(axes[a]!).length) delete axes[a];
     if (Object.keys(axes).length) d.axes = axes;
     else delete d.axes;
+    if (a !== "x" || !("min" in patch || "max" in patch)) return;
+    d.series = seriesOf(d).map((s) => {
+      const at = s.range?.indexOf("..") ?? -1;
+      if (!s.range || at < 0) return s;
+      const from = patch.min !== undefined ? end(patch.min) : s.range.slice(0, at).trim();
+      const to = patch.max !== undefined ? end(patch.max) : s.range.slice(at + 2).trim();
+      return { ...s, range: `${from}..${to}` };
+    });
   });
 }
 

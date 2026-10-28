@@ -1,5 +1,6 @@
 // Document actions that span the UI: clipboard, images, duplicate, context menus.
 import { copyPlotImage, editPlot } from "./Plot";
+import { setCaptionToEdit } from "./Region";
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
 import { latex } from "./latex";
@@ -336,7 +337,14 @@ export function installContextMenus(run: (command: string) => void) {
       items.push(
         {
           label: r.caption ? "Remove Caption" : "Add Caption",
-          run: () => (closeMenu(), updateRegion(id, { caption: r.caption ? undefined : { text: "Caption", position: r.kind === "table" ? "above" : "below" } })),
+          run: () => {
+            closeMenu();
+            // r is live: read whether it had a caption before changing it
+            const adding = !r.caption;
+            updateRegion(id, { caption: adding ? { text: "Caption", position: r.kind === "table" ? "above" : "below" } : undefined });
+            // a new caption opens for typing
+            if (adding) setCaptionToEdit(id);
+          },
         },
         null,
       );

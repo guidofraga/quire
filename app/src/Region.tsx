@@ -11,7 +11,7 @@ import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
-import { createEffect, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { produce } from "solid-js/store";
 import { api } from "./api";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
@@ -119,18 +119,73 @@ function editCaptionLabel(e: MouseEvent, kind: "figure" | "table") {
   ));
 }
 
+/** A caption to start editing as soon as it appears (right after Add Caption). */
+export const [captionToEdit, setCaptionToEdit] = createSignal<string | null>(null);
+
 function Caption(props: { p: Placed }) {
+  const r = () => props.p.region;
+  const [editing, setEditing] = createSignal(false);
+  createEffect(() => {
+    if (captionToEdit() === r().id && r().caption) {
+      setCaptionToEdit(null);
+      setEditing(true);
+    }
+  });
+  const lang = () => state.doc.meta?.lang;
+  const commit = (text: string) => {
+    setEditing(false);
+    const caption = r().caption;
+    if (!caption || text === localized(caption.text, lang())) return;
+    // a caption in several languages keeps the others
+    const next =
+      typeof caption.text === "object" && caption.text !== null
+        ? { ...caption.text, [Object.keys(caption.text).find((k) => lang()?.startsWith(k)) ?? Object.keys(caption.text)[0]]: text }
+        : text;
+    updateRegion(r().id, { caption: { ...caption, text: next } });
+  };
   return (
-    <Show when={props.p.region.caption}>
+    <Show when={r().caption}>
       <div class="caption">
         <span
           class="caption-num"
           title="Double-click to change what every caption of this kind says"
-          onDblClick={(e) => editCaptionLabel(e, props.p.region.kind === "table" ? "table" : "figure")}
+          onDblClick={(e) => editCaptionLabel(e, r().kind === "table" ? "table" : "figure")}
         >
-          {captionPrefix(props.p.region, props.p.number)}
+          {captionPrefix(r(), props.p.number)}
         </span>
-        <Html html={state.report?.html[`${props.p.region.id}:caption`]} class="caption-text" />
+        <Show
+          when={editing()}
+          fallback={
+            <span
+              class="caption-edit-target"
+              title="Double-click to edit the caption"
+              onDblClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+            >
+              <Html html={state.report?.html[`${r().id}:caption`]} class="caption-text" />
+            </span>
+          }
+        >
+          <input
+            class="caption-input"
+            value={localized(r().caption!.text, lang())}
+            size={Math.max(12, localized(r().caption!.text, lang()).length + 2)}
+            spellcheck={true}
+            // after the menu that opened it has closed and handed focus back to the page
+            ref={(el) => setTimeout(() => (el.focus(), el.select()), 60)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onDblClick={(e) => e.stopPropagation()}
+            onInput={(e) => (e.currentTarget.size = Math.max(12, e.currentTarget.value.length + 2))}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") commit(e.currentTarget.value.trim());
+              else if (e.key === "Escape") setEditing(false);
+            }}
+            onBlur={(e) => editing() && commit(e.currentTarget.value.trim())}
+          />
+        </Show>
       </div>
     </Show>
   );

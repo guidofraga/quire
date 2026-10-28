@@ -2853,3 +2853,18 @@ a.xref-missing {
 .plot-series-link:hover {
   background: var(--button-hover);
 }
+
+/* a caption being edited in place */
+.caption-input {
+  padding: 0 3px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+.caption-edit-target {
+  cursor: text;
+}
