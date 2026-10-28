@@ -248,7 +248,17 @@ impl Parser {
                 self.expect(")")?;
                 Ok(Expr::Paren(Box::new(e)))
             }
-            Tok::Sym("[") => self.matrix(pos),
+            Tok::Sym("[") => {
+                let m = self.matrix(pos)?;
+                // `[0; 1; 2] s`: a unit after a vector or matrix applies to every element
+                let unit = matches!(self.peek(), Tok::Unit(_) | Tok::Ident(_))
+                    && !matches!(self.peek2(), Tok::Sym("(" | "["));
+                if unit {
+                    let u = self.unit_term()?;
+                    return Ok(bin(BinaryOp::Juxt, m, u));
+                }
+                Ok(m)
+            }
             Tok::Sym("?") => Ok(Expr::Placeholder),
             t => Err(ParseError::new(format!("expected a value but found {}", describe(&t)), pos)),
         }
