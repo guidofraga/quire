@@ -24,6 +24,8 @@ interface AxisSpec {
   label?: string;
   min?: number;
   max?: number;
+  /** Logarithmic scale (positive values only). */
+  log?: boolean;
 }
 
 /** Fixed categorical order; series keep their colour when others are added or removed. */
@@ -72,12 +74,41 @@ interface Layout {
   top: number;
   right: number;
   bottom: number;
+  /** The data range shown on each axis. */
   x: [number, number];
   y: [number, number];
   xTicks: number[];
   yTicks: number[];
+  xLabel: (t: number) => string;
+  yLabel: (t: number) => string;
+  /** Data value → pixel (NaN off a log axis's domain), and back. */
   sx: (v: number) => number;
   sy: (v: number) => number;
+  ix: (px: number) => number;
+  iy: (py: number) => number;
+}
+
+const SUPER: Record<string, string> = { "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹" };
+
+/** One axis's scale: linear or logarithmic, between `lo` and `hi` (data values). */
+function scale(lo: number, hi: number, log: boolean, count: number) {
+  const t = (v: number) => (log ? (v > 0 ? Math.log10(v) : NaN) : v);
+  const inv = (u: number) => (log ? 10 ** u : u);
+  if (!log) {
+    const tk = ticks(lo, hi, count);
+    const step = tk[1] - tk[0];
+    return { t, inv, ticks: tk, label: (v: number) => fmt(v, step) };
+  }
+  // decades: 1, 10, 100…, written 10⁴ from four digits on
+  const k0 = Math.ceil(Math.log10(lo) - 1e-9);
+  const k1 = Math.floor(Math.log10(hi) + 1e-9);
+  const tk: number[] = [];
+  for (let k = k0; k <= k1; k++) tk.push(10 ** k);
+  const label = (v: number) => {
+    const k = Math.round(Math.log10(v));
+    return Math.abs(k) < 4 ? String(Number(v.toPrecision(1))) : `10${[...String(k)].map((c) => SUPER[c]).join("")}`;
+  };
+  return { t, inv, ticks: tk, label };
 }
 
 export function PlotBody(props: { r: Region }) {
@@ -88,31 +119,84 @@ export function PlotBody(props: { r: Region }) {
   const axes = () => axesOf(r());
   const drawn = () => (view()?.series ?? []).map((s, i) => ({ ...s, i, spec: series()[i] })).filter((s) => !s.error && s.xs.length);
 
+  // a temporary zoomed or panned view (⌥ + scroll, ⌥ + drag, the + − buttons); not saved
+  const [zoomed, setZoomed] = createSignal<{ x: [number, number]; y: [number, number] } | null>(null);
+
   const layout = createMemo((): Layout => {
     const [w, h] = size();
     const all = drawn();
-    let x = extent(all.flatMap((s) => s.xs as number[]), axes().x);
-    let y = extent(all.flatMap((s) => s.ys as number[]), axes().y);
-    // a little air above and below the data, unless the author fixed the limits
-    const pad = (y[1] - y[0]) * 0.06;
-    y = [axes().y?.min ?? (y[0] === 0 ? 0 : y[0] - pad), axes().y?.max ?? y[1] + pad];
-    const xTicks = ticks(x[0], x[1], Math.max(2, Math.round(w / 90)));
-    const yTicks = ticks(y[0], y[1], Math.max(2, Math.round(h / 50)));
-    // snap the axes out to whole ticks when the data leaves them free
-    if (axes().y?.min === undefined && yTicks[0] > y[0]) y = [yTicks[0] - (yTicks[1] - yTicks[0]), y[1]];
-    if (axes().y?.max === undefined && yTicks.at(-1)! < y[1]) y = [y[0], yTicks.at(-1)! + (yTicks[1] - yTicks[0])];
-    const yt = ticks(y[0], y[1], Math.max(2, Math.round(h / 50)));
-    const step = yt[1] - yt[0];
-    const longest = Math.max(...yt.map((t) => fmt(t, step).length));
+    const logX = !!axes().x?.log;
+    const logY = !!axes().y?.log;
+    const usable = (vs: (number | null)[], log: boolean) => (vs as number[]).filter((v) => Number.isFinite(v) && (!log || v > 0));
+    let x = extent(usable(all.flatMap((s) => s.xs), logX), axes().x);
+    let y = extent(usable(all.flatMap((s) => s.ys), logY), axes().y);
+    // printing shows the plot as saved, never a temporary zoom
+    const z = state.printing ? null : zoomed();
+    if (z) {
+      x = z.x;
+      y = z.y;
+    } else if (logY) {
+      // a log axis widens to whole decades
+      y = [axes().y?.min ?? 10 ** Math.floor(Math.log10(y[0])), axes().y?.max ?? 10 ** Math.ceil(Math.log10(y[1]))];
+    } else {
+      // a little air above and below the data, unless the author fixed the limits
+      const pad = (y[1] - y[0]) * 0.06;
+      y = [axes().y?.min ?? (y[0] === 0 ? 0 : y[0] - pad), axes().y?.max ?? y[1] + pad];
+      const yTicks = ticks(y[0], y[1], Math.max(2, Math.round(h / 50)));
+      // snap the axes out to whole ticks when the data leaves them free
+      if (axes().y?.min === undefined && yTicks[0] > y[0]) y = [yTicks[0] - (yTicks[1] - yTicks[0]), y[1]];
+      if (axes().y?.max === undefined && yTicks.at(-1)! < y[1]) y = [y[0], yTicks.at(-1)! + (yTicks[1] - yTicks[0])];
+    }
+    if (logX && !z) x = [axes().x?.min ?? 10 ** Math.floor(Math.log10(x[0])), axes().x?.max ?? 10 ** Math.ceil(Math.log10(x[1]))];
+    const X = scale(x[0], x[1], logX, Math.max(2, Math.round(w / 90)));
+    const Y = scale(y[0], y[1], logY, Math.max(2, Math.round(h / 50)));
+    const longest = Math.max(...Y.ticks.map((t) => Y.label(t).length));
     const left = 18 + longest * 6.6 + 8;
     const top = 10;
     const right = 14;
     const bottom = 40;
-    const sx = (v: number) => left + ((v - x[0]) / (x[1] - x[0])) * (w - left - right);
-    const sy = (v: number) => h - bottom - ((v - y[0]) / (y[1] - y[0])) * (h - top - bottom);
-    x = [x[0], x[1]];
-    return { w, h, left, top, right, bottom, x, y, xTicks, yTicks: yt, sx, sy };
+    const [tx0, tx1, ty0, ty1] = [X.t(x[0]), X.t(x[1]), Y.t(y[0]), Y.t(y[1])];
+    const sx = (v: number) => left + ((X.t(v) - tx0) / (tx1 - tx0)) * (w - left - right);
+    const sy = (v: number) => h - bottom - ((Y.t(v) - ty0) / (ty1 - ty0)) * (h - top - bottom);
+    const ix = (px: number) => X.inv(tx0 + ((px - left) / (w - left - right)) * (tx1 - tx0));
+    const iy = (py: number) => Y.inv(ty0 + ((h - bottom - py) / (h - top - bottom)) * (ty1 - ty0));
+    return { w, h, left, top, right, bottom, x, y, xTicks: X.ticks, yTicks: Y.ticks, xLabel: X.label, yLabel: Y.label, sx, sy, ix, iy };
   });
+
+  /** Zoom the view by `f` (< 1 zooms in) around a pixel, in each axis's own scale. */
+  const zoomBy = (f: number, px?: number, py?: number) => {
+    const L = layout();
+    const cx = px ?? (L.left + L.w - L.right) / 2;
+    const cy = py ?? (L.top + L.h - L.bottom) / 2;
+    const around = (lo: number, hi: number, c: number, log: boolean): [number, number] => {
+      const T = (v: number) => (log ? Math.log10(v) : v);
+      const I = (u: number) => (log ? 10 ** u : u);
+      const tc = T(c);
+      return [I(tc + (T(lo) - tc) * f), I(tc + (T(hi) - tc) * f)];
+    };
+    setZoomed({ x: around(L.x[0], L.x[1], L.ix(cx), !!axes().x?.log), y: around(L.y[0], L.y[1], L.iy(cy), !!axes().y?.log) });
+  };
+  /** Move the view by a pixel offset (⌥ + drag). */
+  const panBy = (dx: number, dy: number, from: Layout) => {
+    setZoomed({
+      x: [from.ix(from.left - dx), from.ix(from.w - from.right - dx)],
+      y: [from.iy(from.h - from.bottom - dy), from.iy(from.top - dy)],
+    });
+  };
+  const toLocal = (e: MouseEvent) => {
+    const box = (e.currentTarget as Element).closest(".plot")!.querySelector("svg")!.getBoundingClientRect();
+    const L = layout();
+    return [((e.clientX - box.left) / box.width) * L.w, ((e.clientY - box.top) / box.height) * L.h] as const;
+  };
+  /** Keep the zoomed view: it becomes the axes' limits (which print). */
+  const keepView = () => {
+    const z = zoomed();
+    if (!z) return;
+    const round = (v: number) => Number(v.toPrecision(4));
+    setAxis(r().id, "x", { min: round(z.x[0]), max: round(z.x[1]) });
+    setAxis(r().id, "y", { min: round(z.y[0]), max: round(z.y[1]) });
+    setZoomed(null);
+  };
 
   const path = (xs: (number | null)[], ys: (number | null)[]) => {
     const L = layout();
@@ -121,11 +205,13 @@ export function PlotBody(props: { r: Region }) {
     for (let k = 0; k < xs.length; k++) {
       const x = xs[k];
       const y = ys[k];
-      if (x === null || y === null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      const px = x === null ? NaN : L.sx(x);
+      const py = y === null ? NaN : L.sy(y);
+      if (!Number.isFinite(px) || !Number.isFinite(py)) {
         pen = false;
         continue;
       }
-      d += `${pen ? "L" : "M"}${L.sx(x).toFixed(2)} ${L.sy(y).toFixed(2)}`;
+      d += `${pen ? "L" : "M"}${px.toFixed(2)} ${py.toFixed(2)}`;
       pen = true;
     }
     return d;
@@ -134,7 +220,7 @@ export function PlotBody(props: { r: Region }) {
   const inside = (x: number | null, y: number | null) => {
     const L = layout();
     const within = (v: number, [a, b]: [number, number]) => v >= Math.min(a, b) - 1e-9 * Math.abs(b - a) && v <= Math.max(a, b) + 1e-9 * Math.abs(b - a);
-    return x !== null && y !== null && Number.isFinite(x) && Number.isFinite(y) && within(x, L.x) && within(y, L.y);
+    return x !== null && y !== null && Number.isFinite(L.sx(x)) && Number.isFinite(L.sy(y)) && within(x, L.x) && within(y, L.y);
   };
   /** How a series is drawn: a line (solid, dashed, dotted), points, or both. */
   const drawAs = (i: number) => series()[i]?.style?.draw ?? (isData(i) ? "line+points" : "line");
@@ -178,7 +264,7 @@ export function PlotBody(props: { r: Region }) {
     const px = hoverX();
     if (px === null || state.printing) return null;
     const L = layout();
-    const xv = L.x[0] + ((px - L.left) / (L.w - L.left - L.right)) * (L.x[1] - L.x[0]);
+    const xv = L.ix(px);
     const rows: { i: number; x: number; y: number }[] = [];
     for (const s of drawn()) {
       let best = -1;
@@ -221,6 +307,31 @@ export function PlotBody(props: { r: Region }) {
           setHoverX(px >= L.left && px <= L.w - L.right ? px : null);
         }}
         onPointerLeave={() => setHoverX(null)}
+        onWheel={(e) => {
+          // ⌥ + scroll zooms the plot at the pointer (plain scroll still moves the page)
+          if (!e.altKey) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const [px, py] = toLocal(e);
+          zoomBy(Math.exp(e.deltaY * 0.01), px, py);
+        }}
+        onPointerDown={(e) => {
+          // ⌥ + drag pans the plot instead of moving it on the page
+          if (!e.altKey || e.button !== 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const start = layout();
+          const box = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+          const k = start.w / box.width;
+          const [x0, y0] = [e.clientX, e.clientY];
+          const move = (ev: PointerEvent) => panBy((ev.clientX - x0) * k, (ev.clientY - y0) * k, start);
+          const up = () => {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+          };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+        }}
         onDblClick={(e) => {
           // empty space: the nearest curve if one is close, else the whole plot
           const box = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
@@ -280,14 +391,14 @@ export function PlotBody(props: { r: Region }) {
           <For each={layout().xTicks}>
             {(t) => (
               <text x={layout().sx(t)} y={layout().h - layout().bottom + 14} text-anchor="middle">
-                {fmt(t, layout().xTicks[1] - layout().xTicks[0])}
+                {layout().xLabel(t)}
               </text>
             )}
           </For>
           <For each={layout().yTicks}>
             {(t) => (
               <text x={layout().left - 6} y={layout().sy(t) + 3.5} text-anchor="end">
-                {fmt(t, layout().yTicks[1] - layout().yTicks[0])}
+                {layout().yLabel(t)}
               </text>
             )}
           </For>
@@ -417,6 +528,23 @@ export function PlotBody(props: { r: Region }) {
           )}
         </Show>
       </svg>
+      {/* zoom: shown on hover, never printed */}
+      <div class="plot-tools" onPointerDown={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()}>
+        <button title="Zoom in (or ⌥ + scroll)" onClick={() => zoomBy(0.5)}>
+          ＋
+        </button>
+        <button title="Zoom out" onClick={() => zoomBy(2)}>
+          −
+        </button>
+        <Show when={zoomed()}>
+          <button title="Back to the whole plot" onClick={() => setZoomed(null)}>
+            ⤢
+          </button>
+          <button title="Keep this view: it becomes the axes' limits, which print" onClick={keepView}>
+            Keep
+          </button>
+        </Show>
+      </div>
       <Show when={readout()}>
         {(h) => {
           const L = layout();
@@ -654,6 +782,7 @@ export function AxisEditor(props: { id: string; axis: "x" | "y"; title?: boolean
           <Num value={spec()?.max} placeholder="auto" step={0.1} onCommit={(v) => set({ max: v })} />
         </Field>
       </div>
+      <Check checked={!!spec()?.log} label="Logarithmic scale" onChange={(on) => set({ log: on || undefined })} />
     </div>
   );
 }

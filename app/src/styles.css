@@ -3283,3 +3283,39 @@ a.xref-missing {
 .col-grip:hover {
   background: color-mix(in srgb, var(--accent) 40%, transparent);
 }
+
+/* a plot's zoom buttons: shown while the pointer is over it */
+.plot-tools {
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.plot:hover .plot-tools {
+  opacity: 1;
+}
+
+.plot-tools button {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid #dddcd7;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #3d3d3a;
+  font: 12px -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.plot-tools button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app.printing .plot-tools {
+  display: none;
+}
