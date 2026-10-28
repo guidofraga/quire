@@ -34,6 +34,8 @@ export interface RegionView {
   constants: string[];
   /** Your variables here that hide a built-in constant. */
   shadowing: string[];
+  /** Your variables read as a unit here because they follow a number (`10 m`). */
+  unitsOverVariables?: string[];
   defines: string | null;
   /** A spreadsheet table's cells. */
   cells?: CellView[][];

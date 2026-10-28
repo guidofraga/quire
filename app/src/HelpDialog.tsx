@@ -42,7 +42,8 @@ const SYNTAX: Row[] = [
 ];
 
 const UNITS: Row[] = [
-  ["2 m + 30 cm", "units need no marker; your own variables win"],
+  ["2 m + 30 cm", "units need no marker; after a number a unit name is the unit"],
+  ["m := 25 kg, then 10 m", "still 10 metres; write 10*m for your variable m"],
   ["500 g, m*g", "g is grams after a number, gravity elsewhere"],
   ["kN, MPa, kgf, tonnef, psi, ksi, ft, in, °C", "SI with prefixes, technical and US units"],
   ["Inspector ▸ Results", "units as written (54 kN·m) or plain SI (54000 J)"],

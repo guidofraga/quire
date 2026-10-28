@@ -12,7 +12,7 @@
 [app/](app) is the Tauri 2 desktop editor (GPL-3.0-or-later): a free-form canvas with live evaluation.
 
 **Writing**
-- **Click anywhere and type.** Math is the default: `L:=2 m` defines L as 2 metres (units need no marker; a variable with the same name always wins). `:` becomes `:=`, a trailing `=` shows the result, Ctrl+G turns the letter before the cursor into Greek.
+- **Click anywhere and type.** Math is the default: `L:=2 m` defines L as 2 metres (units need no marker). Right after a number a unit name is always the unit, so `10 m` stays metres even if you defined `m := 25 kg`; anywhere else your variable wins (`m*g`, `10*m`), and a note under the line offers the other reading. `:` becomes `:=`, a trailing `=` shows the result, Ctrl+G turns the letter before the cursor into Greek.
 - **A word followed by a space becomes text** (`The span…`); typing `:` or `=` right after a single word turns it back into a definition.
 - Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (⇧⌘M, `\math`, or `$t = $`).
 - **LaTeX shortcuts, Word-style:** `\Delta`, `\varepsilon`, `\therefore`, `\sqrt`, `\int`… convert on space or punctuation, with a completion list as you type. They work in math and in text. Structures insert templates; Tab and ⇧Tab move between their `?` slots.

@@ -46,6 +46,8 @@ pub struct Outcome {
     pub constants: Vec<String>,
     /// Your variables here whose names are also a built-in constant.
     pub shadowing: Vec<String>,
+    /// Your variables read as a unit here because they follow a number (`10 m`).
+    pub units_over_variables: Vec<String>,
     /// A table's cells, row-major.
     pub cells: Vec<Vec<CellOutcome>>,
     /// What would fix `error`, when the engine can tell.
@@ -76,6 +78,7 @@ impl Outcome {
             units: Vec::new(),
             constants: Vec::new(),
             shadowing: Vec::new(),
+            units_over_variables: Vec::new(),
             cells: Vec::new(),
             fix: None,
             plot: None,
@@ -227,6 +230,7 @@ pub struct Worksheet {
     used_units: std::collections::BTreeSet<String>,
     used_constants: std::collections::BTreeSet<String>,
     used_shadowing: std::collections::BTreeSet<String>,
+    used_over_variables: std::collections::BTreeSet<String>,
     units: UnitRegistry,
     settings: DisplaySettings,
     globals: Rc<Env>,
@@ -238,6 +242,7 @@ impl Worksheet {
             used_units: Default::default(),
             used_constants: Default::default(),
             used_shadowing: Default::default(),
+            used_over_variables: Default::default(),
             units: UnitRegistry::new(),
             settings,
             globals: Rc::new(Env::new()),
@@ -462,9 +467,11 @@ impl Worksheet {
         let units = std::mem::take(&mut interp.unit_idents);
         let constants = std::mem::take(&mut interp.constant_idents);
         let shadowing = std::mem::take(&mut interp.shadowing);
+        let over = std::mem::take(&mut interp.units_over_variables);
         self.used_units.extend(units);
         self.used_constants.extend(constants);
         self.used_shadowing.extend(shadowing);
+        self.used_over_variables.extend(over);
         r
     }
 
@@ -577,6 +584,7 @@ impl Worksheet {
         self.used_units.clear();
         self.used_constants.clear();
         self.used_shadowing.clear();
+        self.used_over_variables.clear();
         let result = match e {
             Expr::Define { lhs, rhs, .. } => self.define(&mut out, lhs, rhs),
             _ => self.eval(e).map(Some),
@@ -605,6 +613,7 @@ impl Worksheet {
         out.units = std::mem::take(&mut self.used_units).into_iter().collect();
         out.constants = std::mem::take(&mut self.used_constants).into_iter().collect();
         out.shadowing = std::mem::take(&mut self.used_shadowing).into_iter().collect();
+        out.units_over_variables = std::mem::take(&mut self.used_over_variables).into_iter().collect();
         out
     }
 
@@ -754,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_names_are_units_unless_defined() {
+    fn plain_names_are_units_unless_defined_or_after_a_number() {
         let out =
             run(&["L := 2 m", "g := 9.81 m/s^2", "W := 30 cm", "A := L*W", "m := 3 kg", "F := m*g", "2 m"]);
         let shown: Vec<_> =
@@ -762,7 +771,8 @@ mod tests {
         assert_eq!(shown[0], "2 'm");
         assert_eq!(shown[3], "0.6 'm^2");
         assert_eq!(shown[5], "29.43 'N");
-        assert_eq!(shown[6], "6 'kg", "a defined variable shadows the unit");
+        assert_eq!(shown[6], "2 'm", "right after a number, a unit name is the unit");
+        assert_eq!(out[6].units_over_variables, ["m"]);
         assert_eq!(out[1].units, ["m", "s"]);
         assert!(out[5].units.is_empty());
         assert_eq!(run(&["T := 20 degC"])[0].shown.as_deref(), Some("293.15 'K"));
@@ -934,6 +944,21 @@ mod tests {
         assert_eq!(shown(4), "a^2 + 2*a + 1");
         assert_eq!(out[4].defines.as_deref(), Some("y"));
         assert!(out[5].error.is_some());
+    }
+
+    #[test]
+    fn a_unit_after_a_number_wins_over_a_variable() {
+        let out = run(&["m := 25 'kg", "L := 10 m", "m*g", "10*m", "v(t) := 2 t", "v(3)", "100 km/h"]);
+        let shown = |i: usize| out[i].shown.clone().or(out[i].error.clone()).unwrap_or_default();
+        // 10 metres, not 10 × 25 kg; the editor is told so it can offer the variable
+        assert_eq!(shown(1), "10 'm");
+        assert_eq!(out[1].units_over_variables, ["m"]);
+        // anywhere else the variable still wins
+        assert_eq!(shown(2), "245.1662 'N");
+        assert_eq!(shown(3), "250 'kg");
+        assert!(out[3].units_over_variables.is_empty());
+        // and a function's own parameter is never a unit: t here is not tonnes
+        assert_eq!(shown(5), "6");
     }
 
     #[test]

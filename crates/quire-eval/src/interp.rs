@@ -49,6 +49,12 @@ impl<'e> Scope<'e> {
         self.frames.iter().rev().find_map(|f| f.get(name)).or_else(|| self.base.get(name))
     }
 
+    /// Bound in this evaluation (a function's parameter, a loop or plot variable) rather
+    /// than defined in the document.
+    fn is_local(&self, name: &str) -> bool {
+        self.frames.iter().any(|f| f.contains_key(name))
+    }
+
     fn set(&mut self, name: &str, b: Binding) {
         self.frames.last_mut().expect("scope has a frame").insert(name.to_string(), b);
     }
@@ -80,6 +86,8 @@ pub struct Interp<'u> {
     pub constant_idents: BTreeSet<String>,
     /// Your variables whose names are also a built-in constant (they win, but it's worth saying).
     pub shadowing: BTreeSet<String>,
+    /// Your variables read as a unit because they follow a number (`10 m` with `m := 25 kg`).
+    pub units_over_variables: BTreeSet<String>,
 }
 
 /// `2 m`, `9.81 m/s`, `64 kgf*m`: an expression that reads as a number with units.
@@ -111,6 +119,7 @@ impl<'u> Interp<'u> {
             unit_idents: BTreeSet::new(),
             constant_idents: BTreeSet::new(),
             shadowing: BTreeSet::new(),
+            units_over_variables: BTreeSet::new(),
         }
     }
 
@@ -228,7 +237,9 @@ impl<'u> Interp<'u> {
         if let (BinaryOp::Juxt | BinaryOp::Mul, Expr::Num(t)) = (op, a) {
             let unit = match b {
                 Expr::Unit(name) => Some(self.unit(name)?),
-                Expr::Ident(name) if s.get(name).is_none() => self.units.lookup(name),
+                Expr::Ident(name) if !s.is_local(name) && (op == BinaryOp::Juxt || s.get(name).is_none()) => {
+                    self.units.lookup(name)
+                }
                 _ => None,
             };
             if let Some(u) = unit.filter(|u| u.offset != 0.0) {
@@ -239,7 +250,8 @@ impl<'u> Interp<'u> {
             }
         }
         let x = self.eval(s, a)?;
-        // right after a number or unit, a plain name is a unit: `2 g` grams, `100 km/h` hours
+        // right after a number or unit, a plain name is a unit: `2 g` grams, `100 km/h` hours,
+        // and `10 m` metres even when you have a variable m (`10*m` multiplies by it)
         let y = if op == BinaryOp::Juxt || (op == BinaryOp::Div && quantity_like(a)) {
             self.eval_unit_position(s, b)?
         } else {
@@ -250,9 +262,13 @@ impl<'u> Interp<'u> {
 
     fn eval_unit_position(&mut self, s: &mut Scope, e: &Expr) -> Result<Value> {
         match e {
-            Expr::Ident(name) if s.get(name).is_none() => match self.units.lookup(name) {
+            // a function's own parameter stays itself: `v(t) := 9.81 t`
+            Expr::Ident(name) if !s.is_local(name) => match self.units.lookup(name) {
                 Some(u) => {
                     self.unit_idents.insert(name.clone());
+                    if matches!(s.get(name), Some(Binding::Val(_))) {
+                        self.units_over_variables.insert(name.clone());
+                    }
                     Ok(Value::Num(Quantity::new(u.factor, u.dim)))
                 }
                 None => self.eval(s, e),

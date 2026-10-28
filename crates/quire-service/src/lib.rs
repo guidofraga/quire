@@ -289,6 +289,9 @@ pub struct RegionView {
     pub constants: Vec<String>,
     /// Your variables here that hide a built-in constant.
     pub shadowing: Vec<String>,
+    /// Your variables read as a unit here because they follow a number (`10 m`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub units_over_variables: Vec<String>,
     /// The name this region defines (`L`, `f(x)`), for the editor's knowledge of variables.
     pub defines: Option<String>,
     /// A spreadsheet table's cells, row-major.
@@ -537,6 +540,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 units: o.units.clone(),
                 constants: o.constants.clone(),
                 shadowing: Vec::new(),
+                units_over_variables: Vec::new(),
                 defines: None,
                 cells: None,
                 unit_choices: Vec::new(),
@@ -582,6 +586,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 units: o.units.clone(),
                 constants: o.constants.clone(),
                 shadowing: Vec::new(),
+                units_over_variables: Vec::new(),
                 defines: o.defines.clone(),
                 cells: Some(cells),
                 unit_choices: Vec::new(),
@@ -606,6 +611,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             units: o.units.clone(),
             constants: o.constants.clone(),
             shadowing: o.shadowing.clone(),
+            units_over_variables: o.units_over_variables.clone(),
             defines: o.defines.clone(),
             cells: None,
             unit_choices: if input.show && o.error.is_none() {

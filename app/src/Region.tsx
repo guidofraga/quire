@@ -501,6 +501,19 @@ export function forceUnit(name: string) {
 }
 
 
+/** `10 m` → `10*m`: the variable m, not the unit, in the math being edited. */
+function useVariable(name: string) {
+  const input = activeMathInput;
+  if (!input) return;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // a number (or a vector's closing bracket) followed by spaces and the name, as a whole word
+  const re = new RegExp(`([\\p{N}\\]])\\s+${escaped}(?![\\p{L}\\p{N}_.])`, "gu");
+  const next = input.value.replace(re, `$1*${name}`);
+  if (next === input.value) return;
+  input.focus();
+  input.select();
+  document.execCommand("insertText", false, next);
+}
 
 /** What the ambiguous names in this math mean, with a one-click switch where useful. */
 function NameNotes(props: { id: string }) {
@@ -516,6 +529,13 @@ function NameNotes(props: { id: string }) {
     for (const name of v?.units ?? []) {
       const u = g[`unit:${name}`];
       if (u?.meanings.includes("constant")) out.push({ name, text: `unit, ${prettyValue(u.value)} (after a number). Write *${name} for the constant` });
+    }
+    for (const name of v?.unitsOverVariables ?? []) {
+      out.push({
+        name,
+        text: `the unit here (after a number), not your variable ${name}`,
+        action: [`Use the variable ${name}`, () => useVariable(name)],
+      });
     }
     for (const name of v?.shadowing ?? []) {
       const c = g[`constant:${name}`];
