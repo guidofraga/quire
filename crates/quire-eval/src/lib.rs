@@ -20,8 +20,8 @@ mod worksheet;
 pub use constants::{CONSTANTS, Constant, constant};
 pub use error::{EvalError, Result};
 pub use format::{
-    DisplaySettings, DisplaySpec, WorkingUnit, format_number, format_shown, format_value, format_value_in,
-    parse_unit_spec, working_unit,
+    DisplaySettings, DisplaySpec, Notation, WorkingUnit, format_number, format_shown, format_value,
+    format_value_in, parse_unit_spec, working_unit,
 };
 pub use interp::{Binding, Env, Interp, Scope};
 pub use plot::{Axis, PlotInput, PlotOutcome, SAMPLES, SeriesInput, SeriesOutcome};

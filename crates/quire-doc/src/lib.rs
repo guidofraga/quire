@@ -59,6 +59,11 @@ pub struct DisplaySettings {
     pub trailing_zeros: Option<bool>,
     /// `"working"`: results in the document's own units; `"si"` (default): coherent SI.
     pub result_units: Option<String>,
+    /// `"auto"` (default), `"engineering"` (powers of ten in steps of three) or
+    /// `"prefix"` (the unit's SI prefix keeps the number between 1 and 1000).
+    pub notation: Option<String>,
+    /// Round results to this many significant figures instead of `decimals`.
+    pub sig_figs: Option<u32>,
     #[serde(flatten)]
     pub extra: Map<String, Json>,
 }

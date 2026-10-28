@@ -1,5 +1,5 @@
 // The welcome screen at launch: a blank document, recent documents and templates.
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { api, type TemplateInfo } from "./api";
 import { recentList } from "./recent";
 import { prefs, setPref, type Prefs } from "./settings";
@@ -34,6 +34,15 @@ function Screen(props: Props) {
   const recent = recentList().slice(0, 6);
   const [templates] = createResource(() => api.listTemplates().catch(() => [] as TemplateInfo[]));
   const close = () => setWelcomeOpen(false);
+  // Esc closes it wherever focus is (at launch nothing in it has focus yet)
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    close();
+  };
+  onMount(() => window.addEventListener("keydown", onKey, true));
+  onCleanup(() => window.removeEventListener("keydown", onKey, true));
   const run = async (fn: () => Promise<unknown> | unknown) => {
     close();
     await fn();
@@ -50,7 +59,6 @@ function Screen(props: Props) {
     <div
       class="welcome-backdrop"
       onPointerDown={(e) => e.target === e.currentTarget && close()}
-      onKeyDown={(e) => e.key === "Escape" && close()}
     >
       <div class="welcome" role="dialog" aria-label="Welcome to Quire">
         <div class="welcome-head">

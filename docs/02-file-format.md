@@ -47,7 +47,10 @@ Report.quire/                 ← a directory; on macOS registered as a document
   "settings": {
     "display": { "decimals": 4, "exponentialThreshold": 5, "approxEqualDigits": 3,
                  "trailingZeros": false, "fractions": "decimal", "decimalSeparator": "auto",
-                 "resultUnits": "working" },  // results in the units you typed; "si" (default) for coherent SI
+                 "resultUnits": "working",    // results in the units you typed; "si" (default) for coherent SI
+                 "notation": "prefix",        // "auto" (default), "engineering" (12.5*10^3) or "prefix" (12.5 kN, 4 mm)
+                 "sigFigs": 3,                // significant figures instead of decimals (optional)
+                 "groupDigits": true },       // 12 500: shown with thin spaces, never stored
     "calc":    { "angle": "rad", "precision": "double" },
     "units":   { "system": "SI",
                  "prefer": { "force": "kN", "stress": "MPa", "moment": "kN*m" } }

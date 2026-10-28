@@ -433,10 +433,29 @@ function DocumentTab() {
             />
           </Field>
         </div>
+        <Field label="Notation">
+          <Select
+            value={(display().notation as string | undefined) ?? "auto"}
+            options={[
+              ["auto", "Automatic (12500, 1.25×10⁷)"],
+              ["engineering", "Engineering (12.5×10³)"],
+              ["prefix", "SI prefixes (12.5 kN, 4 mm)"],
+            ]}
+            onChange={(v) => set(["settings", "display", "notation"])(v === "auto" ? undefined : v)}
+          />
+        </Field>
+        <Field label="Significant figures" hint="Instead of a number of decimals">
+          <Num value={display().sigFigs as number | undefined} placeholder="off" onCommit={(v) => set(["settings", "display", "sigFigs"])(v && v > 0 ? v : undefined)} />
+        </Field>
         <Check
           checked={!!display().trailingZeros}
           label="Keep trailing zeros (2.50)"
           onChange={(on) => set(["settings", "display", "trailingZeros"])(on || undefined)}
+        />
+        <Check
+          checked={!!display().groupDigits}
+          label="Group digits (12 500)"
+          onChange={(on) => set(["settings", "display", "groupDigits"])(on || undefined)}
         />
       </Section>
       <Section title="Numbering">

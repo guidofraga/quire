@@ -256,6 +256,24 @@ export const isImagePath = (p: string) => IMAGE_EXT.test(p);
 // Context menus
 // ---------------------------------------------------------------------------
 
+/** More / Fewer Decimals for one result, as in a spreadsheet. */
+function decimalsItems(id: string, r: Region): MenuItems {
+  const docDecimals = (state.doc.settings as { display?: { decimals?: number } } | undefined)?.display?.decimals ?? 4;
+  const current = r.display?.decimals ?? docDecimals;
+  const set = (n: number) => () => {
+    closeMenu();
+    updateRegion(id, (d) => {
+      d.display = { ...d.display, decimals: n === docDecimals ? undefined : n };
+      if (d.display.decimals === undefined) delete d.display.decimals;
+      if (!Object.keys(d.display).length) delete d.display;
+    });
+  };
+  return [
+    { label: `More Decimals (${current + 1})`, disabled: current >= 15, run: set(current + 1) },
+    { label: `Fewer Decimals (${Math.max(0, current - 1)})`, disabled: current <= 0, run: set(current - 1) },
+  ];
+}
+
 export function installContextMenus(run: (command: string) => void) {
   setRegionMenuBuilder((id): MenuItems => {
     const go = (cmd: string) => () => {
@@ -327,6 +345,7 @@ export function installContextMenus(run: (command: string) => void) {
         },
         null,
         { label: "Show Result", checked: !!r.show, run: () => (closeMenu(), updateRegion(id, { show: r.show ? undefined : "value" })) },
+        ...(r.show === "value" ? decimalsItems(id, r) : []),
         { label: "Exclude from Calculation", checked: !!r.disabled, run: () => (closeMenu(), updateRegion(id, { disabled: r.disabled ? undefined : true })) },
         { label: "Convert to Text", run: () => (closeMenu(), commitEditing(), convertRegion(id, "text")) },
         null,

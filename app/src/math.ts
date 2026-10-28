@@ -2,6 +2,7 @@
 // fractions, radicals, stretchy fences and matrices. This is the interim renderer
 // until the Rust typesetter (quire-layout) lands; see docs/01-architecture.md §3.
 import { prefs } from "./settings";
+import { state } from "./store";
 import type { BinaryOp, CmpOp, Expr } from "./types";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -140,10 +141,17 @@ function call(name: string, args: Expr[]): string {
   return row(ident(name), mo("("), args.map(m).join(mo(",")), mo(")"));
 }
 
+/** Document ▸ Results ▸ Group digits: a thin space every three digits, from five digits on. */
+let grouping = false;
+
+export function groupDigits(n: string): string {
+  return n.replace(/^(-?)(\d{5,})/, (_, sign: string, int: string) => sign + int.replace(/\B(?=(\d{3})+$)/g, "\u2009"));
+}
+
 function m(e: Expr): string {
   switch (e.t) {
     case "Num":
-      return `<mn>${esc(e.c)}</mn>`;
+      return `<mn>${esc(grouping ? groupDigits(e.c) : e.c)}</mn>`;
     case "Ident":
       return ident(e.c);
     case "Unit":
@@ -189,6 +197,7 @@ export function mathml(
 ): string {
   unitNames = new Set(units);
   constantNames = new Set(constants);
+  grouping = !!(state.doc.settings as { display?: { groupDigits?: boolean } } | undefined)?.display?.groupDigits;
   const parts = [m(input)];
   unitNames = new Set();
   constantNames = new Set();
@@ -207,7 +216,8 @@ const SUPERSCRIPT: Record<string, string> = { "-": "⁻", "0": "⁰", "1": "¹",
 
 /** A linear-syntax value as readable text: `9.80665 'm/'s^2` → `9.80665 m/s²`. */
 export function prettyValue(v: string): string {
-  return v
+  const grouped = (state.doc.settings as { display?: { groupDigits?: boolean } } | undefined)?.display?.groupDigits;
+  return (grouped ? v.replace(/(^|[^\d.])(\d{5,})/g, (_, pre: string, n: string) => pre + groupDigits(n)) : v)
     .replace(/'/g, "")
     .replace(/\*10\^(-?\d+)/g, (_, e: string) => `·10${[...e].map((c) => SUPERSCRIPT[c]).join("")}`)
     .replace(/\^\(?(-?\d+)\)?/g, (_, e: string) => [...e].map((c) => SUPERSCRIPT[c]).join(""))

@@ -18,7 +18,8 @@ use base64::Engine;
 use quire_ast::{Expr, parse};
 use quire_doc::Document;
 use quire_eval::{
-    DisplaySettings, DisplaySpec, Fix, MathInput, Outcome, PlotInput, SeriesInput, TableInput, Worksheet,
+    DisplaySettings, DisplaySpec, Fix, MathInput, Notation, Outcome, PlotInput, SeriesInput, TableInput,
+    Worksheet,
 };
 use serde::Serialize;
 use serde_json::{Value as Json, json};
@@ -77,6 +78,12 @@ pub fn settings_of(doc: &Document) -> DisplaySettings {
         exponential_threshold: d.exponential_threshold.unwrap_or(base.exponential_threshold),
         trailing_zeros: d.trailing_zeros.unwrap_or(base.trailing_zeros),
         working_units: d.result_units.as_deref() == Some("working"),
+        notation: match d.notation.as_deref() {
+            Some("engineering") => Notation::Engineering,
+            Some("prefix") => Notation::Prefix,
+            _ => Notation::Auto,
+        },
+        sig_figs: d.sig_figs.filter(|n| *n > 0),
     }
 }
 
