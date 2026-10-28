@@ -17,7 +17,7 @@ use std::time::Instant;
 use base64::Engine;
 use quire_ast::{Expr, parse};
 use quire_doc::Document;
-use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Outcome, TableInput, Worksheet};
+use quire_eval::{DisplaySettings, DisplaySpec, Fix, MathInput, Outcome, TableInput, Worksheet};
 use serde::Serialize;
 use serde_json::{Value as Json, json};
 
@@ -241,6 +241,19 @@ pub struct RegionView {
     /// Units the result can be shown in, with the result in each (`30 'cm`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unit_choices: Vec<UnitChoice>,
+    /// A one-click repair for `error`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<FixView>,
+}
+
+/// quire_eval::Fix, with regions named by id.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum FixView {
+    /// Write `to` in place of the name `from`.
+    Rename { from: String, to: String },
+    /// The name is defined further down, by region `id`.
+    DefinedBelow { id: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -454,6 +467,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 defines: o.defines.clone(),
                 cells: Some(cells),
                 unit_choices: Vec::new(),
+                fix: None,
             });
             continue;
         }
@@ -479,6 +493,10 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             } else {
                 Vec::new()
             },
+            fix: o.fix.as_ref().map(|f| match f {
+                Fix::Rename { from, to } => FixView::Rename { from: from.clone(), to: to.clone() },
+                Fix::DefinedBelow { index } => FixView::DefinedBelow { id: ev.inputs[*index].id.clone() },
+            }),
         });
     }
 

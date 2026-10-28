@@ -535,6 +535,16 @@ function typed() {
   pauseTimer = setTimeout(releaseErrors, PAUSE_MS);
 }
 
+/** Write `to` in place of the name `from` in a math region (an error's fix). */
+export function renameIn(id: string, from: string, to: string) {
+  const name = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_.'])${name}(?![\\p{L}\\p{N}_.])`, "gu");
+  mutate((d) => {
+    const r = findDraft(d, id);
+    if (r?.kind === "math" && r.expr) r.expr = r.expr.replace(re, to);
+  });
+}
+
 /** Live update while typing (not an undo step on its own). */
 export function setLive(id: string, text: string) {
   typed();

@@ -321,6 +321,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         "View",
         true,
         &[
+            &item(app, "command_palette", "Command Palette…", Some("CmdOrCtrl+K"))?,
+            &sep()?,
             &item(app, "page_view", "Page View", Some("CmdOrCtrl+Shift+P"))?,
             &item(app, "toggle_inspector", "Show Inspector", Some("CmdOrCtrl+Alt+I"))?,
             &sep()?,

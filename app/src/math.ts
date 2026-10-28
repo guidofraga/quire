@@ -30,8 +30,10 @@ function ident(name: string): string {
     const k = ` class="k" data-k="constant:${esc(name)}"`;
     return sub === null ? `<mi${k}>${esc(base)}</mi>` : `<msub${k}>${mi(base)}${mi(sub, true)}</msub>`;
   }
+  // data-v: the name, for tracing where a variable is defined and used
   const [base, sub] = identParts(name);
-  return sub === null ? mi(base) : `<msub>${mi(base)}${mi(sub, sub.length === 1)}</msub>`;
+  const v = ` data-v="${esc(name)}"`;
+  return sub === null ? `<mi${v}>${esc(base)}</mi>` : `<msub${v}>${mi(base)}${mi(sub, sub.length === 1)}</msub>`;
 }
 
 const unit = (name: string) => `<mi class="u" mathvariant="normal">${esc(name)}</mi>`;

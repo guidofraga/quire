@@ -14,6 +14,7 @@ import {
   pickPdfPath,
   pickSavePath,
   setWindowTitle,
+  isMac,
 } from "./api";
 import {
   addBackground,
@@ -38,6 +39,8 @@ import { type Background, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
+import { Palette, setPaletteOpen } from "./Palette";
+import { installTrace } from "./trace";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
 import { directPdf, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
@@ -302,6 +305,8 @@ function runCommand(id: string) {
     case "help":
       commitEditing();
       return setHelpOpen(true);
+    case "command_palette":
+      return setPaletteOpen(true);
     case "new_from_template":
       commitEditing();
       return setTemplates("new");
@@ -423,6 +428,19 @@ export function App() {
 
   onMount(async () => {
     installContextMenus(runCommand);
+    installTrace();
+    // ⌘K from anywhere, the math being edited included (it keeps its keys to itself)
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          e.stopPropagation();
+          setPaletteOpen(true);
+        }
+      },
+      true,
+    );
     // the window itself never scrolls (focus can try to)
     window.addEventListener("scroll", () => window.scrollTo(0, 0));
     document.getElementById("root")?.addEventListener("scroll", (e) => {
@@ -556,6 +574,7 @@ export function App() {
       <NameTooltip />
       <SettingsDialog />
       <HelpDialog />
+      <Palette runCommand={runCommand} />
       <TemplatesDialog
         onOpen={async (doc, origin) => {
           if (!(await guardUnsaved())) return false;

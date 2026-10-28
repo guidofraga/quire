@@ -24,4 +24,4 @@ pub use format::{
 pub use interp::{Binding, Env, Interp, Scope};
 pub use sheet::{CellOutcome, TableInput, cell_label, column_name, parse_ref};
 pub use value::{Matrix, Quantity, Value};
-pub use worksheet::{MathInput, Outcome, Worksheet};
+pub use worksheet::{Fix, MathInput, Outcome, Worksheet};

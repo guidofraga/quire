@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount,
 import { openRegionMenu } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping, RegionBox } from "./Region";
+import { nearestRegion, stepRegion } from "./nav";
 import { Sheet } from "./Sheet";
 import { prefs } from "./settings";
 import {
@@ -80,6 +81,21 @@ export function reveal(id: string) {
 }
 
 setRevealHandler(reveal);
+
+/** Select a region, scrolling only if it is out of view (keyboard moves). */
+export function selectInView(id: string) {
+  const p = layout().byId.get(id);
+  if (!p || !viewportEl) return;
+  const rect = viewportEl.getBoundingClientRect();
+  const z = state.view.zoom;
+  const [sx, sy] = layout().toScene(p.x, p.y);
+  const left = sx * z + state.view.x;
+  const top = sy * z + state.view.y;
+  const w = (widths[id] ?? 0) * z;
+  const h = (heights[id] ?? 0) * z;
+  if (p.hidden || left < 0 || top < 0 || left + w > rect.width || top + h > rect.height) return reveal(id);
+  setState({ selection: [id], caret: null });
+}
 
 /**
  * The scene is zoomed with CSS `zoom`, which lays it out at size, rather than a scale
@@ -342,6 +358,20 @@ export function Canvas() {
     if ((e.key === "Backspace" || e.key === "Delete") && sel.length) {
       e.preventDefault();
       deleteRegions(sel);
+      return;
+    }
+    // Tab / ⇧Tab: the next region in reading order; ⌥ + arrow: the nearest one that way
+    if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const next = stepRegion(sel.length ? sel[sel.length - 1] : null, e.shiftKey ? -1 : 1);
+      if (next) selectInView(next);
+      return;
+    }
+    const way: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (e.altKey && !e.metaKey && !e.ctrlKey && way[e.key]) {
+      e.preventDefault();
+      const next = sel.length ? nearestRegion(sel[sel.length - 1], ...way[e.key]) : stepRegion(null, 1);
+      if (next) selectInView(next);
       return;
     }
     if (e.key === "Enter" && sel.length === 1) {

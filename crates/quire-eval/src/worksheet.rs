@@ -38,6 +38,17 @@ pub struct Outcome {
     pub shadowing: Vec<String>,
     /// A table's cells, row-major.
     pub cells: Vec<Vec<CellOutcome>>,
+    /// What would fix `error`, when the engine can tell.
+    pub fix: Option<Fix>,
+}
+
+/// A one-click repair for an error.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fix {
+    /// Write `to` in place of the name `from` (a typo, or a unit in the wrong case).
+    Rename { from: String, to: String },
+    /// The name is defined further down, by the region at this index.
+    DefinedBelow { index: usize },
 }
 
 impl Outcome {
@@ -52,6 +63,7 @@ impl Outcome {
             constants: Vec::new(),
             shadowing: Vec::new(),
             cells: Vec::new(),
+            fix: None,
         }
     }
 }
@@ -286,18 +298,25 @@ impl Worksheet {
             let Some(name) = o.error.as_deref().and_then(|m| m.strip_suffix(" is not defined")) else {
                 continue;
             };
-            let hint = if defined.iter().any(|&(n, j, global)| n == name && j > i && !global) {
-                format!(
-                    "{name} is defined further down; move that definition above this one, or make it global with ~ (≡)"
+            let rename = |to: &str| Fix::Rename { from: name.to_string(), to: to.to_string() };
+            let (hint, fix) = if let Some(&(_, j, _)) =
+                defined.iter().find(|&&(n, j, global)| n == name && j > i && !global)
+            {
+                (
+                    format!(
+                        "{name} is defined further down; move that definition above this one, or make it global with ~ (≡)"
+                    ),
+                    Fix::DefinedBelow { index: j },
                 )
             } else if let Some(near) = nearest(name, defined.iter().filter(|d| d.1 < i || d.2).map(|d| d.0)) {
-                format!("{name} is not defined; did you mean {near}?")
+                (format!("{name} is not defined; did you mean {near}?"), rename(near))
             } else if let Some(unit) = unit_in_other_case(name, &self.units) {
-                format!("{name} is not defined; did you mean the unit {unit}?")
+                (format!("{name} is not defined; did you mean the unit {unit}?"), rename(&unit))
             } else {
                 continue;
             };
             o.error = Some(hint);
+            o.fix = Some(fix);
         }
     }
 
@@ -706,6 +725,16 @@ mod tests {
         assert_eq!(r[6], "zzz is not defined");
         // a global definition below is visible, so no "further down"
         assert_eq!(shown(&["b + 1", "b ≡ 2"])[0], "3");
+    }
+
+    #[test]
+    fn undefined_names_come_with_a_fix() {
+        let out = run(&["A_net := 3", "A.net", "q := 5 KN", "y + 1", "y := 2", "zzz"]);
+        let rename = |from: &str, to: &str| Some(Fix::Rename { from: from.into(), to: to.into() });
+        assert_eq!(out[1].fix, rename("A.net", "A_net"));
+        assert_eq!(out[2].fix, rename("KN", "kN"));
+        assert_eq!(out[3].fix, Some(Fix::DefinedBelow { index: 4 }));
+        assert_eq!(out[5].fix, None);
     }
 
     #[test]

@@ -39,7 +39,12 @@ export interface RegionView {
   cells?: CellView[][];
   /** Units the result can be shown in, with the result in each. */
   unitChoices?: UnitChoice[];
+  /** A one-click repair for `error`. */
+  fix?: Fix;
 }
+
+/** quire_service::FixView */
+export type Fix = { kind: "rename"; from: string; to: string } | { kind: "definedBelow"; id: string };
 
 /** quire_service::UnitChoice */
 export interface UnitChoice {

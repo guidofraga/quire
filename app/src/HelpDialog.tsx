@@ -62,6 +62,10 @@ const TABLES: Row[] = [
 ];
 
 const KEYS: Row[] = [
+  [`${mod}K`, "command palette: commands, variables, symbols"],
+  ["Tab / ⇧Tab", "next / previous region (editing: once the ? slots are filled)"],
+  [`${alt}Arrows`, "select the nearest region that way; Enter edits, Esc leaves"],
+  [`${mod}click a name`, "go to its definition; the caret on a name highlights its uses"],
   [`${mod}F / ${alt}${mod}F`, "find / find and replace"],
   [isMac ? "⌘G / ⇧⌘G" : "F3 / Shift+F3", "next / previous match"],
   [`${mod}'`, "next error"],

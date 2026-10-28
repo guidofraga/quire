@@ -1,5 +1,9 @@
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
+import { nameAt, setCaretName, trace } from "./trace";
+import { paletteOpen } from "./Palette";
+import { stepRegion } from "./nav";
+import { selectInView } from "./Canvas";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
 import { createEffect, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
@@ -27,8 +31,9 @@ import {
   localized,
   PAGE_WIDTH,
   type Placed,
-  revealRegion,
   regionGrew,
+  renameIn,
+  revealRegion,
   setHeights,
   setLive,
   setState,
@@ -40,7 +45,7 @@ import {
   updateRegion,
   widths,
 } from "./store";
-import type { Expr, Region } from "./types";
+import type { Expr, Fix, Region } from "./types";
 
 export interface RegionProps {
   region: Region;
@@ -196,9 +201,11 @@ function MathEditor(props: { r: Region }) {
     if (hole >= 0) input.setSelectionRange(hole, hole + 1);
     else input.setSelectionRange(at, at);
     activeMathInput = input;
+    traceCaret();
   });
   onCleanup(() => {
     if (activeMathInput === input) activeMathInput = null;
+    setCaretName(null);
     hideCompletions();
   });
   const fit = () => {
@@ -207,6 +214,7 @@ function MathEditor(props: { r: Region }) {
   const atEnd = () => input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
   const latexBefore = () => (prefs.latex ? LATEX_BEFORE.exec(input.value.slice(0, input.selectionStart ?? 0)) : null);
 
+  const traceCaret = () => setCaretName(input.selectionStart === input.selectionEnd ? nameAt(input.value, input.selectionStart ?? 0) : null);
   const updateCompletion = () => {
     const m = latexBefore();
     if (!m) return unitSuggestions();
@@ -268,6 +276,8 @@ function MathEditor(props: { r: Region }) {
       if (hole < 0) hole = e.shiftKey ? v.lastIndexOf("?") : v.indexOf("?");
       e.preventDefault();
       if (hole >= 0) input.setSelectionRange(hole, hole + 1);
+      // no slots to fill: on to the next region
+      else editNext(props.r.id, e.shiftKey ? -1 : 1);
       return;
     }
     const typedAssign = assignJustTyped;
@@ -307,8 +317,11 @@ function MathEditor(props: { r: Region }) {
       e.preventDefault();
       commitBelow(props.r.id);
     } else if (e.key === "Escape") {
+      // done editing; the region stays selected for the keyboard
       e.preventDefault();
+      const id = props.r.id;
       commitEditing();
+      if (layout().byId.has(id)) setState({ selection: [id], caret: null });
     }
   };
   return (
@@ -323,21 +336,40 @@ function MathEditor(props: { r: Region }) {
         fit();
         setLive(props.r.id, e.currentTarget.value);
         updateCompletion();
+        traceCaret();
       }}
+      onSelect={traceCaret}
       onKeyDown={(e) => {
         onKeyDown(e);
         e.stopPropagation();
       }}
-      onKeyUp={(e) => (e.key === "ArrowLeft" || e.key === "ArrowRight") && updateCompletion()}
+      onKeyUp={(e) => {
+        traceCaret();
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") updateCompletion();
+      }}
+      onClick={traceCaret}
       onBlur={() => {
         hideCompletions();
+        setCaretName(null);
         // switching to text unmounts this input: that blur must not end the edit
         const stillMath = layout().byId.get(props.r.id)?.region.kind === "math";
-        if (state.editing === props.r.id && stillMath) commitEditing();
+        // nor does the command palette, which puts what it inserts at this caret
+        if (state.editing === props.r.id && stillMath && !paletteOpen()) commitEditing();
       }}
       style={{ width: `${Math.max(6, initial.length + 2)}ch` }}
     />
   );
+}
+
+/** Tab out of a region: edit the next one in reading order (⇧Tab: the one before). */
+function editNext(id: string, by: 1 | -1) {
+  const next = stepRegion(id, by);
+  commitEditing();
+  if (!next || !layout().byId.has(next)) return;
+  selectInView(next);
+  const kind = layout().byId.get(next)!.region.kind;
+  if (kind === "table") editTableAt(next);
+  else startEditing(next);
 }
 
 /** Rewrite a plain name as the explicit unit `'name` everywhere in the math being edited. */
@@ -427,6 +459,25 @@ function RichTextEditor(props: { p: Placed; style: Record<string, string | undef
   return <div ref={host} class="text-body rich-host" style={props.style} />;
 }
 
+/** The engine's repair for an error, one click away. */
+function FixButton(props: { id: string; fix: Fix }) {
+  const label = () => (props.fix.kind === "rename" ? `Use ${props.fix.to}` : "Show definition");
+  return (
+    <button
+      class="err-fix"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        const f = props.fix;
+        if (f.kind === "rename") renameIn(props.id, f.from, f.to);
+        else revealRegion(f.id);
+      }}
+    >
+      {label()}
+    </button>
+  );
+}
+
 function MathBody(props: { r: Region }) {
   const view = () => state.views[props.r.id];
   const editing = () => state.editing === props.r.id;
@@ -452,7 +503,8 @@ function MathBody(props: { r: Region }) {
       </Show>
       <Show when={view()?.error}>
         <div class="err" title={view()!.error!}>
-          {view()!.error}
+          <span class="err-text">{view()!.error}</span>
+          <Show when={!editing() && view()?.fix}>{(fix) => <FixButton id={props.r.id} fix={fix()} />}</Show>
         </div>
       </Show>
     </>
@@ -754,7 +806,14 @@ export function RegionBox(props: RegionProps) {
     <div
       ref={el}
       class={`region ${r().kind}`}
-      classList={{ selected: selected(), editing: editing(), error: !!state.views[r().id]?.error, found: hitIds().has(r().id) }}
+      classList={{
+        selected: selected(),
+        editing: editing(),
+        error: !!state.views[r().id]?.error,
+        found: hitIds().has(r().id),
+        "trace-def": !!trace()?.defs.has(r().id),
+        "trace-use": !!trace()?.uses.has(r().id) && !trace()?.defs.has(r().id),
+      }}
       data-region={r().id}
       style={{
         left: `${placed().left}px`,
