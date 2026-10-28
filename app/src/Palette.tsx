@@ -58,6 +58,7 @@ const COMMANDS: [string, string, string][] = [
   ["zoom_reset", "Actual Size", `${mod}0`],
   ["next_error", "Next Error", `${mod}'`],
   ["help", "Quire Help", isMac ? "⌘?" : "F1"],
+  ["check_updates", "Check for Updates…", ""],
 ];
 
 const TEXT_COMMANDS: [string, string, string][] = [

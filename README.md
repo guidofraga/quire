@@ -83,6 +83,8 @@ Installers for Windows (.msi/.exe), Linux (.AppImage/.deb/.rpm) and macOS (.dmg)
 - **Windows:** in the SmartScreen dialog, choose **More info ▸ Run anyway**.
 - **Linux:** no warning. Make the AppImage executable first (`chmod +x Quire_*.AppImage`), or install the `.deb` or `.rpm`.
 
+From 0.1.8 on, Quire tells you when a new version is out and updates itself in one click (or choose Quire ▸ Check for Updates…). Updates are signed and checked before they install. With the `.deb` or `.rpm`, update through your package manager instead.
+
 Build and try it (needs Rust; `rustup` installs it):
 
 ```bash

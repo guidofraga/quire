@@ -43,6 +43,7 @@ import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
 import { PagePopover } from "./Popover";
+import { checkForUpdates, UpdateBanner } from "./Updates";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
@@ -334,6 +335,8 @@ function runCommand(id: string) {
       return insertTable();
     case "insert_plot":
       return insertPlot();
+    case "check_updates":
+      return void checkForUpdates(true);
     case "insert_ref":
       // a reference goes into text, at the caret
       if (activeView()) return setRefPickerOpen(true);
@@ -498,6 +501,8 @@ export function App() {
     await guardClose(() => state.dirty, api.clearRecovery);
     window.addEventListener("keydown", browserShortcuts);
     if (exportJob) return runExportJob(exportJob);
+    // a quiet look for a new version once the window has settled
+    setTimeout(() => void checkForUpdates(), 4000);
     await onOpenFile(async (path) => {
       if (await guardUnsaved()) await openPath(path);
     });
@@ -602,6 +607,7 @@ export function App() {
       <Palette runCommand={runCommand} />
       <RefPicker />
       <PagePopover />
+      <UpdateBanner beforeRestart={guardUnsaved} />
       <TemplatesDialog
         onOpen={async (doc, origin) => {
           if (!(await guardUnsaved())) return false;

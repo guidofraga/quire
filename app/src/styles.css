@@ -2868,3 +2868,56 @@ a.xref-missing {
 .caption-edit-target {
   cursor: text;
 }
+
+/* a new version is out */
+.update-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 90;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+  font: 13px -apple-system, system-ui, sans-serif;
+  animation: fade-in 160ms ease-out;
+}
+
+.update-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-text {
+  flex: 1;
+  min-width: 160px;
+}
+
+.update-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.update-notes {
+  max-height: 220px;
+  margin-top: 8px;
+  overflow-y: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--chrome-border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.app.printing .update-banner {
+  display: none;
+}

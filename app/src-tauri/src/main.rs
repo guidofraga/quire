@@ -345,6 +345,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?],
     )?;
     let help_item = item(app, "help", "Quire Help", Some(if mac { "Cmd+Shift+/" } else { "F1" }))?;
+    let updates = item(app, "check_updates", "Check for Updates…", None)?;
     if mac {
         let app_menu = Submenu::with_items(
             app,
@@ -352,6 +353,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             true,
             &[
                 &PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?,
+                &updates,
                 &sep()?,
                 &settings,
                 &sep()?,
@@ -374,7 +376,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         app,
         "Help",
         true,
-        &[&help_item, &sep()?, &PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?],
+        &[&help_item, &updates, &sep()?, &PredefinedMenuItem::about(app, Some("About Quire"), Some(about))?],
     )?;
     Menu::with_items(app, &[&file, &edit, &insert, &format, &arrange, &view, &window, &help])
 }
@@ -427,6 +429,8 @@ fn main() {
     let app = tauri::Builder::default()
         .manage::<Requests>(std::sync::Mutex::new(OpenRequests { ready: false, pending: launch_docs }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .menu(menu)
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.as_str());

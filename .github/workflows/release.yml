@@ -1,4 +1,5 @@
-# Builds installers for Windows, Linux and macOS and attaches them to a draft release.
+# Builds installers for Windows, Linux and macOS, plus signed update packages and
+# latest.json for the in-app updater, and attaches them to a draft release.
 # Run it by pushing a version tag (git tag v0.1.0 && git push origin v0.1.0) or from the
 # Actions tab ("Run workflow").
 name: Release
@@ -52,10 +53,15 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # signs the update packages; the app checks them against the public key in tauri.conf.json
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: Quire ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseBody: Installers for Windows (.msi / .exe), Linux (.AppImage / .deb / .rpm) and macOS (.dmg). These builds are not code-signed yet.
           releaseDraft: true
+          # latest.json: what the app checks for updates (only published releases count)
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
