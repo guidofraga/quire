@@ -307,11 +307,24 @@ export function structure(op: "row_above" | "row_below" | "col_left" | "col_righ
 // Clipboard: tab-separated text, what spreadsheets exchange
 // ---------------------------------------------------------------------------
 
+/** A cell that starts with `"` is quoted and may hold tabs and line breaks (Excel's Alt+Enter). */
 export function parseTsv(text: string): string[][] {
-  const lines = text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n");
-  return lines.map((line) =>
-    line.split("\t").map((cell) => (/^".*"$/s.test(cell) ? cell.slice(1, -1).replace(/""/g, '"') : cell)),
-  );
+  const src = text.replace(/\r\n?/g, "\n").replace(/\n$/, "");
+  const rows: string[][] = [[]];
+  let i = 0;
+  for (;;) {
+    let cell = "";
+    const quoted = src[i] === '"' ? /^"((?:[^"]|"")*)"(?=\t|\n|$)/.exec(src.slice(i)) : null;
+    if (quoted) {
+      cell = quoted[1].replace(/""/g, '"');
+      i += quoted[0].length;
+    } else {
+      while (i < src.length && src[i] !== "\t" && src[i] !== "\n") cell += src[i++];
+    }
+    rows[rows.length - 1].push(cell);
+    if (i >= src.length) return rows;
+    if (src[i++] === "\n") rows.push([]);
+  }
 }
 
 const tsvCell = (s: string) => (/[\t\n"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
