@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, redo, state, undo, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, redo, state, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -47,6 +47,41 @@ describe("undo and redo", () => {
     undo();
     expect(state.doc.regions[0].id).toBe("z");
     expect(state.dirty).toBe(false);
+  });
+
+  it("skips steps that changed nothing", () => {
+    updateRegion("a", { expr: "x := 2" });
+    mutate(() => {});
+    mutate(() => {});
+    expect(undoDepth().steps).toBe(2);
+    undo();
+    expect(state.doc.regions[0].expr).toBe("x := 1");
+  });
+
+  it("keeps 300 steps of a short document", () => {
+    for (let i = 0; i < 350; i++) updateRegion("a", { expr: `x := ${i}` });
+    expect(undoDepth().steps).toBe(300);
+    for (let i = 0; i < 300; i++) undo();
+    expect(state.doc.regions[0].expr).toBe("x := 49");
+  });
+
+  it("keeps fewer steps of a long document, but at least 20", () => {
+    const long = "y".repeat(500_000);
+    loadDoc(doc([math("a", 0, "x := 1"), { id: "big", kind: "text", at: [0, 40], text: long }]), null);
+    for (let i = 0; i < 40; i++) updateRegion("a", { expr: `x := ${i}` });
+    const { steps, chars } = undoDepth();
+    // 40 steps of ~0.5 M characters is over the budget: it keeps what fits
+    expect(steps).toBeGreaterThanOrEqual(20);
+    expect(steps).toBeLessThan(40);
+    expect(chars).toBeLessThanOrEqual(20_000_000);
+    for (let i = 0; i < steps; i++) undo();
+    expect(state.doc.regions[0].expr).toBe(`x := ${39 - steps}`);
+  });
+
+  it("never keeps fewer than 20 steps", () => {
+    loadDoc(doc([math("a", 0, "x := 1"), { id: "big", kind: "text", at: [0, 40], text: "y".repeat(2_000_000) }]), null);
+    for (let i = 0; i < 30; i++) updateRegion("a", { expr: `x := ${i}` });
+    expect(undoDepth().steps).toBe(20);
   });
 
   it("removes properties set to nothing", () => {
