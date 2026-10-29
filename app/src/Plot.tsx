@@ -527,10 +527,11 @@ export function PlotBody(props: { r: Region }) {
               />
               <For each={markNodes(s)}>
                 {(node) => {
-                  // a label is set below its point, in the row's colour and size
+                  // a label starts at its point and hangs below and to the right of it, as in SMath
+                  // (F1 beside its arrow, not on it), in the row's colour and size
                   if (node.m.shape === "text") {
                     return (
-                      <text class="plot-mark-text" x={node.cx} y={node.cy + node.m.size + 2} text-anchor="middle" fill={node.c} font-size={`${node.m.size}px`}>
+                      <text class="plot-mark-text" x={node.cx + 2} y={node.cy + node.m.size + 2} text-anchor="start" fill={node.c} font-size={`${node.m.size}px`}>
                         {node.m.text}
                       </text>
                     );
