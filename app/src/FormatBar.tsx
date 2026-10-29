@@ -78,12 +78,21 @@ function Dropdown(props: {
   let pop: HTMLDivElement | undefined;
   const items = () =>
     pop ? (props.kind === "menu" ? [...pop.querySelectorAll<HTMLElement>("[role^=menuitem]")] : focusables(pop)) : [];
+  // where focus goes back to when it closes without a pick: the math or text being edited
+  // when it was opened from there with the mouse, else the button
+  let returnTo: HTMLElement | null = null;
+  const back = () => {
+    const el = returnTo?.isConnected && !root.contains(returnTo) ? returnTo : button;
+    el.focus({ preventScroll: true });
+  };
   const close = () => {
     const inside = root.contains(document.activeElement);
     setOpen(false);
-    if (inside) button.focus();
+    if (inside) back();
   };
   const show = () => {
+    const active = document.activeElement;
+    returnTo = active instanceof HTMLElement && active !== document.body ? active : null;
     props.onOpen?.();
     setOpen(true);
     if (!fromKeyboard()) return;
@@ -103,7 +112,7 @@ function Dropdown(props: {
       e.preventDefault();
       e.stopPropagation();
       setOpen(false);
-      button.focus();
+      back();
     } else if (e.key === "Tab" && props.kind === "menu") {
       e.preventDefault();
       close();
@@ -126,8 +135,22 @@ function Dropdown(props: {
   const onDoc = (e: MouseEvent) => {
     if (!root.contains(e.target as Node)) setOpen(false);
   };
-  onMount(() => document.addEventListener("mousedown", onDoc));
-  onCleanup(() => document.removeEventListener("mousedown", onDoc));
+  // opened with the mouse while typing, focus stayed in the editor: Esc closes this first,
+  // and the editor keeps focus and its text
+  const onEsc = (e: KeyboardEvent) => {
+    if (!open() || e.key !== "Escape" || root.contains(document.activeElement)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setOpen(false);
+  };
+  onMount(() => {
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onEsc, true);
+  });
+  onCleanup(() => {
+    document.removeEventListener("mousedown", onDoc);
+    window.removeEventListener("keydown", onEsc, true);
+  });
   return (
     <div
       class="fb-dropdown"
