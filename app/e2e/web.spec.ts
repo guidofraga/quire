@@ -2,6 +2,7 @@
 // links and files the visitor picks, and leave as links and downloads.
 import { readFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
+import { audit } from "./axe";
 
 const regions = (page: Page) => page.locator(".region");
 
@@ -36,12 +37,9 @@ test("a shared link opens the document, as it was, in another browser", async ({
   const field = page.getByRole("textbox", { name: "Link to this document" });
   await expect(field).toHaveValue(/#doc=[A-Za-z0-9_-]+$/);
   const link = await field.inputValue();
-  const { default: AxeBuilder } = await import("@axe-core/playwright");
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
-    const { violations } = await new AxeBuilder({ page }).include(".share").analyze();
-    const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-    expect(bad.map((v) => `${colorScheme} ${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+    await audit(page, `Share, ${colorScheme}`, ".share");
   }
 
   const other = await browser.newPage();

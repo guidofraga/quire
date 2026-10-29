@@ -42,7 +42,7 @@ A test that fails sometimes is a bug, in the test or in the app. Reproduce it wi
 
 - typing before a field has focus (wait for `toBeFocused()` first, as the `name()` helper in `notebook.spec.ts` does);
 - measuring colours mid-animation (the axe tests emulate `reducedMotion: "reduce"`);
-- CI's Linux WebKit reporting text colours mid-update right after a document opens (the `audit()` helper in `a11y.spec.ts` re-measures before failing, so only problems that persist fail).
+- CI's Linux WebKit reporting text colours mid-update right after a document opens (the `audit()` helper in `e2e/axe.ts` re-measures before failing, so only problems that persist fail).
 
 ## 4. Results that must not change
 
