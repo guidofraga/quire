@@ -2,12 +2,15 @@
 // at whatever resolution they were pasted in, and the PDF learns the document's details,
 // headings and link targets from the page view.
 
-import { isMac } from "./api";
+import { isLinux, isMac, isTauri } from "./api";
 import { layout, localized, type Placed, state } from "./store";
 import type { Doc, Localized } from "./types";
 
-/** macOS writes the PDF itself; elsewhere the system print dialog saves it ("Save as PDF"). */
-export const directPdf = isMac;
+/**
+ * The desktop app writes the PDF itself on macOS and Linux. Windows (and the browser)
+ * save it from the system print dialog ("Save as PDF").
+ */
+export const directPdf = isMac || (isTauri && isLinux);
 
 async function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
@@ -153,21 +156,26 @@ export function pdfOutline(list: Placed[], html: Record<string, string>, numbere
 }
 
 /**
- * Contents-list rows (`[data-ref]`) as link boxes, measured on the sheets as printed.
- * Cross-references in text are real links, which the print engine keeps by itself.
+ * Link boxes, measured on the sheets as printed: contents-list rows (`[data-ref]`), and on
+ * Linux also the cross-references in text (`<a href="#ref:…">`), because WebKitGTK's PDF
+ * print drops the links it makes on macOS. On macOS the print engine keeps those itself.
  */
 export function pdfLinks(paperW: number, root: ParentNode = document): PdfLink[] {
   const out: PdfLink[] = [];
+  const selector = isMac ? "[data-ref]:not(a)" : '[data-ref]:not(a), a[href^="#ref:"]';
   for (const sheet of root.querySelectorAll<HTMLElement>(".sheet[data-page]")) {
     const box = sheet.getBoundingClientRect();
     if (!box.width) continue;
     // screen pixels → points, whatever the zoom
     const s = (paperW / box.width) * PT;
     const page = Number(sheet.dataset.page) - 1;
-    for (const el of sheet.querySelectorAll<HTMLElement>("[data-ref]:not(a)")) {
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      out.push({ page, left: (r.left - box.left) * s, top: (r.top - box.top) * s, width: r.width * s, height: r.height * s, to: el.dataset.ref! });
+    for (const el of sheet.querySelectorAll<HTMLElement>(selector)) {
+      const to = el.dataset.ref ?? (el.getAttribute("href") ?? "").slice(5);
+      // a cross-reference that wraps over lines gets one box per line
+      for (const r of el.getClientRects()) {
+        if (!r.width || !r.height) continue;
+        out.push({ page, left: (r.left - box.left) * s, top: (r.top - box.top) * s, width: r.width * s, height: r.height * s, to });
+      }
     }
   }
   return out;

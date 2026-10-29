@@ -2,14 +2,24 @@
 //!
 //! The editor's page view already lays the document out as paper-sized sheets, so the
 //! print operation uses the exact paper size with zero margins and no scaling: what is
-//! on screen is what lands in the PDF. On macOS a "save" print job writes the PDF directly.
+//! on screen is what lands in the PDF. macOS (AppKit) and Linux (GTK's "Print to File"
+//! backend) write the PDF directly, with no dialog; Windows still goes through Print.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+#[cfg(target_os = "macos")]
+use std::path::Path;
+use std::path::PathBuf;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::time::Instant;
 
 use serde::Deserialize;
 use tauri::WebviewWindow;
+
+/// How long a PDF export may take before it is reported as failed.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+const EXPORT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Paper size in PostScript points (1/72 in), already rotated for landscape.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -143,7 +153,8 @@ fn run(window: &WebviewWindow, paper: Paper, save_to: Option<PathBuf>, title: St
     rx.recv().map_err(|e| e.to_string())?
 }
 
-/// The print job finishes asynchronously; wait until the file exists and stops growing.
+/// The macOS print job finishes asynchronously; wait until the file exists and stops growing.
+#[cfg(target_os = "macos")]
 fn wait_for_file(path: &Path, timeout: Duration) -> Result<(), String> {
     let start = Instant::now();
     let (mut last, mut stable_since) = (0u64, Instant::now());
@@ -160,6 +171,99 @@ fn wait_for_file(path: &Path, timeout: Duration) -> Result<(), String> {
     Err(format!("timed out writing {}", path.display()))
 }
 
+/// Linux: WebKitGTK prints through GTK, and GTK's "Print to File" backend writes the file
+/// named by `output-uri` in the format `output-file-format`, with no dialog.
+#[cfg(target_os = "linux")]
+mod gtk_pdf {
+    use std::cell::RefCell;
+    use std::ffi::{CStr, CString, c_char};
+    use std::path::Path;
+    use std::rc::Rc;
+    use std::sync::mpsc::Sender;
+
+    use gtk::glib;
+    use gtk::{PageOrientation, PageSetup, PaperSize, PrintSettings, Unit};
+    use webkit2gtk::{PrintOperation, PrintOperationExt, WebView};
+
+    use super::Paper;
+
+    /// GTK's file printer is named "Print to File", translated into the user's language.
+    const PRINT_TO_FILE: &str = "Print to File";
+
+    unsafe extern "C" {
+        fn dgettext(domain: *const c_char, msgid: *const c_char) -> *const c_char;
+    }
+
+    /// The file printer's name in the user's language, as GTK itself looks it up.
+    fn file_printer_name() -> String {
+        let (Ok(domain), Ok(msgid)) = (CString::new("gtk30"), CString::new(PRINT_TO_FILE)) else {
+            return PRINT_TO_FILE.to_owned();
+        };
+        // SAFETY: both arguments are valid NUL-terminated strings that outlive the call; gettext
+        // keeps the returned string until the locale changes, and it is copied out right below.
+        let text = unsafe { dgettext(domain.as_ptr(), msgid.as_ptr()) };
+        if text.is_null() {
+            return PRINT_TO_FILE.to_owned();
+        }
+        // SAFETY: a non-null result of dgettext is a valid NUL-terminated string (see above).
+        match unsafe { CStr::from_ptr(text) }.to_str() {
+            Ok(name) => name.to_owned(),
+            Err(_) => PRINT_TO_FILE.to_owned(),
+        }
+    }
+
+    /// Start writing `path` as a PDF of the page view. `done` gets the outcome once the job
+    /// has finished or failed; it runs on the GTK main thread, so it must not block.
+    pub fn start(
+        view: &WebView,
+        paper: Paper,
+        path: &Path,
+        done: Sender<Result<(), String>>,
+    ) -> Result<(), String> {
+        let uri =
+            glib::filename_to_uri(path, None).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        // paper and page setup must agree: GTK would otherwise scale or re-orient the sheets
+        let size =
+            PaperSize::new_custom("quire-page", "Quire page", paper.width_pt, paper.height_pt, Unit::Points);
+        let page = PageSetup::new();
+        page.set_orientation(PageOrientation::Portrait);
+        page.set_paper_size(&size);
+        page.set_top_margin(0.0, Unit::Points);
+        page.set_bottom_margin(0.0, Unit::Points);
+        page.set_left_margin(0.0, Unit::Points);
+        page.set_right_margin(0.0, Unit::Points);
+
+        let settings = PrintSettings::new();
+        settings.set_printer(&file_printer_name());
+        settings.set(gtk::PRINT_SETTINGS_OUTPUT_URI.as_str(), Some(uri.as_str()));
+        settings.set(gtk::PRINT_SETTINGS_OUTPUT_FILE_FORMAT.as_str(), Some("pdf"));
+        settings.set_orientation(PageOrientation::Portrait);
+        settings.set_paper_size(&size);
+        settings.set_n_copies(1);
+
+        let op = PrintOperation::new(view);
+        op.set_print_settings(&settings);
+        op.set_page_setup(&page);
+
+        // WebKit may still be using the operation after this function returns; keep it
+        // until the job ends, then let go (the signal handlers below hold this slot).
+        let slot = Rc::new(RefCell::new(Some(op.clone())));
+        let (ok, failed) = (done.clone(), done);
+        let kept = slot.clone();
+        op.connect_finished(move |_| {
+            kept.borrow_mut().take();
+            let _ = ok.send(Ok(()));
+        });
+        let kept = slot.clone();
+        op.connect_failed(move |_, e| {
+            kept.borrow_mut().take();
+            let _ = failed.send(Err(format!("could not write the PDF: {}", e.message())));
+        });
+        op.print();
+        Ok(())
+    }
+}
+
 pub fn print(window: &WebviewWindow, paper: Paper, title: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     return run(window, paper, None, title);
@@ -168,6 +272,21 @@ pub fn print(window: &WebviewWindow, paper: Paper, title: String) -> Result<(), 
         let _ = (paper, title);
         window.print().map_err(|e| e.to_string())
     }
+}
+
+/// Linux: start the GTK job on the main thread and wait for its outcome here, off the UI thread.
+#[cfg(target_os = "linux")]
+fn run_gtk(window: &WebviewWindow, paper: Paper, path: PathBuf) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let failed = tx.clone();
+    window
+        .with_webview(move |wv| {
+            if let Err(e) = gtk_pdf::start(&wv.inner(), paper, &path, tx) {
+                let _ = failed.send(Err(e));
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    rx.recv_timeout(EXPORT_TIMEOUT).map_err(|_| "timed out writing the PDF".to_string())?
 }
 
 pub fn export_pdf(
@@ -184,16 +303,24 @@ pub fn export_pdf(
     #[cfg(target_os = "macos")]
     {
         run(window, paper, Some(path.clone()), title)?;
-        wait_for_file(&path, Duration::from_secs(120))?;
+        wait_for_file(&path, EXPORT_TIMEOUT)?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = title;
+        run_gtk(window, paper, path.clone())?;
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
         // bookmarks, links and smaller images are a bonus; the PDF is already complete without them
         if let Err(e) = crate::pdf::finish(&path, &info, compress) {
             eprintln!("quire: could not finish {}: {e}", path.display());
         }
         Ok(())
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = (window, paper, title, compress, info, wait_for_file);
-        Err("direct PDF export is macOS-only for now; use Print and choose a PDF printer".into())
+        let _ = (window, paper, title, compress, info);
+        Err("direct PDF export is macOS and Linux only; use Print and choose a PDF printer".into())
     }
 }

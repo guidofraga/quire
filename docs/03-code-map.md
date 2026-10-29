@@ -76,10 +76,10 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | File | What lives there |
 |---|---|
 | `main.rs` | Tauri commands (thin wrappers over `quire-service`), the native menu with its accelerators, Open Recent, crash recovery, files the system asks to open, the window setup. |
-| `print.rs` | Printing and PDF export through WebKit's print engine, at the exact paper size. |
-| `pdf.rs` | Finishing the exported PDF with `lopdf`: details, bookmarks, links, page labels. |
+| `print.rs` | Printing and PDF export through WebKit's print engine, at the exact paper size: AppKit's save job on macOS, GTK's "Print to File" backend on Linux (the printer is named in the user's language). Windows only prints, through the dialog. |
+| `pdf.rs` | Finishing the exported PDF with `lopdf` (macOS and Linux): details, bookmarks, links, page labels, smaller photos. |
 | `tauri.conf.json`, `capabilities/` | Window, bundle, updater and permission configuration. |
-| `tests/` | The headless PDF export test (macOS, run by hand). |
+| `tests/` | The headless PDF export test (macOS and Linux, run by hand). |
 
 ## 5. The UI (`app/src`)
 

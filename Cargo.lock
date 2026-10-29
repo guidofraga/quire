@@ -2673,6 +2673,7 @@ name = "quire-app"
 version = "0.1.11"
 dependencies = [
  "flate2",
+ "gtk",
  "jpeg-encoder",
  "lopdf",
  "objc2",
@@ -2687,6 +2688,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "webkit2gtk",
 ]
 
 [[package]]

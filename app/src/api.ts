@@ -113,6 +113,7 @@ export async function pickPdfPath(suggested: string): Promise<string | null> {
 }
 
 export const isMac = /Mac/.test(navigator.userAgent);
+export const isLinux = /Linux/.test(navigator.userAgent);
 
 /**
  * Documents are `.quire` folders (a single file in the Finder, where they are packages)

@@ -67,21 +67,27 @@ describe("pdfOutline", () => {
 });
 
 describe("pdfLinks", () => {
-  const rect = (left: number, top: number, width: number, height: number) => () => ({ left, top, width, height }) as DOMRect;
+  const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, height }) as DOMRect;
+  /** What getClientRects returns for an element: one box per line. */
+  const lines = (...boxes: DOMRect[]) => () => boxes as unknown as DOMRectList;
 
-  it("measures contents rows on each sheet in points, whatever the zoom", () => {
+  it("measures contents rows and cross-references on each sheet in points, whatever the zoom", () => {
     const root = document.createElement("div");
     root.innerHTML = `
-      <div class="sheet" data-page="1"><div class="contents-row" data-ref="h1"></div><a class="xref" data-ref="h1" href="#ref:h1"></a></div>
+      <div class="sheet" data-page="1"><div class="contents-row" data-ref="h1"></div><a class="xref" href="#ref:h1"></a></div>
       <div class="sheet" data-page="2"><div class="contents-row" data-ref="f1"></div></div>`;
     const [s1, s2] = root.querySelectorAll<HTMLElement>(".sheet");
     // shown at 50 %: a 800 px wide paper takes 400 screen pixels
-    s1.getBoundingClientRect = rect(100, 50, 400, 566);
-    s2.getBoundingClientRect = rect(100, 650, 400, 566);
-    (s1.firstElementChild as HTMLElement).getBoundingClientRect = rect(130, 110, 300, 10);
-    (s2.firstElementChild as HTMLElement).getBoundingClientRect = rect(100, 650, 200, 8);
+    s1.getBoundingClientRect = () => box(100, 50, 400, 566);
+    s2.getBoundingClientRect = () => box(100, 650, 400, 566);
+    (s1.firstElementChild as HTMLElement).getClientRects = lines(box(130, 110, 300, 10));
+    // a cross-reference that wraps gets one box per line
+    (s1.querySelector("a") as HTMLElement).getClientRects = lines(box(130, 150, 100, 10), box(100, 170, 50, 10));
+    (s2.firstElementChild as HTMLElement).getClientRects = lines(box(100, 650, 200, 8));
     expect(pdfLinks(800, root)).toEqual([
       { page: 0, left: 45, top: 90, width: 450, height: 15, to: "h1" },
+      { page: 0, left: 45, top: 150, width: 150, height: 15, to: "h1" },
+      { page: 0, left: 0, top: 180, width: 75, height: 15, to: "h1" },
       { page: 1, left: 0, top: 0, width: 300, height: 12, to: "f1" },
     ]);
   });

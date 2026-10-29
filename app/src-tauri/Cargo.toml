@@ -18,11 +18,19 @@ tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 serde = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# the versions tauri already locks, so no second GTK or WebKit stack is built
+gtk = { version = "0.18", features = ["v3_24"] }
+webkit2gtk = { version = "2", features = ["v2_40"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSDictionary", "NSGeometry", "NSObject"] }
 objc2-app-kit = { version = "0.3", features = ["NSPrintInfo", "NSPrintOperation", "NSView", "NSWindow", "NSResponder", "NSGraphics"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "objc2-app-kit"] }
+
+# the exported PDF is finished on macOS and Linux (bookmarks, links, details, smaller photos)
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 # re-encode photos in exported PDFs (WebKit stores every image losslessly)
 lopdf = { version = "0.46", default-features = false }
 jpeg-encoder = "0.7"
