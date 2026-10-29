@@ -885,9 +885,37 @@ export function distributeRegions(ids: string[], axis: "x" | "y") {
 
 export type ContentsKind = "headings" | "figures" | "tables" | "checks";
 
+/** Regions that sit in the text column like Word's tables and pictures, not where the click was. */
+const BLOCK_KINDS = new Set(["table", "toc", "image", "plot2d", "plot3d"]);
+
+/**
+ * Where a table, list, image or plot goes when inserted at `at`. In Pages view, as in Word:
+ * at the left margin of the text column, on the insertion point's line, or under whatever
+ * already sits on that line. On the canvas, where the insertion point is. (It can be dragged
+ * anywhere afterwards.)
+ */
+export function blockPlace(at: [number, number]): [number, number] {
+  const l = layout();
+  if (!l.pageView) return at;
+  let y = at[1];
+  // under what the line already holds, beside or below which the block would otherwise land
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const q of l.list) {
+      if (q.hidden || q.parent) continue;
+      const bottom = q.y + (heights[q.region.id] ?? LINE);
+      if (q.y <= y + 0.5 && bottom > y + 0.5) {
+        y = snap(bottom + GRID);
+        moved = true;
+      }
+    }
+  }
+  return [0, y];
+}
+
 export function insertContents(of: ContentsKind) {
   commitEditing();
-  const [x, y] = state.caret ?? [0, snap(contentBottom() + GRID)];
+  const [x, y] = blockPlace(state.caret ?? [0, snap(contentBottom() + GRID)]);
   const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables", checks: "Summary of Checks" }[of];
   mutate((d) => {
     d.regions.push({ id: newId(), kind: "toc", at: [x, y], of, title });
@@ -897,8 +925,10 @@ export function insertContents(of: ContentsKind) {
 export function insertRegion(region: Omit<Region, "id">) {
   commitEditing();
   const id = newId();
+  const r = region as Region;
+  const at = BLOCK_KINDS.has(r.kind) ? blockPlace(r.at) : r.at;
   mutate((d) => {
-    d.regions.push({ ...region, id } as Region);
+    d.regions.push({ ...region, at, id } as Region);
   });
   setState({ selection: [id], caret: null });
   return id;

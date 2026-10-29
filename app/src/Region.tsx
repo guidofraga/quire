@@ -167,15 +167,20 @@ function Caption(props: { p: Placed }) {
               }}
             >
               <Html html={state.report?.html[`${r().id}:caption`]} class="caption-text" />
+              <Show when={!localized(r().caption!.text, lang()).trim() && !state.printing}>
+                <span class="caption-placeholder">caption text</span>
+              </Show>
             </span>
           }
         >
           <input
             class="caption-input"
-            value={localized(r().caption!.text, lang())}
+            // read once: a re-evaluation while typing must not put the old text back
+            value={untrack(() => localized(r().caption!.text, lang()))}
             size={Math.max(12, localized(r().caption!.text, lang()).length + 2)}
             spellcheck={true}
             aria-label="Caption"
+            placeholder="caption text"
             // after the menu that opened it has closed and handed focus back to the page
             ref={(el) => setTimeout(() => (el.focus(), el.select()), 60)}
             onPointerDown={(e) => e.stopPropagation()}

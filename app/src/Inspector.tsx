@@ -1,5 +1,6 @@
 // Inspector: properties of the selected region, the document and its pages.
-import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEditor";
+import { activeCell, activeFormat, colName, type Column, columnsOf, formatCells, isSheet, setBorders, setFit, toggleCells } from "./TableEditor";
+import { type Borders, bordersOf, fitsColumn, type HAlign, SHADES, type VAlign } from "./tableFormat";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { arrowFocus } from "./a11y";
 import { type Background, PX_PER_MM, toPx } from "./pages";
@@ -78,6 +79,49 @@ export function Select<T extends string>(props: { value: T; options: [T, string]
   );
 }
 
+/** The selected cells of a table (the active cell's format shown): Word's cell formatting. */
+function CellFields(props: { r: Region }) {
+  const f = () => activeFormat(props.r);
+  const cell = () => `${colName(activeCell().c)}${activeCell().r + 1}`;
+  return (
+    <div class="insp-sub">
+      <div class="insp-subtitle">Cell {cell()}</div>
+      <div class="insp-row">
+        <Field label="Horizontal">
+          <Select<string>
+            value={f().align ?? ""}
+            options={[
+              ["", "Column's"],
+              ["left", "Left"],
+              ["center", "Centre"],
+              ["right", "Right"],
+            ]}
+            onChange={(v) => formatCells(props.r.id, { align: (v || undefined) as HAlign | undefined })}
+          />
+        </Field>
+        <Field label="Vertical">
+          <Select<string>
+            value={f().valign ?? "middle"}
+            options={[
+              ["top", "Top"],
+              ["middle", "Middle"],
+              ["bottom", "Bottom"],
+            ]}
+            onChange={(v) => formatCells(props.r.id, { valign: v === "middle" ? undefined : (v as VAlign) })}
+          />
+        </Field>
+      </div>
+      <Field label="Shading">
+        <Select<string> value={f().fill ?? ""} options={SHADES} onChange={(v) => formatCells(props.r.id, { fill: v || undefined })} />
+      </Field>
+      <div class="insp-row">
+        <Check checked={!!f().bold} label="Bold" onChange={() => toggleCells(props.r.id, "bold")} />
+        <Check checked={!!f().italic} label="Italic" onChange={() => toggleCells(props.r.id, "italic")} />
+      </div>
+    </div>
+  );
+}
+
 /** The selected column of a table being edited (or the first one). */
 function ColumnFields(props: { r: Region }) {
   const c = () => (state.editing === props.r.id ? activeCell().c : 0);
@@ -141,19 +185,21 @@ function CaptionFields(props: { r: Region }) {
     <Section title="Caption">
       <Check
         checked={!!props.r.caption}
-        label="Show a numbered caption"
-        onChange={(on) => updateRegion(props.r.id, { caption: on ? { text: "Caption", position: "below" } : undefined })}
+        label="Numbered caption (Figure N – / Table N –)"
+        // Word's default places: above a table, below a figure
+        onChange={(on) => updateRegion(props.r.id, { caption: on ? { text: "", position: props.r.kind === "table" ? "above" : "below" } : undefined })}
       />
       <Show when={props.r.caption}>
         <Field label="Text">
           <Text
             value={localized(props.r.caption!.text)}
+            placeholder="caption text"
             onCommit={(v) => updateRegion(props.r.id, { caption: { ...props.r.caption!, text: v } })}
           />
         </Field>
         <Field label="Position">
           <Select
-            value={props.r.caption!.position ?? "below"}
+            value={props.r.caption!.position ?? (props.r.kind === "table" ? "above" : "below")}
             options={[
               ["above", "Above"],
               ["below", "Below"],
@@ -296,7 +342,20 @@ function RegionTab() {
                     />
                   </Field>
                 </div>
+                <Check checked={fitsColumn(r())} label="Fit the width of the text column" onChange={(on) => setFit(r().id, on)} />
+                <Field label="Borders">
+                  <Select<Borders>
+                    value={bordersOf(r())}
+                    options={[
+                      ["all", "All borders"],
+                      ["outer", "Outside borders"],
+                      ["none", "No borders"],
+                    ]}
+                    onChange={(v) => setBorders(r().id, v)}
+                  />
+                </Field>
                 <ColumnFields r={r()} />
+                <CellFields r={r()} />
               </Match>
               <Match when={r().kind === "table"}>
                 <Field label="Matrix shown" hint="Any expression giving a matrix">

@@ -1375,7 +1375,8 @@ ms.str::after {
 .insp-link {
   border: 0;
   background: none;
-  color: var(--error);
+  /* the text shade of the error colour: readable on the dark theme too */
+  color: var(--error-ink);
   font: 12px -apple-system, system-ui, sans-serif;
   padding: 0;
   text-align: left;
@@ -3586,4 +3587,194 @@ input[type="radio"]:focus-visible,
 
 .plot3d-reset:hover {
   color: #3d3d3a;
+}
+
+/* ---------------------------------------------------------------------------
+   Word-like tables: size picker, table tools, fitted widths, borders, cell formats
+   --------------------------------------------------------------------------- */
+.table-picker {
+  position: fixed;
+  z-index: 1000;
+  padding: 8px 10px 8px;
+  border: 1px solid var(--chrome-border, #d7d9de);
+  border-radius: 8px;
+  background: var(--chrome-bg, #fff);
+  color: var(--ink, #1f2328);
+  box-shadow: 0 8px 28px rgba(20, 30, 50, 0.22);
+  font: 12px -apple-system, system-ui, sans-serif;
+  user-select: none;
+}
+
+.table-picker-title {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.table-picker-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.table-picker-row {
+  display: flex;
+  gap: 3px;
+}
+
+.table-picker-cell {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 1px solid #b9c0ca;
+  border-radius: 2px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.table-picker-cell.on {
+  border-color: var(--accent, #2f6fdf);
+  background: var(--accent-soft, #dbe7fb);
+}
+
+.table-picker-hint {
+  margin-top: 6px;
+  color: var(--muted, #6b7280);
+  font-size: 11px;
+}
+
+.sheet-chrome {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: 640px;
+  margin-bottom: 4px;
+}
+
+.sheet-chrome .sheet-bar {
+  margin-bottom: 0;
+}
+
+.table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #d7d9de;
+  border-radius: 6px;
+  background: #f6f7f9;
+  box-shadow: 0 2px 8px rgba(20, 30, 50, 0.12);
+  font: 11px -apple-system, system-ui, sans-serif;
+}
+
+.tt-group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-right: 4px;
+  border-right: 1px solid #dfe2e7;
+}
+
+.tt-group:last-child {
+  border-right: 0;
+}
+
+.tt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: #1f2328;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tt-btn.wide {
+  font-size: 11px;
+}
+
+.tt-btn:hover:not(:disabled) {
+  background: #e8ebf0;
+}
+
+.tt-btn[aria-pressed="true"] {
+  border-color: #b8c7e6;
+  background: var(--accent-soft, #dbe7fb);
+  /* darker than the accent: 4.5:1 on the soft background (WCAG AA) */
+  color: #1d4fae;
+}
+
+.tt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tt-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tt-select select {
+  height: 22px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f2328;
+  font: inherit;
+}
+
+.tt-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #9aa3af;
+  border-radius: 2px;
+}
+
+/* a table as wide as the text column: fixed columns, text wraps in its cell */
+.sheet.fit {
+  table-layout: fixed;
+}
+
+.sheet.fit td {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sheet.fit .cell-input {
+  min-width: 0;
+}
+
+/* borders: all (default), outside only, none; while editing, faint grid lines show the cells */
+.sheet.borders-outer {
+  border: 1px solid #9aa3af;
+}
+
+.sheet.borders-outer td,
+.sheet.borders-none td {
+  border-style: none;
+}
+
+.sheet.editing.borders-outer td,
+.sheet.editing.borders-none td {
+  border: 1px dashed #c9ced6;
+}
+
+.caption-placeholder {
+  color: var(--muted, #8a8f98);
+  font-style: italic;
+}
+
+@media print {
+  .caption-placeholder,
+  .sheet-chrome {
+    display: none !important;
+  }
 }

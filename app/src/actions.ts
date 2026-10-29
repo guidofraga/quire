@@ -30,6 +30,7 @@ import { closeMenu, type MenuItems, setRegionMenuBuilder } from "./menu";
 import type { Background } from "./pages";
 import {
   availableWidth,
+  blockPlace,
   commitEditing,
   contentBottom,
   convertRegion,
@@ -402,7 +403,8 @@ async function placeImage(src: string, at?: [number, number]) {
   const url = await api.readAsset(state.path ?? "", src);
   setState("assets", src, url);
   const [nw, nh] = await naturalSize(url);
-  const [x, y] = at ?? state.caret ?? [GRID * 4, GRID * 4];
+  // dropped where it was dropped; inserted, at the text column's margin like Word's pictures
+  const [x, y] = at ?? (state.caret ? blockPlace(state.caret) : [GRID * 4, GRID * 4]);
   const maxW = Math.min(availableWidth(x), 480);
   const w = Math.round(Math.min(nw, maxW));
   const id = newId();
@@ -491,6 +493,22 @@ function decimalsItems(id: string, r: Region): MenuItems {
   ];
 }
 
+/** Regions that take a numbered caption: figures (images, plots) and tables. */
+export const CAPTIONED = ["image", "table", "plot2d", "plot3d"];
+
+/**
+ * Word's Insert Caption: "Figura 3 –" / "Tabela 2 –" numbered automatically (the words come
+ * from the document's numbering, else its language), above a table and below a figure, open
+ * for typing its text. It enters List of Figures / List of Tables.
+ */
+export function insertCaption(id: string, position?: "above" | "below") {
+  const r = layout().byId.get(id)?.region;
+  if (!r || !CAPTIONED.includes(r.kind)) return;
+  if (state.editing === id) commitEditing();
+  if (!r.caption) updateRegion(id, { caption: { text: "", position: position ?? (r.kind === "table" ? "above" : "below") } });
+  setCaptionToEdit(id);
+}
+
 export function installContextMenus(run: (command: string) => void) {
   setRegionMenuBuilder((id): MenuItems => {
     const go = (cmd: string) => () => {
@@ -571,20 +589,21 @@ export function installContextMenus(run: (command: string) => void) {
       );
     } else if (!many && r?.kind === "text" && state.editing !== id) {
       items.push({ label: "Convert to Math", run: () => (closeMenu(), convertRegion(id, "math")) }, null);
-    } else if (r && ["image", "table", "plot2d"].includes(r.kind)) {
+    } else if (r && CAPTIONED.includes(r.kind)) {
       if (r.kind === "plot2d") items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlotImage(id)) });
       items.push(
-        {
-          label: r.caption ? "Remove Caption" : "Add Caption",
-          run: () => {
-            closeMenu();
-            // r is live: read whether it had a caption before changing it
-            const adding = !r.caption;
-            updateRegion(id, { caption: adding ? { text: "Caption", position: r.kind === "table" ? "above" : "below" } : undefined });
-            // a new caption opens for typing
-            if (adding) setCaptionToEdit(id);
-          },
-        },
+        r.caption
+          ? { label: "Edit Caption", run: () => (closeMenu(), setCaptionToEdit(id)) }
+          : { label: "Insert Caption…", run: () => (closeMenu(), insertCaption(id)) },
+        ...(r.caption
+          ? [
+              {
+                label: r.caption.position === "above" ? "Move Caption Below" : "Move Caption Above",
+                run: () => (closeMenu(), updateRegion(id, { caption: { ...r.caption!, position: r.caption!.position === "above" ? "below" : "above" } })),
+              },
+              { label: "Remove Caption", run: () => (closeMenu(), updateRegion(id, { caption: undefined })) },
+            ]
+          : []),
         null,
       );
     }

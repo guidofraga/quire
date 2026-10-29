@@ -1,13 +1,50 @@
 // Spreadsheet tables: cells hold text, values (12 kN) or formulas (=SUM(B2:B4)).
 // The engine evaluates them (crates/quire-eval/src/sheet.rs); this is the grid you edit.
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show, untrack } from "solid-js";
+import { render } from "solid-js/web";
 import { api, isTauri } from "./api";
 import { esc, prettyValue } from "./math";
 import { verdictOf } from "./checks";
 import { decimalComma, parseCsv, tableNameFrom, toCsv, withDecimalComma } from "./csv";
 import { tableFromHtml } from "./clipboard";
-import { commitEditing, contentBottom, flash, insertRegion, layout, type Placed, LINE, redo, setState, snap, startEditing, state, undo, updateRegion } from "./store";
+import {
+  availableWidth,
+  commitEditing,
+  contentBottom,
+  flash,
+  insertRegion,
+  layout,
+  type Placed,
+  LINE,
+  redo,
+  setState,
+  snap,
+  startEditing,
+  state,
+  undo,
+  updateRegion,
+} from "./store";
 import type { Region } from "./types";
+import {
+  a1,
+  anchorOf,
+  applyFormat,
+  type Borders,
+  bordersOf,
+  type CellFormat,
+  expandRange,
+  fitsColumn,
+  formatAt,
+  formatsOf,
+  mergeCells,
+  reorderFormats,
+  SHADES,
+  shiftFormats,
+  spansOf,
+  splitCells,
+  tidyFormats,
+} from "./tableFormat";
+import { DEFAULT_TABLE, openTablePicker, TablePicker } from "./TablePicker";
 
 export interface Column {
   width?: number;
@@ -134,13 +171,40 @@ function focusGrid() {
   queueMicrotask(() => document.querySelector<HTMLElement>(".region.editing .sheet-wrap")?.focus({ preventScroll: true }));
 }
 
+const spansFor = (t: Region) => spansOf(t, ...sizeOf(t));
+
 function select(r: number, c: number, extend = false) {
   const t = editingTable();
   if (!t) return;
   const [h, w] = sizeOf(t);
   r = Math.max(0, Math.min(h - 1, r));
   c = Math.max(0, Math.min(w - 1, c));
+  // a merged cell is selected as a whole
+  if (!extend) [r, c] = anchorOf(spansFor(t), r, c);
   setSel((s) => (extend ? { ...s, r2: r, c2: c } : { r, c, r2: r, c2: c }));
+}
+
+/** The cell one step away, stepping over a merged cell's full width or height. */
+function stepFrom(t: Region, i: number, j: number, dr: number, dc: number): [number, number] {
+  const [h, w] = spansFor(t).span(i, j);
+  return [dr > 0 ? i + h : i + dr, dc > 0 ? j + w : j + dc];
+}
+
+/** Word's Tab: the next cell, on to the next row; past the last cell a new row. */
+function tabFrom(t: Region, back: boolean) {
+  const { r, c } = sel();
+  const [h, w] = sizeOf(t);
+  const s = spansFor(t);
+  const cells: [number, number][] = [];
+  for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) if (!s.covered.has(`${i},${j}`)) cells.push([i, j]);
+  const k = cells.findIndex(([i, j]) => i === r && j === c);
+  if (back) {
+    if (k > 0) select(...cells[k - 1]);
+    return;
+  }
+  if (k >= 0 && k < cells.length - 1) return select(...cells[k + 1]);
+  editRows(t.id, (rows) => rows.push(Array(w).fill("")));
+  select(h, 0);
 }
 
 function beginEdit(text: string | null, typed: boolean) {
@@ -160,15 +224,17 @@ function beginEdit(text: string | null, typed: boolean) {
 }
 
 /** Write the cell being typed and move by (dr, dc); Enter past the last row adds one. */
-function commitDraft(dr = 0, dc = 0) {
+function commitDraft(dr = 0, dc = 0, tab?: "next" | "back") {
   const t = editingTable();
   const text = draft();
   if (!t || text === null) return;
   const { r, c } = sel();
   setDraft(null);
   if ((rowsOf(t)[r]?.[c] ?? "") !== text) setCells(t.id, [r, c], [[text]]);
-  if (dr > 0 && r + dr >= sizeOf(t)[0]) editRows(t.id, (rows) => rows.push([]));
-  if (dr || dc) select(r + dr, c + dc);
+  const [nr, nc] = stepFrom(t, r, c, dr, dc);
+  if (dr > 0 && nr >= sizeOf(t)[0]) editRows(t.id, (rows) => rows.push([]));
+  if (tab) tabFrom(editingTable()!, tab === "back");
+  else if (dr || dc) select(nr, nc);
   focusGrid();
 }
 
@@ -247,8 +313,99 @@ function sortRows(descending: boolean) {
     const result = next.map((row) => [...row]);
     sorted.forEach((from, k) => (result[movable[k]] = next[from]));
     rows.splice(0, rows.length, ...result);
+    // bold, shading… go with their rows
+    const order = rows.map((_, i) => i);
+    sorted.forEach((from, k) => (order[movable[k]] = from));
+    if (t.cellFormat) setFormats(t, reorderFormats(formatsOf(t), order));
   });
 }
+
+function setFormats(r: Region, f: ReturnType<typeof formatsOf>) {
+  const tidy = tidyFormats(f);
+  if (tidy) r.cellFormat = tidy;
+  else delete r.cellFormat;
+}
+
+// ---------------------------------------------------------------------------
+// Word-like formatting of the selected cells
+// ---------------------------------------------------------------------------
+
+const tableById = (id: string) => {
+  const r = layout().byId.get(id)?.region;
+  return isSheet(r) ? r : undefined;
+};
+
+/** The cells of the selection (merged cells once, by their top-left cell). */
+function selectedCells(t: Region): [number, number][] {
+  const { r0, r1, c0, c1 } = range(sel());
+  const s = spansFor(t);
+  const out: [number, number][] = [];
+  for (let i = r0; i <= r1; i++) for (let j = c0; j <= c1; j++) if (!s.covered.has(`${i},${j}`)) out.push([i, j]);
+  return out.length ? out : [anchorOf(s, r0, c0)];
+}
+
+/** Bold, italic, alignment, shading on the selected cells (`undefined` clears). */
+export function formatCells(id: string, patch: Partial<CellFormat>) {
+  const t = tableById(id);
+  if (!t) return;
+  const cells = selectedCells(t);
+  updateRegion(id, (r) => setFormats(r, applyFormat(formatsOf(r), cells, patch)));
+}
+
+/** The format of the active cell, for the toolbar's pressed buttons. */
+export function activeFormat(r: Region): CellFormat {
+  const { r: i, c: j } = sel();
+  return formatAt(r, i, j);
+}
+
+/** Header cells are bold without saying so. */
+const headerCell = (t: Region, i: number, j: number) => (!!t.header?.row && i === 0) || (!!t.header?.column && j === 0);
+
+/** ⌘B / ⌘I: on for all, or off if every selected cell already has it. */
+export function toggleCells(id: string, key: "bold" | "italic") {
+  const t = tableById(id);
+  if (!t) return;
+  const cells = selectedCells(t);
+  // header cells are bold by default: plain needs saying so
+  const implied = (i: number, j: number) => key === "bold" && headerCell(t, i, j);
+  const on = !cells.every(([i, j]) => formatAt(t, i, j)[key] ?? implied(i, j));
+  updateRegion(id, (r) => {
+    const f = { ...formatsOf(r) };
+    for (const [i, j] of cells) f[a1(i, j)] = { ...f[a1(i, j)], [key]: on === implied(i, j) ? undefined : on };
+    setFormats(r, f);
+  });
+}
+
+export function mergeSelection(id: string) {
+  const t = tableById(id);
+  if (!t) return;
+  const rg = expandRange(spansFor(t), range(sel()));
+  if (rg.r0 === rg.r1 && rg.c0 === rg.c1) return flash("Select two or more cells to merge");
+  editRows(id, (rows, r) => setFormats(r, mergeCells(rows, formatsOf(r), rg)));
+  setSel({ r: rg.r0, c: rg.c0, r2: rg.r0, c2: rg.c0 });
+}
+
+export function splitSelection(id: string) {
+  const t = tableById(id);
+  if (!t) return;
+  const rg = expandRange(spansFor(t), range(sel()));
+  updateRegion(id, (r) => setFormats(r, splitCells(formatsOf(r), rg)));
+}
+
+/** Whether the selection holds a merged cell (Split Cells applies). */
+export function selectionHasMerge(t: Region): boolean {
+  return selectedCells(t).some(([i, j]) => {
+    const [h, w] = spansFor(t).span(i, j);
+    return h > 1 || w > 1;
+  });
+}
+
+export const setBorders = (id: string, b: Borders) => updateRegion(id, { borders: b === "all" ? undefined : b });
+export const setFit = (id: string, on: boolean) =>
+  updateRegion(id, (r) => {
+    if (on) r.fit = true;
+    else delete r.fit;
+  });
 
 /** Insert or delete whole rows/columns at the selection; formulas follow. */
 export function structure(op: "row_above" | "row_below" | "col_left" | "col_right" | "delete_rows" | "delete_cols") {
@@ -285,6 +442,8 @@ export function structure(op: "row_above" | "row_below" | "col_left" | "col_righ
     for (const row of rows)
       for (let c = 0; c < row.length; c++)
         if (row[c].startsWith("=")) row[c] = `=${shiftRefs(row[c].slice(1), axis, at, delta)}`;
+    // formats and merged cells follow their cells
+    if (r.cellFormat) setFormats(r, shiftFormats(formatsOf(r), axis, at, delta));
     if (axis === "row") {
       if (delta > 0) rows.splice(at, 0, ...Array.from({ length: delta }, () => Array(w).fill("")));
       else rows.splice(at, -delta);
@@ -380,7 +539,20 @@ export function tableCommand(id: string): boolean {
 }
 
 export function tableMenuItems(run: (fn: () => void) => () => void) {
+  const t = editingTable();
+  const id = t?.id ?? "";
+  const { r0, r1, c0, c1 } = range(sel());
+  const many = r0 !== r1 || c0 !== c1;
   return [
+    { label: "Merge Cells", disabled: !many, run: run(() => mergeSelection(id)) },
+    { label: "Split Cells", disabled: !t || !selectionHasMerge(t), run: run(() => splitSelection(id)) },
+    null,
+    { label: "Bold", shortcut: "⌘B", run: run(() => toggleCells(id, "bold")) },
+    { label: "Italic", shortcut: "⌘I", run: run(() => toggleCells(id, "italic")) },
+    { label: "Align Left", shortcut: "⌘L", run: run(() => formatCells(id, { align: "left" })) },
+    { label: "Align Centre", shortcut: "⌘E", run: run(() => formatCells(id, { align: "center" })) },
+    { label: "Align Right", shortcut: "⌘R", run: run(() => formatCells(id, { align: "right" })) },
+    null,
     { label: "Insert Row Above", run: run(() => structure("row_above")) },
     { label: "Insert Row Below", run: run(() => structure("row_below")) },
     { label: "Insert Column Left", run: run(() => structure("col_left")) },
@@ -399,22 +571,63 @@ export function tableMenuItems(run: (fn: () => void) => () => void) {
   ];
 }
 
-/** Insert ▸ Table: a small table with a header row, ready to type into. */
-export function insertTable(rows?: string[][], name?: string) {
+/** What was typed into the size picker: the first characters of the new table's first cell. */
+let pendingTyped: string | null = null;
+
+function consumeTyped() {
+  const typed = pendingTyped;
+  pendingTyped = null;
+  if (typed && editingTable()) beginEdit(typed, true);
+}
+
+let pickerMounted = false;
+
+/** The size picker lives outside the app's tree: mount it the first time it is needed. */
+function mountPicker() {
+  if (pickerMounted) return;
+  pickerMounted = true;
+  const host = document.createElement("div");
+  host.className = "table-picker-host";
+  document.body.append(host);
+  render(() => <TablePicker />, host);
+}
+
+const blankRows = (h: number, w: number) => Array.from({ length: h }, () => Array<string>(w).fill(""));
+
+/**
+ * Insert ▸ Table. With a click (toolbar, menu) Word's grid opens to choose rows × columns;
+ * from the keyboard (⌥⌘T) the default size goes in at once. `rows` (paste, CSV) inserts those.
+ */
+export function insertTable(rows: string[][], name?: string): string;
+export function insertTable(): string | undefined;
+export function insertTable(rows?: string[][], name?: string): string | undefined {
+  if (!rows) {
+    const ev = typeof window !== "undefined" ? (window.event as Event | undefined) : undefined;
+    if (!(ev instanceof KeyboardEvent)) {
+      mountPicker();
+      const target = ev instanceof MouseEvent ? (ev.target as Element | null) : null;
+      const button = target?.closest?.(".toolbar button") ?? null;
+      const anchor = button ?? (ev instanceof MouseEvent ? { x: ev.clientX, y: ev.clientY } : null);
+      openTablePicker(anchor, (h, w, typed) => createTable(blankRows(h, w), undefined, typed, true));
+      return;
+    }
+    return createTable(blankRows(...DEFAULT_TABLE), undefined, undefined, true);
+  }
+  return createTable(rows, name);
+}
+
+/** A table at the insertion point with a header row, ready to type into; `fit`: as wide as the text column. */
+function createTable(rows: string[][], name?: string, typed?: string, fit = false) {
   commitEditing();
   // without an insertion point, below everything
   const at = state.caret ?? [36, snap(contentBottom() + LINE)];
-  const data = rows ?? [
-    ["", "", ""],
-    ["", "", ""],
-    ["", "", ""],
-    ["", "", ""],
-  ];
-  const id = insertRegion({ kind: "table", at, rows: data, header: { row: true }, ...(name ? { name } : {}) });
+  const id = insertRegion({ kind: "table", at, rows, header: { row: true }, ...(fit ? { fit: true } : {}), ...(name ? { name } : {}) });
   setState({ caret: null });
+  pendingTyped = typed ?? null;
   startEditing(id);
   setSel({ r: 0, c: 0, r2: 0, c2: 0 });
   focusGrid();
+  if (pendingTyped) queueMicrotask(consumeTyped);
   return id;
 }
 
@@ -501,12 +714,187 @@ function cellValueHtml(linear: string): string {
   return `<span class="cell-num">${esc(m[1])}</span>${m[2] ? ` <span class="cell-unit">${esc(m[2])}</span>` : ""}`;
 }
 
+/** The row-number column while editing. */
+const ROW_HEAD_W = 26;
+const MIN_COL = 28;
+/** A region's left and right padding (styles.css `.region`). */
+const REGION_PAD = 6;
+
+/** A table that fits the text column: columns with a width keep it, the others share what is left. */
+export function fitWidths(cols: Column[], n: number, total: number): number[] {
+  const set = Array.from({ length: n }, (_, j) => cols[j]?.width);
+  const fixed = set.reduce<number>((a, w) => a + (w ?? 0), 0);
+  const free = set.filter((w) => w === undefined).length;
+  const share = free ? Math.max(MIN_COL, (total - fixed) / free) : 0;
+  return set.map((w) => w ?? share);
+}
+
+/** Small line icons for the table toolbar: alignment as lines of text. */
+function AlignIcon(props: { h?: "left" | "center" | "right"; v?: "top" | "middle" | "bottom" }) {
+  const lines = props.h
+    ? [14, 9, 14, 9].map((w, k) => {
+        const x = props.h === "left" ? 1 : props.h === "right" ? 15 - w : (16 - w) / 2;
+        return <line x1={x} x2={x + w} y1={3 + k * 3.4} y2={3 + k * 3.4} />;
+      })
+    : [10, 10].map((w, k) => {
+        const y0 = props.v === "top" ? 3 : props.v === "bottom" ? 9.5 : 6.3;
+        return <line x1={(16 - w) / 2} x2={(16 - w) / 2 + w} y1={y0 + k * 3.2} y2={y0 + k * 3.2} />;
+      });
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      {props.v ? <rect x="0.8" y="0.8" width="14.4" height="14.4" rx="1.5" fill="none" stroke-width="1" opacity="0.55" /> : null}
+      {lines}
+    </svg>
+  );
+}
+
+/** Word's Table Design / Layout tabs, in a strip above the table being edited. */
+function TableTools(props: { r: Region }) {
+  const id = () => props.r.id;
+  const fmt = () => activeFormat(props.r);
+  const head = () => headerCell(props.r, sel().r, sel().c);
+  const keep = (e: Event) => {
+    // the grid (or the cell being typed) keeps the keyboard; the canvas doesn't start a drag
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const act = (fn: () => void) => () => {
+    if (draft() !== null) commitDraft();
+    fn();
+    focusGrid();
+  };
+  const Btn = (p: { label: string; pressed?: boolean; disabled?: boolean; run: () => void; children: JSX.Element; wide?: boolean }) => (
+    <button
+      class="tt-btn"
+      classList={{ wide: !!p.wide }}
+      title={p.label}
+      aria-label={p.label}
+      aria-pressed={p.pressed === undefined ? undefined : p.pressed}
+      disabled={p.disabled}
+      tabIndex={-1}
+      onPointerDown={keep}
+      onClick={act(p.run)}
+    >
+      {/* the glyph is a picture of the label: screen readers read the label */}
+      <span aria-hidden="true">{p.children}</span>
+    </button>
+  );
+  const many = () => {
+    const { r0, r1, c0, c1 } = range(sel());
+    return r0 !== r1 || c0 !== c1;
+  };
+  return (
+    <div class="table-tools" role="toolbar" aria-label="Table tools" onPointerDown={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()}>
+      <div class="tt-group" role="group" aria-label="Text">
+        <Btn label="Bold (⌘B)" pressed={fmt().bold ?? head()} run={() => toggleCells(id(), "bold")}>
+          <b>B</b>
+        </Btn>
+        <Btn label="Italic (⌘I)" pressed={!!fmt().italic} run={() => toggleCells(id(), "italic")}>
+          <i style={{ "font-family": "Georgia, serif" }}>I</i>
+        </Btn>
+      </div>
+      <div class="tt-group" role="group" aria-label="Alignment">
+        <For each={["left", "center", "right"] as const}>
+          {(h) => (
+            <Btn label={`Align ${h === "center" ? "centre" : h}`} pressed={fmt().align === h} run={() => formatCells(id(), { align: fmt().align === h ? undefined : h })}>
+              <AlignIcon h={h} />
+            </Btn>
+          )}
+        </For>
+        <For each={["top", "middle", "bottom"] as const}>
+          {(v) => (
+            <Btn label={`Align ${v}`} pressed={(fmt().valign ?? "middle") === v} run={() => formatCells(id(), { valign: v === "middle" ? undefined : v })}>
+              <AlignIcon v={v} />
+            </Btn>
+          )}
+        </For>
+      </div>
+      <div class="tt-group" role="group" aria-label="Shading and borders">
+        <label class="tt-select" title="Cell shading">
+          <span class="tt-swatch" style={{ background: fmt().fill ?? "transparent" }} aria-hidden="true" />
+          <select
+            aria-label="Shading"
+            value={fmt().fill ?? ""}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              if (draft() !== null) commitDraft();
+              formatCells(id(), { fill: e.currentTarget.value || undefined });
+              focusGrid();
+            }}
+          >
+            <For each={SHADES}>{([v, label]) => <option value={v}>{label}</option>}</For>
+          </select>
+        </label>
+        <label class="tt-select" title="Borders">
+          <select
+            aria-label="Borders"
+            value={bordersOf(props.r)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              setBorders(id(), e.currentTarget.value as Borders);
+              focusGrid();
+            }}
+          >
+            <option value="all">All borders</option>
+            <option value="outer">Outside borders</option>
+            <option value="none">No borders</option>
+          </select>
+        </label>
+      </div>
+      <div class="tt-group" role="group" aria-label="Rows and columns">
+        <Btn label="Insert row above" run={() => structure("row_above")} wide>
+          +row↑
+        </Btn>
+        <Btn label="Insert row below" run={() => structure("row_below")} wide>
+          +row↓
+        </Btn>
+        <Btn label="Insert column left" run={() => structure("col_left")} wide>
+          +column←
+        </Btn>
+        <Btn label="Insert column right" run={() => structure("col_right")} wide>
+          +column→
+        </Btn>
+        <Btn label="Delete rows" run={() => structure("delete_rows")} wide>
+          −rows
+        </Btn>
+        <Btn label="Delete columns" run={() => structure("delete_cols")} wide>
+          −columns
+        </Btn>
+      </div>
+      <div class="tt-group" role="group" aria-label="Merge">
+        <Btn label="Merge cells" disabled={!many()} run={() => mergeSelection(id())} wide>
+          Merge
+        </Btn>
+        <Btn label="Split cells" disabled={!selectionHasMerge(props.r)} run={() => splitSelection(id())} wide>
+          Split
+        </Btn>
+      </div>
+      <div class="tt-group" role="group" aria-label="Table">
+        <Btn
+          label="Header row"
+          pressed={!!props.r.header?.row}
+          run={() => updateRegion(id(), { header: { ...props.r.header, row: !props.r.header?.row } })}
+          wide
+        >
+          Header
+        </Btn>
+        <Btn label="Fit the text column" pressed={fitsColumn(props.r)} run={() => setFit(id(), !fitsColumn(props.r))} wide>
+          ⟷ Fit
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 export function SheetGrid(props: { p: Placed }) {
   const r = () => props.p.region;
-  const editing = () => state.editing === r().id;
+  // a memo: the placement changes on every layout, editing doesn't (an effect on it would
+  // otherwise rerun and drop what is being typed)
+  const editing = createMemo(() => state.editing === r().id);
   const size = createMemo(() => sizeOf(r()));
   const rowIdx = createMemo(() => Array.from({ length: size()[0] }, (_, i) => i));
   const colIdx = createMemo(() => Array.from({ length: size()[1] }, (_, i) => i));
+  const spans = createMemo(() => spansOf(r(), ...size()));
   const cols = () => columnsOf(r());
   const view = (i: number, j: number) => state.views[r().id]?.cells?.[i]?.[j];
   const raw = (i: number, j: number) => rowsOf(r())[i]?.[j] ?? "";
@@ -517,6 +905,18 @@ export function SheetGrid(props: { p: Placed }) {
   };
   const active = (i: number, j: number) => editing() && sel().r === i && sel().c === j;
 
+  // Word-like widths: the table fits the text column, its columns share it
+  const fit = () => fitsColumn(r());
+  const [liveWidths, setLiveWidths] = createSignal<number[] | null>(null);
+  // inside the region's padding, so its edges line up with the text's
+  const widthsNow = createMemo(() => liveWidths() ?? (fit() ? fitWidths(cols(), size()[1], availableWidth(props.p.x) - REGION_PAD) : null));
+  const colWidth = (j: number): number | undefined => widthsNow()?.[j] ?? cols()[j]?.width;
+  const tableWidth = () => {
+    const w = widthsNow();
+    if (!w) return undefined;
+    return w.reduce((a, b) => a + b, 0) + (editing() ? ROW_HEAD_W : 0);
+  };
+
   // a new edit starts on the cell that was double-clicked
   createEffect(
     on(editing, (on) => {
@@ -524,9 +924,12 @@ export function SheetGrid(props: { p: Placed }) {
         setDraft(null);
         const hit = untrack(() => pendingCell);
         pendingCell = null;
-        if (hit) setSel({ r: hit[0], c: hit[1], r2: hit[0], c2: hit[1] });
-        else if (untrack(sel).r >= size()[0] || untrack(sel).c >= size()[1]) setSel({ r: 0, c: 0, r2: 0, c2: 0 });
+        if (hit) {
+          const [i, j] = anchorOf(untrack(spans), hit[0], hit[1]);
+          setSel({ r: i, c: j, r2: i, c2: j });
+        } else if (untrack(sel).r >= untrack(size)[0] || untrack(sel).c >= untrack(size)[1]) setSel({ r: 0, c: 0, r2: 0, c2: 0 });
         focusGrid();
+        if (pendingTyped) queueMicrotask(consumeTyped);
       } else if (untrack(draft) !== null) {
         setDraft(null);
       }
@@ -586,19 +989,44 @@ export function SheetGrid(props: { p: Placed }) {
     window.addEventListener("pointerup", up);
   };
 
+  /** ⌘B, ⌘I, ⌘L/E/R: Word's shortcuts on the selected cells; true when handled. */
+  const formatKey = (e: KeyboardEvent): boolean => {
+    if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return false;
+    const k = e.key.toLowerCase();
+    const align: Record<string, "left" | "center" | "right"> = { l: "left", e: "center", r: "right" };
+    if (k === "b" || k === "i") toggleCells(r().id, k === "b" ? "bold" : "italic");
+    else if (align[k]) formatCells(r().id, { align: align[k] });
+    else return false;
+    return true;
+  };
+
   const onGridKey = (e: KeyboardEvent) => {
-    if (!editing() || draft() !== null) return;
-    const { r: i, c: j, r2, c2 } = sel();
+    if (!editing()) return;
     const mod = e.metaKey || e.ctrlKey;
+    if (draft() !== null) {
+      // typed faster than the cell's field took the focus: the keys still go into it
+      if (e.key.length === 1 && !mod && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDraft((d) => (d ?? "") + e.key);
+        const input = formulaInput();
+        if (input) {
+          input.focus();
+          queueMicrotask(() => input.setSelectionRange(input.value.length, input.value.length));
+        }
+      }
+      return;
+    }
+    const { r: i, c: j, r2, c2 } = sel();
     const arrows: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
     if (arrows[e.key] && !mod) {
       e.preventDefault();
       const [dr, dc] = arrows[e.key];
       if (e.shiftKey) select(r2 + dr, c2 + dc, true);
-      else select(i + dr, j + dc);
+      else select(...stepFrom(r(), i, j, dr, dc));
     } else if (e.key === "Tab") {
       e.preventDefault();
-      select(i, j + (e.shiftKey ? -1 : 1));
+      tabFrom(r(), e.shiftKey);
     } else if (e.key === "Enter" || e.key === "F2") {
       e.preventDefault();
       beginEdit(null, false);
@@ -608,6 +1036,8 @@ export function SheetGrid(props: { p: Placed }) {
     } else if (e.key === "Escape") {
       e.preventDefault();
       commitEditing();
+    } else if (formatKey(e)) {
+      e.preventDefault();
     } else if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (e.shiftKey) redo();
@@ -635,7 +1065,7 @@ export function SheetGrid(props: { p: Placed }) {
       commitDraft(e.shiftKey ? -1 : 1, 0);
     } else if (e.key === "Tab") {
       e.preventDefault();
-      commitDraft(0, e.shiftKey ? -1 : 1);
+      commitDraft(0, 0, e.shiftKey ? "back" : "next");
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancelDraft();
@@ -643,6 +1073,11 @@ export function SheetGrid(props: { p: Placed }) {
       e.preventDefault();
       const d: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
       commitDraft(...d[e.key]);
+    } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && ["b", "i"].includes(e.key.toLowerCase())) {
+      // the whole cell, as there is no formatting inside a cell
+      e.preventDefault();
+      commitDraft();
+      formatKey(e);
     }
   };
 
@@ -653,6 +1088,13 @@ export function SheetGrid(props: { p: Placed }) {
     if (editing() || !tableEl.rows[0]) return;
     const box = tableEl.getBoundingClientRect();
     const z = state.view.zoom;
+    const w = widthsNow();
+    if (w) {
+      // fitted columns: the edges are the widths, whatever cells are merged
+      let x = 0;
+      setEdges(w.map((cw, j) => ({ j, x: (x += cw), h: box.height / z })));
+      return;
+    }
     setEdges([...tableEl.rows[0].cells].map((td, j) => ({ j, x: (td.getBoundingClientRect().right - box.left) / z, h: box.height / z })));
   };
   const setColumnWidth = (j: number, w: number | undefined) =>
@@ -663,7 +1105,43 @@ export function SheetGrid(props: { p: Placed }) {
       if (w === undefined) delete list[j].width;
       reg.columns = list;
     });
+
+  /** Drag a column's right border, Word-like: the column to the right gives the room, so the table keeps its width. */
+  const dragFitted = (e: PointerEvent, j: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const w0 = widthsNow()!;
+    const n = w0.length;
+    const x0 = e.clientX;
+    let w = [...w0];
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) / state.view.zoom;
+      w = [...w0];
+      if (j < n - 1) {
+        const d = Math.max(MIN_COL - w0[j], Math.min(w0[j + 1] - MIN_COL, dx));
+        w[j] = w0[j] + d;
+        w[j + 1] = w0[j + 1] - d;
+      } else w[j] = Math.max(MIN_COL, w0[j] + dx);
+      setLiveWidths(w);
+      measureEdges();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setLiveWidths(null);
+      updateRegion(r().id, (reg) => {
+        const list = [...((reg.columns as Column[] | undefined) ?? [])];
+        while (list.length < n) list.push({});
+        reg.columns = list.map((c, k) => (k < n ? { ...c, width: Math.round(w[k]) } : c));
+      });
+      measureEdges();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const dragEdge = (e: PointerEvent, j: number) => {
+    if (widthsNow()) return dragFitted(e, j);
     e.preventDefault();
     e.stopPropagation();
     const col = tableEl.querySelectorAll("col")[j] as HTMLTableColElement | undefined;
@@ -673,7 +1151,7 @@ export function SheetGrid(props: { p: Placed }) {
     const x0 = e.clientX;
     let w = startW;
     const move = (ev: PointerEvent) => {
-      w = Math.max(28, Math.round(startW + (ev.clientX - x0) / state.view.zoom));
+      w = Math.max(MIN_COL, Math.round(startW + (ev.clientX - x0) / state.view.zoom));
       col.style.width = `${w}px`;
       measureEdges();
     };
@@ -688,6 +1166,7 @@ export function SheetGrid(props: { p: Placed }) {
 
   // column widths: drag the edge of a column letter
   const startResize = (e: PointerEvent, j: number) => {
+    if (widthsNow()) return dragFitted(e, j);
     e.preventDefault();
     e.stopPropagation();
     const th = (e.currentTarget as HTMLElement).parentElement!;
@@ -695,24 +1174,31 @@ export function SheetGrid(props: { p: Placed }) {
     const x0 = e.clientX;
     let w = startW;
     const move = (ev: PointerEvent) => {
-      w = Math.max(28, Math.round(startW + (ev.clientX - x0) / state.view.zoom));
+      w = Math.max(MIN_COL, Math.round(startW + (ev.clientX - x0) / state.view.zoom));
       th.style.width = `${w}px`;
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      updateRegion(r().id, (reg) => {
-        const list = [...((reg.columns as Column[] | undefined) ?? [])];
-        while (list.length <= j) list.push({});
-        list[j] = { ...list[j], width: w };
-        reg.columns = list;
-      });
+      setColumnWidth(j, w);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
   const align = (i: number, j: number) => cols()[j]?.align ?? (isNumeric(view(i, j)?.result) ? "right" : "left");
+
+  /** A cell's own format over its column's: alignment, bold, italic, shading. */
+  const cellStyle = (i: number, j: number): JSX.CSSProperties => {
+    const f = formatAt(r(), i, j);
+    return {
+      "text-align": f.align ?? align(i, j),
+      "vertical-align": f.valign,
+      "font-weight": f.bold === true ? "700" : f.bold === false ? "400" : undefined,
+      "font-style": f.italic ? "italic" : undefined,
+      "background-color": f.fill,
+    };
+  };
 
   const cellContent = (i: number, j: number) => {
     const v = view(i, j);
@@ -742,7 +1228,9 @@ export function SheetGrid(props: { p: Placed }) {
       onCut={onCut}
       onPaste={pasteCells}
     >
-      <Show when={editing()}>
+      <Show when={editing() && !state.printing}>
+        <div class="sheet-chrome">
+        <TableTools r={r()} />
         <div class="sheet-bar" aria-hidden="true" onPointerDown={(e) => e.stopPropagation()}>
           <span class="sheet-ref">
             {(() => {
@@ -751,14 +1239,22 @@ export function SheetGrid(props: { p: Placed }) {
             })()}
           </span>
           <span class="sheet-raw" classList={{ error: !!view(sel().r, sel().c)?.error }}>
-            {view(sel().r, sel().c)?.error ?? (raw(sel().r, sel().c) || " ")}
+            {view(sel().r, sel().c)?.error ?? (raw(sel().r, sel().c) || " ")}
           </span>
+        </div>
         </div>
       </Show>
       <table
         ref={tableEl}
         class="sheet"
-        classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column, editing: editing() }}
+        classList={{
+          "head-row": !!r().header?.row,
+          "head-col": !!r().header?.column,
+          editing: editing(),
+          fit: !!widthsNow(),
+          [`borders-${bordersOf(r())}`]: true,
+        }}
+        style={{ width: tableWidth() !== undefined ? `${tableWidth()}px` : undefined }}
         role={editing() ? "grid" : undefined}
         aria-label={(r().name as string | undefined) ?? "Table"}
         aria-multiselectable={editing() || undefined}
@@ -766,9 +1262,9 @@ export function SheetGrid(props: { p: Placed }) {
       >
         <colgroup>
           <Show when={editing()}>
-            <col class="row-head-col" />
+            <col class="row-head-col" style={{ width: widthsNow() ? `${ROW_HEAD_W}px` : undefined }} />
           </Show>
-          <For each={colIdx()}>{(j) => <col style={{ width: cols()[j]?.width ? `${cols()[j]!.width}px` : undefined }} />}</For>
+          <For each={colIdx()}>{(j) => <col style={{ width: colWidth(j) ? `${colWidth(j)}px` : undefined }} />}</For>
         </colgroup>
         <Show when={editing()}>
           <thead>
@@ -779,7 +1275,7 @@ export function SheetGrid(props: { p: Placed }) {
                   <th
                     class="col-head"
                     classList={{ on: j >= range(sel()).c0 && j <= range(sel()).c1 }}
-                    style={{ width: cols()[j]?.width ? `${cols()[j]!.width}px` : undefined }}
+                    style={{ width: colWidth(j) ? `${colWidth(j)}px` : undefined }}
                     onPointerDown={(e) => {
                       e.preventDefault();
                       if (draft() !== null) commitDraft();
@@ -800,7 +1296,7 @@ export function SheetGrid(props: { p: Placed }) {
         <tbody>
           <For each={rowIdx()}>
             {(i) => (
-              <tr>
+              <tr classList={{ "head-row-tr": i === 0 && !!r().header?.row }}>
                 <Show when={editing()}>
                   <th
                     class="row-head"
@@ -819,49 +1315,54 @@ export function SheetGrid(props: { p: Placed }) {
                 </Show>
                 <For each={colIdx()}>
                   {(j) => (
-                    <td
-                      id={`${r().id}-cell-${i}-${j}`}
-                      role={editing() ? "gridcell" : undefined}
-                      aria-selected={editing() ? inSel(i, j) : undefined}
-                      data-r={i}
-                      data-c={j}
-                      classList={{
-                        sel: inSel(i, j),
-                        active: active(i, j),
-                        err: !!view(i, j)?.error,
-                        formula: !!view(i, j)?.formula,
-                        "check-pass": !view(i, j)?.error && verdictOf(view(i, j)?.text) === true,
-                        "check-fail": !view(i, j)?.error && verdictOf(view(i, j)?.text) === false,
-                      }}
-                      style={{ "text-align": align(i, j) }}
-                      title={view(i, j)?.error ?? undefined}
-                      onPointerDown={(e) => onCellDown(e, i, j)}
-                      onDblClick={(e) => {
-                        if (!editing()) return;
-                        e.stopPropagation();
-                        select(i, j);
-                        beginEdit(null, false);
-                      }}
-                      onContextMenu={() => {
-                        if (editing() && !inSel(i, j)) select(i, j);
-                      }}
-                    >
-                      <Show when={editing()}>
-                        <span class="sr-only">{cellName(i, j)} </span>
-                      </Show>
-                      <Show when={active(i, j) && draft() !== null} fallback={<span class="cell" innerHTML={cellContent(i, j)} />}>
-                        <input
-                          class="cell-input"
-                          aria-label={`Cell ${cellName(i, j)}`}
-                          value={draft() ?? ""}
-                          spellcheck={false}
-                          autocomplete="off"
-                          onInput={(e) => setDraft(e.currentTarget.value)}
-                          onKeyDown={onInputKey}
-                          onPointerDown={(e) => e.stopPropagation()}
-                        />
-                      </Show>
-                    </td>
+                    <Show when={!spans().covered.has(`${i},${j}`)}>
+                      <td
+                        id={`${r().id}-cell-${i}-${j}`}
+                        role={editing() ? (i === 0 && r().header?.row ? "columnheader" : "gridcell") : undefined}
+                        aria-selected={editing() ? inSel(i, j) : undefined}
+                        data-r={i}
+                        data-c={j}
+                        rowSpan={spans().span(i, j)[0] > 1 ? spans().span(i, j)[0] : undefined}
+                        colSpan={spans().span(i, j)[1] > 1 ? spans().span(i, j)[1] : undefined}
+                        classList={{
+                          sel: inSel(i, j),
+                          active: active(i, j),
+                          err: !!view(i, j)?.error,
+                          formula: !!view(i, j)?.formula,
+                          filled: !!formatAt(r(), i, j).fill,
+                          "check-pass": !view(i, j)?.error && verdictOf(view(i, j)?.text) === true,
+                          "check-fail": !view(i, j)?.error && verdictOf(view(i, j)?.text) === false,
+                        }}
+                        style={cellStyle(i, j)}
+                        title={view(i, j)?.error ?? undefined}
+                        onPointerDown={(e) => onCellDown(e, i, j)}
+                        onDblClick={(e) => {
+                          if (!editing()) return;
+                          e.stopPropagation();
+                          select(i, j);
+                          beginEdit(null, false);
+                        }}
+                        onContextMenu={() => {
+                          if (editing() && !inSel(i, j)) select(i, j);
+                        }}
+                      >
+                        <Show when={editing()}>
+                          <span class="sr-only">{cellName(i, j)} </span>
+                        </Show>
+                        <Show when={active(i, j) && draft() !== null} fallback={<span class="cell" innerHTML={cellContent(i, j)} />}>
+                          <input
+                            class="cell-input"
+                            aria-label={`Cell ${cellName(i, j)}`}
+                            value={draft() ?? ""}
+                            spellcheck={false}
+                            autocomplete="off"
+                            onInput={(e) => setDraft(e.currentTarget.value)}
+                            onKeyDown={onInputKey}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          />
+                        </Show>
+                      </td>
+                    </Show>
                   )}
                 </For>
               </tr>
