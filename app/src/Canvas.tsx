@@ -6,6 +6,7 @@ import { RegionBox } from "./Region";
 import { nearestRegion, stepRegion } from "./nav";
 import { editPlot } from "./Plot";
 import { Sheet } from "./Sheet";
+import { welcomeOpen } from "./Welcome";
 import { prefs } from "./settings";
 import {
   checkpoint,
@@ -239,8 +240,10 @@ export function Canvas() {
 
   // A hidden field at the insertion point receives typing, so dead keys (á, ã, ç),
   // IME composition, dictation and paste all start a region — not just plain keydowns.
+  // The welcome screen keeps focus while it is open and hands it back when it closes,
+  // so typing starts at the insertion point right after "Blank document".
   createEffect(() => {
-    if (state.caret && !state.editing) sink.focus({ preventScroll: true });
+    if (state.caret && !state.editing && !welcomeOpen()) sink.focus({ preventScroll: true });
   });
 
   function onSinkInput(e: InputEvent) {

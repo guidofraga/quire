@@ -27,6 +27,14 @@ test("evaluates math with units as you type", async ({ page }) => {
   await expect(page.locator(".status .muted").first()).toContainText("3 math");
 });
 
+test("typing starts right after choosing Blank document", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await typeLines(page, "a:=2", "b:=a*3=");
+  await expect(regions(page)).toHaveCount(2);
+  await expect(regions(page).nth(1)).toContainText(/=6$/);
+});
+
 test("explains a unit mismatch", async ({ page }) => {
   await blank(page);
   await typeLines(page, "x:=1 m + 2 kN=");
