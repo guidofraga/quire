@@ -140,6 +140,7 @@ quire/
 │  ├─ quire-sym        rewrite engine + CasBackend trait (+ symengine-sys)
 │  ├─ quire-layout     math typesetting (OpenType MATH), text measurement
 │  ├─ quire-doc     ✅ document model, .quire loading (save + migrations next)
+│  ├─ quire-smath   ✅ SMath `.sm` (XML) importer: document, cached results, images
 │  ├─ quire-export     PDF (krilla), HTML, LaTeX, Markdown
 │  └─ quire-cli     ✅ headless: `quire eval | check | fmt --check | calc`
 ├─ app/                Tauri 2 shell (Rust side: commands, menus, file assoc.)
@@ -152,7 +153,7 @@ quire/
 - `doc.apply(patch[])` → `{ rev, invalidated: RegionId[] }`. Patches are small model operations (move, set expression, set text). They also drive undo/redo and, later, CRDT collaboration.
 - `layout.math(regionId)` → glyph list plus slot map.
 - event `eval.result { regionId, rev, value | error, displayed }`, streamed.
-- `export.pdf(opts)` / `import.sm(path)`.
+- `export.pdf(opts)`. SMath files are imported by `quire-smath` (`quire import`, and File ▸ Open for a `.sm`), not by a separate command.
 
 The **`quire-cli`** is a first-class deliverable: it lets CI pipelines re-run engineering calcs on every commit, fail the build if a check reads `FALHA`, and attach the PDF. SMath can't do any of this, and it's a big part of why the file format should be Git-friendly in the first place.
 

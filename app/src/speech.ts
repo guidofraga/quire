@@ -224,6 +224,17 @@ function binary(op: BinaryOp, a: Expr, b: Expr, cx: Ctx): string {
 }
 
 function call(name: string, args: Expr[], cx: Ctx): string {
+  // SMath's program constructs, read as the steps they are
+  if (name === "block") return `block: ${args.map((e, i) => (i === 0 ? "first " : "") + say(e, cx)).join("; then ")}`;
+  if (name === "if" && (args.length === 2 || args.length === 3)) {
+    return `if ${say(args[0], cx)}, then ${say(args[1], cx)}${args.length === 3 ? `, otherwise ${say(args[2], cx)}` : ""}`;
+  }
+  if (name === "for" && args.length === 3) return `for each ${say(args[0], cx)} in ${say(args[1], cx)}, do ${say(args[2], cx)}`;
+  if (name === "for" && args.length === 4) {
+    return `for ${say(args[0], cx)}, while ${say(args[1], cx)}, step ${say(args[2], cx)}, do ${say(args[3], cx)}`;
+  }
+  if (name === "while" && args.length === 2) return `while ${say(args[0], cx)}, do ${say(args[1], cx)}`;
+  if (name === "sys" && args.length >= 3) return `system of ${args.slice(0, -2).map((e) => say(e, cx)).join(", ")}`;
   const [x, y, z, w] = args.map((e) => say(unparen(e), cx));
   switch (`${name}/${args.length}`) {
     case "sqrt/1":

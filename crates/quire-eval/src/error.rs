@@ -31,3 +31,9 @@ macro_rules! bail {
     ($($t:tt)*) => { return Err($crate::error::EvalError::new(format!($($t)*))) };
 }
 pub(crate) use bail;
+
+/// For a value the code's own shapes guarantee to be there. It reports an engine bug
+/// rather than panicking, and is never caused by the user's input.
+pub(crate) fn internal(what: &str) -> EvalError {
+    EvalError::new(format!("internal error: {what} has an unexpected shape"))
+}

@@ -14,6 +14,12 @@ use crate::{Result, ServiceError};
 
 static STAGED: Mutex<BTreeMap<String, Vec<u8>>> = Mutex::new(BTreeMap::new());
 
+/// The staging area. A poisoned lock (a panic while another thread held it) still holds
+/// complete map entries, so its data is recovered rather than crashing the caller.
+fn staging() -> std::sync::MutexGuard<'static, BTreeMap<String, Vec<u8>>> {
+    STAGED.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub(crate) const IMAGE_TYPES: &[(&str, &str)] = &[
     ("png", "image/png"),
     ("jpg", "image/jpeg"),
@@ -43,14 +49,14 @@ pub fn stage(bytes: Vec<u8>, ext: &str) -> Result<String> {
     let hash = Sha256::digest(&bytes);
     let name =
         format!("assets/{}.{ext}", hash.iter().take(8).map(|b| format!("{b:02x}")).collect::<String>());
-    STAGED.lock().expect("asset staging lock").insert(name.clone(), bytes);
+    staging().insert(name.clone(), bytes);
     Ok(name)
 }
 
 /// Stage an asset under the name it already has inside a bundle (a `.quirez` opened in memory).
 pub(crate) fn stage_named(name: &str, bytes: Vec<u8>) -> Result<()> {
     crate::checked_asset(name)?;
-    STAGED.lock().expect("asset staging lock").insert(name.to_string(), bytes);
+    staging().insert(name.to_string(), bytes);
     Ok(())
 }
 
@@ -67,7 +73,7 @@ pub fn stage_base64(data: &str, ext: &str) -> Result<String> {
 }
 
 pub(crate) fn staged(src: &str) -> Option<Vec<u8>> {
-    STAGED.lock().expect("asset staging lock").get(src).cloned()
+    staging().get(src).cloned()
 }
 
 /// Every asset path the document references (images, page backgrounds, legacy blobs).
@@ -101,7 +107,8 @@ pub(crate) fn write_into(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<
         if target.exists() || crate::checked_asset(&src).is_err() {
             continue;
         }
-        std::fs::create_dir_all(target.parent().expect("assets/ has a parent"))?;
+        let parent = target.parent().ok_or_else(|| ServiceError(format!("not a bundle asset: {src}")))?;
+        std::fs::create_dir_all(parent)?;
         if let Some(bytes) = staged(&src) {
             std::fs::write(&target, bytes)?;
         } else if let Some(old) = from.map(|f| f.join(&src)).filter(|p| p.exists()) {

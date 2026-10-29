@@ -4,6 +4,8 @@ use std::process::ExitCode;
 use quire_ast::{parse, print};
 use quire_cli::{Verdict, compare, evaluate};
 use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Worksheet};
+use quire_smath::Imported;
+use serde_json::json;
 
 mod serve;
 
@@ -16,18 +18,22 @@ usage:
   quire fmt --check <path>...     verify every expression round-trips through the parser
   quire calc <expr> [--in <unit>] [--decimals <n>]
                                   evaluate one expression, e.g. quire calc \"2 'm + 30 'cm\" --in mm
+  quire import <file.sm> [out.quire]
+                                  convert an SMath Studio worksheet into a .quire bundle
   quire serve [--port <n>]        editor backend on localhost for UI development (default port 7878)
 ";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = match args.first().map(String::as_str) {
-        Some("eval") if args.len() == 2 => cmd_eval(&args[1]),
-        Some("check") if args.len() == 2 => cmd_check(&args[1]),
-        Some("fmt") if args.len() >= 3 && args[1] == "--check" => cmd_fmt_check(&args[2..]),
-        Some("calc") if args.len() >= 2 => cmd_calc(&args[1..]),
-        Some("serve") => cmd_serve(&args[1..]),
-        Some("--version" | "-V") => {
+    let rest = args.get(1..).unwrap_or_default();
+    let result = match (args.first().map(String::as_str), rest) {
+        (Some("eval"), [file]) => cmd_eval(file),
+        (Some("check"), [file]) => cmd_check(file),
+        (Some("fmt"), [flag, paths @ ..]) if flag == "--check" && !paths.is_empty() => cmd_fmt_check(paths),
+        (Some("calc"), [_, ..]) => cmd_calc(rest),
+        (Some("import"), [_] | [_, _]) => cmd_import(rest),
+        (Some("serve"), _) => cmd_serve(rest),
+        (Some("--version" | "-V"), _) => {
             println!("quire {}", env!("CARGO_PKG_VERSION"));
             Ok(true)
         }
@@ -236,6 +242,65 @@ fn cmd_calc(args: &[String]) -> CmdResult {
         }
         (None, None) => Ok(true),
     }
+}
+
+/// `quire import <file.sm> [out.quire]`: convert an SMath worksheet into a bundle, with the
+/// results SMath cached in `results.json` for `quire check`.
+fn cmd_import(args: &[String]) -> CmdResult {
+    let src = PathBuf::from(args.first().ok_or("usage: quire import <file.sm> [out.quire]")?);
+    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or("the file has no name")?;
+    // the bundle is named after the worksheet, without its .sm suffix
+    let stem = name.split_once(".sm").map_or(name.as_str(), |(stem, _)| stem);
+    let out = match args.get(1) {
+        Some(out) => PathBuf::from(out),
+        None => src.with_file_name(format!("{stem}.quire")),
+    };
+    let bytes = std::fs::read(&src).map_err(|e| format!("{}: {e}", src.display()))?;
+    let imported = quire_service::import_smath(&bytes, src.file_name().and_then(|n| n.to_str()))
+        .map_err(|e| format!("{}: {e}", src.display()))?;
+    let skipped = write_import(&imported, &out)?;
+    let summary: Vec<String> = imported.stats.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    let results = imported.results.as_object().map_or(0, |m| m.len());
+    println!(
+        "{name} -> {}  [{}] assets={} results={results}",
+        out.display(),
+        summary.join(", "),
+        imported.assets.len()
+    );
+    for w in imported.warnings.iter().chain(skipped.iter()) {
+        println!("  warning: {w}");
+    }
+    Ok(true)
+}
+
+/// Writes `document.json`, `results.json` (only when SMath cached results) and the assets.
+/// An asset whose path is not a bundle asset name is skipped; the returned warnings say so.
+fn write_import(imported: &Imported, out: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(out)?;
+    let doc = quire_service::canonical::to_string(&imported.document);
+    std::fs::write(out.join("document.json"), doc)?;
+    if imported.results.as_object().is_some_and(|m| !m.is_empty()) {
+        let results = json!({
+            "format": "quire-results/1",
+            "producer": "SMath Studio (imported)",
+            "results": imported.results,
+        });
+        std::fs::write(out.join("results.json"), quire_service::canonical::to_string(&results))?;
+    }
+    let mut skipped = Vec::new();
+    for asset in &imported.assets {
+        // the path comes from the worksheet's XML: write only names the bundle would accept
+        if quire_service::checked_asset(&asset.path).is_err() {
+            skipped.push(format!("skipped image {:?}: not a bundle asset name", asset.path));
+            continue;
+        }
+        let target = out.join(&asset.path);
+        if let Some(dir) = target.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(target, &asset.data)?;
+    }
+    Ok(skipped)
 }
 
 fn cmd_serve(args: &[String]) -> CmdResult {

@@ -14,17 +14,20 @@ fn quote_colors(src: &str) -> Cow<'_, str> {
     let mut out = String::with_capacity(src.len() + 8);
     let mut rest = src;
     while let Some(i) = rest.find("color=#") {
-        let value = &rest[i + 6..];
-        let hex = value[1..].bytes().take_while(u8::is_ascii_hexdigit).count();
-        let ends = matches!(value.as_bytes().get(1 + hex), Some(b' ' | b'}'));
-        out.push_str(&rest[..i + 6]);
-        if (3..=8).contains(&hex) && ends {
-            out.push('"');
-            out.push_str(&value[..1 + hex]);
-            out.push('"');
-            rest = &value[1 + hex..];
-        } else {
-            rest = value;
+        // `i + 6` is the '#', an ASCII byte, so this split is always on a character boundary
+        let Some((head, value)) = rest.split_at_checked(i + 6) else { break };
+        let bytes = value.as_bytes();
+        let hex = bytes.iter().skip(1).take_while(|b| b.is_ascii_hexdigit()).count();
+        let ends = matches!(bytes.get(1 + hex), Some(b' ' | b'}'));
+        out.push_str(head);
+        match value.split_at_checked(1 + hex) {
+            Some((color, tail)) if (3..=8).contains(&hex) && ends => {
+                out.push('"');
+                out.push_str(color);
+                out.push('"');
+                rest = tail;
+            }
+            _ => rest = value,
         }
     }
     out.push_str(rest);
@@ -71,16 +74,15 @@ pub fn render_djot_editable(src: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html.as_str();
     let marker = "<span class=\"qmath\" data-math=\":m";
-    while let Some(i) = rest.find(marker) {
-        out.push_str(&rest[..i]);
-        let after = &rest[i + marker.len()..];
+    while let Some((head, after)) = rest.split_once(marker) {
+        out.push_str(head);
         let end = after.find('"').unwrap_or(0);
-        let n: usize = after[..end].parse().unwrap_or(0);
+        let n: usize = after.get(..end).and_then(|d| d.parse().ok()).unwrap_or(0);
         let expr = exprs.get(n).map(String::as_str).unwrap_or_default();
         let escaped =
             expr.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;");
         out.push_str(&format!("<span class=\"qmath\" data-expr=\"{escaped}\""));
-        rest = &after[end + 1..];
+        rest = after.get(end + 1..).unwrap_or_default();
     }
     out.push_str(rest);
     out

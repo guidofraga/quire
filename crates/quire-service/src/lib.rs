@@ -18,8 +18,8 @@ use base64::Engine;
 use quire_ast::{Expr, parse};
 use quire_doc::Document;
 use quire_eval::{
-    DisplaySettings, DisplaySpec, Fix, MathInput, Notation, Outcome, PlotInput, SeriesInput, TableInput,
-    Worksheet,
+    Animate, DisplaySettings, DisplaySpec, Fix, Marker, MathInput, Notation, Outcome, PlotInput, PlotOutcome,
+    SeriesInput, SeriesOutcome, TableInput, Worksheet,
 };
 use serde::Serialize;
 use serde_json::{Value as Json, json};
@@ -84,7 +84,14 @@ pub fn settings_of(doc: &Document) -> DisplaySettings {
             _ => Notation::Auto,
         },
         sig_figs: d.sig_figs.filter(|n| *n > 0),
+        marked_units: marked_units(doc),
     }
+}
+
+/// `"settings": {"units": {"marked": true}}`: SMath documents, where every unit is written
+/// quoted (`'m`) and a bare name is always a variable.
+fn marked_units(doc: &Document) -> bool {
+    doc.settings.extra.get("units").and_then(|u| u.get("marked")).and_then(Json::as_bool).unwrap_or(false)
 }
 
 fn display_of(r: &quire_doc::Region) -> DisplaySpec {
@@ -101,8 +108,10 @@ fn table_input(r: &quire_doc::Region) -> TableInput {
         Json::Null => String::new(),
         other => other.to_string(),
     };
-    let rows = r.extra["rows"]
-        .as_array()
+    let rows = r
+        .extra
+        .get("rows")
+        .and_then(Json::as_array)
         .map(|rows| {
             rows.iter()
                 .map(|row| row.as_array().map(|c| c.iter().map(cell).collect()).unwrap_or_default())
@@ -154,7 +163,22 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
         })
         .unwrap_or_default();
     let axis = |a: &str| text(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
-    PlotInput { series, x_unit: axis("x"), y_unit: axis("y") }
+    // `axes` is a boolean or an object of axis settings; only `false` hides them
+    // `"axes": false`, or a window with `"visible": false` (an SMath plot drawn without axes)
+    let axes = match r.extra.get("axes") {
+        Some(Json::Bool(b)) => *b,
+        Some(a) => a.get("visible").and_then(Json::as_bool).unwrap_or(true),
+        None => true,
+    };
+    let grid = !matches!(r.extra.get("grid"), Some(Json::Bool(false)));
+    let equal = text(r.extra.get("aspect")).as_deref() == Some("equal");
+    let animate = r.extra.get("animate").and_then(|a| {
+        let var = text(a.get("var"))?;
+        let over = text(a.get("over"))?;
+        let fps = a.get("fps").and_then(Json::as_f64).filter(|f| f.is_finite() && *f > 0.0);
+        Some(Animate { var, over, fps: fps.unwrap_or(quire_eval::DEFAULT_FPS) })
+    });
+    PlotInput { series, x_unit: axis("x"), y_unit: axis("y"), axes, grid, equal, animate }
 }
 
 /// Trailing `→` (or `->`) inside text asks for the expression worked out symbolically.
@@ -337,7 +361,18 @@ pub struct PlotView {
     /// Axis units (`kN*m`), empty for plain numbers.
     pub x_unit: String,
     pub y_unit: String,
+    /// The series as drawn (for an animation, its last frame).
     pub series: Vec<SeriesView>,
+    pub axes: bool,
+    pub grid: bool,
+    /// One unit of x is drawn as long as one of y.
+    pub equal: bool,
+    /// Every frame's series, for an animated plot.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub frames: Vec<Vec<SeriesView>>,
+    /// Frames per second, for an animated plot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -347,12 +382,61 @@ pub struct SeriesView {
     pub xs: Vec<f64>,
     pub ys: Vec<f64>,
     pub error: Option<String>,
+    /// Whether consecutive points are joined by a line.
+    pub connect: bool,
+    /// Per point: its marker, or `null` for a point of the line. Empty for a plain line.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub marks: Vec<Option<MarkView>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkView {
+    /// `.`, `o`, `+`, `x`, `*`, or `text` for a label.
+    pub shape: String,
+    /// SMath's size number (a label's font size).
+    pub size: f64,
+    /// A CSS colour; absent for the series' colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// A label's words.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+fn series_view(s: &SeriesOutcome) -> SeriesView {
+    SeriesView {
+        xs: s.xs.clone(),
+        ys: s.ys.clone(),
+        error: s.error.clone(),
+        connect: s.connect,
+        marks: s.marks.iter().map(|m| m.as_ref().map(mark_view)).collect(),
+    }
+}
+
+fn mark_view(m: &Marker) -> MarkView {
+    MarkView { shape: m.shape.clone(), size: m.size, color: m.color.clone(), text: m.text.clone() }
+}
+
+fn plot_view(p: &PlotOutcome) -> PlotView {
+    PlotView {
+        x_unit: p.x.unit.clone(),
+        y_unit: p.y.unit.clone(),
+        series: p.series.iter().map(series_view).collect(),
+        axes: p.axes,
+        grid: p.grid,
+        equal: p.equal,
+        frames: p.frames.iter().map(|f| f.iter().map(series_view).collect()).collect(),
+        fps: p.fps,
+    }
 }
 
 fn fix_view(f: &Fix, inputs: &[MathInput]) -> FixView {
     match f {
         Fix::Rename { from, to } => FixView::Rename { from: from.clone(), to: to.clone() },
-        Fix::DefinedBelow { index } => FixView::DefinedBelow { id: inputs[*index].id.clone() },
+        Fix::DefinedBelow { index } => FixView::DefinedBelow {
+            id: inputs.get(*index).map_or_else(String::new, |input| input.id.clone()),
+        },
     }
 }
 
@@ -522,12 +606,15 @@ pub fn library() -> Library {
     Library { constants, units: unit_list }
 }
 
-/// Pick the text for the document language from a localized value.
+/// Pick the text for the document language from a localized value: the document's language,
+/// else English, else the first one written. SMath worksheets carry several translations and
+/// no document language, often with Russian first.
 fn localized<'a>(v: &'a Json, lang: Option<&str>) -> Option<&'a str> {
     match v {
         Json::String(s) => Some(s),
         Json::Object(m) => lang
             .and_then(|l| m.iter().find(|(k, _)| l.starts_with(k.as_str())))
+            .or_else(|| m.iter().find(|(k, _)| k.as_str() == "en"))
             .or_else(|| m.iter().next())
             .and_then(|(_, v)| v.as_str()),
         _ => None,
@@ -565,15 +652,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 cells: None,
                 unit_choices: Vec::new(),
                 fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
-                plot: Some(PlotView {
-                    x_unit: p.x.unit.clone(),
-                    y_unit: p.y.unit.clone(),
-                    series: p
-                        .series
-                        .iter()
-                        .map(|s| SeriesView { xs: s.xs.clone(), ys: s.ys.clone(), error: s.error.clone() })
-                        .collect(),
-                }),
+                plot: Some(plot_view(p)),
                 symbolic: false,
             });
             continue;
@@ -694,8 +773,12 @@ pub fn bundle_dir(path: &Path) -> PathBuf {
     }
 }
 
-/// Load a bundle's document as JSON (validated against the model first).
+/// Load a bundle's document as JSON (validated against the model first). An SMath
+/// Studio worksheet (`.sm`) is converted; see [`open_smath`].
 pub fn open(path: &Path) -> Result<Json> {
+    if is_smath_file(path) {
+        return open_smath(&std::fs::read(path)?, path.file_name().and_then(|n| n.to_str()));
+    }
     if quire_doc::is_single_file(path) {
         quire_doc::load(path)?;
         let bytes = quire_doc::read_entry(path, "document.json")?.unwrap_or_default();
@@ -733,6 +816,11 @@ impl Drop for TempDir {
 /// `from` is the bundle the document was opened from: on Save As its images are
 /// copied along. Images inserted since opening are written from the staging area.
 pub fn save(path: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
+    if is_smath_file(path) {
+        return Err(ServiceError(
+            "an SMath worksheet is not saved over: save to a .quire or .quirez file".into(),
+        ));
+    }
     let _: Document = serde_json::from_value(doc.clone())?;
     // images to carry over may sit inside a single file: unpack it first
     let unpacked = match from {
@@ -771,6 +859,9 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
 /// A document held in memory, for the browser build: a `.quirez` (its images are staged, so
 /// `read_asset` finds them) or a bare `document.json`.
 pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
+    if is_smath(bytes) {
+        return open_smath(bytes, None);
+    }
     let doc: Json = if bytes.first() == Some(&b'{') {
         serde_json::from_slice(bytes)?
     } else {
@@ -787,6 +878,48 @@ pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
     };
     let _: Document = serde_json::from_value(doc.clone())?;
     Ok(doc)
+}
+
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// An SMath Studio worksheet is named `.sm` (any case); its contents decide the rest.
+fn is_smath_file(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("sm"))
+}
+
+/// SMath worksheets are XML: after an optional byte-order mark and whitespace, a `<` and
+/// the worksheet namespace (or a bare `<regions>` root from SMath 0.55).
+fn is_smath(bytes: &[u8]) -> bool {
+    let body = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+    let start = body.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(body.len());
+    let body = body.get(start..).unwrap_or_default();
+    let contains = |needle: &[u8]| body.windows(needle.len()).any(|w| w == needle);
+    body.first() == Some(&b'<') && (contains(b"smath.info/schemas/worksheet") || contains(b"<regions"))
+}
+
+/// Convert the bytes of an SMath worksheet with `quire_smath`: the document and its images.
+/// `file_name` (`Beam.sm`) is recorded as the document's source when known.
+pub fn import_smath(bytes: &[u8], file_name: Option<&str>) -> Result<quire_smath::Imported> {
+    let body = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+    let text = std::str::from_utf8(body)
+        .map_err(|e| ServiceError(format!("not a readable SMath worksheet: {e}")))?;
+    match file_name {
+        Some(name) => quire_smath::convert_file(text, name),
+        None => quire_smath::convert(text),
+    }
+    .map_err(|e| ServiceError(e.to_string()))
+}
+
+/// An SMath worksheet as an unsaved document. Its images are staged like the ones a `.quirez`
+/// brings, so they show without a bundle on disk. The caller starts it without a path, so
+/// Save asks for a new file and the `.sm` is never written.
+fn open_smath(bytes: &[u8], file_name: Option<&str>) -> Result<Json> {
+    let imported = import_smath(bytes, file_name)?;
+    let _: Document = serde_json::from_value(imported.document.clone())?;
+    for asset in imported.assets {
+        assets::stage_named(&asset.path, asset.data)?;
+    }
+    Ok(imported.document)
 }
 
 /// A document as `.quirez` bytes, with the images it uses (they must have been staged).
@@ -819,7 +952,7 @@ pub fn new_document() -> Json {
 }
 
 /// Asset references are content-addressed names inside the bundle: `assets/<16 hex>.<ext>`.
-pub(crate) fn checked_asset(src: &str) -> Result<&str> {
+pub fn checked_asset(src: &str) -> Result<&str> {
     let ok = src.strip_prefix("assets/").and_then(|f| f.split_once('.')).is_some_and(|(hash, ext)| {
         hash.len() == 16
             && hash.bytes().all(|b| b.is_ascii_hexdigit())
@@ -849,7 +982,36 @@ mod tests {
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfake";
 
     #[test]
-    fn results_offer_the_units_they_can_be_shown_in() {
+    fn a_garbage_sm_file_is_an_error_not_a_panic() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let path = std::env::temp_dir().join(format!("quire-garbage-{}.SM", std::process::id()));
+        std::fs::write(&path, "not an SMath worksheet")?;
+        let opened = open(&path);
+        std::fs::remove_file(&path)?;
+        assert!(opened.is_err(), "garbage must not open");
+        assert!(open_bytes(b"<regions").is_err(), "a truncated worksheet must not open");
+        assert!(open_bytes(b"\xEF\xBB\xBF  <?xml version=\"1.0\"?><smath.info/schemas/worksheet>").is_err());
+        assert!(open_bytes(b"\xFF\xFE<regions").is_err(), "invalid UTF-8 must not open");
+        Ok(())
+    }
+
+    #[test]
+    fn an_smath_worksheet_opens_as_a_document() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let xml = concat!(
+            r#"<regions xmlns="http://smath.info/schemas/worksheet/1.0"><settings/>"#,
+            r#"<region left="0" top="0" width="200" height="20"><text><p>Hello</p></text></region>"#,
+            r#"<region left="0" top="40" width="200" height="30"><math><input>"#,
+            r#"<e type="operand">x</e><e type="operand">2</e><e type="operator" args="2">:</e>"#,
+            r#"</input></math></region></regions>"#
+        );
+        let doc = open_bytes(xml.as_bytes())?;
+        let exprs: Vec<&str> =
+            doc["regions"].as_array().into_iter().flatten().filter_map(|r| r["expr"].as_str()).collect();
+        assert_eq!(exprs, ["x := 2"]);
+        Ok(())
+    }
+
+    #[test]
+    fn results_offer_the_units_they_can_be_shown_in() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let doc = serde_json::json!({
             "format": "quire/1",
             "regions": [
@@ -859,22 +1021,23 @@ mod tests {
                 { "id": "e", "kind": "math", "at": [0, 90], "expr": "F:=10 N", "show": "value", "display": { "unit": "kg" } }
             ]
         });
-        let r = report(&doc).unwrap();
-        let view = |id: &str| r.regions.iter().find(|v| v.id == id).unwrap();
+        let r = report(&doc)?;
+        let view = |id: &str| r.regions.iter().find(|v| v.id == id).ok_or_else(|| format!("no region {id}"));
         let choices: Vec<(&str, &str)> =
-            view("b").unit_choices.iter().map(|c| (c.unit.as_str(), c.text.as_str())).collect();
+            view("b")?.unit_choices.iter().map(|c| (c.unit.as_str(), c.text.as_str())).collect();
         assert_eq!(&choices[..3], [("mm", "300 'mm"), ("cm", "30 'cm"), ("m", "0.3 'm")]);
         assert!(choices.iter().all(|(u, _)| !u.contains('N')), "only lengths: {choices:?}");
-        assert!(view("c").unit_choices.is_empty(), "plain numbers have no units to pick");
-        assert!(view("a").unit_choices.is_empty(), "only shown results");
+        assert!(view("c")?.unit_choices.is_empty(), "plain numbers have no units to pick");
+        assert!(view("a")?.unit_choices.is_empty(), "only shown results");
         // a unit of another kind keeps the rest in SI
-        assert_eq!(view("e").result_text.as_deref(), Some("10 'kg*'m/'s^2"));
-        assert!(view("e").unit_choices.iter().any(|c| c.unit == "kN"));
+        assert_eq!(view("e")?.result_text.as_deref(), Some("10 'kg*'m/'s^2"));
+        assert!(view("e")?.unit_choices.iter().any(|c| c.unit == "kN"));
+        Ok(())
     }
 
     /// A small saved bundle with text, math, inline math and an image, in a temp folder.
-    fn fixture(tag: &str) -> PathBuf {
-        let src = assets::stage(PNG.to_vec(), "png").unwrap();
+    fn fixture(tag: &str) -> std::result::Result<PathBuf, Box<dyn std::error::Error>> {
+        let src = assets::stage(PNG.to_vec(), "png")?;
         let doc = serde_json::json!({
             "format": "quire/1",
             "regions": [
@@ -888,16 +1051,17 @@ mod tests {
         });
         let dir = std::env::temp_dir().join(format!("quire-{tag}-{}.quire", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        save(&dir, &doc, None).unwrap();
-        dir
+        save(&dir, &doc, None)?;
+        Ok(dir)
     }
 
     #[test]
-    fn documents_round_trip_in_memory_with_their_images() {
-        let src = assets::stage(vec![0x89, b'P', b'N', b'G', 1], "png").unwrap();
+    fn documents_round_trip_in_memory_with_their_images()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let src = assets::stage(vec![0x89, b'P', b'N', b'G', 1], "png")?;
         let mut doc = new_document();
         doc["regions"] = json!([{ "id": "a", "kind": "image", "at": [0, 0], "src": src }]);
-        let saved = quire_doc::read_bytes(&save_bytes(&doc).unwrap()).unwrap();
+        let saved = quire_doc::read_bytes(&save_bytes(&doc)?)?;
         assert_eq!(
             saved.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
             ["document.json", src.as_str()]
@@ -909,22 +1073,23 @@ mod tests {
         let bytes = quire_doc::write_bytes(vec![
             ("document.json".into(), canonical::to_string(&doc).into_bytes()),
             (other.into(), vec![0x89, b'P', b'N', b'G', 2]),
-        ])
-        .unwrap();
-        assert_eq!(open_bytes(&bytes).unwrap()["regions"][0]["src"], json!(other));
-        assert!(read_asset(Path::new(""), other).unwrap().starts_with("data:image/png;base64,"));
+        ])?;
+        assert_eq!(open_bytes(&bytes)?["regions"][0]["src"], json!(other));
+        assert!(read_asset(Path::new(""), other)?.starts_with("data:image/png;base64,"));
         // a bare document.json opens too, and anything else says what it is not
-        assert_eq!(open_bytes(canonical::to_string(&doc).as_bytes()).unwrap()["meta"], doc["meta"]);
-        assert!(open_bytes(b"PK nonsense").unwrap_err().0.contains("not a Quire document"));
+        assert_eq!(open_bytes(canonical::to_string(&doc).as_bytes())?["meta"], doc["meta"]);
+        assert!(open_bytes(b"PK nonsense").err().is_some_and(|e| e.0.contains("not a Quire document")));
+        Ok(())
     }
 
     #[test]
-    fn report_for_a_document() {
-        let dir = fixture("report");
-        let doc = open(&dir).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
-        let r = report(&doc).unwrap();
-        let area = r.regions.iter().find(|v| v.result_text.as_deref() == Some("0.08 'm^2")).unwrap();
+    fn report_for_a_document() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let dir = fixture("report")?;
+        let doc = open(&dir)?;
+        std::fs::remove_dir_all(&dir)?;
+        let r = report(&doc)?;
+        let area =
+            r.regions.iter().find(|v| v.result_text.as_deref() == Some("0.08 'm^2")).ok_or("no area")?;
         assert!(area.input.is_some() && area.result.is_some());
         // 2 math regions + 2 inline in the paragraph
         assert_eq!(r.regions.len(), 4);
@@ -932,10 +1097,38 @@ mod tests {
         assert!(r.html.values().any(|h| h.contains("<h1>Loads</h1>")));
         assert!(r.html.contains_key("scheme:caption"));
         assert!(r.glossary.contains_key("constant:g"));
+        Ok(())
     }
 
     #[test]
-    fn inline_math_in_text_is_evaluated_in_reading_order() {
+    fn marked_units_setting_reaches_the_engine() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let regions = serde_json::json!([
+            { "id": "aaaaaa", "kind": "math", "at": [0, 0], "expr": "c", "show": "value" },
+            { "id": "bbbbbb", "kind": "math", "at": [0, 40], "expr": "10 'm", "show": "value" },
+            { "id": "cccccc", "kind": "math", "at": [0, 80], "expr": "10 c", "show": "value" },
+            { "id": "dddddd", "kind": "math", "at": [0, 120], "expr": "10 c", "show": "symbolic" }
+        ]);
+        let doc = |settings: Json| serde_json::json!({ "format": "quire/1", "settings": settings, "regions": regions.clone() });
+        // unmarked: `c` is the speed of light and `m` is metres
+        let plain = report(&doc(serde_json::json!({})))?;
+        assert!(plain.regions[0].error.is_none(), "c is a constant unless the document is marked");
+        assert_ne!(plain.regions[2].result_text.as_deref(), Some("10*c"));
+        // marked (SMath): a bare `c` with no value is a symbol, not the speed of light, so
+        // `=` (a number) says it is not defined, `→` works with it, and quoted units still work
+        let marked = report(&doc(serde_json::json!({ "units": { "marked": true } })))?;
+        assert_eq!(marked.regions[0].error.as_deref(), Some("c is not defined"));
+        assert_eq!(marked.regions[1].result_text.as_deref(), Some("10 'm"));
+        assert_eq!(marked.regions[2].error.as_deref(), Some("c is not defined"));
+        assert_eq!(marked.regions[3].result_text.as_deref(), Some("10*c"));
+        let unmarked: Document =
+            serde_json::from_value(doc(serde_json::json!({ "units": { "marked": false } })))?;
+        assert!(!settings_of(&unmarked).marked_units);
+        Ok(())
+    }
+
+    #[test]
+    fn inline_math_in_text_is_evaluated_in_reading_order()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let doc = serde_json::json!({
             "format": "quire/1",
             "regions": [
@@ -943,39 +1136,42 @@ mod tests {
                 { "id": "bbbbbb", "kind": "math", "at": [0, 40], "expr": "L*3", "show": "value" }
             ]
         });
-        let r = report(&doc).unwrap();
-        let by_id = |id: &str| r.regions.iter().find(|v| v.id == id).unwrap();
-        assert_eq!(by_id("aaaaaa:m1").result_text.as_deref(), Some("4 'm^2"));
-        assert_eq!(by_id("bbbbbb").result_text.as_deref(), Some("6 'm"));
+        let r = report(&doc)?;
+        let by_id = |id: &str| r.regions.iter().find(|v| v.id == id).ok_or_else(|| format!("no region {id}"));
+        assert_eq!(by_id("aaaaaa:m1")?.result_text.as_deref(), Some("4 'm^2"));
+        assert_eq!(by_id("bbbbbb")?.result_text.as_deref(), Some("6 'm"));
         assert!(r.html["aaaaaa"].contains(r#"data-math="aaaaaa:m0""#));
         assert_eq!(split_show("a ≤ b ="), ("a ≤ b".to_string(), true));
         assert_eq!(split_show("x := 1"), ("x := 1".to_string(), false));
         assert_eq!(split_show("a <="), ("a <=".to_string(), false));
+        Ok(())
     }
 
     #[test]
-    fn staged_images_are_written_and_save_as_copies_assets() {
+    fn staged_images_are_written_and_save_as_copies_assets()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let png = b"\x89PNG\r\n\x1a\nfake".to_vec();
-        let src = assets::stage(png.clone(), "PNG").unwrap();
+        let src = assets::stage(png.clone(), "PNG")?;
         assert!(src.starts_with("assets/") && src.ends_with(".png"));
-        assert!(read_asset(Path::new("/nonexistent"), &src).unwrap().starts_with("data:image/png;base64,"));
-        let original = fixture("saveas-src");
-        let mut doc = open(&original).unwrap();
-        let carried = doc["regions"][4]["src"].as_str().unwrap().to_string();
-        doc["regions"].as_array_mut().unwrap().push(serde_json::json!(
+        assert!(read_asset(Path::new("/nonexistent"), &src)?.starts_with("data:image/png;base64,"));
+        let original = fixture("saveas-src")?;
+        let mut doc = open(&original)?;
+        let carried = doc["regions"][4]["src"].as_str().ok_or("no image")?.to_string();
+        doc["regions"].as_array_mut().ok_or("no regions")?.push(serde_json::json!(
             { "id": "zzzzzz", "kind": "image", "at": [0, 9000], "size": [10, 10], "src": src }
         ));
         let dir = std::env::temp_dir().join(format!("quire-saveas-test-{}.quire", std::process::id()));
-        save(&dir, &doc, Some(&original)).unwrap();
-        assert_eq!(std::fs::read(dir.join(&src)).unwrap(), png);
+        save(&dir, &doc, Some(&original))?;
+        assert_eq!(std::fs::read(dir.join(&src))?, png);
         assert!(dir.join(&carried).exists(), "existing images are carried over");
-        std::fs::remove_dir_all(&dir).unwrap();
-        std::fs::remove_dir_all(&original).unwrap();
+        std::fs::remove_dir_all(&dir)?;
+        std::fs::remove_dir_all(&original)?;
         assert!(assets::stage(vec![1, 2, 3], "exe").is_err());
+        Ok(())
     }
 
     #[test]
-    fn glossary_explains_units_and_constants() {
+    fn glossary_explains_units_and_constants() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let doc = serde_json::json!({
             "format": "quire/1",
             "regions": [
@@ -983,59 +1179,72 @@ mod tests {
                 { "id": "bbbbbb", "kind": "math", "at": [0, 40], "expr": "F := m*g", "show": "value" }
             ]
         });
-        let r = report(&doc).unwrap();
+        let r = report(&doc)?;
         assert_eq!(r.glossary["unit:g"].value, "0.001 'kg");
         assert_eq!(r.glossary["constant:g"].title, "standard gravity");
         assert_eq!(r.glossary["constant:g"].meanings, ["constant", "unit"]);
         let lib = library();
         assert!(lib.constants.iter().any(|c| c.name == "k.B"));
         assert!(lib.units.iter().any(|u| u.name == "kgf") || lib.units.iter().any(|u| u.name == "gf"));
+        Ok(())
     }
 
     #[test]
-    fn assets_cannot_escape_the_bundle() {
-        let dir = fixture("assets");
-        let src = open(&dir).unwrap()["regions"][4]["src"].as_str().unwrap().to_string();
+    fn assets_cannot_escape_the_bundle() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let dir = fixture("assets")?;
+        let src = open(&dir)?["regions"][4]["src"].as_str().ok_or("no image")?.to_string();
         assert!(read_asset(&dir, "../../Cargo.toml").is_err());
         assert!(read_asset(&dir, "assets/../../../x.png").is_err());
-        assert!(read_asset(&dir, &src).unwrap().starts_with("data:image/png;base64,"));
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(read_asset(&dir, &src)?.starts_with("data:image/png;base64,"));
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
     }
 
     #[test]
-    fn single_file_documents_round_trip() {
-        let dir = fixture("single");
-        let doc = open(&dir).unwrap();
-        let src = doc["regions"][4]["src"].as_str().unwrap().to_string();
+    fn single_file_documents_round_trip() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let dir = fixture("single")?;
+        let doc = open(&dir)?;
+        let src = doc["regions"][4]["src"].as_str().ok_or("no image")?.to_string();
         let file = std::env::temp_dir().join(format!("quire-single-{}.quirez", std::process::id()));
-        save(&file, &doc, Some(&dir)).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
+        save(&file, &doc, Some(&dir))?;
+        std::fs::remove_dir_all(&dir)?;
         assert!(file.is_file());
-        assert_eq!(open(&file).unwrap(), doc);
-        assert!(read_asset(&file, &src).unwrap().starts_with("data:image/png;base64,"));
+        assert_eq!(open(&file)?, doc);
+        assert!(read_asset(&file, &src)?.starts_with("data:image/png;base64,"));
         assert!(read_asset(&file, "assets/0000000000000000.png").is_err());
         // saving over itself keeps the images; saving back out as a folder works too
-        save(&file, &doc, Some(&file)).unwrap();
+        save(&file, &doc, Some(&file))?;
         assert!(read_asset(&file, &src).is_ok());
         let back = std::env::temp_dir().join(format!("quire-unpacked-{}.quire", std::process::id()));
-        save(&back, &doc, Some(&file)).unwrap();
+        save(&back, &doc, Some(&file))?;
         assert!(back.join(&src).is_file());
-        assert_eq!(report(&open(&file).unwrap()).unwrap().error_count, 0);
+        assert_eq!(report(&open(&file)?)?.error_count, 0);
         assert!(quire_doc::load(&file).is_ok());
-        std::fs::remove_file(&file).unwrap();
-        std::fs::remove_dir_all(&back).unwrap();
+        std::fs::remove_file(&file)?;
+        std::fs::remove_dir_all(&back)?;
+        Ok(())
     }
 
     #[test]
-    fn save_then_open_is_identical() {
-        let first = fixture("save-a");
-        let doc = open(&first).unwrap();
+    fn save_then_open_is_identical() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let first = fixture("save-a")?;
+        let doc = open(&first)?;
         let dir = std::env::temp_dir().join(format!("quire-save-test-{}.quire", std::process::id()));
-        save(&dir, &doc, Some(&first)).unwrap();
-        let original = std::fs::read_to_string(first.join("document.json")).unwrap();
-        let written = std::fs::read_to_string(dir.join("document.json")).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
-        std::fs::remove_dir_all(&first).unwrap();
+        save(&dir, &doc, Some(&first))?;
+        let original = std::fs::read_to_string(first.join("document.json"))?;
+        let written = std::fs::read_to_string(dir.join("document.json"))?;
+        std::fs::remove_dir_all(&dir)?;
+        std::fs::remove_dir_all(&first)?;
         assert_eq!(written, original);
+        Ok(())
+    }
+
+    #[test]
+    fn several_translations_and_no_document_language_read_in_english() {
+        let v = serde_json::json!({ "ru": "Входные данные:", "en": "Input data:", "ind": "Data masukan:" });
+        assert_eq!(localized(&v, None), Some("Input data:"));
+        assert_eq!(localized(&v, Some("pt-BR")), Some("Input data:"));
+        assert_eq!(localized(&v, Some("ru")), Some("Входные данные:"));
+        assert_eq!(localized(&serde_json::json!({ "ru": "Только" }), None), Some("Только"));
     }
 }

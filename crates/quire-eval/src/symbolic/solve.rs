@@ -11,6 +11,9 @@ fn numeric_hint(x: &str) -> String {
     format!("for a number, give {x} a range with = instead of →: solve(f({x}) == 0, {x}, a, b)")
 }
 
+/// For a table lookup the solver's own shapes guarantee; never caused by the input.
+const INTERNAL: &str = "internal error: the equations have an unexpected shape";
+
 /// The real solutions of `e == 0` for `x`: one value, or a column of them.
 pub(crate) fn solve(e: &S, x: &str) -> Res<S> {
     let mut roots = roots(e, x)?;
@@ -33,10 +36,10 @@ pub(crate) fn solve(e: &S, x: &str) -> Res<S> {
         values.sort_by(|a, b| a.0.total_cmp(&b.0));
         roots = values.into_iter().map(|(_, r)| r).collect();
     }
-    match roots.len() {
-        0 => Err("no real solutions".into()),
-        1 => Ok(roots.pop().unwrap()),
-        _ => Ok(S::Vec(roots)),
+    match <[S; 1]>::try_from(roots) {
+        Ok([only]) => Ok(only),
+        Err(roots) if roots.is_empty() => Err("no real solutions".into()),
+        Err(roots) => Ok(S::Vec(roots)),
     }
 }
 
@@ -56,10 +59,10 @@ fn roots(e: &S, x: &str) -> Res<Vec<S>> {
 }
 
 fn poly_roots(c: &[S], x: &str) -> Res<Vec<S>> {
-    match c.len() {
-        0 | 1 => Err(format!("there is no {x} to solve for")),
-        2 => Ok(vec![neg(div(c[0].clone(), c[1].clone()))]),
-        3 => Ok(quadratic(c)),
+    match c {
+        [] | [_] => Err(format!("there is no {x} to solve for")),
+        [c0, c1] => Ok(vec![neg(div(c0.clone(), c1.clone()))]),
+        [c0, c1, c2] => Ok(quadratic(c0, c1, c2)),
         _ => {
             let factored = factor_in(&from_coeffs(c, x), x);
             let pieces = match factored {
@@ -72,7 +75,7 @@ fn poly_roots(c: &[S], x: &str) -> Res<Vec<S>> {
                 let pc = coeffs(&base, x).ok_or_else(|| numeric_hint(x))?;
                 if pc.len() <= 3 {
                     out.extend(poly_roots(&pc, x)?);
-                } else if pc[1..pc.len() - 1].iter().all(is_zero) {
+                } else if pc.get(1..pc.len() - 1).is_some_and(|mid| mid.iter().all(is_zero)) {
                     out.extend(pure_power(&pc)?);
                 } else {
                     return Err(format!(
@@ -88,27 +91,29 @@ fn poly_roots(c: &[S], x: &str) -> Res<Vec<S>> {
 }
 
 /// `a*x^2 + b*x + c`: both roots by the formula, or none when they are complex.
-fn quadratic(c: &[S]) -> Vec<S> {
-    let (c0, c1, c2) = (c[0].clone(), c[1].clone(), c[2].clone());
-    let disc = add(vec![pow(c1.clone(), n(2)), mul(vec![n(-4), c2.clone(), c0])]);
+fn quadratic(c0: &S, c1: &S, c2: &S) -> Vec<S> {
+    let disc = add(vec![pow(c1.clone(), n(2)), mul(vec![n(-4), c2.clone(), c0.clone()])]);
     if num_of(&disc).is_some_and(|d| d.f() < 0.0) {
         return vec![];
     }
-    let two_a = mul(vec![n(2), c2]);
+    let two_a = mul(vec![n(2), c2.clone()]);
     if disc == ZERO {
-        return vec![neg(div(c1, two_a))];
+        return vec![neg(div(c1.clone(), two_a))];
     }
     let root = pow(disc, S::N(Num::rat(1, 2)));
     vec![
         div(add(vec![neg(c1.clone()), neg(root.clone())]), two_a.clone()),
-        div(add(vec![neg(c1), root]), two_a),
+        div(add(vec![neg(c1.clone()), root]), two_a),
     ]
 }
 
 /// `a*x^n + b == 0`: the real n-th roots of -b/a.
 fn pure_power(c: &[S]) -> Res<Vec<S>> {
     let k = c.len() as i128 - 1;
-    let v = simplify(&neg(div(c[0].clone(), c[c.len() - 1].clone())));
+    let [first, .., last] = c else {
+        return Err("solve cannot find these roots exactly".into());
+    };
+    let v = simplify(&neg(div(first.clone(), last.clone())));
     let none = |_: &str| None;
     let sign = approx(&v, &none).map(f64::signum);
     let root = |v: S| pow(v, S::N(Num::rat(1, k)));
@@ -181,7 +186,8 @@ fn isolate(lhs: &S, rhs: S, x: &str) -> Res<Vec<S>> {
             isolate(u, div(one("ln", rhs), one("ln", (**c).clone())), x)
         }
         S::Fn(f, args) if args.len() == 1 => {
-            let u = &args[0];
+            // the guard above checks there is exactly one argument
+            let [u] = args.as_slice() else { return cannot() };
             let out = match f.as_str() {
                 "exp" if below(1e-300) || is_zero(&rhs) => return Ok(vec![]),
                 "exp" => one("ln", rhs),
@@ -206,6 +212,13 @@ fn isolate(lhs: &S, rhs: S, x: &str) -> Res<Vec<S>> {
     }
 }
 
+/// Adds `term` to entry `i` of a row of the linear system.
+fn add_into(row: &mut [S], i: usize, term: S) -> Res<()> {
+    let slot = row.get_mut(i).ok_or(INTERNAL)?;
+    *slot = add(vec![slot.clone(), term]);
+    Ok(())
+}
+
 /// `solve([eq1; eq2], [x; y])`: linear equations in several unknowns, by elimination.
 pub(crate) fn solve_system(eqs: &[S], xs: &[String]) -> Res<S> {
     if eqs.len() != xs.len() {
@@ -222,11 +235,12 @@ pub(crate) fn solve_system(eqs: &[S], xs: &[String]) -> Res<S> {
         let (num, _) = together(e);
         let mut row = vec![ZERO; size + 1];
         for t in terms(&expand(&num)) {
-            let present: Vec<usize> = (0..size).filter(|&i| t.depends(&xs[i])).collect();
+            let present: Vec<usize> =
+                xs.iter().enumerate().filter(|(_, x)| t.depends(x)).map(|(i, _)| i).collect();
             match present.as_slice() {
-                [] => row[size] = add(vec![row[size].clone(), neg(t)]),
-                [i] => match power_of(&t, &xs[*i]) {
-                    Some((1, rest)) => row[*i] = add(vec![row[*i].clone(), rest]),
+                [] => add_into(&mut row, size, neg(t))?,
+                [i] => match xs.get(*i).and_then(|x| power_of(&t, x)) {
+                    Some((1, rest)) => add_into(&mut row, *i, rest)?,
                     _ => return Err(not_linear(xs)),
                 },
                 _ => return Err(not_linear(xs)),
@@ -236,22 +250,32 @@ pub(crate) fn solve_system(eqs: &[S], xs: &[String]) -> Res<S> {
     }
     for col in 0..size {
         let pivot = (col..size)
-            .find(|&r| !is_zero(&rows[r][col]))
+            .find(|&r| rows.get(r).and_then(|row| row.get(col)).is_some_and(|c| !is_zero(c)))
             .ok_or("the equations do not fix every unknown: some of them say the same thing")?;
         rows.swap(col, pivot);
+        let pivot_row = rows.get(col).cloned().ok_or(INTERNAL)?;
+        let pivot_val = pivot_row.get(col).cloned().ok_or(INTERNAL)?;
         for r in 0..size {
-            if r == col || is_zero(&rows[r][col]) {
+            let row = rows.get_mut(r).ok_or(INTERNAL)?;
+            let here = row.get(col).ok_or(INTERNAL)?;
+            if r == col || is_zero(here) {
                 continue;
             }
-            let f = simplify(&div(rows[r][col].clone(), rows[col][col].clone()));
-            let pivot_row = rows[col].clone();
+            let f = simplify(&div(here.clone(), pivot_val.clone()));
             for (k, p) in pivot_row.iter().enumerate().skip(col) {
-                let v = add(vec![rows[r][k].clone(), neg(mul(vec![f.clone(), p.clone()]))]);
-                rows[r][k] = simplify(&v);
+                let cur = row.get(k).ok_or(INTERNAL)?.clone();
+                let v = add(vec![cur, neg(mul(vec![f.clone(), p.clone()]))]);
+                *row.get_mut(k).ok_or(INTERNAL)? = simplify(&v);
             }
         }
     }
-    Ok(S::Vec((0..size).map(|i| simplify(&div(rows[i][size].clone(), rows[i][i].clone()))).collect()))
+    let mut sol = Vec::with_capacity(size);
+    for (i, row) in rows.iter().enumerate().take(size) {
+        let num = row.get(size).ok_or(INTERNAL)?;
+        let den = row.get(i).ok_or(INTERNAL)?;
+        sol.push(simplify(&div(num.clone(), den.clone())));
+    }
+    Ok(S::Vec(sol))
 }
 
 fn not_linear(xs: &[String]) -> String {

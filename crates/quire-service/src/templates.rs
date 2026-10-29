@@ -159,10 +159,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_templates_load_and_evaluate_cleanly() {
+    fn builtin_templates_load_and_evaluate_cleanly() -> std::result::Result<(), Box<dyn std::error::Error>> {
         for b in BUILTIN {
-            let doc: Json = serde_json::from_str(b.json).unwrap_or_else(|e| panic!("{}: {e}", b.id));
-            let report = crate::report(&doc).unwrap_or_else(|e| panic!("{}: {e}", b.id));
+            let doc: Json = serde_json::from_str(b.json).map_err(|e| format!("{}: {e}", b.id))?;
+            let report = crate::report(&doc).map_err(|e| format!("{}: {}", b.id, e.0))?;
             let errors: Vec<_> = report
                 .regions
                 .iter()
@@ -170,24 +170,26 @@ mod tests {
                 .collect();
             assert!(errors.is_empty(), "{}: {errors:?}", b.id);
         }
+        Ok(())
     }
 
     #[test]
-    fn your_templates_round_trip() {
+    fn your_templates_round_trip() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let dir = std::env::temp_dir().join(format!("quire-templates-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let doc = document(&dir, "builtin:beam").unwrap().doc;
-        let id = save_as(&dir, "My: beam", "Steel beams", &doc, None).unwrap();
+        let doc = document(&dir, "builtin:beam")?.doc;
+        let id = save_as(&dir, "My: beam", "Steel beams", &doc, None)?;
         assert!(id.ends_with("My- beam.quirez"));
         let listed = list(&dir);
-        let mine = listed.iter().find(|t| !t.builtin).unwrap();
+        let mine = listed.iter().find(|t| !t.builtin).ok_or("the saved template is not listed")?;
         assert_eq!((mine.name.as_str(), mine.description.as_str()), ("My- beam", "Steel beams"));
-        let back = document(&dir, &mine.id).unwrap();
+        let back = document(&dir, &mine.id)?;
         assert_eq!(back.doc["regions"], doc["regions"]);
         assert!(back.doc["meta"].get("templateDescription").is_none());
         assert!(document(&dir, "/etc/passwd").is_err());
-        delete(&dir, &mine.id).unwrap();
+        delete(&dir, &mine.id)?;
         assert!(list(&dir).iter().all(|t| t.builtin));
         let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
     }
 }

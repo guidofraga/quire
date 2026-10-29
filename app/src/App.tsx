@@ -8,6 +8,7 @@ import {
   exportJob,
   guardClose,
   isTauri,
+  isSmathPath,
   isWeb,
   onMenu,
   onOpenFile,
@@ -45,6 +46,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
+import type { Doc } from "./types";
 import { closeMenu, setMenu } from "./menu";
 import { checks, failing, tableName } from "./checks";
 import { PagePopover } from "./Popover";
@@ -82,6 +84,7 @@ import {
   selectAll,
   showReport,
   setState,
+  settleImportedOnOpen,
   state,
   togglePageView,
   undo,
@@ -172,10 +175,22 @@ export async function newDocument() {
   adoptPath(null);
 }
 
+/**
+ * An SMath worksheet opens as an untitled document, titled after the file. Save then asks for
+ * a new .quire or .quirez file, so the .sm is never written over.
+ */
+function openImported(doc: Doc, file: string) {
+  const name = file.split(/[\\/]/).pop() ?? "";
+  loadDoc({ ...doc, meta: { ...doc.meta, title: name.replace(/\.sm$/i, "") } }, null);
+  adoptPath(null);
+  settleImportedOnOpen();
+}
+
 export async function openPath(path: string) {
   try {
     await flushSave();
     const doc = await api.open(path);
+    if (isSmathPath(path)) return openImported(doc, path);
     loadDoc(doc, path);
     adoptPath(path);
     if (!nb.current) addRecent(path);
@@ -217,19 +232,21 @@ async function save(as = false) {
 // The web version: no files, only what the visitor picks, downloads or opens from a link
 // ---------------------------------------------------------------------------
 
-/** A document the visitor picked: a .quirez, or a document.json from a .quire folder. */
+/** A document the visitor picked: a .quirez, a document.json from a .quire folder, or an SMath .sm. */
 async function openFile() {
   const file = await new Promise<File | null>((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".quirez,.json";
+    input.accept = ".quirez,.json,.sm";
     input.onchange = () => resolve(input.files?.[0] ?? null);
     input.click();
   });
   if (!file) return;
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    loadDoc(await api.openBytes(base64(bytes)), null);
+    const doc = await api.openBytes(base64(bytes));
+    if (isSmathPath(file.name)) openImported(doc, file.name);
+    else loadDoc(doc, null);
   } catch (e) {
     flash(`Could not open ${file.name}: ${(e as Error).message}`);
   }
@@ -240,7 +257,11 @@ async function openUrl(url: string) {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`the server answered ${res.status}`);
-    loadDoc(await api.openBytes(base64(new Uint8Array(await res.arrayBuffer()))), null);
+    const doc = await api.openBytes(base64(new Uint8Array(await res.arrayBuffer())));
+    // an SMath worksheet opens as an import: titled after the file, its regions settled
+    const file = new URL(url, location.href).pathname.split("/").pop() ?? url;
+    if (isSmathPath(file)) openImported(doc, file);
+    else loadDoc(doc, null);
   } catch (e) {
     flash(`Could not open ${url}: ${(e as Error).message}`);
   }

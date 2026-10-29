@@ -15,6 +15,7 @@ Where things are today and how they fit together. [01-architecture.md](01-archit
                 ┌──────────────────────── crates/ (MIT OR Apache-2.0) ─────────────────────┐
                 │  quire-service: one function per editor call, JSON in and out            │
                 │      ├─ quire-doc     document model, .quire / .quirez on disk           │
+                │      ├─ quire-smath   SMath .sm worksheets → a document (import only)    │
                 │      └─ quire-eval    worksheet evaluation, tables, plots, symbolic math │
                 │            ├─ quire-ast    linear math syntax: lex, parse, print         │
                 │            └─ quire-units  dimensions and the unit table                 │
@@ -52,24 +53,30 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | `quire-units` | `db.rs`, `dim.rs`, `rational.rs` | `Dim` (seven SI exponents, rational) and the built-in unit table with factors from NIST SP 811. |
 | `quire-eval` | `value.rs`, `ops.rs` | Values (SI magnitude + dimension, matrices, strings) and arithmetic with dimension checks. |
 | | `interp.rs` | Evaluating one expression in a scope; the lazy constructs (`if`, `for`, `sum`, `int`, `diff`, …) and user functions. |
-| | `builtins.rs`, `stats.rs`, `solvers.rs`, `numeric.rs` | Built-in functions whose arguments are evaluated first; statistics and fitting; ODE solvers, `linfit` and nonlinear `solve`; plain linear algebra. |
+| | `builtins.rs`, `stats.rs`, `solvers.rs`, `numeric.rs`, `linalg.rs` | Built-in functions whose arguments are evaluated first; statistics and fitting; ODE solvers, `linfit` and nonlinear `solve`; plain linear algebra; SMath's matrix functions (`col`, `csort`, `tr`, `polyroots`…). |
 | | `constants.rs` | Built-in constants and the name-resolution order (your variable, then constant, then unit). |
 | | `worksheet.rs` | Worksheet semantics: definitions in reading order, global `≡`, "defined further down", working units. |
 | | `format.rs` | Result display: rounding, notation, which unit a result is shown in. |
 | | `sheet/` | Spreadsheet tables: `formula.rs` (A1 syntax), `functions.rs` (SUM, IF, VLOOKUP…), `mod.rs` (evaluating a table, named tables as matrices). |
-| | `plot.rs` | Sampling plot series where the plot sits in reading order. |
-| | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `tests.rs`. |
+| | `plot.rs` | Sampling plot series where the plot sits in reading order; SMath systems (`sys`), marker rows and animation frames. |
+| | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `tests.rs`. `bridge.rs`: formulas as values (`Value::Sym`) in SMath documents, where a name with no value is a symbol. |
 | `quire-doc` | `lib.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `.quirez` (one ZIP file) in `single.rs`. |
 | `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries). |
-| | `canonical.rs` | Canonical `document.json` output; must match `dump()` in `tools/sm2quire.py`. |
+| | `canonical.rs` | Canonical `document.json` output: key order and line breaks are fixed, so diffs stay small. |
 | | `assets.rs` | Images, content-addressed (`assets/<sha256:16>.<ext>`), staged in memory until the first save. |
 | | `text.rs` | Djot → HTML for text regions; documents are untrusted, so raw HTML is dropped. |
 | | `templates.rs`, `templates/*.json` | Built-in templates and the user's own. |
 | | `notebook.rs` | Notebooks: list, create, rename, move, duplicate, trash, style, search. One entry point, `call(op, args)`. |
 | `quire-web` | `lib.rs` | The service as WebAssembly for the web version: `dispatch` (the calls a browser can make, files as base64) behind a plain `alloc`/`call` interface, no binding generator. Built with `npm --prefix app run wasm` (the `web` profile in `Cargo.toml`, optimised for size). |
-| `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`). |
+| `quire-smath` | `lib.rs` | `convert` and `convert_file` (the file name sets the document's source): XML in, `Imported` out (document, cached results, assets, warnings). |
+| | `convert.rs` | The importer proper: settings, metadata, page model, and every region kind. |
+| | `math.rs` | SMath's RPN math tokens → AST → Quire's linear syntax. |
+| | `text.rs` | SMath's XHTML-like paragraphs → Djot. |
+| `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`), `quire import <file.sm> [out.quire]`. |
 | | `serve.rs` | `quire serve`: the service over `127.0.0.1` for UI work. Development only; it checks the Host header and a custom request header. |
 | | `tests/` | Fixtures with independently known results; see [05-testing.md](05-testing.md). |
+
+**Opening a file.** `quire_service::open` reads a `.quire`, `.quirez` or `.sm`. An `.sm` goes through `quire-smath` and comes back as an unsaved document: `open_smath` stages its images, and Save asks for a new file, so the `.sm` is never written. The double-click path is the same: `is_document` in `app/src-tauri/src/main.rs` admits `.sm` from the command line, and `request_open` hands it to the UI, where `openPath` in `App.tsx` calls `openImported`. The Open dialog (`pickOpenPath` in `api.ts`) lists `.sm` too.
 
 ## 4. The desktop shell (`app/src-tauri`)
 
@@ -108,7 +115,8 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `MathEditor.tsx` | Typing math: linear editing, Greek, LaTeX shortcuts, prose detection, ambiguity notes. |
 | `richtext.ts` | Text regions: ProseMirror in the editor, Djot in the document (`toDjot`). |
 | `TableEditor.tsx` | The spreadsheet grid. Evaluation is in `quire-eval/src/sheet`. |
-| `Plot.tsx` | 2D plots as SVG; the engine samples, this file lays out. |
+| `Plot.tsx` | 2D plots as SVG; the engine samples, this file lays out, plays animation frames. |
+| `plotGeometry.ts` | Plot geometry without the DOM: SMath marker sizes and shapes, equal scales, frame timing. |
 | `math.ts` | AST → MathML. |
 | `trace.ts`, `xref.ts`, `checks.ts`, `labels.ts` | Where a variable comes from; cross-references; pass/fail checks; caption words per language. |
 | `nav.ts`, `find.ts` | Keyboard movement between regions; find and replace. |
@@ -155,7 +163,6 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 |---|---|
 | `docs/` | This documentation; see [README.md](README.md). |
 | `schema/quire-1.schema.json` | JSON Schema for `document.json`. |
-| `tools/sm2quire.py` | SMath `.sm` → `.quire` importer (stdlib Python, the reference mapping). |
 | `tools/build-math-font.py` | Builds `app/src/fonts/QuireMath.woff` from STIX Two Math. |
 | `app/e2e/` | Playwright tests. |
 | `.github/workflows/ci.yml` | Tests on every push and pull request. |

@@ -54,8 +54,41 @@ export interface PlotView {
   /** Axis units (`kN*m`); empty for plain numbers. */
   xUnit: string;
   yUnit: string;
-  /** `null` marks a gap (a point that could not be computed). */
-  series: { xs: (number | null)[]; ys: (number | null)[]; error: string | null }[];
+  /** The series as drawn (for an animation, its last frame). */
+  series: PlotSeriesView[];
+  /** Whether the axes are drawn (SMath's `axes`). */
+  axes: boolean;
+  /** Whether grid lines are drawn. */
+  grid: boolean;
+  /** One unit of x is drawn as long as one unit of y. */
+  equal: boolean;
+  /** Every frame's series, for an animated plot. */
+  frames?: PlotSeriesView[][];
+  /** Frames per second, for an animated plot. */
+  fps?: number;
+}
+
+/** quire_service::SeriesView. `null` marks a gap (a point that could not be computed). */
+export interface PlotSeriesView {
+  xs: (number | null)[];
+  ys: (number | null)[];
+  error: string | null;
+  /** Whether consecutive points are joined by a line. */
+  connect: boolean;
+  /** Per point: its marker, or `null` for a point of the line. Absent for a plain line. */
+  marks?: (PlotMarkView | null)[];
+}
+
+/** quire_service::MarkView: SMath's marker on one point. */
+export interface PlotMarkView {
+  /** `.`, `o`, `+`, `x`, `*`, or `text` for a label. */
+  shape: string;
+  /** SMath's size number (a label's font size). */
+  size: number;
+  /** A CSS colour; absent for the series' colour. */
+  color?: string;
+  /** A label's words. */
+  text?: string;
 }
 
 /** quire_service::FixView */

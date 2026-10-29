@@ -17,14 +17,14 @@ fn tokenize(src: &str) -> Result<Vec<Tok>> {
     const SYMS: [&str; 18] =
         ["<>", "<=", ">=", "!=", "==", "+", "-", "*", "/", "^", "&", "%", "=", "<", ">", "(", ")", ":"];
     'outer: while i < chars.len() {
-        let c = chars[i];
+        let Some(&c) = chars.get(i) else { break };
         if c.is_whitespace() {
             i += 1;
             continue;
         }
         if c.is_ascii_digit() || (c == '.' && chars.get(i + 1).is_some_and(char::is_ascii_digit)) {
             let start = i;
-            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+            while chars.get(i).is_some_and(|ch| ch.is_ascii_digit() || *ch == '.') {
                 i += 1;
             }
             if matches!(chars.get(i), Some('e' | 'E')) {
@@ -39,13 +39,13 @@ fn tokenize(src: &str) -> Result<Vec<Tok>> {
                     }
                 }
             }
-            out.push(Tok::Num(chars[start..i].iter().collect()));
+            out.push(Tok::Num(chars.get(start..i).unwrap_or(&[]).iter().collect()));
             continue;
         }
         if c.is_alphabetic() || c == '_' || c == '$' || c == '°' {
             let start = i;
             while i < chars.len() {
-                let d = chars[i];
+                let Some(&d) = chars.get(i) else { break };
                 if d.is_alphanumeric() || d == '_' || d == '$' || d == '°' {
                     i += 1;
                 } else if d == '.' && chars.get(i + 1).is_some_and(|n| n.is_alphanumeric() || *n == '_') {
@@ -54,7 +54,7 @@ fn tokenize(src: &str) -> Result<Vec<Tok>> {
                     break;
                 }
             }
-            out.push(Tok::Name(chars[start..i].iter().collect()));
+            out.push(Tok::Name(chars.get(start..i).unwrap_or(&[]).iter().collect()));
             continue;
         }
         if c == '"' {
@@ -90,7 +90,8 @@ fn tokenize(src: &str) -> Result<Vec<Tok>> {
             i += 1;
             continue;
         }
-        let sub = |s: &str| chars[i..].iter().take(s.chars().count()).copied().eq(s.chars());
+        let sub =
+            |s: &str| chars.get(i..).unwrap_or(&[]).iter().take(s.chars().count()).copied().eq(s.chars());
         for s in SYMS {
             if sub(s) {
                 let canon = match s {

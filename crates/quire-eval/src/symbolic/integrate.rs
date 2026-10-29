@@ -102,7 +102,7 @@ fn single(f: &S, x: &str, d: usize) -> Option<S> {
             Some(div(f.clone(), mul(vec![a, func("ln", vec![(**b).clone()])])))
         }
         S::Fn(g, args) if args.len() == 1 => {
-            let u = &args[0];
+            let [u] = args.as_slice() else { return None };
             if let Some(a) = linear(u, x) {
                 return Some(div(primitive(g, u)?, a));
             }
@@ -119,18 +119,19 @@ fn single(f: &S, x: &str, d: usize) -> Option<S> {
 /// `1/sqrt(c + a*x^2)`: asin for a < 0, a logarithm (asinh) for a > 0.
 fn inverse_root(b: &S, x: &str) -> Option<S> {
     let c = coeffs(b, x)?;
-    if c.len() != 3 || !is_zero(&c[1]) {
+    let [c0, c1, c2] = c.as_slice() else { return None };
+    if !is_zero(c1) {
         return None;
     }
     let half = S::N(Num::rat(1, 2));
     let rt = |a: S| simplify(&pow(a, half.clone()));
-    if negative(&c[2]) {
-        let a = neg(c[2].clone());
-        let arg = mul(vec![rt(a.clone()), sym(x), pow(rt(c[0].clone()), n(-1))]);
+    if negative(c2) {
+        let a = neg(c2.clone());
+        let arg = mul(vec![rt(a.clone()), sym(x), pow(rt(c0.clone()), n(-1))]);
         Some(div(func("asin", vec![arg]), rt(a)))
     } else {
-        let arg = add(vec![mul(vec![rt(c[2].clone()), sym(x)]), pow(b.clone(), half.clone())]);
-        Some(div(func("ln", vec![arg]), rt(c[2].clone())))
+        let arg = add(vec![mul(vec![rt(c2.clone()), sym(x)]), pow(b.clone(), half.clone())]);
+        Some(div(func("ln", vec![arg]), rt(c2.clone())))
     }
 }
 
@@ -148,9 +149,11 @@ fn substitution(fs: &[S], x: &str) -> Option<S> {
         let rest = mul(rest);
         let mut tries: Vec<(S, S)> = Vec::new(); // (u, antiderivative in u)
         match &f {
-            S::Fn(g, args) if args.len() == 1 && linear(&args[0], x).is_none() => {
-                if let Some(p) = primitive(g, &args[0]) {
-                    tries.push((args[0].clone(), p));
+            S::Fn(g, args) if args.len() == 1 && args.first().is_some_and(|u| linear(u, x).is_none()) => {
+                if let Some(u) = args.first()
+                    && let Some(p) = primitive(g, u)
+                {
+                    tries.push((u.clone(), p));
                 }
             }
             S::Pow(b, k) if !k.depends(x) && **b != sym(x) => {
@@ -193,9 +196,10 @@ fn exp_trig(fs: &[S], x: &str) -> Option<S> {
         (S::Fn(b, _), S::Fn(a, _)) if a == "exp" && (b == "sin" || b == "cos") => (g, f),
         _ => return None,
     };
-    let (S::Fn(_, u), S::Fn(kind, v)) = (e, t) else { return None };
-    let (a, b) = (linear(&u[0], x)?, linear(&v[0], x)?);
-    let (sin, cos) = (func("sin", vec![v[0].clone()]), func("cos", vec![v[0].clone()]));
+    let (S::Fn(_, us), S::Fn(kind, vs)) = (e, t) else { return None };
+    let ([u], [v]) = (us.as_slice(), vs.as_slice()) else { return None };
+    let (a, b) = (linear(u, x)?, linear(v, x)?);
+    let (sin, cos) = (func("sin", vec![v.clone()]), func("cos", vec![v.clone()]));
     let inner = if kind == "sin" {
         add(vec![mul(vec![a.clone(), sin]), neg(mul(vec![b.clone(), cos]))])
     } else {
@@ -218,7 +222,7 @@ fn by_parts(fs: &[S], x: &str, d: usize) -> Option<S> {
         }
         match &g {
             S::Fn(k, u) if matches!(k.as_str(), "exp" | "sin" | "cos" | "sinh" | "cosh") => {
-                linear(&u[0], x)?;
+                linear(u.first()?, x)?;
                 let big_g = int(&g, x, d)?;
                 let rest = int(&mul(vec![diff(&p, x), big_g.clone()]), x, d)?;
                 return Some(add(vec![mul(vec![p, big_g]), neg(rest)]));
@@ -279,7 +283,9 @@ fn times_trig(c: S, t: Option<S>, f: &S) -> Vec<(S, Option<S>)> {
     let (S::Fn(k1, a), S::Fn(k2, b)) = (&t, f) else {
         return vec![(mul(vec![c, t.clone(), f.clone()]), None)];
     };
-    let (a, b) = (a[0].clone(), b[0].clone());
+    let (Some(a), Some(b)) = (a.first().cloned(), b.first().cloned()) else {
+        return vec![(mul(vec![c, t.clone(), f.clone()]), None)];
+    };
     let sum = add(vec![a.clone(), b.clone()]);
     let dif = add(vec![a, neg(b)]);
     let half = S::N(Num::rat(1, 2));
@@ -384,9 +390,11 @@ fn quadratic_term(top: &S, q: &S, x: &str) -> Option<S> {
     if t.len() > 2 {
         return None;
     }
-    let (bb, cc) = (t.get(1).cloned().unwrap_or(ZERO), t[0].clone());
+    let cc = t.first()?.clone();
+    let bb = t.get(1).cloned().unwrap_or(ZERO);
     let qc = coeffs(q, x)?;
-    let (c, b, a) = (qc[0].clone(), qc[1].clone(), qc[2].clone());
+    let [c, b, a] = qc.as_slice() else { return None };
+    let (c, b, a) = (c.clone(), b.clone(), a.clone());
     let two_a = mul(vec![n(2), a.clone()]);
     let log_part = mul(vec![bb.clone(), pow(two_a.clone(), n(-1)), func("ln", vec![q.clone()])]);
     let k = simplify(&add(vec![cc, neg(mul(vec![bb, b.clone(), pow(two_a.clone(), n(-1))]))]));

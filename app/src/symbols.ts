@@ -129,6 +129,7 @@ export const STRUCTURES: Category[] = [
     title: "Data",
     items: [
       t("linterp", "linterp(?, ?, ?)", "Interpolate in a table"),
+      t("cinterp", "cinterp(?, ?, ?)", "Cubic spline through a table, at a point"),
       t("cspline", "interp(cspline(?, ?), ?, ?, ?)", "Cubic spline through a table"),
       t("slope", "slope(?, ?)", "Slope of the best-fit line"),
       t("intercept", "intercept(?, ?)", "Intercept of the best-fit line"),
@@ -150,6 +151,8 @@ export const STRUCTURES: Category[] = [
       t("col", "[?; ?]", "Column vector"),
       t("matrix", "[?, ?; ?, ?]", "2 × 2"),
       t("matrix3", "[?, ?, ?; ?, ?, ?; ?, ?, ?]", "3 × 3"),
+      t("csort", "csort(?, ?)", "Sort rows by a column"), t("rsort", "rsort(?, ?)", "Sort columns by a row"),
+      t("tr", "tr(?)", "Trace"), t("polyroots", "polyroots(?)", "Roots of a polynomial [a0; a1; a2]"),
     ],
   },
   {

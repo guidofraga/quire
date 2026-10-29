@@ -419,14 +419,25 @@ struct OpenRequests {
 
 type Requests = std::sync::Mutex<OpenRequests>;
 
+/// What the system may hand us to open. An SMath `.sm` opens as an untitled document (the UI
+/// does the import), so the file itself is never written.
 fn is_document(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
-    p.ends_with(".quire") || p.ends_with(".quirez") || p.ends_with(".quire/") || p.ends_with("document.json")
+    p.ends_with(".quire")
+        || p.ends_with(".quirez")
+        || p.ends_with(".quire/")
+        || p.ends_with("document.json")
+        || p.ends_with(".sm")
+}
+
+/// The open requests. A poisoned lock still holds a valid list, so it is used as it is.
+fn requests_lock(state: &Requests) -> std::sync::MutexGuard<'_, OpenRequests> {
+    state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn request_open(app: &AppHandle, path: String) {
     let state = app.state::<Requests>();
-    let mut r = state.lock().expect("open requests lock");
+    let mut r = requests_lock(&state);
     if r.ready {
         let _ = app.emit("open-file", path);
     } else {
@@ -437,7 +448,7 @@ fn request_open(app: &AppHandle, path: String) {
 /// Called once by the UI when it can open documents: hands over what arrived before.
 #[tauri::command]
 fn take_open_requests(state: tauri::State<'_, Requests>) -> Vec<String> {
-    let mut r = state.lock().expect("open requests lock");
+    let mut r = requests_lock(&state);
     r.ready = true;
     std::mem::take(&mut r.pending)
 }
@@ -454,7 +465,7 @@ fn main() {
         eprintln!("usage: quire-app --export-pdf <document.quire> <output.pdf>");
         std::process::exit(2);
     }
-    let app = tauri::Builder::default()
+    let built = tauri::Builder::default()
         .manage::<Requests>(std::sync::Mutex::new(OpenRequests { ready: false, pending: launch_docs }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -464,7 +475,7 @@ fn main() {
             let _ = app.emit("menu", event.id().0.as_str());
         })
         .setup(move |app| {
-            let config = app.config().app.windows.first().cloned().expect("a window in tauri.conf.json");
+            let config = app.config().app.windows.first().cloned().ok_or("tauri.conf.json has no window")?;
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some(job) = &job {
                 window =
@@ -498,8 +509,14 @@ fn main() {
             take_recovery,
             clear_recovery
         ])
-        .build(tauri::generate_context!())
-        .expect("error while starting Quire");
+        .build(tauri::generate_context!());
+    let app = match built {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("Quire could not start: {e}");
+            std::process::exit(1);
+        }
+    };
     app.run(|handle, event| {
         // macOS delivers Finder double-clicks and "Open With" as events, also at launch
         #[cfg(target_os = "macos")]

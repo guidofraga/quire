@@ -43,7 +43,11 @@
           "type": "object",
           "properties": {
             "system": { "enum": ["SI", "US", "Imperial", "CGS"] },
-            "prefer": { "type": "object", "additionalProperties": { "type": "string" } }
+            "prefer": { "type": "object", "additionalProperties": { "type": "string" } },
+            "marked": {
+              "type": "boolean",
+              "description": "Units are always written with an apostrophe ('m): a bare name is never a unit or a constant, only a variable (π, pi, e and ∞ excepted). Set by the SMath importer."
+            }
           }
         }
       }
@@ -283,13 +287,30 @@
               "axes": {
                 "type": ["boolean", "object"],
                 "properties": {
+                  "visible": { "type": "boolean" },
                   "x": { "$ref": "#/$defs/plotAxis" },
                   "y": { "$ref": "#/$defs/plotAxis" }
                 }
               },
               "grid": { "type": "boolean" },
+              "aspect": { "enum": ["auto", "equal"] },
+              "animate": {
+                "type": "object",
+                "required": ["var", "over"],
+                "properties": {
+                  "var": { "type": "string" },
+                  "over": { "type": "string" },
+                  "fps": { "type": "number", "exclusiveMinimum": 0 }
+                }
+              },
               "extrema": { "type": "boolean" },
-              "legend": { "enum": ["none", "top-left", "top-right", "bottom-left", "bottom-right"] },
+              "legend": {
+                "oneOf": [
+                  { "type": "boolean" },
+                  { "enum": ["none", "top-left", "top-right", "bottom-left", "bottom-right"] }
+                ]
+              },
+              "palette": { "enum": ["default", "smath"] },
               "render": { "type": "string" },
               "camera": {
                 "type": "object",

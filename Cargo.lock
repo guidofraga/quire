@@ -2706,6 +2706,7 @@ dependencies = [
  "quire-doc",
  "quire-eval",
  "quire-service",
+ "quire-smath",
  "quire-units",
  "serde_json",
 ]
@@ -2736,11 +2737,24 @@ dependencies = [
  "quire-ast",
  "quire-doc",
  "quire-eval",
+ "quire-smath",
  "quire-units",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "trash",
+]
+
+[[package]]
+name = "quire-smath"
+version = "0.1.11"
+dependencies = [
+ "base64 0.22.1",
+ "regex",
+ "roxmltree",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -2950,6 +2964,12 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rustc-hash"
@@ -3342,6 +3362,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "sha1"
+version = "0.10.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
 ]
 
 [[package]]

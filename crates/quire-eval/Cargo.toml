@@ -9,3 +9,6 @@ license.workspace = true
 [dependencies]
 quire-ast.workspace = true
 quire-units.workspace = true
+
+[lints]
+workspace = true

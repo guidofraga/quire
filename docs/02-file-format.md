@@ -1,7 +1,7 @@
 # 02 — The `.quire` Document Format (v1)
 
 > Replaces SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
-> Reference importer: [`tools/sm2quire.py`](../tools/sm2quire.py).
+> Importer: [`crates/quire-smath`](../crates/quire-smath) (`quire import`, or File ▸ Open in the app).
 
 ## 1. Design goals, measured against a real SMath file
 
@@ -85,7 +85,8 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
                  "groupDigits": true },       // 12 500: shown with thin spaces, never stored
     "calc":    { "angle": "rad", "precision": "double" },
     "units":   { "system": "SI",
-                 "prefer": { "force": "kN", "stress": "MPa", "moment": "kN*m" } }
+                 "prefer": { "force": "kN", "stress": "MPa", "moment": "kN*m" },
+                 "marked": false }      // true: units are always written quoted, a bare name is never a unit (§4.3)
   },
   "units":  { "tf": "1000 'kgf", "crane_load": "1.4 'tonnef" },   // custom unit definitions
   "styles": {
@@ -185,6 +186,8 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 3. Anywhere else a constant wins over a unit (`m*g` is gravity, `c*1 s` is a distance).
 4. `'g` always means the unit.
 
+In a **marked** document (`"settings": {"units": {"marked": true}}`, which the SMath importer writes for every worksheet, since SMath marks every unit) a bare name is never a unit or a constant. Only `π`, `pi`, `e` and `∞` resolve without a definition. As in SMath, any other name with no value is a symbol: `y := Fz*2` defines `y` as the formula `2*Fz`, and `→` works with it. Showing such a value with `=` asks for a number, so it is an error naming the first undefined name (`Fz is not defined; did you mean F?`, or `m is not defined; for the unit, write 'm` when the name is a unit). Quoted units work as before. The Inspector's Document tab shows the setting for these documents and can turn it off.
+
 The report tells the editor how each name was resolved, and which variables hide a constant. The editor colours units blue and constants purple, explains a name on hover, and offers a one-click "use the unit" fix while you type.
 
 Canonical function names are English (`tan`, `sinh`, `atan`, `log10`). The importer maps SMath's `tg`, `sh`, `arctg`, `nthroot` and so on.
@@ -273,13 +276,24 @@ A spreadsheet table runs in reading order with the math regions:
 
 | Field | Notes |
 |---|---|
-| `series[].y` | What is plotted: an expression in the variable (`M(x)`), or, without a `range`, a vector of values (data). |
+| `series[].y` | What is plotted: an expression in the variable (`M(x)`), or, without a `range`, a vector of values (data). A matrix with two or more columns is one line through its rows (column 1 is x, column 2 is y; a row without numbers is a gap). A vector of matrices (`sys(…)` is one) draws one line per element. Style columns are below. |
+| `animate` | `{ "var": "t", "over": "step", "fps": 20 }`: the plot is drawn once per element of the list `over`, with `var` bound to it. Variables that a plotted call changes keep their new values for the next frame, so `f(path, t)` whose `f` appends to `path` grows a trail. At most 1000 frames; `fps` defaults to 20. |
+| `aspect` | `"equal"` draws one unit of x as long as one unit of y, so circles stay round. |
+| `axes`, `grid` | Booleans. `axes: false` hides the axes, their numbers and titles; `grid: false` hides the grid lines. An `axes` object hides them with `"visible": false` while still fixing the window. |
 | `series[].x` | With a `range`: the variable's name (default `x`). Without: a vector of x values (default 1, 2, 3…). |
 | `series[].range` | `start..end`; the expression is sampled at 241 evenly spaced points. A point that fails to evaluate is a gap in the line. |
 | `axes.x` / `axes.y` | `unit` (otherwise the units the document works in, as for results), `label`, `min`, `max`. |
 | `extrema` | `true` marks and labels each series' maximum and minimum. |
+| `legend` | `false` (or `"none"`) hides the legend. Without it, a plot of several series has one. SMath imports set `false`. |
+| `palette` | `"smath"` takes SMath's series colours in order (blue, red, green, sandy orange, violet, dark red) instead of the app's own. Explicit `style.color` still wins. SMath imports set it. |
+
+**Style columns.** A matrix row may carry SMath's marker style after its x and y: column 3 is the marker, column 4 its size and column 5 its colour. Markers are `"."` (a filled disc), `"o"` (an open circle), `"+"`, `"x"` and `"*"`; `""` or `"-"` is a plain vertex of the line. Any other word is a text label drawn under its point (SMath's beam names its reactions this way). Sizes are read off the SMath screenshots: a `"."` of size 125 is about 50 px across, an `"o"` of size 185 about 112 px. Colours are SMath's names (`Red`, `Blue`, `Light Blue`, `Green`, …, case and spaces ignored); an unknown name takes the series' colour. A series whose rows all carry markers is not joined by a line.
+
+SMath plots a function of `x` without naming `x`, over the window it shows. The importer writes that window as `"x": "x"` and `range`: the horizontal half-width is half the plot's width over `6 × scale_y` px per unit, shifted by `transpose_x` (SMath keeps the horizontal zoom in `scale_y`). That model is read off the SMath screenshots of Hermite and Legendre; Beam's view does not fit it, but its curves are explicit data. SMath never fits a plot to its data: it draws a fixed window. The importer always writes that window as `axes.x`/`axes.y` `min`/`max`, with `"visible": false` when SMath says `axes="false"` (PlanetaryGear's star keeps its size next to markers sized in pixels). The `y` range: the vertical zoom is in `scale_x` (6 px per unit at zoom 1, as for x), and `transpose_y` shifts the window. The curves beyond it are clipped, as in SMath. This model is read off the Hermite screenshot (about ±10.5 for a 351 px plot at zoom 2.78).
 
 Series are evaluated where the plot sits in reading order, so they see the definitions above it. All series share one y axis, so they must have the same kind of unit.
+
+An animated plot (SMath's `animate`) keeps one set of axes for all its frames, so the view does not jump. The file stores the last frame's series in the drawing and the rest as frames, so printing shows the last frame. The app plays frames at `fps` with Play and Pause and a frame slider; with Reduce motion on, it starts paused on the last frame.
 
 `plot3d` adds `surface: "f(x, y)"` (or `parametric: [x(u,v), y(u,v), z(u,v)]`), `x`/`y` ranges and a `camera: { "azimuth": 30, "elevation": 25, "distance": 3 }` that is saved when the user stops orbiting.
 
@@ -351,7 +365,7 @@ The importer already obeys these rules. Converting the same `.sm` twice gives by
 
 ## 8. Import validation (SMath → Quire)
 
-`tools/sm2quire.py` ran against a real-world report and all 58 worksheets bundled with SMath 1.5 (both the current namespaced schema and the 0.55-era bare schema):
+The importer (first written in Python, then ported to Rust in `crates/quire-smath`) ran against a real-world report and all 58 worksheets bundled with SMath 1.5 (both the current namespaced schema and the 0.55-era bare schema):
 
 | Region type | Converted | Fallback to `legacy` |
 |---|---|---|

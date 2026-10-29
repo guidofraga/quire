@@ -309,7 +309,8 @@ fn outline(doc: &mut Document, pages: &[ObjectId], headings: &[Heading]) -> Opti
     let root = doc.new_object_id();
     let tree = Tree { items: &items, children: &children, ids: &ids };
     let visible = tree.write(doc, &top, root, true);
-    let (first, last) = (ids[top[0]], ids[top[top.len() - 1]]);
+    let (Some(&top_first), Some(&top_last)) = (top.first(), top.last()) else { return None };
+    let (first, last) = (*ids.get(top_first)?, *ids.get(top_last)?);
     let dict = dictionary! { "Type" => "Outlines", "First" => first, "Last" => last, "Count" => visible };
     doc.objects.insert(root, dict.into());
     Some(root)
@@ -363,6 +364,8 @@ mod tests {
 
     use super::*;
     use crate::print::LinkBox;
+
+    type TestResult<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
     const HEIGHT: f32 = 800.0;
 
@@ -444,128 +447,139 @@ mod tests {
     }
 
     /// Run the post-processing and read the result back as a viewer would.
-    fn finished(info: &PdfInfo) -> Document {
+    fn finished(info: &PdfInfo) -> TestResult<Document> {
         let mut doc = printed();
-        annotate(&mut doc, info).unwrap();
+        annotate(&mut doc, info)?;
         let mut bytes = Vec::new();
-        doc.save_to(&mut bytes).unwrap();
-        Document::load_mem(&bytes).unwrap()
+        doc.save_to(&mut bytes)?;
+        Ok(Document::load_mem(&bytes)?)
     }
 
-    fn text(doc: &Document, dict: &Dictionary, key: &[u8]) -> String {
-        let (_, o) = doc.dereference(dict.get(key).unwrap()).unwrap();
-        decode_text_string(o).unwrap()
+    fn text(doc: &Document, dict: &Dictionary, key: &[u8]) -> TestResult<String> {
+        let (_, o) = doc.dereference(dict.get(key)?)?;
+        Ok(decode_text_string(o)?)
     }
 
-    fn get<'a>(doc: &'a Document, dict: &Dictionary, key: &[u8]) -> &'a Dictionary {
-        doc.get_dictionary(dict.get(key).unwrap().as_reference().unwrap()).unwrap()
+    fn get<'a>(doc: &'a Document, dict: &Dictionary, key: &[u8]) -> TestResult<&'a Dictionary> {
+        Ok(doc.get_dictionary(dict.get(key)?.as_reference()?)?)
     }
 
     /// (page index, y) of an explicit /XYZ destination.
-    fn target(doc: &Document, dest: &Object) -> (usize, f32) {
-        let dest = dest.as_array().unwrap();
+    fn target(doc: &Document, dest: &Object) -> TestResult<(usize, f32)> {
+        let dest = dest.as_array()?;
         let pages: Vec<ObjectId> = doc.page_iter().collect();
-        let page = pages.iter().position(|&p| p == dest[0].as_reference().unwrap()).unwrap();
-        assert_eq!(dest[1].as_name().unwrap(), b"XYZ");
-        (page, dest[3].as_float().unwrap())
+        let dest_page = dest.first().ok_or("an empty destination")?.as_reference()?;
+        let page = pages
+            .iter()
+            .position(|&p| p == dest_page)
+            .ok_or("the destination page is not in the document")?;
+        assert_eq!(dest[1].as_name()?, b"XYZ");
+        Ok((page, dest[3].as_float()?))
     }
 
     #[test]
-    fn writes_the_document_details() {
-        let doc = finished(&report());
-        let info = doc.get_dictionary(doc.trailer.get(b"Info").unwrap().as_reference().unwrap()).unwrap();
-        assert_eq!(text(&doc, info, b"Title"), "Footbridge — deck check");
-        assert_eq!(text(&doc, info, b"Author"), "A. Engineer, B. Checker");
-        assert_eq!(text(&doc, info, b"Keywords"), "steel, footbridge");
-        assert_eq!(text(&doc, info, b"Company"), "Example Ltd");
-        assert_eq!(text(&doc, info, b"Creator"), format!("Quire {}", env!("CARGO_PKG_VERSION")));
-        assert_eq!(text(&doc, info, b"ModDate"), "D:20261028120000Z00'00'");
+    fn writes_the_document_details() -> TestResult {
+        let doc = finished(&report())?;
+        let info = doc.get_dictionary(doc.trailer.get(b"Info")?.as_reference()?)?;
+        assert_eq!(text(&doc, info, b"Title")?, "Footbridge — deck check");
+        assert_eq!(text(&doc, info, b"Author")?, "A. Engineer, B. Checker");
+        assert_eq!(text(&doc, info, b"Keywords")?, "steel, footbridge");
+        assert_eq!(text(&doc, info, b"Company")?, "Example Ltd");
+        assert_eq!(text(&doc, info, b"Creator")?, format!("Quire {}", env!("CARGO_PKG_VERSION")));
+        assert_eq!(text(&doc, info, b"ModDate")?, "D:20261028120000Z00'00'");
         assert!(!info.has(b"Subject"), "empty fields are left out");
 
-        let catalog = doc.catalog().unwrap();
+        let catalog = doc.catalog()?;
         assert_eq!(doc.version, "1.4");
-        assert_eq!(text(&doc, catalog, b"Lang"), "en-GB");
-        assert_eq!(catalog.get(b"PageMode").unwrap().as_name().unwrap(), b"UseOutlines");
-        let prefs = catalog.get(b"ViewerPreferences").unwrap().as_dict().unwrap();
-        assert!(prefs.get(b"DisplayDocTitle").unwrap().as_bool().unwrap());
-        let labels =
-            catalog.get(b"PageLabels").unwrap().as_dict().unwrap().get(b"Nums").unwrap().as_array().unwrap();
-        assert_eq!(labels[0].as_i64().unwrap(), 0);
-        assert_eq!(labels[1].as_dict().unwrap().get(b"St").unwrap().as_i64().unwrap(), 3);
+        assert_eq!(text(&doc, catalog, b"Lang")?, "en-GB");
+        assert_eq!(catalog.get(b"PageMode")?.as_name()?, b"UseOutlines");
+        let prefs = catalog.get(b"ViewerPreferences")?.as_dict()?;
+        assert!(prefs.get(b"DisplayDocTitle")?.as_bool()?);
+        let labels = catalog.get(b"PageLabels")?.as_dict()?.get(b"Nums")?.as_array()?;
+        assert_eq!(labels[0].as_i64()?, 0);
+        assert_eq!(labels[1].as_dict()?.get(b"St")?.as_i64()?, 3);
+        Ok(())
     }
 
     #[test]
-    fn nests_the_headings_as_bookmarks() {
-        let doc = finished(&report());
-        let catalog = doc.catalog().unwrap();
-        let root = get(&doc, catalog, b"Outlines");
+    fn nests_the_headings_as_bookmarks() -> TestResult {
+        let doc = finished(&report())?;
+        let catalog = doc.catalog()?;
+        let root = get(&doc, catalog, b"Outlines")?;
         // chapters open: 1, 2, 2.1, 2.2 show; 2.1.1 is inside the closed 2.1
-        assert_eq!(root.get(b"Count").unwrap().as_i64().unwrap(), 4);
+        assert_eq!(root.get(b"Count")?.as_i64()?, 4);
 
-        let loads = get(&doc, root, b"First");
-        assert_eq!(text(&doc, loads, b"Title"), "1 Loads");
-        assert_eq!(target(&doc, loads.get(b"Dest").unwrap()), (0, HEIGHT - 100.0));
+        let loads = get(&doc, root, b"First")?;
+        assert_eq!(text(&doc, loads, b"Title")?, "1 Loads");
+        assert_eq!(target(&doc, loads.get(b"Dest")?)?, (0, HEIGHT - 100.0));
         assert!(!loads.has(b"First") && !loads.has(b"Prev"));
 
-        let checks = get(&doc, loads, b"Next");
-        assert_eq!(text(&doc, checks, b"Title"), "2 Checks");
-        assert_eq!(loads.get(b"Next").unwrap(), root.get(b"Last").unwrap(), "the lost heading is not listed");
+        let checks = get(&doc, loads, b"Next")?;
+        assert_eq!(text(&doc, checks, b"Title")?, "2 Checks");
+        assert_eq!(loads.get(b"Next")?, root.get(b"Last")?, "the lost heading is not listed");
         assert!(!checks.has(b"Next"));
-        assert_eq!(checks.get(b"Count").unwrap().as_i64().unwrap(), 2);
+        assert_eq!(checks.get(b"Count")?.as_i64()?, 2);
 
-        let bending = get(&doc, checks, b"First");
-        assert_eq!(text(&doc, bending, b"Title"), "2.1 Bending");
-        assert_eq!(target(&doc, bending.get(b"Dest").unwrap()), (1, HEIGHT - 300.0));
-        assert_eq!(bending.get(b"Count").unwrap().as_i64().unwrap(), -1, "deeper levels start closed");
-        assert_eq!(text(&doc, get(&doc, bending, b"First"), b"Title"), "2.1.1 Elastic");
+        let bending = get(&doc, checks, b"First")?;
+        assert_eq!(text(&doc, bending, b"Title")?, "2.1 Bending");
+        assert_eq!(target(&doc, bending.get(b"Dest")?)?, (1, HEIGHT - 300.0));
+        assert_eq!(bending.get(b"Count")?.as_i64()?, -1, "deeper levels start closed");
+        assert_eq!(text(&doc, get(&doc, bending, b"First")?, b"Title")?, "2.1.1 Elastic");
 
-        let deflection = get(&doc, bending, b"Next");
-        assert_eq!(text(&doc, deflection, b"Title"), "2.2 Deflection");
-        assert_eq!(deflection.get(b"Parent").unwrap(), bending.get(b"Parent").unwrap());
-        assert_eq!(target(&doc, deflection.get(b"Dest").unwrap()).0, 2);
+        let deflection = get(&doc, bending, b"Next")?;
+        assert_eq!(text(&doc, deflection, b"Title")?, "2.2 Deflection");
+        assert_eq!(deflection.get(b"Parent")?, bending.get(b"Parent")?);
+        assert_eq!(target(&doc, deflection.get(b"Dest")?)?.0, 2);
+        Ok(())
     }
 
     #[test]
-    fn links_jump_within_the_file() {
-        let doc = finished(&report());
-        let page = doc.page_iter().next().unwrap();
-        let annots = doc.get_page_annotations(page).unwrap();
+    fn links_jump_within_the_file() -> TestResult {
+        let doc = finished(&report())?;
+        let page = doc.page_iter().next().ok_or("no page")?;
+        let annots = doc.get_page_annotations(page)?;
         assert_eq!(annots.len(), 3, "the reference to a deleted region is gone, the row link added");
 
         // the cross-reference now goes to section 2.1 instead of back into the app
         assert!(!annots[0].has(b"A"));
-        assert_eq!(target(&doc, annots[0].get(b"Dest").unwrap()), (1, HEIGHT - 300.0));
+        assert_eq!(target(&doc, annots[0].get(b"Dest")?)?, (1, HEIGHT - 300.0));
 
         // web links are left as they were
-        let action = annots[1].get(b"A").unwrap();
-        let (_, action) = doc.dereference(action).unwrap();
-        let uri = action.as_dict().unwrap().get(b"URI").unwrap().as_str().unwrap();
+        let action = annots[1].get(b"A")?;
+        let (_, action) = doc.dereference(action)?;
+        let uri = action.as_dict()?.get(b"URI")?.as_str()?;
         assert_eq!(uri, b"https://example.com/en");
 
         // the contents row: points from the top-left corner become PDF coordinates
         let row = annots[2];
-        let rect: Vec<f32> =
-            row.get(b"Rect").unwrap().as_array().unwrap().iter().map(|o| o.as_float().unwrap()).collect();
+        let rect: Vec<f32> = row
+            .get(b"Rect")?
+            .as_array()?
+            .iter()
+            .map(|o| o.as_float())
+            .collect::<std::result::Result<_, _>>()?;
         assert_eq!(rect, vec![72.0, HEIGHT - 212.0, 472.0, HEIGHT - 200.0]);
-        assert_eq!(target(&doc, row.get(b"Dest").unwrap()), (0, HEIGHT - 100.0));
+        assert_eq!(target(&doc, row.get(b"Dest")?)?, (0, HEIGHT - 100.0));
+        Ok(())
     }
 
     #[test]
-    fn a_plain_document_gets_details_only() {
+    fn a_plain_document_gets_details_only() -> TestResult {
         let info = PdfInfo { title: "Notes".into(), ..Default::default() };
-        let doc = finished(&info);
-        let catalog = doc.catalog().unwrap();
+        let doc = finished(&info)?;
+        let catalog = doc.catalog()?;
         assert!(!catalog.has(b"Outlines") && !catalog.has(b"PageMode") && !catalog.has(b"PageLabels"));
         assert!(!catalog.has(b"Lang"));
         // with nothing to point at, cross-references are unlinked rather than left pointing into the app
-        let page = doc.page_iter().next().unwrap();
-        let annots = doc.get_page_annotations(page).unwrap();
+        let page = doc.page_iter().next().ok_or("no page")?;
+        let annots = doc.get_page_annotations(page)?;
         assert_eq!(annots.len(), 1);
         assert!(annots[0].has(b"A"));
+        Ok(())
     }
 
     #[test]
-    fn photos_are_still_reencoded() {
+    fn photos_are_still_reencoded() -> TestResult {
         // a smooth picture with sensor-like noise: zlib does poorly, JPEG well
         let (w, h) = (256u16, 256u16);
         let mut seed = 7u32;
@@ -580,23 +594,24 @@ mod tests {
             }
         }
         let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        std::io::Write::write_all(&mut z, &pixels).unwrap();
+        std::io::Write::write_all(&mut z, &pixels)?;
         let image = Stream::new(
             dictionary! {
                 "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
                 "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8, "Filter" => "FlateDecode",
             },
-            z.finish().unwrap(),
+            z.finish()?,
         );
         let mut doc = printed();
         let id = doc.add_object(image);
         let path = std::env::temp_dir().join(format!("quire-pdf-test-{}.pdf", std::process::id()));
-        doc.save(&path).unwrap();
-        finish(&path, &report(), true).unwrap();
-        let doc = Document::load(&path).unwrap();
+        doc.save(&path)?;
+        finish(&path, &report(), true)?;
+        let doc = Document::load(&path)?;
         std::fs::remove_file(&path).ok();
-        let image = doc.get_object(id).unwrap().as_stream().unwrap();
-        assert_eq!(image.dict.get(b"Filter").unwrap().as_name().unwrap(), b"DCTDecode");
-        assert!(doc.catalog().unwrap().has(b"Outlines"));
+        let image = doc.get_object(id)?.as_stream()?;
+        assert_eq!(image.dict.get(b"Filter")?.as_name()?, b"DCTDecode");
+        assert!(doc.catalog()?.has(b"Outlines"));
+        Ok(())
     }
 }

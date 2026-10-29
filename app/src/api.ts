@@ -127,11 +127,18 @@ export function documentPath(p: string): string {
   return p.replace(/[\\/]document\.json$/i, "");
 }
 
+/** An SMath Studio worksheet (`.sm`, XML). It opens as an untitled document, never over the file. */
+export const isSmathPath = (p: string) => /\.sm$/i.test(p);
+
 export async function pickOpenPath(): Promise<string | null> {
   if (isTauri) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const extensions = isMac ? ["quire", "quirez"] : ["quirez", "json"];
-    const p = await open({ title: "Open", filters: [{ name: "Quire document", extensions }] });
+    const filters = [
+      { name: "Quire document", extensions },
+      { name: "SMath Studio worksheet", extensions: ["sm"] },
+    ];
+    const p = await open({ title: "Open", filters });
     return typeof p === "string" ? documentPath(p) : null;
   }
   return window.prompt("Path to a .quire or .quirez document");
