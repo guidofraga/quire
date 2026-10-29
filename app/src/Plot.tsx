@@ -297,6 +297,8 @@ export function PlotBody(props: { r: Region }) {
   return (
     <div class="plot" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }}>
       <svg
+        role="img"
+        aria-label={`Plot of ${series().map((s) => s.label || s.y).join(", ") || "nothing yet"}${series()[0]?.x ? ` against ${series()[0].x}` : ""}`}
         width={size()[0]}
         height={size()[1]}
         viewBox={`0 0 ${size()[0]} ${size()[1]}`}
@@ -530,17 +532,17 @@ export function PlotBody(props: { r: Region }) {
       </svg>
       {/* zoom: shown on hover, never printed */}
       <div class="plot-tools" onPointerDown={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()}>
-        <button title="Zoom in (or ⌥ + scroll)" onClick={() => zoomBy(0.5)}>
+        <button title="Zoom in (or ⌥ + scroll)" aria-label="Zoom in" onClick={() => zoomBy(0.5)}>
           ＋
         </button>
-        <button title="Zoom out" onClick={() => zoomBy(2)}>
+        <button title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(2)}>
           −
         </button>
         <Show when={zoomed()}>
-          <button title="Back to the whole plot" onClick={() => setZoomed(null)}>
+          <button title="Back to the whole plot" aria-label="Back to the whole plot" onClick={() => setZoomed(null)}>
             ⤢
           </button>
-          <button title="Keep this view: it becomes the axes' limits, which print" onClick={keepView}>
+          <button title="Keep this view: it becomes the axes' limits, which print" aria-label="Keep this view" onClick={keepView}>
             Keep
           </button>
         </Show>
@@ -708,7 +710,7 @@ export function SeriesEditor(props: { id: string; i: number; title?: boolean }) 
         <div class="insp-subtitle">
           <span class="plot-swatch" style={{ background: colour() }} />
           Series {props.i + 1}
-          <button class="insp-mini" title="Remove this series" onClick={() => removeSeries(props.id, props.i)}>
+          <button class="insp-mini" title="Remove this series" aria-label="Remove this series" onClick={() => removeSeries(props.id, props.i)}>
             ✕
           </button>
         </div>
