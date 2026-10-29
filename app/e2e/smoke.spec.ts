@@ -33,6 +33,23 @@ test("explains a unit mismatch", async ({ page }) => {
   await expect(regions(page).first()).toContainText(/cannot add a length \(m\) and a force/);
 });
 
+test("fits data and solves an ODE with units", async ({ page }) => {
+  await blank(page);
+  await typeLines(
+    page,
+    "x:=[1;2;3;4] m",
+    "F:=[5;7;9;11] kN",
+    "slope(x, F)=kN/m",
+    "D(t, y):=-y/(2 s)",
+    "Y:=rkfixed(10 mm, 0, 4 s, 40, D)",
+    "Y[41, 2]=mm",
+  );
+  await expect(regions(page)).toHaveCount(6);
+  await expect(regions(page).nth(2)).toContainText(/=2\s*kN\W?m$/);
+  // 10 mm·e^−2
+  await expect(regions(page).nth(5)).toContainText(/=1\.3534\s*mm$/);
+});
+
 test("a word followed by a space becomes text", async ({ page }) => {
   await blank(page);
   await typeLines(page, "The span is simply supported.");
