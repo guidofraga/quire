@@ -82,7 +82,7 @@ SwiftUI gives the most native feel, but:
 
 > ✅ **Licensing:** engine crates are MIT OR Apache-2.0; the desktop app is GPL-3.0-or-later, so a `giac` backend crate can link Giac in-process **in the app tier only**. See README.
 >
-> **Status (0.1.7):** symbolic math (`→`) ships as a small built-in rewrite engine in `quire-eval` (simplify, expand, `diff`, `int` for common integrands, `solve` up to degree two). SymEngine and the out-of-process backends above remain the plan for heavier work (series, harder integrals, systems).
+> **Status:** symbolic math (`→`) ships as a built-in rewrite engine in `quire-eval` (`symbolic/`): simplification to the shortest of several equivalent forms with fractions cancelled, `factor`, `expand`, `diff`, `int` (table, substitution, by parts, partial fractions, definite integrals through limits), `solve` (exact polynomial roots up to degree four, cleared denominators, isolation through exp/ln/trig, linear systems), `series`/`taylor`, `lim` with L'Hôpital, and `subs`. SymEngine and the out-of-process backends above remain the plan for heavier work (Gröbner bases, nonlinear systems, ODEs, Risch integration).
 
 ### 2.2 Units & dimensional analysis (`quire-units`)
 Generic unit crates (`uom`, `dimensioned`) check units at Rust *compile time*, which is useless for a notebook where users type units at runtime. We build our own:
@@ -166,5 +166,5 @@ The **`quire-cli`** is a first-class deliverable: it lets CI pipelines re-run en
 | **P3.5 Editor polish** ✅ | Units without markers, implicit multiplication, word→text typing, rich text (ProseMirror ↔ Djot), format bar, inspector, align/distribute, smart guides, resize, contents lists, clipboard and images | Verified end to end in the browser and through PDF export |
 | **P3.6 Writing math** ✅ | Ribbon v2 (Text / Paragraph / Equation / Arrange), structures and symbols galleries, LaTeX shortcuts with completion, built-in constants, positional unit/constant/variable resolution with hover glossary and disambiguation notes, click-to-edit at the pointer | Verified in the browser, through PDF export and 44/44 SMath results unchanged |
 | **P4 Visualization & data** (in progress) | 2D/3D plots, CSV/JSON/clipboard import/export, data regions | 2D plots done (0.1.7): functions and data, units on the axes, editing on the page, vector PDF. Still to do: 3D plots, file import/export, data regions |
-| **P5 Symbolic** (started) | `→`, diff/int/solve/series via SymEngine and the CAS plugin | `→` with simplify, expand, diff, int and solve (degree ≤ 2) built in (0.1.7). Still to do: series, harder integrals, SymEngine/CAS backends |
+| **P5 Symbolic** (started) | `→`, diff/int/solve/series via SymEngine and the CAS plugin | `→` with simplify, expand, diff, int and solve (degree ≤ 2) built in (0.1.7); then textbook simplification, `factor`, solve up to degree 4 with fractions, transcendental isolation and linear systems, integration by substitution/parts/partial fractions, `series`, `lim` and `subs`. Still to do: nonlinear systems, ODEs, SymEngine/CAS backends |
 | **P6 Ecosystem** | Plugin API (WASM-sandboxed functions/units), web viewer (core → WASM) | — |
