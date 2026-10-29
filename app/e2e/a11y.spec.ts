@@ -5,6 +5,11 @@ import { expect, type Page, test } from "@playwright/test";
 
 /** Fail on serious and critical problems; list them all so one run shows everything. */
 async function audit(page: Page, state: string) {
+  // measure a settled page: fonts in and two frames painted (CI's Linux WebKit is slower)
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
   const { violations } = await new AxeBuilder({ page }).analyze();
   const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   const report = bad.map((v) => `${state}: ${v.id} (${v.impact}) ${v.help}\n${v.nodes.map((n) => `    ${n.target.join(" ")}  ${n.failureSummary?.split("\n")[1] ?? ""}`).join("\n")}`);
@@ -47,6 +52,9 @@ for (const scheme of ["light", "dark"] as const) {
 
     test("a document with math, text, a table and a plot, on the canvas and in pages", async ({ page }) => {
       await page.getByRole("button", { name: /Simply supported beam/ }).click();
+      // the rest of the window is inert until the welcome screen has gone
+      await expect(page.getByRole("dialog", { name: "Welcome to Quire" })).toBeHidden();
+      await expect(page.locator("[inert]")).toHaveCount(0);
       await expect(page.locator(".region.plot2d")).toBeVisible();
       await expect(page.locator(".region.math .res").first()).toBeVisible();
       await audit(page, "beam, pages");
