@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use quire_ast::{Expr, parse, print};
@@ -234,6 +235,12 @@ pub struct Worksheet {
     units: UnitRegistry,
     settings: DisplaySettings,
     globals: Rc<Env>,
+    /// Where each name is defined (region positions), and the region being run: a
+    /// definition that reads a name defined further down keeps its formula (SMath).
+    defined_at: HashMap<String, Vec<usize>>,
+    current: usize,
+    /// `"calc": {"definitions": "smath"}`: SMath's rule for names defined further down.
+    smath_definitions: bool,
 }
 
 impl Worksheet {
@@ -246,7 +253,18 @@ impl Worksheet {
             units: UnitRegistry::new(),
             settings,
             globals: Rc::new(Env::new()),
+            defined_at: HashMap::new(),
+            current: 0,
+            smath_definitions: false,
         }
+    }
+
+    /// SMath's rule (documents imported from SMath): a definition that reads a name only
+    /// defined further down keeps its formula and is worked out where it is used, instead
+    /// of "x is defined further down".
+    pub fn with_smath_definitions(mut self, on: bool) -> Self {
+        self.smath_definitions = on;
+        self
     }
 
     pub fn units(&self) -> &UnitRegistry {
@@ -269,13 +287,23 @@ impl Worksheet {
     /// Evaluate regions in order: `≡` definitions first, then everything top to bottom.
     pub fn run(&mut self, regions: &[MathInput]) -> Vec<Outcome> {
         let parsed: Vec<_> = regions.iter().map(|r| parse(&r.expr)).collect();
+        self.defined_at.clear();
+        for (i, p) in parsed.iter().enumerate() {
+            if let Ok(Expr::Define { lhs, .. }) = p
+                && let Expr::Ident(name) = lhs.as_ref()
+            {
+                self.defined_at.entry(name.clone()).or_default().push(i);
+            }
+        }
         let mut out: Vec<Option<Outcome>> = vec![None; regions.len()];
         for (i, r) in regions.iter().enumerate() {
             if let Ok(e @ Expr::Define { global: true, .. }) = &parsed[i] {
+                self.current = i;
                 out[i] = Some(self.step(r, e));
             }
         }
         for (i, r) in regions.iter().enumerate() {
+            self.current = i;
             if let Some(t) = &r.table {
                 out[i] = Some(self.step_table(r, t));
             } else if let Some(p) = &r.plot {
@@ -680,12 +708,37 @@ impl Worksheet {
         true
     }
 
-    /// `Ok(None)` for function definitions, which have no value of their own.
+    /// `name` is defined in a region below the one being run.
+    fn defined_below(&self, name: &str) -> bool {
+        self.defined_at.get(name).is_some_and(|at| at.iter().any(|&i| i > self.current))
+    }
+
+    /// `Ok(None)` for function definitions and SMath-style kept formulas, which have no
+    /// value of their own.
     fn define(&mut self, out: &mut Outcome, lhs: &Expr, rhs: &Expr) -> Result<Option<Value>> {
         match lhs {
             Expr::Ident(name) => {
                 out.defines = Some(name.clone());
-                let v = self.eval(rhs)?;
+                let constants_before = self.used_constants.clone();
+                let r = self.eval(rhs);
+                // SMath: reading a name that is only defined further down (or a built-in
+                // constant the document redefines further down) keeps the formula, worked
+                // out where it is used
+                let forward = self.smath_definitions
+                    && match &r {
+                        Err(e) => {
+                            e.message.strip_suffix(" is not defined").is_some_and(|n| self.defined_below(n))
+                        }
+                        Ok(_) => {
+                            self.used_constants.difference(&constants_before).any(|n| self.defined_below(n))
+                        }
+                    };
+                if forward {
+                    self.used_constants = constants_before;
+                    self.bind(name.clone(), Binding::Lazy(Rc::new(rhs.clone())));
+                    return Ok(None);
+                }
+                let v = r?;
                 self.bind(name.clone(), Binding::Val(v.clone()));
                 Ok(Some(v))
             }
@@ -743,7 +796,11 @@ mod tests {
     use super::*;
 
     fn run(lines: &[&str]) -> Vec<Outcome> {
-        let regions: Vec<MathInput> = lines
+        Worksheet::new(DisplaySettings::default()).run(&inputs(lines))
+    }
+
+    fn inputs(lines: &[&str]) -> Vec<MathInput> {
+        lines
             .iter()
             .enumerate()
             .map(|(i, l)| MathInput {
@@ -755,8 +812,7 @@ mod tests {
                 plot: None,
                 symbolic: false,
             })
-            .collect();
-        Worksheet::new(DisplaySettings::default()).run(&regions)
+            .collect()
     }
 
     fn shown(lines: &[&str]) -> Vec<String> {
@@ -1174,6 +1230,36 @@ mod tests {
         let r = shown(&["line([1; 2; 3], [3; 5; 7])", "line(a := 2, a + 1)"]);
         assert_eq!(r[0], "[1; 2]");
         assert_eq!(r[1], "3");
+    }
+
+    #[test]
+    fn smath_keeps_formulas_that_read_names_defined_below() {
+        let lines = [
+            "F.p := 685.65 'kN",
+            "F.ap := c*F.p",
+            "c := 0.5",
+            "F.ap",
+            "T := k*L",
+            "k := 2 'kN/'m",
+            "L := 3 'm",
+            "T",
+            "z := w + 1",
+            "u := v + 1",
+            "v := u + 1",
+            "u",
+        ];
+        let out =
+            Worksheet::new(DisplaySettings::default()).with_smath_definitions(true).run(&inputs(&lines));
+        let shown = |i: usize| out[i].shown.clone().or(out[i].error.clone()).unwrap_or_default();
+        assert!(out[1].error.is_none(), "kept as a formula, not an error");
+        assert_eq!(shown(3), "3.4282*10^5*'N", "c is the 0.5 below, not the speed of light");
+        assert_eq!(shown(7), "6000 'N");
+        assert!(shown(8).contains("w is not defined"), "a name defined nowhere is still an error");
+        assert!(out[11].error.is_some(), "u and v defined by each other: an error, not a hang");
+        // a Quire document keeps its own rule
+        let quire = run(&lines);
+        assert!(quire[1].error.is_none() && quire[3].shown.as_deref() != Some("3.4282*10^5*'N"));
+        assert!(quire[4].error.as_deref().unwrap().contains("defined further down"));
     }
 
     #[test]

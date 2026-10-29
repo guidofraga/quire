@@ -452,7 +452,8 @@ class Converter:
 
     def calc_settings(self, settings):
         calc = child(settings, "calculation") if settings is not None else None
-        out = {}
+        # SMath keeps a formula that reads a name defined further down
+        out = {"calc": {"definitions": "smath"}}
         if calc is None:
             return out
         g = lambda n: (child(calc, n).text if child(calc, n) is not None else None)

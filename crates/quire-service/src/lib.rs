@@ -264,7 +264,8 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
 
 fn run(doc: &Document, tables: bool) -> Evaluated {
     let start = Instant::now();
-    let mut worksheet = Worksheet::new(settings_of(doc));
+    let mut worksheet = Worksheet::new(settings_of(doc))
+        .with_smath_definitions(doc.settings.calc.definitions.as_deref() == Some("smath"));
     let unit_errors = doc
         .units
         .iter()

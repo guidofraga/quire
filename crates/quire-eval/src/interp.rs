@@ -17,6 +17,9 @@ pub enum Binding {
     Func(Rc<Func>),
     /// The definition exists but failed; uses report it instead of "not defined".
     Failed(String),
+    /// SMath: a definition that reads a name only defined further down keeps its formula,
+    /// worked out where it is used.
+    Lazy(Rc<Expr>),
 }
 
 #[derive(Debug)]
@@ -876,6 +879,16 @@ impl Interp<'_> {
                 Ok(v.clone())
             }
             Some(Binding::Failed(_)) => bail!("{name} has no value (its definition has an error)"),
+            Some(Binding::Lazy(e)) => {
+                let e = Rc::clone(e);
+                if self.depth >= MAX_DEPTH {
+                    bail!("{name} is defined in terms of itself");
+                }
+                self.depth += 1;
+                let r = self.eval(&mut Scope::new(s.base), &e);
+                self.depth -= 1;
+                r
+            }
             Some(Binding::Func(_)) => unreachable!("functions are stored under name#arity"),
             None => {
                 if let Some(c) = constant(name) {

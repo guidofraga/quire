@@ -36,6 +36,7 @@
           "type": "object",
           "properties": {
             "angle": { "enum": ["rad", "deg", "grad"] },
+            "definitions": { "enum": ["smath"], "description": "smath: a definition reading a name defined further down keeps its formula (documents imported from SMath)" },
             "precision": { "enum": ["double", "arbitrary"] }
           }
         },

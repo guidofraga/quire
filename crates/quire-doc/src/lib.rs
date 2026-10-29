@@ -47,6 +47,17 @@ pub struct Document {
 pub struct Settings {
     #[serde(default)]
     pub display: DisplaySettings,
+    #[serde(default)]
+    pub calc: CalcSettings,
+    #[serde(flatten)]
+    pub extra: Map<String, Json>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct CalcSettings {
+    /// `"smath"`: a definition that reads a name defined further down keeps its formula,
+    /// worked out where it is used (set by the SMath importer).
+    pub definitions: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Json>,
 }
