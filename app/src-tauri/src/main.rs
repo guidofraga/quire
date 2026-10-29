@@ -110,6 +110,12 @@ fn export_csv(path: PathBuf, contents: String) -> CmdResult<()> {
     std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// Notebooks: list, create, rename, move, trash and search notes in a folder.
+#[tauri::command]
+fn notebook(op: String, args: Json) -> CmdResult<Json> {
+    quire_service::notebook::call(&op, &args).map_err(err)
+}
+
 #[tauri::command]
 fn djot_html(src: String) -> String {
     quire_service::render_djot_editable(&src)
@@ -477,6 +483,7 @@ fn main() {
             export_pdf,
             finish_export,
             export_csv,
+            notebook,
             take_open_requests,
             set_recent,
             save_recovery,

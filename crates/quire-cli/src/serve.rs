@@ -66,6 +66,10 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             quire_service::templates::delete(&templates_dir(), arg(body, "id")?).map_err(err)?;
             Ok(Json::Null)
         }
+        "notebook" => {
+            let args = body.get("args").cloned().unwrap_or(Json::Null);
+            quire_service::notebook::call(arg(body, "op")?, &args).map_err(err)
+        }
         _ => Err(format!("unknown command {command}")),
     }
 }

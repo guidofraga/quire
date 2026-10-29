@@ -16,3 +16,4 @@ serde_json.workspace = true
 jotdown = "0.10"
 base64 = "0.22"
 sha2 = "0.10"
+trash = "5"

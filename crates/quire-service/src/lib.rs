@@ -6,6 +6,7 @@
 
 pub mod assets;
 pub mod canonical;
+pub mod notebook;
 pub mod templates;
 mod text;
 
