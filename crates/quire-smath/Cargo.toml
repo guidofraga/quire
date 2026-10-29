@@ -1,0 +1,17 @@
+[package]
+name = "quire-smath"
+description = "Quire: SMath Studio worksheet (.sm) importer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+roxmltree = "0.20"
+regex = "1"
+base64 = "0.22"
+sha1 = "0.10"
+sha2 = "0.10"
+# spreadsheets named by importData (.xlsx)
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

@@ -27,6 +27,12 @@ fn open_document(path: PathBuf) -> CmdResult<Json> {
     quire_service::open(&path).map_err(err)
 }
 
+/// An SMath Studio worksheet, converted: opens as a new, untitled document.
+#[tauri::command]
+fn import_sm(path: PathBuf) -> CmdResult<quire_service::ImportedSm> {
+    quire_service::import_sm(&path).map_err(err)
+}
+
 #[tauri::command]
 fn save_document(path: PathBuf, doc: Json, from: Option<PathBuf>) -> CmdResult<()> {
     quire_service::save(&path, &doc, from.as_deref()).map_err(err)
@@ -463,6 +469,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             report,
             open_document,
+            import_sm,
             save_document,
             read_asset,
             new_document,

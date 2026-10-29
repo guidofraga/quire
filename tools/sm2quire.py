@@ -727,14 +727,23 @@ class Converter:
                         wanted.append(m.group(1))
                 walk(r.get("regions", []))
         walk(regions)
-        here = {p.name.lower(): p for p in self.src.parent.iterdir()} if wanted else {}
+        # the .sm's folder first, then up to two folders above it (a shared table)
+        folders = []
+        if wanted:
+            d = self.src.resolve().parent
+            for _ in range(3):
+                folders.append({p.name.lower(): p for p in d.iterdir()} if d.is_dir() else {})
+                d = d.parent
         data = {}
         for name in wanted:
             base = re.split(r"[\\/]", name)[-1]
-            path = here.get(base.lower())
-            if path is None:
+            found = next(((up, f[base.lower()]) for up, f in enumerate(folders) if base.lower() in f), None)
+            if found is None:
                 self.warnings.append(f"importData: {base} is not next to {self.src.name}; its tables stay empty")
                 continue
+            up, path = found
+            if up > 0:
+                self.warnings.append(f"importData: {base} read from {path}")
             try:
                 data[base] = read_csv(path) if path.suffix.lower() in (".csv", ".txt") else read_xlsx(path)
             except Exception as ex:  # a damaged or old .xls file: say so, keep going

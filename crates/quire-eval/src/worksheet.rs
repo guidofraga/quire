@@ -297,6 +297,13 @@ impl Worksheet {
 
     /// Evaluate regions in order: `≡` definitions first, then everything top to bottom.
     pub fn run(&mut self, regions: &[MathInput]) -> Vec<Outcome> {
+        crate::ops::set_zero_fits(self.smath_definitions);
+        let out = self.run_regions(regions);
+        crate::ops::set_zero_fits(false);
+        out
+    }
+
+    fn run_regions(&mut self, regions: &[MathInput]) -> Vec<Outcome> {
         let parsed: Vec<_> = regions.iter().map(|r| parse(&r.expr)).collect();
         self.defined_at.clear();
         for (i, p) in parsed.iter().enumerate() {
@@ -1295,6 +1302,15 @@ mod tests {
         assert_eq!(r[0], "98.0665 'N", "SMath's g.e is standard gravity");
         assert_eq!(r[1], "0.15");
         assert_eq!(r[3], "7", "primes end a name");
+        // MC-3010.94: `b.2 := 0` in one branch, then an area plus 4·b.2·t (0 mm)
+        let lines = ["b := 0", "t := 8 'mm", "2*t*t + 4*b*t", "0 - 3 'm", "1 'm + 1 's"];
+        let smath =
+            Worksheet::new(DisplaySettings::default()).with_smath_definitions(true).run(&inputs(&lines));
+        let r: Vec<String> = smath.into_iter().map(|o| o.shown.or(o.error).unwrap_or_default()).collect();
+        assert_eq!(r[2], "0.0001 'm^2", "in a document from SMath an exact zero fits any unit");
+        assert_eq!(r[3], "-3 'm");
+        assert!(r[4].contains("cannot add"), "non-zero values still need matching units: {}", r[4]);
+        assert!(shown(&lines)[2].contains("cannot add"), "Quire's own documents stay strict");
     }
 
     #[test]

@@ -761,6 +761,32 @@ pub fn report(doc_json: &Json) -> Result<Report> {
 // Files
 // ---------------------------------------------------------------------------
 
+/// An SMath worksheet opened in Quire: the converted document, the temporary bundle its
+/// images come from until the first save (the app's `origin`), and what could not be
+/// converted exactly.
+#[derive(Debug, Serialize)]
+pub struct ImportedSm {
+    pub doc: Json,
+    pub origin: String,
+    pub warnings: Vec<String>,
+}
+
+/// Open an SMath Studio `.sm` file: convert it into a bundle in the temporary folder (never
+/// next to the .sm) and return it as a new, untitled document.
+pub fn import_sm(path: &Path) -> Result<ImportedSm> {
+    let bytes = std::fs::read(path)?;
+    let imported = quire_smath::import(&bytes, path).map_err(ServiceError)?;
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "smath".into());
+    let tag = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(&bytes));
+    let dir = std::env::temp_dir().join("quire-import").join(format!("{stem}-{}.quire", &tag[..8]));
+    quire_smath::write_bundle(&imported, &dir)?;
+    Ok(ImportedSm {
+        doc: imported.document,
+        origin: dir.to_string_lossy().into_owned(),
+        warnings: imported.warnings,
+    })
+}
+
 /// The bundle directory for a path that may point at the bundle or its document.json.
 pub fn bundle_dir(path: &Path) -> PathBuf {
     if path.file_name().is_some_and(|n| n == "document.json") {

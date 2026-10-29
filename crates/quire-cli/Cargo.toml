@@ -16,4 +16,5 @@ quire-units.workspace = true
 quire-eval.workspace = true
 quire-doc.workspace = true
 quire-service.workspace = true
+quire-smath.workspace = true
 serde_json.workspace = true

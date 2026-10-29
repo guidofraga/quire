@@ -37,8 +37,27 @@ pub fn pow(x: Quantity, y: Quantity) -> Result<Quantity> {
     Ok(Quantity::new(check(v, "this power")?, dim))
 }
 
+thread_local! {
+    /// Documents from SMath: an exact zero fits any unit, as in SMath and Mathcad.
+    static ZERO_FITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Turn SMath's "a zero fits any unit" on for the worksheet being run (off by default:
+/// Quire's own documents say when `x - y == 0` mixes a length and a plain zero).
+pub(crate) fn set_zero_fits(on: bool) {
+    ZERO_FITS.with(|z| z.set(on));
+}
+
 fn num_op(op: BinaryOp, x: Quantity, y: Quantity) -> Result<Quantity> {
     Ok(match op {
+        // an exact zero fits any unit, as in SMath and Mathcad (`b := 0` in one branch of an if,
+        // then `2*b*t + A` with A an area); anything else must match
+        BinaryOp::Add | BinaryOp::Sub
+            if x.dim != y.dim && (x.v == 0.0 || y.v == 0.0) && ZERO_FITS.with(|z| z.get()) =>
+        {
+            let dim = if x.v == 0.0 { y.dim } else { x.dim };
+            Quantity::new(if op == BinaryOp::Add { x.v + y.v } else { x.v - y.v }, dim)
+        }
         BinaryOp::Add => {
             same_dim(x.dim, y.dim, "add")?;
             Quantity::new(x.v + y.v, x.dim)

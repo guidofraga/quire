@@ -29,6 +29,10 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             serde_json::to_value(quire_service::report(doc).map_err(err)?).map_err(|e| e.to_string())
         }
         "open_document" => quire_service::open(Path::new(arg(body, "path")?)).map_err(err),
+        "import_sm" => {
+            serde_json::to_value(quire_service::import_sm(Path::new(arg(body, "path")?)).map_err(err)?)
+                .map_err(|e| e.to_string())
+        }
         "save_document" => {
             let doc = body.get("doc").ok_or("missing \"doc\"")?;
             let from = body.get("from").and_then(Json::as_str).map(Path::new);

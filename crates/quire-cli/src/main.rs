@@ -16,6 +16,8 @@ usage:
   quire fmt --check <path>...     verify every expression round-trips through the parser
   quire calc <expr> [--in <unit>] [--decimals <n>]
                                   evaluate one expression, e.g. quire calc \"2 'm + 30 'cm\" --in mm
+  quire import <file.sm> [<out.quire>]
+                                  convert an SMath Studio worksheet (spreadsheets next to it come along)
   quire serve [--port <n>]        editor backend on localhost for UI development (default port 7878)
 ";
 
@@ -27,6 +29,7 @@ fn main() -> ExitCode {
         Some("fmt") if args.len() >= 3 && args[1] == "--check" => cmd_fmt_check(&args[2..]),
         Some("calc") if args.len() >= 2 => cmd_calc(&args[1..]),
         Some("serve") => cmd_serve(&args[1..]),
+        Some("import") if (2..=3).contains(&args.len()) => cmd_import(&args[1], args.get(2)),
         Some("--version" | "-V") => {
             println!("quire {}", env!("CARGO_PKG_VERSION"));
             Ok(true)
@@ -47,6 +50,27 @@ fn main() -> ExitCode {
 }
 
 type CmdResult = Result<bool, Box<dyn std::error::Error>>;
+
+/// `quire import calc.sm [calc.quire]`: an SMath worksheet as a Quire bundle.
+fn cmd_import(src: &str, out: Option<&String>) -> CmdResult {
+    let src = Path::new(src);
+    let out = out.map(PathBuf::from).unwrap_or_else(|| src.with_extension("quire"));
+    let imported = quire_smath::import(&std::fs::read(src)?, src)?;
+    quire_smath::write_bundle(&imported, &out)?;
+    let stats: Vec<String> = imported.stats.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    println!(
+        "{} -> {}  [{}] assets={} results={}",
+        src.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
+        out.display(),
+        stats.join(", "),
+        imported.assets.len(),
+        imported.results.len()
+    );
+    for w in &imported.warnings {
+        println!("  warning: {w}");
+    }
+    Ok(true)
+}
 
 fn width(s: &str) -> usize {
     s.chars().count()

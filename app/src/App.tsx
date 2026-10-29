@@ -165,7 +165,24 @@ export async function newDocument() {
   loadDoc(withDefaults(await api.newDocument()), null);
 }
 
+/** An SMath Studio worksheet (`.sm`): converted, it opens as a new, untitled document. */
+export const isSmPath = (path: string) => /\.sm$/i.test(path);
+
+async function openSm(path: string) {
+  try {
+    const { doc, origin, warnings } = await api.importSm(path);
+    loadDoc(doc, null, origin);
+    addRecent(path);
+    const note = warnings.length ? ` (${warnings.length} note${warnings.length > 1 ? "s" : ""}: ${warnings[0]})` : "";
+    flash(`Opened the SMath worksheet ${fileName(path)}; Save keeps it as a Quire document${note}`);
+  } catch (e) {
+    flash(`Could not open ${fileName(path)}: ${(e as Error).message}`);
+    forgetRecent(path);
+  }
+}
+
 export async function openPath(path: string) {
+  if (isSmPath(path)) return openSm(path);
   try {
     const doc = await api.open(path);
     loadDoc(doc, path);
@@ -617,6 +634,14 @@ export function App() {
         if (ev.payload.type !== "drop") return;
         const ratio = window.devicePixelRatio || 1;
         const at = clientToDoc(ev.payload.position.x / ratio, ev.payload.position.y / ratio);
+        // an SMath worksheet dropped on the window opens like File ▸ Open
+        const sm = ev.payload.paths.find(isSmPath);
+        if (sm) {
+          void guardUnsaved().then((ok) => {
+            if (ok) void openPath(sm);
+          });
+          return;
+        }
         ev.payload.paths
           .filter(isImagePath)
           .forEach((path, i) => insertImagePath(path, [at[0] + i * 18, at[1] + i * 18]).catch((err) => flash(String(err))));

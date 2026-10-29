@@ -28,6 +28,7 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
 export const api = {
   report: (doc: Doc) => call<Report>("report", { doc }),
   open: (path: string) => call<Doc>("open_document", { path }),
+  importSm: (path: string) => call<{ doc: Doc; origin: string; warnings: string[] }>("import_sm", { path }),
   save: (path: string, doc: Doc, from: string | null) => call<null>("save_document", { path, doc, from }),
   djotHtml: (src: string) => call<string>("djot_html", { src }),
   library: () => call<Library>("library"),
@@ -100,10 +101,17 @@ export async function pickOpenPath(): Promise<string | null> {
   if (isTauri) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const extensions = isMac ? ["quire", "quirez"] : ["quirez", "json"];
-    const p = await open({ title: "Open", filters: [{ name: "Quire document", extensions }] });
+    const p = await open({
+      title: "Open",
+      filters: [
+        { name: "Quire document or SMath worksheet", extensions: [...extensions, "sm"] },
+        { name: "Quire document", extensions },
+        { name: "SMath Studio worksheet", extensions: ["sm"] },
+      ],
+    });
     return typeof p === "string" ? documentPath(p) : null;
   }
-  return window.prompt("Path to a .quire or .quirez document");
+  return window.prompt("Path to a .quire, .quirez or SMath .sm document");
 }
 
 export async function pickSavePath(suggested: string): Promise<string | null> {
