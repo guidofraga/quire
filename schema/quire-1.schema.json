@@ -54,6 +54,17 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "data": {
+      "description": "Spreadsheets carried with the document, read by importData: file name -> sheet name -> rows from A1 (cells: number, string or null)",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": ["number", "string", "null"] } }
+        }
+      }
+    },
     "styles": {
       "type": "object",
       "properties": {

@@ -13,11 +13,14 @@ Standard library only. Deterministic: converting the same file twice yields
 byte-identical output.
 """
 import base64
+import csv
 import hashlib
+import io
 import json
 import re
 import sys
 import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter
 from pathlib import Path
 
@@ -211,6 +214,79 @@ def to_linear(n, units_bare=False):
         name = RENAME.get(name, name)
         return name + "(" + ", ".join(to_linear(a, units_bare) for a in args) + ")"
     raise ValueError(k)
+
+
+# ---------------------------------------------------------------------------
+# Spreadsheets read by importData: carried inside the document
+# ---------------------------------------------------------------------------
+
+XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+
+
+def col_index(ref):
+    """`AB12` -> (11, 27), zero-based."""
+    m = re.fullmatch(r"([A-Za-z]+)(\d+)", ref)
+    col = 0
+    for ch in m.group(1).upper():
+        col = col * 26 + ord(ch) - 64
+    return int(m.group(2)) - 1, col - 1
+
+
+def cell_value(text):
+    try:
+        v = float(text)
+    except (TypeError, ValueError):
+        return text
+    return int(v) if v.is_integer() and abs(v) < 2**53 else v
+
+
+def read_xlsx(path):
+    """{sheet: rows from A1} with numbers, strings and None, using only the standard library."""
+    z = zipfile.ZipFile(path)
+    names = set(z.namelist())
+    shared = []
+    if "xl/sharedStrings.xml" in names:
+        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", XLSX_NS):
+            shared.append("".join(t.text or "" for t in si.iter(f"{{{XLSX_NS['m']}}}t")))
+    rels = {}
+    for rel in ET.fromstring(z.read("xl/_rels/workbook.xml.rels")):
+        target = rel.get("Target").lstrip("/")
+        rels[rel.get("Id")] = target if target.startswith("xl/") else "xl/" + target
+    sheets = {}
+    for sh in ET.fromstring(z.read("xl/workbook.xml")).find("m:sheets", XLSX_NS):
+        rows = {}
+        for c in ET.fromstring(z.read(rels[sh.get(REL_NS)])).iter(f"{{{XLSX_NS['m']}}}c"):
+            r, col = col_index(c.get("r"))
+            t, v = c.get("t"), c.find("m:v", XLSX_NS)
+            if t == "s" and v is not None:
+                val = shared[int(v.text)]
+            elif t == "inlineStr":
+                val = "".join(x.text or "" for x in c.iter(f"{{{XLSX_NS['m']}}}t"))
+            elif t in ("str", "e"):
+                val = v.text if v is not None else None
+            elif t == "b":
+                val = int(v.text) if v is not None else None
+            else:
+                val = cell_value(v.text) if v is not None else None
+            if val is not None and val != "":
+                rows.setdefault(r, {})[col] = val
+        if rows:
+            width = max(max(cols) for cols in rows.values()) + 1
+            sheets[sh.get("name")] = [
+                [rows.get(r, {}).get(c) for c in range(width)] for r in range(max(rows) + 1)
+            ]
+        else:
+            sheets[sh.get("name")] = []
+    return sheets
+
+
+def read_csv(path):
+    text = Path(path).read_bytes().decode("utf-8-sig", errors="replace")
+    dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;	") if text.strip() else csv.excel
+    rows = [[cell_value(x.replace(",", ".")) if re.fullmatch(r"-?[\d.,]+(e-?\d+)?", x.strip()) else (x or None)
+             for x in row] for row in csv.reader(io.StringIO(text), dialect)]
+    return {"Sheet1": rows}
 
 
 def unescape_sm(s):
@@ -419,6 +495,9 @@ class Converter:
         doc["styles"] = self.styles()
         self.strip_default_fonts(regions, doc["styles"])
         doc["regions"] = regions
+        data = self.data_files(regions)
+        if data:
+            doc["data"] = data
         if not doc["page"]:
             del doc["page"]
         deps = self.dependencies(settings)
@@ -637,6 +716,30 @@ class Converter:
                     reg["notePosition"] = desc.get("position").lower()
         self.math_sizes[r.get("fontSize", "10")] += 1
         return reg
+
+    def data_files(self, regions):
+        """Spreadsheets named in importData(…) and found next to the .sm, read into the document."""
+        wanted = []
+        def walk(rs):
+            for r in rs:
+                for m in re.finditer(r'importData(?:\.\w+)?\("([^"]+)"', r.get("expr", "")):
+                    if m.group(1) not in wanted:
+                        wanted.append(m.group(1))
+                walk(r.get("regions", []))
+        walk(regions)
+        here = {p.name.lower(): p for p in self.src.parent.iterdir()} if wanted else {}
+        data = {}
+        for name in wanted:
+            base = re.split(r"[\\/]", name)[-1]
+            path = here.get(base.lower())
+            if path is None:
+                self.warnings.append(f"importData: {base} is not next to {self.src.name}; its tables stay empty")
+                continue
+            try:
+                data[base] = read_csv(path) if path.suffix.lower() in (".csv", ".txt") else read_xlsx(path)
+            except Exception as ex:  # a damaged or old .xls file: say so, keep going
+                self.warnings.append(f"importData: cannot read {base}: {ex}")
+        return data
 
     def radio(self, r, rb, origin):
         """SMath's option list, defining the variable in <input>. output="Default": the number

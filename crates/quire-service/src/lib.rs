@@ -262,10 +262,33 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
     out
 }
 
+/// The document's spreadsheets (`data`) for `importData`.
+fn data_files(doc: &Document) -> quire_eval::DataFiles {
+    use quire_eval::Cell;
+    let mut files = quire_eval::DataFiles::default();
+    for (file, sheets) in &doc.data {
+        for (sheet, rows) in sheets {
+            let cells = |row: &Vec<Json>| {
+                row.iter()
+                    .map(|c| match c {
+                        Json::Number(n) => n.as_f64().map_or(Cell::Empty, Cell::Num),
+                        Json::String(s) => Cell::Text(s.clone()),
+                        Json::Bool(b) => Cell::Num(f64::from(u8::from(*b))),
+                        _ => Cell::Empty,
+                    })
+                    .collect()
+            };
+            files.insert(file, sheet, rows.iter().map(cells).collect());
+        }
+    }
+    files
+}
+
 fn run(doc: &Document, tables: bool) -> Evaluated {
     let start = Instant::now();
     let mut worksheet = Worksheet::new(settings_of(doc))
-        .with_smath_definitions(doc.settings.calc.definitions.as_deref() == Some("smath"));
+        .with_smath_definitions(doc.settings.calc.definitions.as_deref() == Some("smath"))
+        .with_data(data_files(doc));
     let unit_errors = doc
         .units
         .iter()

@@ -241,6 +241,7 @@ pub struct Worksheet {
     current: usize,
     /// `"calc": {"definitions": "smath"}`: SMath's rule for names defined further down.
     smath_definitions: bool,
+    data: Rc<crate::data::DataFiles>,
 }
 
 impl Worksheet {
@@ -256,6 +257,7 @@ impl Worksheet {
             defined_at: HashMap::new(),
             current: 0,
             smath_definitions: false,
+            data: Rc::default(),
         }
     }
 
@@ -264,6 +266,12 @@ impl Worksheet {
     /// of "x is defined further down".
     pub fn with_smath_definitions(mut self, on: bool) -> Self {
         self.smath_definitions = on;
+        self
+    }
+
+    /// Spreadsheets carried in the document, read by `importData`.
+    pub fn with_data(mut self, data: crate::data::DataFiles) -> Self {
+        self.data = Rc::new(data);
         self
     }
 
@@ -491,6 +499,7 @@ impl Worksheet {
 
     fn eval(&mut self, e: &Expr) -> Result<Value> {
         let mut interp = Interp::new(&self.units);
+        interp.data = Rc::clone(&self.data);
         let globals = Rc::clone(&self.globals);
         let mut scope = Scope::new(&globals);
         let r = interp.eval(&mut scope, e);

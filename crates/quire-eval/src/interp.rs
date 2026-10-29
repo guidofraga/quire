@@ -98,6 +98,8 @@ pub struct Interp<'u> {
     depth: usize,
     steps: u64,
     flow: Option<Flow>,
+    /// Spreadsheets carried in the document, for `importData`.
+    pub data: Rc<crate::data::DataFiles>,
     /// Plain names that resolved to units (`2 m`): the editor colours them as units.
     pub unit_idents: BTreeSet<String>,
     /// Plain names that resolved to built-in constants (`g`, `c`, `R`).
@@ -146,6 +148,7 @@ impl<'u> Interp<'u> {
             depth: 0,
             steps: 0,
             flow: None,
+            data: Rc::default(),
             unit_idents: BTreeSet::new(),
             constant_idents: BTreeSet::new(),
             shadowing: BTreeSet::new(),
@@ -389,6 +392,14 @@ impl<'u> Interp<'u> {
             ("roots", 2 | 3) => self.roots(s, args),
             ("polyroots", 1) => self.polyroots(s, args),
             ("IsDefined", 1) => self.is_defined(s, args),
+            // SMath's importData (and importData.XLSX, .CSV…): tables carried in the document
+            (n, _) if n == "importData" || n.starts_with("importData.") => {
+                let data = Rc::clone(&self.data);
+                args.iter()
+                    .map(|a| self.eval(s, a))
+                    .collect::<Result<Vec<_>>>()
+                    .and_then(|v| data.import(n, &v))
+            }
             ("lim", _) => Err(EvalError::new("a limit is symbolic: end the line with → instead of =")),
             _ => return None,
         })
