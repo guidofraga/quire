@@ -4,6 +4,7 @@
 //! print operation uses the exact paper size with zero margins and no scaling: what is
 //! on screen is what lands in the PDF. On macOS a "save" print job writes the PDF directly.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,53 @@ use tauri::WebviewWindow;
 pub struct Paper {
     pub width_pt: f64,
     pub height_pt: f64,
+}
+
+/// A place on a page: page index from 0, and points from the top of the paper.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct Spot {
+    pub page: usize,
+    pub top: f64,
+}
+
+/// A bookmark for a heading; `title` already carries its number ("2.1 Bending").
+#[derive(Debug, Clone, Deserialize)]
+pub struct Heading {
+    pub title: String,
+    pub level: u8,
+    #[serde(flatten)]
+    pub at: Spot,
+}
+
+/// A clickable box the print engine does not make itself (a contents-list row), in points
+/// from the paper's top-left corner, that jumps to the region `to`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LinkBox {
+    pub page: usize,
+    pub left: f64,
+    pub top: f64,
+    pub width: f64,
+    pub height: f64,
+    pub to: String,
+}
+
+/// What the page view knows and the print engine does not: the document's details, its
+/// headings and where every cross-reference target landed.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PdfInfo {
+    pub title: String,
+    pub author: String,
+    pub subject: String,
+    pub keywords: String,
+    pub company: String,
+    pub lang: String,
+    /// The number printed on the first page.
+    pub first_page: Option<i64>,
+    pub outline: Vec<Heading>,
+    /// Region id → where it starts.
+    pub targets: HashMap<String, Spot>,
+    pub links: Vec<LinkBox>,
 }
 
 #[cfg(target_os = "macos")]
@@ -128,6 +176,7 @@ pub fn export_pdf(
     paper: Paper,
     title: String,
     compress: bool,
+    info: PdfInfo,
 ) -> Result<(), String> {
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| format!("cannot replace {}: {e}", path.display()))?;
@@ -136,17 +185,15 @@ pub fn export_pdf(
     {
         run(window, paper, Some(path.clone()), title)?;
         wait_for_file(&path, Duration::from_secs(120))?;
-        if compress {
-            // a smaller file is a bonus; the PDF is already complete without it
-            if let Err(e) = crate::pdf::compress_images(&path) {
-                eprintln!("quire: could not compress images in {}: {e}", path.display());
-            }
+        // bookmarks, links and smaller images are a bonus; the PDF is already complete without them
+        if let Err(e) = crate::pdf::finish(&path, &info, compress) {
+            eprintln!("quire: could not finish {}: {e}", path.display());
         }
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (window, paper, title, compress, wait_for_file);
+        let _ = (window, paper, title, compress, info, wait_for_file);
         Err("direct PDF export is macOS-only for now; use Print and choose a PDF printer".into())
     }
 }

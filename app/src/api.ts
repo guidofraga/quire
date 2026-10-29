@@ -1,4 +1,5 @@
 // Bridge to the Rust backend: Tauri commands in the app, `quire serve` over /api in a browser.
+import type { PdfInfo } from "./export";
 import type { Doc, Library, Report } from "./types";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -40,8 +41,8 @@ export const api = {
     call<string>("save_template", { name, description, doc, from }),
   deleteTemplate: (id: string) => call<null>("delete_template", { id }),
   print: (paper: Paper, title: string) => call<null>("print_document", { paper, title }),
-  exportPdf: (path: string, paper: Paper, title: string, compress: boolean) =>
-    call<null>("export_pdf", { path, paper, title, compress }),
+  exportPdf: (path: string, paper: Paper, title: string, compress: boolean, info: PdfInfo) =>
+    call<null>("export_pdf", { path, paper, title, compress, info }),
   finishExport: (error: string | null) => call<null>("finish_export", { error }),
   exportCsv: (path: string, contents: string) => call<null>("export_csv", { path, contents }),
   /** Documents the system asked to open before the UI was ready (Finder, Explorer, command line). */
