@@ -65,6 +65,11 @@ impl<'e> Scope<'e> {
         self.frames.last_mut().expect("scope has a frame").insert(name.to_string(), Binding::Val(v))
     }
 
+    /// What was assigned at the top level of this evaluation (a program region's variables).
+    pub(crate) fn into_locals(self) -> HashMap<String, Binding> {
+        self.frames.into_iter().next().unwrap_or_default()
+    }
+
     pub(crate) fn restore(&mut self, name: &str, prev: Option<Binding>) {
         let frame = self.frames.last_mut().expect("scope has a frame");
         match prev {
@@ -119,7 +124,7 @@ pub(crate) fn is_statement(e: &Expr) -> bool {
     match e {
         Expr::Define { .. } => true,
         Expr::Ident(n) => n == "break" || n == "continue",
-        Expr::Call(n, _) => matches!(n.as_str(), "if" | "while" | "for" | "line" | "block"),
+        Expr::Call(n, _) => matches!(n.as_str(), "if" | "while" | "for" | "line" | "block" | "sys"),
         _ => false,
     }
 }
@@ -357,6 +362,7 @@ impl<'u> Interp<'u> {
             // two plain expressions: Mathcad's straight-line fit line(vx, vy) (stats.rs)
             ("line", 2) if !args.iter().any(is_statement) => return None,
             ("block" | "line", _) => self.block(s, args),
+            ("sys", 3..) => self.sys(s, args),
             ("for", 3) => self.for_in(s, args),
             ("for", 4) => self.for_c(s, args),
             ("while", 2) => self.while_(s, args),
@@ -404,6 +410,17 @@ impl<'u> Interp<'u> {
             last = v;
         }
         Ok(last)
+    }
+
+    /// SMath's `sys(a, b, …, rows, cols)`: statements run in order like `line` (SMath stores
+    /// a branch of a program this way); plain values make a list (a column vector).
+    fn sys(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let items = &args[..args.len() - 2];
+        if items.iter().any(is_statement) {
+            return self.block(s, items);
+        }
+        let vals = items.iter().map(|a| self.eval(s, a)).collect::<Result<Vec<_>>>()?;
+        Ok(Value::Matrix(Matrix::column(vals)))
     }
 
     /// After a loop's body: whether to leave the loop (`break`); `continue` just goes on.

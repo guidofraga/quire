@@ -127,7 +127,7 @@ const head = (word: string, ...xs: string[]) => row(kw(word), space(0.3), ...xs)
 const isStatement = (e: Expr) =>
   e.t === "Define" ||
   (e.t === "Ident" && (e.c === "break" || e.c === "continue")) ||
-  (e.t === "Call" && ["if", "while", "for", "line", "block"].includes(e.c[0]));
+  (e.t === "Call" && ["if", "while", "for", "line", "block", "sys"].includes(e.c[0]));
 
 function program(name: string, args: Expr[]): string | null {
   const [x, y, z, w] = args;

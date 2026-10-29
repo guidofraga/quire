@@ -5,7 +5,7 @@ use quire_units::{Unit, UnitRegistry};
 
 use crate::error::{EvalError, Result, bail};
 use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value_in};
-use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, set_element};
+use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, is_statement, set_element};
 use crate::plot::{Axis, PlotInput, PlotOutcome, Sampled, SeriesOutcome};
 use crate::sheet::{CellOutcome, TableInput, cell_label};
 use crate::value::Value;
@@ -463,15 +463,24 @@ impl Worksheet {
 
     fn eval(&mut self, e: &Expr) -> Result<Value> {
         let mut interp = Interp::new(&self.units);
-        let r = interp.eval(&mut Scope::new(&self.globals), e);
+        let globals = Rc::clone(&self.globals);
+        let mut scope = Scope::new(&globals);
+        let r = interp.eval(&mut scope, e);
+        // SMath: what a program region (if, line, sys, while, for) assigns at its top level
+        // is defined for the regions below it
+        let assigned = if r.is_ok() && is_statement(e) { scope.into_locals() } else { Default::default() };
         let units = std::mem::take(&mut interp.unit_idents);
         let constants = std::mem::take(&mut interp.constant_idents);
         let shadowing = std::mem::take(&mut interp.shadowing);
         let over = std::mem::take(&mut interp.units_over_variables);
+        drop(interp);
         self.used_units.extend(units);
         self.used_constants.extend(constants);
         self.used_shadowing.extend(shadowing);
         self.used_over_variables.extend(over);
+        for (name, b) in assigned {
+            self.bind(name, b);
+        }
         r
     }
 
@@ -1165,6 +1174,33 @@ mod tests {
         let r = shown(&["line([1; 2; 3], [3; 5; 7])", "line(a := 2, a + 1)"]);
         assert_eq!(r[0], "[1; 2]");
         assert_eq!(r[1], "3");
+    }
+
+    #[test]
+    fn smath_units_and_names_from_imported_files() {
+        let r = shown(&["W := 10 'kg*'g.e", "u := 15 '%", "σ′ := 2*3", "σ′′ := σ′ + 1"]);
+        assert_eq!(r[0], "98.0665 'N", "SMath's g.e is standard gravity");
+        assert_eq!(r[1], "0.15");
+        assert_eq!(r[3], "7", "primes end a name");
+    }
+
+    #[test]
+    fn smath_programs_define_for_the_regions_below() {
+        // as in the MC-3010.94 report: the chosen option picks a table inside an if,
+        // each branch an SMath sys(…) block, and the regions below use what it defined
+        let r = shown(&[
+            "Tipo_cabo := 2",
+            "if(Tipo_cabo == 1, sys(Tabela := [1; 2], Classe := \"fibra\", 2, 1), sys(Tabela := [3; 4], Classe := \"aço\", 2, 1))",
+            "Tabela",
+            "Classe",
+            "Opcoes := sys(1770, 1960, 2160, 3, 1)",
+            "for(k, 1..3, ultimo := k)",
+            "ultimo",
+        ]);
+        assert_eq!(r[2], "[3; 4]");
+        assert_eq!(r[3], "\"aço\"");
+        assert_eq!(r[4], "[1770; 1960; 2160]", "sys of plain values is a list");
+        assert_eq!(r[6], "3");
     }
 
     #[test]

@@ -43,7 +43,9 @@ def children(el, name):
 
 # precedence (higher binds tighter); assoc only matters for binary ops
 BINARY = {
-    ":": (":=", 0), "≡": ("≡", 0),
+    # in the .sm file ≡ is SMath's boolean equal (shown as a bold =) and ≈ its
+    # approximately-equal comparison: both test equality, they are not definitions
+    ":": (":=", 0), "≡": ("==", 3), "≈": ("==", 3),
     "|": ("or", 1), "&": ("and", 2),
     "=": ("==", 3), "≠": ("≠", 3), "<": ("<", 3), ">": (">", 3), "≤": ("≤", 3), "≥": ("≥", 3),
     "+": ("+", 4), "-": ("-", 4), "±": ("±", 4),
@@ -59,7 +61,7 @@ RENAME = {
     "tg": "tan", "ctg": "cot", "sh": "sinh", "ch": "cosh", "th": "tanh", "cth": "coth",
     "arctg": "atan", "arcctg": "acot", "arcsin": "asin", "arccos": "acos",
     "arcsec": "asec", "arccosec": "acsc", "cosec": "csc", "lg": "log10",
-    "nthroot": "root", "line": "block",
+    "nthroot": "root",
 }
 
 
@@ -140,7 +142,8 @@ def is_quantity(n):
 
 
 def fmt_id(name):
-    return name
+    # SMath names may end in primes (σ', f''); in Quire ' marks a unit, so use ′
+    return name.replace("'", "′")
 
 
 def fmt_str(s):
@@ -208,6 +211,14 @@ def to_linear(n, units_bare=False):
         name = RENAME.get(name, name)
         return name + "(" + ", ".join(to_linear(a, units_bare) for a in args) + ")"
     raise ValueError(k)
+
+
+def unescape_sm(s):
+    r"""SMath option text: `"Classe\0020\6x19"` -> `Classe 6x19` (\hhhh\ is a character)."""
+    s = s.strip()
+    if len(s) >= 2 and s[0] == s[-1] == '"':
+        s = s[1:-1]
+    return re.sub(r"\\([0-9A-Fa-f]{4})\\", lambda m: chr(int(m.group(1), 16)), s)
 
 
 def math_expr(container):
@@ -571,6 +582,8 @@ class Converter:
                 return [self.plot(r, body, origin)]
             if t == "pagebreak":
                 return [self.base(r, origin, "pagebreak")]
+            if t == "radiobuttonlist":
+                return [self.radio(r, body, origin)]
         except Exception as ex:  # never lose content: fall through to legacy
             self.warnings.append(f"region at top={r.get('top')}: {t}: {ex}")
         return [self.legacy(r, t, origin)]
@@ -603,7 +616,9 @@ class Converter:
             if val is not None:
                 shown = to_linear(val)
                 if contract is not None:
-                    shown += " " + to_linear(contract)
+                    # `2.06*10^5 'mm^3` would read as 10^(5 mm³): only a plain number takes a space
+                    sep = " " if re.fullmatch(r"-?[0-9.]+", shown) else "*"
+                    shown += sep + to_linear(contract)
                 self.results[reg["id"]] = shown
         if fmt:
             reg["display"] = fmt
@@ -620,6 +635,27 @@ class Converter:
                 if desc.get("position", "Right") != "Right":
                     reg["notePosition"] = desc.get("position").lower()
         self.math_sizes[r.get("fontSize", "10")] += 1
+        return reg
+
+    def radio(self, r, rb, origin):
+        """SMath's option list, defining the variable in <input>. output="Default": the number
+        of the chosen option (from 1); output="Element": the chosen row's element in column
+        outputColumn of the table named by the input attribute. The options go in the note."""
+        reg = self.base(r, origin, "math")
+        var = math_expr(child(rb, "input"))
+        if var is None or var.kind != "id":
+            raise ValueError("option list without a variable")
+        chosen = int(rb.get("selected") or 1)
+        value = str(chosen)
+        if rb.get("output") == "Element" and rb.get("input"):
+            value = f"{fmt_id(rb.get('input'))}[{chosen}, {int(rb.get('outputColumn') or 1)}]"
+        reg["expr"] = f"{to_linear(var)} := {value}"
+        items = [unescape_sm(li.text or "") for li in children(child(rb, "ul"), "li")]
+        # a Djot list, the chosen option in bold
+        reg["note"] = "\n".join(
+            f"- *{k} = {esc(item)}* ✓" if k == chosen else f"- {k} = {esc(item)}"
+            for k, item in enumerate(items, 1)
+        )
         return reg
 
     def text(self, r, variants, origin):

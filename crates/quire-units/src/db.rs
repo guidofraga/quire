@@ -39,6 +39,7 @@ const LUMINOUS: [i8; 7] = [0, 0, 0, 0, 0, 0, 1];
 const AREA: [i8; 7] = [2, 0, 0, 0, 0, 0, 0];
 const VOLUME: [i8; 7] = [3, 0, 0, 0, 0, 0, 0];
 const VELOCITY: [i8; 7] = [1, 0, -1, 0, 0, 0, 0];
+const ACCEL: [i8; 7] = [1, 0, -2, 0, 0, 0, 0];
 const FREQUENCY: [i8; 7] = [0, 0, -1, 0, 0, 0, 0];
 pub(crate) const FORCE: [i8; 7] = [1, 1, -2, 0, 0, 0, 0];
 pub(crate) const PRESSURE: [i8; 7] = [-1, 1, -2, 0, 0, 0, 0];
@@ -108,6 +109,8 @@ static DEFS: &[Def] = &[
     u(&["mph"], 63360.0 * INCH / 3600.0, VELOCITY, false),
     u(&["knot"], 1852.0 / 3600.0, VELOCITY, false),
     u(&["rpm"], 1.0 / 60.0, FREQUENCY, false),
+    // SMath's g.e: standard gravity as a unit (`m*'g.e` is a weight)
+    u(&["g.e"], G0, ACCEL, false),
     // force (gravitational units are first-class: kgf = k + gf)
     u(&["gf"], G0 * 1e-3, FORCE, true),
     u(&["tonnef", "tf"], G0 * 1e3, FORCE, false),
@@ -131,6 +134,8 @@ static DEFS: &[Def] = &[
     u(&["hp"], 745.699_871_582_270_2, POWER, false),
     // angle (dimensionless)
     u(&["rad"], 1.0, NONE, true),
+    // SMath's '% (a hundredth)
+    u(&["%"], 0.01, NONE, false),
     u(&["deg", "°"], PI / 180.0, NONE, false),
     u(&["rev"], 2.0 * PI, NONE, false),
     // temperature
