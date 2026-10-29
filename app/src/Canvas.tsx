@@ -6,6 +6,7 @@ import { RegionBox } from "./Region";
 import { nearestRegion, stepRegion } from "./nav";
 import { editPlot } from "./Plot";
 import { Sheet } from "./Sheet";
+import { welcomeOpen } from "./Welcome";
 import { prefs } from "./settings";
 import {
   checkpoint,
@@ -239,8 +240,10 @@ export function Canvas() {
 
   // A hidden field at the insertion point receives typing, so dead keys (á, ã, ç),
   // IME composition, dictation and paste all start a region — not just plain keydowns.
+  // The welcome screen keeps focus while it is open and hands it back when it closes,
+  // so typing starts at the insertion point right after "Blank document".
   createEffect(() => {
-    if (state.caret && !state.editing) sink.focus({ preventScroll: true });
+    if (state.caret && !state.editing && !welcomeOpen()) sink.focus({ preventScroll: true });
   });
 
   function onSinkInput(e: InputEvent) {
@@ -492,10 +495,14 @@ export function Canvas() {
     if (c.x !== v.x || c.y !== v.y) setState("view", { x: c.x, y: c.y });
   });
 
-  // switching between pages and canvas keeps what was in front of you in place
+  // switching between pages and canvas keeps what was in front of you in place; a document
+  // just opened starts at its top instead (in the page view, with the whole first page edge)
+  let shownDoc = state.doc;
   createEffect(
     on(layout, (l, prev) => {
-      if (!prev || prev.pageView === l.pageView) return;
+      const opened = shownDoc !== state.doc;
+      shownDoc = state.doc;
+      if (!prev || prev.pageView === l.pageView || opened) return;
       const { w, h } = viewportSize();
       const { x, y, zoom } = state.view;
       const doc = prev.fromScene((w / 2 - x) / zoom, (h / 3 - y) / zoom);
