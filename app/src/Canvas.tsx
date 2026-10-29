@@ -1,7 +1,8 @@
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
 import { openRegionMenu } from "./menu";
 import { SHEET_GAP } from "./pages";
-import { forwardTyping, RegionBox } from "./Region";
+import { forwardTyping } from "./MathEditor";
+import { RegionBox } from "./Region";
 import { nearestRegion, stepRegion } from "./nav";
 import { editPlot } from "./Plot";
 import { Sheet } from "./Sheet";
