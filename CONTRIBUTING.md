@@ -30,6 +30,8 @@ Day to day:
 | To | Run |
 |---|---|
 | Test the engine | `cargo test --workspace --exclude quire-app` |
+| Test the UI's logic | `npm --prefix app test` (Vitest; `run test:watch` while you work) |
+| Try the UI end to end | `npm --prefix app run e2e` (Playwright in WebKit; starts `quire serve` and the dev server, or reuses running ones; once: `npx --prefix app playwright install webkit`) |
 | Work on the UI in a browser | `cargo run -p quire-cli -- serve` in one terminal, `npm --prefix app run dev` in another, then open http://localhost:5173 |
 | Run the desktop app while developing | `npm --prefix app run tauri dev` |
 | Build `Quire.app` / the installers | `npm --prefix app run tauri build` (add `-- --bundles app` for just the macOS app) |
@@ -45,13 +47,14 @@ CI runs these on every push; run them first:
 cargo fmt --all --check
 cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
 cargo test --workspace --exclude quire-app
-cd app && npx tsc --noEmit
+cd app && npx tsc --noEmit && npm test && npm run e2e
 ```
 
 And:
 
 - **Engine changes come with tests**, next to the code they test (`#[cfg(test)] mod tests`). A test that shows what a user typed and what they should see is the most useful kind.
-- **UI changes are tried by hand**, in the browser setup above or the desktop app. Say in the pull request what you tried, and add a screenshot when something looks different.
+- **UI logic comes with tests** too: a `*.test.ts` next to the module (`src/pages.test.ts`). Behaviour a user sees end to end belongs in `app/e2e/smoke.spec.ts`.
+- **UI changes are also tried by hand**, in the browser setup above or the desktop app. Say in the pull request what you tried, and add a screenshot when something looks different.
 - **File-format changes** update `docs/02-file-format.md` and `schema/quire-1.schema.json` in the same change. Documents written by earlier versions must keep opening unchanged.
 - **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why.
 
