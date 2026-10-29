@@ -1,5 +1,6 @@
 // Quire ▸ Settings… (⌘,): app-wide preferences and the defaults for new documents.
 import { onCleanup, onMount, Show } from "solid-js";
+import { useModal } from "./a11y";
 import { directPdf } from "./export";
 import { Check, Field, LANGS, Num, Section, Select, Text } from "./Inspector";
 import { type CanvasPattern, type Prefs, prefs, resetPrefs, setPref, setSettingsOpen, settingsOpen, type Theme } from "./settings";
@@ -26,11 +27,13 @@ function Dialog() {
   onMount(() => window.addEventListener("keydown", onKey, true));
   onCleanup(() => window.removeEventListener("keydown", onKey, true));
   const toggle = (key: keyof Prefs) => (on: boolean) => setPref(key, on as never);
+  let el!: HTMLDivElement;
+  useModal(() => el);
   return (
     <div class="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="settings" role="dialog" aria-label="Settings">
-        <header>
-          <h2>Settings</h2>
+      <div class="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={el}>
+        <header role="none">
+          <h2 id="settings-title">Settings</h2>
           <button class="settings-close" onClick={close} aria-label="Close">
             ✕
           </button>

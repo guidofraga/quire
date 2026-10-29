@@ -1,5 +1,6 @@
 // Help ▸ Quire Help: a one-page quick reference.
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { useModal } from "./a11y";
 import { isMac } from "./api";
 
 export const [helpOpen, setHelpOpen] = createSignal(false);
@@ -73,6 +74,8 @@ const KEYS: Row[] = [
   [`${mod}K`, "command palette: commands, variables, symbols"],
   ["Tab / ⇧Tab", "next / previous region (editing: once the ? slots are filled)"],
   [`${alt}Arrows`, "select the nearest region that way; Enter edits, Esc leaves"],
+  ["F6 / ⇧F6", "between the toolbar, the format bar, the page and the inspector; Esc returns to the page"],
+  [isMac ? "⇧F10" : "Shift+F10", "the right-click menu of the selection"],
   [`${mod}click a name`, "go to its definition; the caret on a name highlights its uses"],
   [`${mod}F / ${alt}${mod}F`, "find / find and replace"],
   [isMac ? "⌘G / ⇧⌘G" : "F3 / Shift+F3", "next / previous match"],
@@ -137,16 +140,18 @@ function Dialog() {
   };
   onMount(() => window.addEventListener("keydown", onKey, true));
   onCleanup(() => window.removeEventListener("keydown", onKey, true));
+  let el!: HTMLDivElement;
+  useModal(() => el);
   return (
     <div class="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="settings help" role="dialog" aria-label="Quire Help">
-        <header>
+      <div class="settings help" role="dialog" aria-modal="true" aria-label="Quire Help" ref={el}>
+        <header role="none">
           <h2>Quick reference</h2>
           <button class="settings-close" onClick={close} aria-label="Close">
             ✕
           </button>
         </header>
-        <div class="settings-body help-body">
+        <div class="settings-body help-body" tabIndex={0} aria-label="Quick reference">
           <Part title="Writing">
             <Table rows={WRITING} />
           </Part>

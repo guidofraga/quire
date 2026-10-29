@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
-import { openRegionMenu } from "./menu";
+import { openRegionMenu, openRegionMenuAt } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping } from "./MathEditor";
 import { RegionBox } from "./Region";
@@ -135,6 +135,25 @@ export function reveal(id: string) {
 }
 
 setRevealHandler(reveal);
+
+let sinkEl: HTMLTextAreaElement | undefined;
+
+/**
+ * Give the page the keyboard (F6, Esc from a toolbar): typing then starts a region. With
+ * nothing selected and no insertion point, the insertion point goes to the top left of
+ * what is in view.
+ */
+export function focusCanvas() {
+  if (!sinkEl || !viewportEl) return;
+  // back into the region being edited, where it was left
+  const editor = state.editing && viewportEl.querySelector<HTMLElement>(".region.editing :is(input, [contenteditable=true], .sheet-wrap)");
+  if (editor) return editor.focus({ preventScroll: true });
+  if (!state.caret && !state.selection.length && !state.editing) {
+    const rect = viewportEl.getBoundingClientRect();
+    setState({ caret: clientToDoc(rect.left + 48, rect.top + 48) });
+  }
+  sinkEl.focus({ preventScroll: true });
+}
 
 /** Select a region, scrolling only if it is out of view (keyboard moves). */
 export function selectInView(id: string) {
@@ -390,7 +409,7 @@ export function Canvas() {
   function onKeyDown(e: KeyboardEvent) {
     if (state.editing) return;
     const target = e.target as HTMLElement;
-    if (target !== sink && target.closest?.("input, textarea, button, select")) return;
+    if (target !== sink && target.closest?.("input, textarea, button, select, [role=dialog], [role=menu]")) return;
     const sel = state.selection;
     if (e.key === " " && !e.repeat) {
       spaceDown = true;
@@ -425,6 +444,14 @@ export function Canvas() {
     }
     if (e.key === "Escape") {
       setState({ selection: [], caret: null });
+      return;
+    }
+    // the context menu from the keyboard: for the selection, or the empty page at the insertion point
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      e.preventDefault();
+      const el = sel.length ? viewportEl!.querySelector(`[data-region="${sel[0]}"]`) : sink;
+      const box = (el ?? sink).getBoundingClientRect();
+      openRegionMenuAt(box.left + 8, box.bottom + 4, sel[0] ?? null);
       return;
     }
     // SMath: on empty space, Enter opens a line and Backspace/Delete close one
@@ -575,6 +602,8 @@ export function Canvas() {
     <div
       ref={viewportEl}
       class="viewport"
+      role="main"
+      aria-label="Document"
       classList={{ panning: panning(), "page-view": layout().pageView, [`pattern-${prefs.canvasPattern}`]: !layout().pageView }}
       style={gridStyle()}
       onPointerDown={onBackgroundDown}
@@ -642,12 +671,12 @@ export function Canvas() {
           {(h) => <div class="guide h" style={{ top: `${h()[0]}px`, left: `${h()[1]}px`, width: `${h()[2] - h()[1]}px` }} />}
         </Show>
         <Show when={caretScene()}>
-          <div class="caret" style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }} />
+          <div class="caret" aria-hidden="true" style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }} />
         </Show>
         <textarea
-          ref={sink}
+          ref={(el) => (sink = sinkEl = el)}
           class="key-sink"
-          aria-label="Type to insert"
+          aria-label="Page: type to insert math, or a quote mark for text"
           autocomplete="off"
           spellcheck={false}
           style={{ left: `${caretScene()?.[0] ?? 0}px`, top: `${caretScene()?.[1] ?? 0}px` }}
@@ -659,7 +688,7 @@ export function Canvas() {
         <div class="view-pill page-hint">{pageHint()}</div>
       </Show>
       <Show when={lost()}>
-        <button class="view-pill back-to-doc" onPointerDown={(e) => e.stopPropagation()} onClick={backToDocument}>
+        <button class="view-pill back-to-doc" aria-label="Back to your document" onPointerDown={(e) => e.stopPropagation()} onClick={backToDocument}>
           ↖ Back to your document
         </button>
       </Show>

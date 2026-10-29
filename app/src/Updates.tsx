@@ -81,7 +81,7 @@ export function UpdateBanner(props: { beforeRestart: () => Promise<boolean> }) {
             <strong>Quire {available()!.version}</strong> is available.
           </span>
           <Show when={available()!.notes}>
-            <button class="update-link" onClick={() => setShowNotes(!showNotes())}>
+            <button class="update-link" aria-expanded={showNotes()} onClick={() => setShowNotes(!showNotes())}>
               {showNotes() ? "Hide" : "What's new"}
             </button>
           </Show>

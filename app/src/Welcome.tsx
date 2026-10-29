@@ -1,5 +1,6 @@
 // The welcome screen at launch: a blank document, recent documents and templates.
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { useModal } from "./a11y";
 import { api, type TemplateInfo } from "./api";
 import { recentList } from "./recent";
 import { prefs, setPref, type Prefs } from "./settings";
@@ -43,6 +44,8 @@ function Screen(props: Props) {
   };
   onMount(() => window.addEventListener("keydown", onKey, true));
   onCleanup(() => window.removeEventListener("keydown", onKey, true));
+  let el!: HTMLDivElement;
+  useModal(() => el);
   const run = async (fn: () => Promise<unknown> | unknown) => {
     close();
     await fn();
@@ -60,7 +63,7 @@ function Screen(props: Props) {
       class="welcome-backdrop"
       onPointerDown={(e) => e.target === e.currentTarget && close()}
     >
-      <div class="welcome" role="dialog" aria-label="Welcome to Quire">
+      <div class="welcome" role="dialog" aria-modal="true" aria-label="Welcome to Quire" ref={el}>
         <div class="welcome-head">
           <div class="welcome-title">Quire</div>
           <div class="welcome-sub">Engineering calculations with live math, units, plots and reports</div>
@@ -69,14 +72,14 @@ function Screen(props: Props) {
           <section>
             <h3>Start</h3>
             <button class="welcome-item primary" onClick={close} autofocus>
-              <span class="welcome-icon">＋</span>
+              <span class="welcome-icon" aria-hidden="true">＋</span>
               <span>
                 <b>Blank document</b>
                 <small>Click anywhere on the page and type</small>
               </span>
             </button>
             <button class="welcome-item" onClick={() => void run(props.openDialog)}>
-              <span class="welcome-icon">⌘O</span>
+              <span class="welcome-icon" aria-hidden="true">⌘O</span>
               <span>
                 <b>Open…</b>
                 <small>A Quire document from your computer</small>
@@ -87,7 +90,7 @@ function Screen(props: Props) {
               <For each={recent}>
                 {(path) => (
                   <button class="welcome-item" title={path} onClick={() => void run(() => props.openPath(path))}>
-                    <span class="welcome-icon doc">▤</span>
+                    <span class="welcome-icon doc" aria-hidden="true">▤</span>
                     <span>
                       <b>{nameOf(path)}</b>
                       <small>{folderOf(path)}</small>
@@ -102,7 +105,7 @@ function Screen(props: Props) {
             <For each={templates() ?? []} fallback={<p class="welcome-empty">Loading…</p>}>
               {(t) => (
                 <button class="welcome-item" onClick={() => void openTemplate(t)}>
-                  <span class="welcome-icon doc">{t.builtin ? "◧" : "★"}</span>
+                  <span class="welcome-icon doc" aria-hidden="true">{t.builtin ? "◧" : "★"}</span>
                   <span>
                     <b>{t.name}</b>
                     <small>{t.description || "Your template"}</small>
