@@ -1,0 +1,23 @@
+{
+  "format": "quire/1",
+  "meta": { "title": "Calculus", "authors": ["Calculus I"] },
+  "settings": { "display": { "decimals": 4 } },
+  "styles": { "numbering": { "headings": "1.1" } },
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
+    "footer": { "left": "{title}", "right": "{page} / {pages}", "color": "#8a8f98" }
+  },
+  "regions": [
+    { "id": "c00", "kind": "text", "at": [0, 0], "text": "{.title}\n# Stationary points of a cubic" },
+    { "id": "c01", "kind": "text", "at": [0, 54], "width": 640, "text": "Worked symbolically with →, the way you would on paper: the derivative, where it is zero, the area under the curve, and a limit and a series for good measure." },
+    { "id": "c02", "kind": "math", "at": [0, 117], "expr": "f(x):=x^3-3*x" },
+    { "id": "c03", "kind": "math", "at": [0, 162], "expr": "diff(f(x), x)", "show": "symbolic" },
+    { "id": "c04", "kind": "math", "at": [0, 207], "expr": "solve(diff(f(x), x)==0, x)", "show": "symbolic", "note": "stationary points" },
+    { "id": "c05", "kind": "math", "at": [0, 261], "expr": "int(f(x), x, 0, 2)", "show": "symbolic", "note": "signed area from 0 to 2" },
+    { "id": "c06", "kind": "math", "at": [0, 324], "expr": "lim(sin(x)/x, x, 0)", "show": "symbolic" },
+    { "id": "c07", "kind": "math", "at": [306, 324], "expr": "series(e^x, x, 0, 4)", "show": "symbolic" },
+    { "id": "c08", "kind": "plot2d", "at": [0, 396], "size": [520, 250], "series": [{ "y": "f(x)", "x": "x", "range": "-2..2", "label": "f(x)" }, { "y": "3*x^2-3", "x": "x", "range": "-2..2", "label": "f′(x)" }], "grid": true, "extrema": true, "caption": { "text": "The cubic and its derivative" } }
+  ]
+}

@@ -43,6 +43,7 @@ Day to day:
 | Test the engine | `cargo test --workspace --exclude quire-app` |
 | Test the UI's logic | `npm --prefix app test` (Vitest; `run test:watch` while you work) |
 | Try the UI end to end | `npm --prefix app run e2e` (Playwright in WebKit; once: `npx --prefix app playwright install webkit`) |
+| Retake the README's pictures | `npm --prefix app run screenshots` (writes `docs/images`) |
 | Check PDF export (macOS) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored` |
 | Build `Quire.app` / the installers | `npm --prefix app run tauri build` (add `-- --bundles app` for just the macOS app) |
 | Try one expression | `cargo run -q -p quire-cli -- calc "2 m + 30 cm" --in mm` |

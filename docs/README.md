@@ -4,6 +4,7 @@ For people working on Quire. Start with [CONTRIBUTING.md](../CONTRIBUTING.md) to
 
 | Page | Read it when |
 |---|---|
+| [Features](features.md) | You want to know everything Quire does today, by area |
 | [01 — Architecture](01-architecture.md) | You want to know why Quire is built this way: Tauri and Rust, the engine's layers, rendering, the roadmap |
 | [02 — File format](02-file-format.md) | You change what a document or notebook holds, or read `.quire` files from other tools |
 | [03 — Code map](03-code-map.md) | You are looking for where something lives, or how an edit becomes a result on the page |

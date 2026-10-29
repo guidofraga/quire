@@ -17,7 +17,11 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 
 Run the PDF test when you change printing, `export.ts`, `print.rs` or `pdf.rs`; CI has no macOS desktop.
 
-## 2. Writing tests
+## 2. The README's pictures
+
+`npm --prefix app run screenshots` (`app/screenshots/`) opens the documents in `docs/examples/` and the built-in templates in the real app, in WebKit against `quire serve`, and writes `docs/images/`. It isn't part of `npm run e2e`. Run it after a visible change to the app and commit the pictures that changed.
+
+## 3. Writing tests
 
 - **Say what a user typed and what they should see.** `M := q*L^2/8 =` with `q := 12 kN/m` and `L := 6 m` shows `54 kN·m`: that test documents behaviour and catches regressions in parsing, units and display at once.
 - **Test with units.** Most engine bugs hide in dimensions: a fit of kN against m, an ODE with t in seconds.
@@ -26,7 +30,7 @@ Run the PDF test when you change printing, `export.ts`, `print.rs` or `pdf.rs`; 
 - **A bug fix starts with a failing test.**
 - Tests that touch the disk work in a fresh temporary folder and check what lands there, not only what the screen shows (`notebook.spec.ts`).
 
-## 3. End-to-end tests
+## 4. End-to-end tests
 
 `npm run e2e` starts `quire serve` and the Vite dev server (or reuses ones already running), then drives WebKit, the engine of the macOS app. Once per machine: `npx --prefix app playwright install webkit`.
 
@@ -46,7 +50,7 @@ A test that fails sometimes is a bug, in the test or in the app. Reproduce it wi
 - measuring colours mid-animation (the axe tests emulate `reducedMotion: "reduce"`);
 - CI's Linux WebKit reporting text colours mid-update right after a document opens (the `audit()` helper in `e2e/axe.ts` re-measures before failing, so only problems that persist fail).
 
-## 4. Results that must not change
+## 5. Results that must not change
 
 `crates/quire-cli/tests/check.rs` evaluates each bundle in `tests/fixtures` and compares every result with its `results.json`, whose values were worked out by hand or in another program. When a change alters what an existing worksheet shows, the test fails; if the new result is right, say so and why in the commit, and update `results.json`.
 
@@ -66,7 +70,7 @@ The test is a ratchet. `FLOOR` in the file holds, for each worksheet, the number
 
 `smath_robustness.rs` feeds the importer broken input: hostile fixtures, every corpus file cut at many positions, and random mutations. Set `QUIRE_SMATH_PANIC_DIR` to save each input that panics, for reproduction.
 
-## 5. Before you push
+## 6. Before you push
 
 ```bash
 cargo fmt --all --check

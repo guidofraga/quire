@@ -1,139 +1,140 @@
-# Quire — a modern successor to SMath Studio
+<p align="center">
+  <img src="app/app-icon.svg" width="112" height="112" alt="Quire's icon: a stack of paper sheets on a blue tile">
+</p>
 
-**[Try Quire in your browser](https://guidofraga.github.io/quire/)**: nothing to install. Write a calculation, then **Share** gives a link that opens it, live and editable, in anyone's browser.
+<h1 align="center">Quire</h1>
 
-| | |
+<p align="center">
+  <b>Calculations you can read: live maths with units, on paper you can print.</b>
+</p>
+
+<p align="center">
+  Write maths the way you would on paper, and Quire works out every result as you type, units
+  included. For engineers writing calculation reports, and for students and teachers keeping
+  course notes. It opens SMath Studio worksheets, runs on macOS, Windows and Linux, and in the browser.
+</p>
+
+<p align="center">
+  <a href="https://github.com/guidofraga/quire/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/guidofraga/quire/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/guidofraga/quire/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/guidofraga/quire?style=flat-square&label=release&color=3a5f9f"></a>
+  <a href="#license"><img alt="License: engine MIT or Apache-2.0, app GPL-3.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0%20%C2%B7%20GPL--3.0-3a5f9f?style=flat-square"></a>
+  <img alt="Runs on macOS, Windows, Linux and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20Web-3a5f9f?style=flat-square">
+  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-3a5f9f?style=flat-square&logo=rust&logoColor=white">
+</p>
+
+<p align="center">
+  <a href="https://guidofraga.github.io/quire/"><img alt="Try Quire in your browser" src="https://img.shields.io/badge/Try%20Quire%20in%20your%20browser-3a5f9f?style=for-the-badge" height="40"></a>
+</p>
+
+<p align="center">
+  <a href="#a-tour">A tour</a> ·
+  <a href="#why-quire">Why Quire</a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#download">Download</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="#contributing">Contributing</a> ·
+  <a href="#license">License</a>
+</p>
+
+<br>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+    <img src="docs/images/hero.png" alt="Quire showing a calculation report for a simply supported steel beam on an A4 page: the span, modulus and section properties with their units, a table of loads whose design column is worked out by formulas, the design moment M_d = 47.587 kN·m as a typeset fraction, and the top of a plot of the bending moment. The toolbar reads 2 checks." width="100%">
+  </picture>
+  <br><sub><b>Simply supported beam</b>, one of Quire's templates. <a href="https://guidofraga.github.io/quire/?open=https://raw.githubusercontent.com/guidofraga/quire/main/crates/quire-service/templates/beam.json">Open it in your browser</a> and change the span.</sub>
+</p>
+
+## A tour
+
+Every picture is a real document, photographed by the app's own test setup (`npm --prefix app run screenshots`). The links open the same document in your browser, ready to edit.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/units.png" alt="A physics note on projectile motion: the time of flight 3.28 s, range 62.76 m and highest point 13.17 m worked out from a launch speed in m/s and an angle in degrees, the path as a function y(x), and a plot of the ball's path with its highest point marked" width="100%"><p align="center"><sub><b>Units everywhere.</b> Results come out in the units you work in, and adding a length to a force is an error that says so. <a href="https://guidofraga.github.io/quire/?open=https://raw.githubusercontent.com/guidofraga/quire/main/docs/examples/projectile.quire/document.json">Open it</a></sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/symbolic.png" alt="A calculus note: the derivative of x³ − 3x worked out symbolically as 3x² − 3, the stationary points −1 and 1, a definite integral, a limit and a Taylor series, and a plot of the cubic and its derivative" width="100%"><p align="center"><sub><b>Symbolic maths.</b> Derivatives, integrals, equations, limits and series with →, written as on paper. <a href="https://guidofraga.github.io/quire/?open=https://raw.githubusercontent.com/guidofraga/quire/main/docs/examples/calculus.quire/document.json">Open it</a></sub></p></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/tables.png" alt="A load combinations sheet: a table of characteristic actions in kN, and a table of partial factors whose design column and governing combination are worked out by spreadsheet formulas, read back into the maths below" width="100%"><p align="center"><sub><b>Spreadsheet tables.</b> Cells hold values with units and formulas like <code>=SUM(B2:B4)</code>, and the maths reads them back. <a href="https://guidofraga.github.io/quire/?open=https://raw.githubusercontent.com/guidofraga/quire/main/crates/quire-service/templates/combinations.json">Open it</a></sub></p></td>
+<td width="50%" valign="top"><img src="docs/images/notebooks.png" alt="A notebook called Physics 101 in the sidebar, with coloured sections for Mechanics, Statics, Maths review and Lab reports; the note Projectile motion is open, and the title bar reads Mechanics › Projectile motion" width="100%"><p align="center"><sub><b>Notebooks.</b> A course's notes in sections that save themselves, as in OneNote or Obsidian. A notebook is just a folder. (Desktop app)</sub></p></td>
+</tr>
+</table>
+
+## Why Quire
+
+- **Units everywhere.** Type `12 kN/m` and `6 m`, and the moment comes out in kN·m. A wrong unit is an error, not a wrong answer.
+- **Results you can trust.** Every change re-evaluates the whole document in well under a millisecond, and the test suite checks real reports against results worked out independently.
+- **It reads like paper.** Fractions, roots and matrices are typeset as you type, next to text, tables and plots, on pages that print and export to PDF with bookmarks and links.
+- **Your files.** Documents are readable JSON that diffs well in Git; a notebook is an ordinary folder. Nothing is locked in, and every document opens in later versions.
+- **Opens SMath Studio worksheets.** `.sm` files open as Quire documents and compute the same results.
+- **Share a link.** **Share** puts a whole document in a link that opens, live and editable, in anyone's browser. Nothing is uploaded: the document travels inside the link.
+- **Free and open.** The engine is MIT or Apache-2.0, the app GPL-3.0.
+
+## What it does
+
+| Area | Highlights |
 |---|---|
-| [docs/01-architecture.md](docs/01-architecture.md) | Platform choice (Tauri 2 + Rust core), CAS/units/evaluation engine, rendering engine, crate layout, roadmap |
-| [docs/02-file-format.md](docs/02-file-format.md) | The `.quire` document format: bundle layout, schema, linear math syntax, canonical serialization |
-| [docs/03-code-map.md](docs/03-code-map.md) | Where the code is and how an edit becomes a result on the page |
-| [docs/04-guidelines.md](docs/04-guidelines.md) | How code, styles and the app's words are written; accessibility; recipes for common changes |
-| [docs/05-testing.md](docs/05-testing.md) | Test layers, fixtures, end-to-end tests |
-| [docs/06-releasing.md](docs/06-releasing.md) | How a version is built, published and offered by the updater |
-| [schema/quire-1.schema.json](schema/quire-1.schema.json) | JSON Schema (draft 2020-12) for `document.json` |
-| [crates/quire-smath](crates/quire-smath) | SMath `.sm` → Quire importer (the reference mapping; `quire import`) |
+| **Maths** | Units without markers, functions, matrices, `sum`, `int`, `diff`, `solve` (roots, systems), ODEs (`rkfixed`), fitting and statistics, built-in constants, errors that say what is wrong |
+| **Symbolic** | `→` for derivatives, integrals (substitution, by parts, partial fractions), `solve` up to degree four, limits, series, `factor`, `expand`, `simplify` |
+| **Documents** | Rich text with live maths in sentences, spreadsheet tables, 2D plots, images, numbered headings and captions, cross-references, contents lists, summary of checks |
+| **Pages** | A free canvas or A4/Letter pages with headers and footers, PDF export with bookmarks and links, templates |
+| **Notes** | Notebooks of sections and notes, search across notes, autosave (desktop app) |
+| **Sharing** | The web version, documents in links, copy and paste to Word and Google Docs as equations, LaTeX, CSV |
+| **Accessibility** | The whole app works from the keyboard and with VoiceOver; maths is read as words |
 
-## Desktop app
+Every feature in detail: [docs/features.md](docs/features.md).
 
-[app/](app) is the Tauri 2 desktop editor (GPL-3.0-or-later): a free-form canvas with live evaluation.
+## Download
 
-**Writing**
-- **Click anywhere and type.** Math is the default: `L:=2 m` defines L as 2 metres (units need no marker). Right after a number a unit name is always the unit, so `10 m` stays metres even if you defined `m := 25 kg`; anywhere else your variable wins (`m*g`, `10*m`), and a note under the line offers the other reading. `:` becomes `:=`, a trailing `=` shows the result, Ctrl+G turns the letter before the cursor into Greek.
-- **A word followed by a space becomes text** (`The span…`); typing `:` or `=` right after a single word turns it back into a definition.
-- Text regions are rich text: paragraph styles (Title, Heading 1–3), bold, italic, underline, strikethrough, super/subscript, colour, size, alignment and justification, bulleted and numbered lists, and **live math inside sentences** (⇧⌘M, `\math`, or `$t = $`).
-- **LaTeX shortcuts, Word-style:** `\Delta`, `\varepsilon`, `\therefore`, `\sqrt`, `\int`… convert on space or punctuation, with a completion list as you type. They work in math and in text. Structures insert templates; Tab and ⇧Tab move between their `?` slots.
-- **Equation ribbon:** a Structures gallery (fractions, scripts, radicals, integrals, large operators, calculus, matrices, functions, with typeset previews) and a Symbols library (Greek, operators, arrows, logic and sets, constants, units). Click to insert at the caret.
-- **Results in the units you work in:** with `q := 12 kN/m` and `L := 6 m`, `M := q*L^2/8 =` shows `54 kN·m`, not `54000 J`; stresses come out in MPa once you use MPa, areas in cm² when the dimensions are in cm. Type a unit after `=` to choose it (`M = kgf*m`), as in SMath: typing `=` lists the units that fit with the result in each, and clicking the unit of any result switches it. A unit of another kind keeps the rest in SI (a force shown in `kg` reads `kg·m/s²`). Inspector ▸ Results switches a document back to coherent SI, and chooses the notation: automatic, engineering (12.5×10³) or SI prefixes (12.5 kN, 4 mm, 30 cm), significant figures, and digit grouping (12 500). Right-click a result for More / Fewer Decimals.
-- **Functions and solving:** `f(x) := x^2`, `f(5) =`, `int(f(x), x, 0, 1) =`, `f(a) =` shows the body in terms of `a`. `solve(k*x == F, x, 0 m, 1 m)` finds a root in a range (or near the current value with `solve(…, x)`), `solve([x^2 + y^2 == 4 m^2; x*y == 1 m^2], [x; y])` solves nonlinear systems from the current values (Newton), `lsolve(A, b)` linear ones. `rkfixed(y0, t0, t1, n, D)` and `Rkadapt(…)` integrate ODEs y′ = D(t, y) with units on t and every y. `slope`, `intercept`, `line`, `corr`, `polyfit(vx, vy, k)` and `linfit(vx, vy, F)` fit data (the slope of kN against m is in kN/m); `linterp(xs, ys, x)` and `interp(cspline(xs, ys), xs, ys, x)` interpolate tables; `mean`, `median`, `stdev`/`var` (population), `Stdev`/`Var` (sample), `percentile`, `sort`, `norm`, `dot`, `cross` work on vectors; `Ceil(1.23 m, 5 cm)` rounds to a multiple.
-- **Symbolic math** with `→` (type `->` or Ctrl+. at the end of a line, as in SMath): `diff(M(x), x) →` gives `q·(L − 2x)/2`, `int(M(x), x, 0, L) →` gives `L³·q/12`. Results are simplified to short textbook forms (like terms collected, fractions cancelled: `(x² − 1)/(x − 1) →` gives `x + 1`), and `factor`, `expand`, `simplify` and `subs` reshape expressions. `solve` handles polynomials up to degree four with exact roots, equations with fractions, `exp(k·t) == 2` (`ln(2)/k`) and linear systems (`solve([A + B == P; B·L == P·a], [A; B])`); `int` knows substitution, integration by parts, partial fractions and infinite limits; `series(f, x, x0, n)` gives Taylor polynomials and `lim(f, x, a)` limits, with L'Hôpital's rule. Names stay symbols (taken as positive) and your own functions are expanded into their formulas.
-- **Spreadsheet tables** (Insert ▸ Table, ⌥⌘T, or paste cells copied from Excel):
-  - Cells hold text, values with units (`4.5 kN/m`, `1,5`, `15%`) or formulas like `=B2*C2`, `=SUM(D2:D4)` and `=IF(B5<=C5, "OK", "FAIL")`.
-  - About 50 spreadsheet functions: `IF`, `SUMIF`, `VLOOKUP`, `INDEX`/`MATCH`, `ROUND`… Formulas also read the worksheet's variables (`=σ`) and units (`=B2 + 5 kN`).
-  - Editing works like a spreadsheet: click a cell while typing a formula to insert its reference, ⌘D fills down, rows and columns are inserted from the right-click menu, and copy and paste use tab-separated cells.
-  - A named table is a matrix for the math below it (`loads[4, 4]`); other tables read its cells as `loads!B2`.
-  - **CSV files:** Insert ▸ Table from CSV… reads comma, semicolon or tab-separated files (as Excel writes them in any locale) into a table named after the file; right-click a table ▸ Export as CSV… writes its values as shown, with decimal commas and `;` for documents in languages that use them.
-- **2D plots** (Insert ▸ Plot, ⌥⌘P): functions over a range (`M(x)` for `x` from `0 m` to `L`) and data vectors, several series on one plot, axes in the units you work in (m, kN·m), hover to read values, maximum and minimum marked on request, SMath's marker styles and animations (play, pause, a frame slider) carried over from imported worksheets. Plots update with the worksheet and print as vector graphics; select a function first and Insert ▸ Plot plots it over a sensible range.
-- **Errors that help:** `cannot add a length (m) and a force (N)`; `x is defined further down` when a definition sits below its use; `did you mean A_net?` for a near miss and `did you mean the unit kN?` for `KN`.
-- **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
-- **Find and replace** (⌘F, ⌥⌘F) across math, text, notes, captions and area titles, with match case and whole names; Replace All is one undo step.
-- Right-click a math region to **Copy Result** (`800 cm²`) or **Copy as LaTeX** for papers and Word's equation editor.
-- **Keyboard and screen readers:** everything works without a mouse. Tab and ⇧Tab move between regions, Enter edits, ⇧F10 opens the right-click menu; F6 moves between the toolbar, the format bar, the page and the inspector, arrows move inside menus and galleries, and Esc closes them and goes back. With VoiceOver, math is read as words ("M is defined as q times L squared over 8, equals 54 kilonewton metres"), tables being edited are grids with named cells (B2), and messages and errors are spoken. Quire follows Reduce motion and Increase contrast, and meets WCAG AA contrast in light and dark.
-- `~` types a global definition `≡`, as in SMath. **Help ▸ Quire Help** (⇧⌘/, F1) is a one-page quick reference.
-- Click a selected box again (or double-click it) to edit with the caret where you clicked. With a text box selected but not being edited, the ribbon formats the whole box.
+Installers for Windows (`.msi`, `.exe`), macOS (`.dmg`, Apple silicon and Intel) and Linux (`.AppImage`, `.deb`, `.rpm`) are on the [latest release](https://github.com/guidofraga/quire/releases/latest). Quire then updates itself in one click (with the `.deb` or `.rpm`, through your package manager).
 
-**Layout**
-- Drag to move (9 px grid, **smart guides** to other regions' edges and centres; hold ⌘ for free movement), drag handles to resize text width or images.
-- Select several (Shift-click or drag a frame) and **align** left/centre/right/top/middle/bottom or **distribute** them — format bar, Arrange menu or right-click.
-- Copy, cut, paste and duplicate regions (⌘C/⌘X/⌘V/⌘D); paste or drop images straight onto the page.
-- **Copy and paste work across windows and documents**, and still work after Quire restarts. Images come along too.
-  - **Pasting into Word, Google Docs or Pages:** text keeps its formatting, math arrives as an equation with its result (MathML), and tables arrive as tables of the values shown. Plain-text apps get the math lines (`M:=q*L^2/8 =`) and the text; spreadsheets get the cells.
-  - **Pasting from other apps:** each line of text becomes a region, math or text by the same rules as typing. LaTeX becomes Quire math, both on the page and inside a line you are editing (`$M = \frac{q L^2}{8}$` → `M := q*L^2/8`, `\sqrt{x}`, `x_{net}` → `x.net`, `\alpha`). A table copied from a web page, Word or Google Sheets becomes a spreadsheet table.
-- When a result grows (a fraction, a matrix, an error note), what is below it moves down instead of being covered.
+The installers aren't code-signed yet, so the first launch shows a warning:
 
-**In the browser**
-- **[guidofraga.github.io/quire](https://guidofraga.github.io/quire/)** is Quire in a web page: the same engine, compiled to WebAssembly, running on the visitor's own computer. There is no server and no account.
-- **Share** (in the toolbar, and File ▸ Share Link… in the desktop app) makes a link that carries the whole document. Whoever opens it can change the numbers and see every result update; nothing is uploaded, because the document travels inside the link. Images are left out of links: send the `.quirez` file for those.
-- In the browser, Save downloads a `.quirez` and Open reads one; the address bar always holds the document as it is now, so reloading loses nothing. `…/quire/?open=<url>` opens a `.quirez` or `document.json` from any public address (a GitHub repository or Gist, say).
-- Notebooks, your own templates and finished PDF reports need the desktop app.
+- **macOS:** open Quire once and dismiss the message, then choose **System Settings ▸ Privacy & Security ▸ Open Anyway** and confirm.
+- **Windows:** in the SmartScreen dialog, choose **More info ▸ Run anyway**.
+- **Linux:** make the AppImage executable first (`chmod +x Quire_*.AppImage`), or install the `.deb` or `.rpm`.
 
-**Notebooks**
-- **A notebook keeps your notes together**, as in OneNote, Notion or Obsidian: File ▸ New Notebook… (or Open Notebook…, ⇧⌘O) shows a sidebar of sections and notes. Notes save themselves as you write; there is no Save and nothing to lose.
-- **⌘N** adds a note to the section you're in and asks for its name; **⌥⌘N** adds a section. Drag notes and sections to reorder them or move them between sections, give sections a colour from the right-click menu, and double-click or press F2 to rename. Click the title at the top of the window to rename the open note.
-- **Search every note** with ⇧⌘F: titles and content, ignoring case and accents (*calculo* finds *Cálculo*), with the matching line shown; click a result to go to that place. ⌘K also goes to any note by name.
-- **It's just a folder.** Sections are subfolders and notes are ordinary `.quire` documents named after their titles, so a notebook syncs through iCloud, Dropbox or Git, and any note still opens on its own. Deleted notes go to the system Trash. ⌘\ hides the sidebar; Quire reopens the notebook you were in.
+Or skip the download: [Quire runs in your browser](https://guidofraga.github.io/quire/).
 
-**Document**
-- **Pages** view (⇧⌘P): paper sheets with backgrounds, headers and footers with `{page}`, `{pages}`, `{date}`, `{time}`, `{file}`, `{title}`, `{author}`, `{company}` fields, regions kept whole across page breaks. Pages stay centred and in view, with "Page 2 of 5" while you scroll. The document ends where its content ends: content that runs past a page starts the next one, and **+ New page** under the last page adds a blank one with the insertion point at its top. **Canvas** is the free, endless sheet: it shows the printable width and where pages will break (exactly as in the page view and the PDF), has a dots, grid, ruled or plain background (Settings ▸ Appearance), and offers a way back when you scroll off into empty space. Switching views keeps your place; click the zoom percentage for common sizes, Fit Page Width and Fit Whole Page.
-- Auto-numbered headings, figure and table captions, and always-current **Table of Contents, List of Figures, List of Tables** (with page numbers) from the Insert menu.
-- **Cross-references** (Insert ▸ Cross-Reference…, ⇧⌘R, while writing text): "see Figure 2", "Table 1", "Section 2.1" or "page 4", renumbered as the document changes; click one to go there.
-- **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
-- **File ▸ Export as PDF…** (⌘E) writes exactly the page view with selectable text, straight to the file you choose, on macOS and Linux, and finishes it as a report: bookmarks for the numbered headings ("2.1 Bending"), cross-references and Contents / List of Figures / List of Tables / Summary of Checks entries that jump to their target, the document's title, authors, company, keywords and language in the PDF's properties, and page numbers in the viewer that match the footer. Web links stay clickable on macOS; on Linux they are printed as plain text. On Windows Export as PDF… opens the system print dialog, where you choose Save as PDF. Images are embedded at the resolution set in Settings ▸ PDF export. **Print…** (⌘P) opens the print dialog on every platform.
-- **Templates:** File ▸ New from Template… (⇧⌘N) starts from a calculation report, a beam check or a load-combination sheet, or from your own: File ▸ Save as Template… keeps page setup, headers, styles, regions and images.
-- **Opening SMath files:** File ▸ Open accepts SMath Studio `.sm` worksheets, and so does double-clicking one. Each opens as a new unsaved document: Save asks for a new name, and the `.sm` file is never changed. `quire import file.sm [out.quire]` does the same on the command line and writes a `.quire` bundle.
-- **Files:** a document is a `.quire` folder (shown as a single file in the Finder) or a `.quirez` single file, which is what Windows and Linux save and what to send by email. Both open by double-click; **File ▸ Open Recent** lists the last ten; unsaved work is kept aside and offered back if Quire quits unexpectedly.
-- Every change re-evaluates the whole worksheet in Rust (well under a millisecond for typical documents). Math is drawn as MathML for now; a dedicated Rust typesetter comes later.
+## Build from source
 
-Run it during development:
+You need Rust (`rustup` installs it) and Node 22; [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
 
 ```bash
-npm --prefix app install
+npm --prefix app ci
 ```
 
 ```bash
 npm --prefix app run tauri dev
 ```
 
-Build `Quire.app` (in `target/release/bundle/macos/`):
+The engine also works on the command line:
 
 ```bash
-npm --prefix app run tauri build -- --bundles app
+cargo run -q -p quire-cli -- calc "2 m + 30 cm" --in mm
 ```
 
-To work on the UI in a browser, run `quire serve` (the same backend over localhost) and `npm --prefix app run dev`, then open `http://localhost:5173/?open=<path to a .quire>`.
-
-## Engine
+`quire eval <doc>` prints a document's calculations, `quire check <doc>` compares them with known results, and `quire import file.sm out.quire` converts an SMath worksheet.
 
 | Crate | What it does |
 |---|---|
-| [quire-ast](crates/quire-ast) | Linear math syntax: lexer, parser, canonical printer |
-| [quire-units](crates/quire-units) | Dimensions (rational exponents), unit table with SI prefixes, kgf/tonnef/psi/°C… |
-| [quire-eval](crates/quire-eval) | Numeric kernel, built-in functions, `sum`/`int`/`diff`/`for`/`if`, worksheet semantics, spreadsheet tables, plot sampling and symbolic math (`→`) |
-| [quire-doc](crates/quire-doc) | Loads `.quire` bundles |
-| [quire-service](crates/quire-service) | What the app asks the engine: evaluated views of a document, rendered text, templates |
-| [quire-cli](crates/quire-cli) | The `quire` command, and `quire serve` for working on the UI in a browser |
+| [quire-ast](crates/quire-ast) | Linear maths syntax: lexer, parser, canonical printer |
+| [quire-units](crates/quire-units) | Dimensions and the unit table |
+| [quire-eval](crates/quire-eval) | The engine: evaluation, worksheets, spreadsheet tables, plots, symbolic maths |
+| [quire-doc](crates/quire-doc) | Loading `.quire` and `.quirez` documents |
+| [quire-smath](crates/quire-smath) | Importing SMath Studio worksheets |
+| [quire-service](crates/quire-service) | What the app asks the engine for; templates; notebooks |
+| [quire-web](crates/quire-web) | The engine as WebAssembly, for the web version |
+| [quire-cli](crates/quire-cli) | The `quire` command, and `quire serve` for UI work in a browser |
 
-Installers for Windows (.msi/.exe), Linux (.AppImage/.deb/.rpm) and macOS (.dmg) are built by the **Release** GitHub Actions workflow: push a tag such as `v0.1.0`, or run it from the Actions tab, and it attaches them to a draft release. They aren't code-signed yet, so the first launch shows a warning:
-
-- **macOS:** open Quire once and dismiss the "can't be verified" message, then choose **System Settings ▸ Privacy & Security ▸ Open Anyway** and confirm. Since macOS Sequoia (15), right-click ▸ Open no longer skips the check.
-- **Windows:** in the SmartScreen dialog, choose **More info ▸ Run anyway**.
-- **Linux:** no warning. Make the AppImage executable first (`chmod +x Quire_*.AppImage`), or install the `.deb` or `.rpm`.
-
-From 0.1.8 on, Quire tells you when a new version is out and updates itself in one click (or choose Quire ▸ Check for Updates…). Updates are signed and checked before they install. With the `.deb` or `.rpm`, update through your package manager instead.
-
-Build and try it (needs Rust; `rustup` installs it):
-
-```bash
-cargo build --release
-```
-
-```bash
-./target/release/quire calc "2 'm + 30 'cm" --in mm
-```
-
-Other commands: `quire eval <doc>` prints the full calculation listing; `quire fmt --check <path>` verifies that every expression round-trips. Run the test suite with `cargo test`.
-
-Convert any SMath file:
-
-```bash
-./target/release/quire import "path/to/file.sm" out.quire
-```
+How it all fits together: [docs/03-code-map.md](docs/03-code-map.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks to run and commit and pull-request conventions, and [docs/](docs/README.md) for the code map, guidelines, testing and releasing.
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the checks to run and how pull requests work, and [docs/](docs/README.md) has the architecture, file format, guidelines, testing and releasing.
 
-## Licensing
+## License
 
-- Engine crates and the file-format spec and schema: **MIT OR Apache-2.0** (`LICENSE-MIT`, `LICENSE-APACHE`).
-- Desktop app (`app/`: the Tauri shell, canvas and editor): **GPL-3.0-or-later** (`app/LICENSE`).
-- Engine crates never depend on GPL code, so they can be used anywhere.
+- The engine crates, the file-format spec and the schema: **MIT OR Apache-2.0** ([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)). They never depend on GPL code, so they can be used anywhere.
+- The desktop app (`app/`): **GPL-3.0-or-later** ([app/LICENSE](app/LICENSE)).
