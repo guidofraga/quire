@@ -47,6 +47,13 @@ pub fn stage(bytes: Vec<u8>, ext: &str) -> Result<String> {
     Ok(name)
 }
 
+/// Stage an asset under the name it already has inside a bundle (a `.quirez` opened in memory).
+pub(crate) fn stage_named(name: &str, bytes: Vec<u8>) -> Result<()> {
+    crate::checked_asset(name)?;
+    STAGED.lock().expect("asset staging lock").insert(name.to_string(), bytes);
+    Ok(())
+}
+
 pub fn stage_file(path: &Path) -> Result<String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_string();
     stage(std::fs::read(path)?, &ext)

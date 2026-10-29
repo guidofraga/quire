@@ -532,13 +532,23 @@ pub fn duplicate(root: &Path, rel: &str) -> Result<String> {
     Ok(new_rel)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn to_trash(path: &Path) -> std::result::Result<(), trash::Error> {
+    trash::delete(path)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn to_trash(_: &Path) -> std::result::Result<(), &'static str> {
+    Err("there is no Trash in a browser")
+}
+
 /// Move a section or note to the system's Trash, where it can be put back.
 pub fn trash(root: &Path, rel: &str) -> Result<()> {
     let path = inside(root, rel)?;
     if rel.is_empty() || !path.exists() {
         return Err(err(format!("there is no {rel} in the notebook")));
     }
-    trash::delete(&path).map_err(|e| err(format!("could not move {} to the Trash: {e}", file_name(rel))))?;
+    to_trash(&path).map_err(|e| err(format!("could not move {} to the Trash: {e}", file_name(rel))))?;
     let mut meta = read_meta(root);
     forget(&mut meta, rel);
     write_meta(root, &meta)

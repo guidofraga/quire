@@ -12,7 +12,7 @@ use serde_json::{Map, Value as Json};
 
 mod single;
 
-pub use single::{SINGLE_FILE_EXT, is_single_file, pack, read_entry, unpack};
+pub use single::{SINGLE_FILE_EXT, is_single_file, pack, read_bytes, read_entry, unpack, write_bytes};
 
 pub const FORMAT_MAJOR: &str = "quire/1";
 

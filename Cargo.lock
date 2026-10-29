@@ -2746,6 +2746,15 @@ name = "quire-units"
 version = "0.1.11"
 
 [[package]]
+name = "quire-web"
+version = "0.1.11"
+dependencies = [
+ "base64 0.22.1",
+ "quire-service",
+ "serde_json",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"

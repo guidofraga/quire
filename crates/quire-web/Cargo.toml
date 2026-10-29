@@ -1,0 +1,16 @@
+[package]
+name = "quire-web"
+description = "Quire's engine as WebAssembly, for the browser version"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+quire-service.workspace = true
+serde_json.workspace = true
+base64 = "0.22"

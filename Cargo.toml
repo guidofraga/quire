@@ -15,8 +15,18 @@ quire-eval = { path = "crates/quire-eval" }
 quire-doc = { path = "crates/quire-doc" }
 quire-service = { path = "crates/quire-service" }
 quire-cli = { path = "crates/quire-cli" }
+quire-web = { path = "crates/quire-web" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [profile.release]
 lto = "thin"
+
+# the browser engine (crates/quire-web): small to download, still fast
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

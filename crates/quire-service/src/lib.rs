@@ -13,7 +13,6 @@ mod text;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use base64::Engine;
 use quire_ast::{Expr, parse};
@@ -263,8 +262,21 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
     out
 }
 
+/// Milliseconds since an arbitrary start; the browser build has no clock here (its caller
+/// times the call instead).
+#[cfg(not(target_arch = "wasm32"))]
+fn now_ms() -> f64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1e3
+}
+
+#[cfg(target_arch = "wasm32")]
+fn now_ms() -> f64 {
+    0.0
+}
+
 fn run(doc: &Document, tables: bool) -> Evaluated {
-    let start = Instant::now();
+    let start = now_ms();
     let mut worksheet = Worksheet::new(settings_of(doc));
     let unit_errors = doc
         .units
@@ -273,7 +285,7 @@ fn run(doc: &Document, tables: bool) -> Evaluated {
         .collect();
     let inputs = math_inputs(doc, tables);
     let outcomes = worksheet.run(&inputs);
-    Evaluated { inputs, outcomes, worksheet, elapsed_ms: start.elapsed().as_secs_f64() * 1e3, unit_errors }
+    Evaluated { inputs, outcomes, worksheet, elapsed_ms: now_ms() - start, unit_errors }
 }
 
 /// Evaluate the math regions of a document (what `quire eval`/`check` use).
@@ -756,6 +768,41 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+/// A document held in memory, for the browser build: a `.quirez` (its images are staged, so
+/// `read_asset` finds them) or a bare `document.json`.
+pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
+    let doc: Json = if bytes.first() == Some(&b'{') {
+        serde_json::from_slice(bytes)?
+    } else {
+        let mut doc = None;
+        for (name, data) in quire_doc::read_bytes(bytes)? {
+            if name == "document.json" {
+                doc = Some(serde_json::from_slice(&data)?);
+            } else if name.starts_with("assets/") {
+                // a file that isn't a well-formed asset name is ignored, as on disk
+                let _ = assets::stage_named(&name, data);
+            }
+        }
+        doc.ok_or_else(|| ServiceError("not a Quire document: there is no document.json in it".into()))?
+    };
+    let _: Document = serde_json::from_value(doc.clone())?;
+    Ok(doc)
+}
+
+/// A document as `.quirez` bytes, with the images it uses (they must have been staged).
+pub fn save_bytes(doc: &Json) -> Result<Vec<u8>> {
+    let _: Document = serde_json::from_value(doc.clone())?;
+    let mut doc = doc.clone();
+    canonical::sort_regions(&mut doc);
+    let mut entries = vec![("document.json".to_string(), canonical::to_string(&doc).into_bytes())];
+    for src in assets::referenced(&doc) {
+        if let Some(bytes) = assets::staged(&src) {
+            entries.push((src, bytes));
+        }
+    }
+    Ok(quire_doc::write_bytes(entries)?)
+}
+
 pub fn new_document() -> Json {
     json!({
         "format": quire_doc::FORMAT_MAJOR,
@@ -843,6 +890,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         save(&dir, &doc, None).unwrap();
         dir
+    }
+
+    #[test]
+    fn documents_round_trip_in_memory_with_their_images() {
+        let src = assets::stage(vec![0x89, b'P', b'N', b'G', 1], "png").unwrap();
+        let mut doc = new_document();
+        doc["regions"] = json!([{ "id": "a", "kind": "image", "at": [0, 0], "src": src }]);
+        let saved = quire_doc::read_bytes(&save_bytes(&doc).unwrap()).unwrap();
+        assert_eq!(
+            saved.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            ["document.json", src.as_str()]
+        );
+
+        // opening stages the images it carries, so they show without a bundle on disk
+        let other = "assets/00000000000000aa.png";
+        doc["regions"][0]["src"] = json!(other);
+        let bytes = quire_doc::write_bytes(vec![
+            ("document.json".into(), canonical::to_string(&doc).into_bytes()),
+            (other.into(), vec![0x89, b'P', b'N', b'G', 2]),
+        ])
+        .unwrap();
+        assert_eq!(open_bytes(&bytes).unwrap()["regions"][0]["src"], json!(other));
+        assert!(read_asset(Path::new(""), other).unwrap().starts_with("data:image/png;base64,"));
+        // a bare document.json opens too, and anything else says what it is not
+        assert_eq!(open_bytes(canonical::to_string(&doc).as_bytes()).unwrap()["meta"], doc["meta"]);
+        assert!(open_bytes(b"PK nonsense").unwrap_err().0.contains("not a Quire document"));
     }
 
     #[test]
