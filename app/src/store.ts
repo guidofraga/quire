@@ -122,7 +122,10 @@ export function mutate(fn: (d: Doc) => void, history = true) {
 }
 
 function restore(json: string) {
+  // undo and redo leave the view as it is (see togglePageView)
+  const view = state.doc.page?.view;
   setState("doc", reconcile(JSON.parse(json) as Doc, { key: "id" }));
+  if (view) setState("doc", "page", (p) => ({ ...(p ?? {}), view }));
   // a table stays open across undo (its cells are plain data); text editors don't
   const editing = state.editing ? layout().byId.get(state.editing)?.region : undefined;
   if (editing?.kind !== "table") setState({ editing: null });
@@ -380,10 +383,12 @@ export function noteRoom(p: Placed, list: readonly Placed[], measured: Record<st
   return Math.max(120, room);
 }
 
+/**
+ * Pages or canvas. The choice is kept in the document, but it is a way of looking at it
+ * rather than an edit: no undo step, and the document doesn't become "Edited".
+ */
 export function togglePageView() {
-  mutate((d) => {
-    d.page = { ...(d.page ?? {}), view: d.page?.view === "pages" ? "canvas" : "pages" };
-  });
+  setState("doc", "page", (p) => ({ ...(p ?? {}), view: p?.view === "pages" ? "canvas" : "pages" }));
 }
 
 // ---------------------------------------------------------------------------

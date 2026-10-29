@@ -35,6 +35,14 @@ test("typing starts right after choosing Blank document", async ({ page }) => {
   await expect(regions(page).nth(1)).toContainText(/=6$/);
 });
 
+test("switching views doesn't make a document Edited", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.getByRole("button", { name: "Canvas", exact: true }).click();
+  await page.getByRole("button", { name: "Pages", exact: true }).click();
+  await expect(page.locator(".toolbar .title")).toHaveText("Untitled");
+});
+
 test("explains a unit mismatch", async ({ page }) => {
   await blank(page);
   await typeLines(page, "x:=1 m + 2 kN=");

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, state, undo, undoDepth, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -26,6 +26,17 @@ describe("undo and redo", () => {
     updateRegion("a", { expr: "x := 3" });
     redo();
     expect(state.doc.regions[0].expr).toBe("x := 3");
+  });
+
+  it("switches views without an edit or an undo step", () => {
+    togglePageView();
+    expect(state.doc.page?.view).toBe("pages");
+    expect(state.dirty).toBe(false);
+    updateRegion("a", { expr: "x := 2" });
+    undo();
+    // undoing an edit doesn't switch the view back
+    expect(state.doc.page?.view).toBe("pages");
+    expect(state.doc.regions[0].expr).toBe("x := 1");
   });
 
   it("does nothing with an empty history", () => {
