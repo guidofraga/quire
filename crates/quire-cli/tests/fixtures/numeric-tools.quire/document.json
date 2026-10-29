@@ -1,0 +1,493 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Numeric tools (regression)"
+  },
+  "regions": [
+    {
+      "id": "dl",
+      "kind": "math",
+      "at": [
+        0,
+        0
+      ],
+      "expr": "δ := [2; 4; 6; 8; 10] 'mm"
+    },
+    {
+      "id": "P",
+      "kind": "math",
+      "at": [
+        0,
+        27
+      ],
+      "expr": "P := [1.1; 2.0; 3.1; 3.9; 5.2] 'kN"
+    },
+    {
+      "id": "kslope",
+      "kind": "math",
+      "at": [
+        0,
+        54
+      ],
+      "expr": "k.s := slope(δ, P)",
+      "show": "value",
+      "display": {
+        "unit": "kN/mm",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "icpt",
+      "kind": "math",
+      "at": [
+        0,
+        81
+      ],
+      "expr": "P.0 := intercept(δ, P)",
+      "show": "value",
+      "display": {
+        "unit": "kN",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "corr",
+      "kind": "math",
+      "at": [
+        0,
+        108
+      ],
+      "expr": "corr(δ, P)",
+      "show": "value",
+      "display": {
+        "decimals": 4
+      }
+    },
+    {
+      "id": "F",
+      "kind": "math",
+      "at": [
+        0,
+        135
+      ],
+      "expr": "F(x) := [x; x^2]"
+    },
+    {
+      "id": "cfit",
+      "kind": "math",
+      "at": [
+        0,
+        162
+      ],
+      "expr": "c.f := linfit(δ, P, F)"
+    },
+    {
+      "id": "lin1",
+      "kind": "math",
+      "at": [
+        0,
+        189
+      ],
+      "expr": "c.f[1]",
+      "show": "value",
+      "display": {
+        "unit": "kN/mm",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "lin2",
+      "kind": "math",
+      "at": [
+        0,
+        216
+      ],
+      "expr": "c.f[2]",
+      "show": "value",
+      "display": {
+        "unit": "kN/mm^2",
+        "decimals": 6
+      }
+    },
+    {
+      "id": "pfit",
+      "kind": "math",
+      "at": [
+        0,
+        243
+      ],
+      "expr": "a := polyfit(δ, P, 2)"
+    },
+    {
+      "id": "poly0",
+      "kind": "math",
+      "at": [
+        0,
+        270
+      ],
+      "expr": "a[1]",
+      "show": "value",
+      "display": {
+        "unit": "kN",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "poly2",
+      "kind": "math",
+      "at": [
+        0,
+        297
+      ],
+      "expr": "a[3]",
+      "show": "value",
+      "display": {
+        "unit": "kN/mm^2",
+        "decimals": 6
+      }
+    },
+    {
+      "id": "fc",
+      "kind": "math",
+      "at": [
+        0,
+        324
+      ],
+      "expr": "f.c := [32.1; 35.4; 30.8; 33.6; 34.2; 31.9] 'MPa"
+    },
+    {
+      "id": "fcm",
+      "kind": "math",
+      "at": [
+        0,
+        351
+      ],
+      "expr": "f.cm := mean(f.c)",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "sd",
+      "kind": "math",
+      "at": [
+        0,
+        378
+      ],
+      "expr": "σ.f := Stdev(f.c)",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "sdp",
+      "kind": "math",
+      "at": [
+        0,
+        405
+      ],
+      "expr": "stdev(f.c)",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "fck",
+      "kind": "math",
+      "at": [
+        0,
+        432
+      ],
+      "expr": "f.ck := f.cm - 1.64*σ.f",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 2
+      }
+    },
+    {
+      "id": "med",
+      "kind": "math",
+      "at": [
+        0,
+        459
+      ],
+      "expr": "median(f.c)",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 2
+      }
+    },
+    {
+      "id": "p10",
+      "kind": "math",
+      "at": [
+        0,
+        486
+      ],
+      "expr": "percentile(f.c, 0.1)",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "xs",
+      "kind": "math",
+      "at": [
+        0,
+        513
+      ],
+      "expr": "x.s := [0; 2; 4; 6; 8] 'm"
+    },
+    {
+      "id": "ws",
+      "kind": "math",
+      "at": [
+        0,
+        540
+      ],
+      "expr": "w := [0; 7.5; 11.2; 8.1; 0] 'mm"
+    },
+    {
+      "id": "spl",
+      "kind": "math",
+      "at": [
+        0,
+        567
+      ],
+      "expr": "interp(cspline(x.s, w), x.s, w, 3 'm)",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "spln",
+      "kind": "math",
+      "at": [
+        0,
+        594
+      ],
+      "expr": "interp(lspline(x.s, w), x.s, w, 7 'm)",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "ms",
+      "kind": "math",
+      "at": [
+        0,
+        621
+      ],
+      "expr": "m.s := 1000 'kg"
+    },
+    {
+      "id": "ks",
+      "kind": "math",
+      "at": [
+        0,
+        648
+      ],
+      "expr": "k := 400 'kN/'m"
+    },
+    {
+      "id": "D",
+      "kind": "math",
+      "at": [
+        0,
+        675
+      ],
+      "expr": "D(t, y) := [y[2]; -k/m.s*y[1]]"
+    },
+    {
+      "id": "Y",
+      "kind": "math",
+      "at": [
+        0,
+        702
+      ],
+      "expr": "Y := rkfixed([10 'mm; 0 'm/'s], 0, 0.5 's, 500, D)"
+    },
+    {
+      "id": "x05",
+      "kind": "math",
+      "at": [
+        0,
+        729
+      ],
+      "expr": "Y[501, 2]",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "v05",
+      "kind": "math",
+      "at": [
+        0,
+        756
+      ],
+      "expr": "Y[501, 3]",
+      "show": "value",
+      "display": {
+        "unit": "m/s",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "cd",
+      "kind": "math",
+      "at": [
+        0,
+        783
+      ],
+      "expr": "c.d := 4 'kN*'s/'m"
+    },
+    {
+      "id": "D2",
+      "kind": "math",
+      "at": [
+        0,
+        810
+      ],
+      "expr": "D.2(t, y) := [y[2]; -(k*y[1] + c.d*y[2])/m.s]"
+    },
+    {
+      "id": "Z",
+      "kind": "math",
+      "at": [
+        0,
+        837
+      ],
+      "expr": "Z := Rkadapt([10 'mm; 0 'm/'s], 0, 0.5 's, 10, D.2(t, y))"
+    },
+    {
+      "id": "xd",
+      "kind": "math",
+      "at": [
+        0,
+        864
+      ],
+      "expr": "Z[11, 2]",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 4
+      }
+    },
+    {
+      "id": "Areq",
+      "kind": "math",
+      "at": [
+        0,
+        891
+      ],
+      "expr": "A.req := 0.06 'm^2"
+    },
+    {
+      "id": "Wreq",
+      "kind": "math",
+      "at": [
+        0,
+        918
+      ],
+      "expr": "W.req := 2000 'cm^3"
+    },
+    {
+      "id": "b",
+      "kind": "math",
+      "at": [
+        0,
+        945
+      ],
+      "expr": "b := 0.2 'm"
+    },
+    {
+      "id": "h",
+      "kind": "math",
+      "at": [
+        0,
+        972
+      ],
+      "expr": "h := 0.3 'm"
+    },
+    {
+      "id": "sec",
+      "kind": "math",
+      "at": [
+        0,
+        999
+      ],
+      "expr": "sec := solve([b*h == A.req; b*h^2/6 == W.req], [b; h])"
+    },
+    {
+      "id": "bsol",
+      "kind": "math",
+      "at": [
+        0,
+        1026
+      ],
+      "expr": "sec[1]",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 2
+      }
+    },
+    {
+      "id": "hsol",
+      "kind": "math",
+      "at": [
+        0,
+        1053
+      ],
+      "expr": "sec[2]",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 2
+      }
+    },
+    {
+      "id": "spac",
+      "kind": "math",
+      "at": [
+        0,
+        1080
+      ],
+      "expr": "Floor(237 'mm, 25 'mm)",
+      "show": "value",
+      "display": {
+        "unit": "mm"
+      }
+    },
+    {
+      "id": "lreq",
+      "kind": "math",
+      "at": [
+        0,
+        1107
+      ],
+      "expr": "Ceil(1.234 'm, 5 'cm)",
+      "show": "value",
+      "display": {
+        "unit": "m"
+      }
+    }
+  ]
+}

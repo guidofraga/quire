@@ -9,7 +9,7 @@ use crate::format::{DisplaySettings, format_number};
 use crate::ops::{self, arith, same_dim, uniform};
 use crate::value::{Matrix, Quantity, Value};
 
-fn arity(name: &str, args: &[Value], ok: impl Fn(usize) -> bool, expected: &str) -> Result<()> {
+pub(crate) fn arity(name: &str, args: &[Value], ok: impl Fn(usize) -> bool, expected: &str) -> Result<()> {
     if !ok(args.len()) {
         bail!("{name} takes {expected}, but got {}", args.len());
     }
@@ -34,7 +34,7 @@ fn matrix_arg<'a>(name: &str, v: &'a Value) -> Result<&'a Matrix> {
 }
 
 /// Numbers from every argument, matrices flattened.
-fn flatten(args: &[Value]) -> Vec<&Value> {
+pub(crate) fn flatten(args: &[Value]) -> Vec<&Value> {
     let mut out = Vec::new();
     for a in args {
         match a {
@@ -184,7 +184,7 @@ pub fn call(name: &str, args: &[Value]) -> Option<Result<Value>> {
         "num2str" => num2str(args),
         "concat" => concat(args),
         "eval" => arity(name, args, |n| n == 1, "1 argument").map(|_| args[0].clone()),
-        _ => return None,
+        _ => return crate::stats::call(name, args),
     };
     Some(r)
 }
@@ -292,10 +292,10 @@ fn mean(args: &[Value]) -> Result<Value> {
 }
 
 /// A vector's numbers and their common units.
-type Vector = (Vec<f64>, Dim);
+pub(crate) type Vector = (Vec<f64>, Dim);
 
 /// The numbers of a vector (row or column), all with the same units.
-fn vector(name: &str, v: &Value) -> Result<Vector> {
+pub(crate) fn vector(name: &str, v: &Value) -> Result<Vector> {
     let m = matrix_arg(name, v)?;
     if m.rows != 1 && m.cols != 1 {
         bail!("{name} needs a vector, not a {}×{} matrix", m.rows, m.cols);
@@ -313,7 +313,7 @@ fn vector(name: &str, v: &Value) -> Result<Vector> {
     Ok((out, dim.unwrap_or(Dim::NONE)))
 }
 
-fn column(values: Vec<f64>, dim: Dim) -> Value {
+pub(crate) fn column(values: Vec<f64>, dim: Dim) -> Value {
     let n = values.len();
     Value::Matrix(Matrix::new(n, 1, values.into_iter().map(|v| Value::Num(Quantity::new(v, dim))).collect()))
 }
