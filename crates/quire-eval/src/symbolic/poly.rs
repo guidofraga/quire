@@ -38,7 +38,8 @@ pub(super) fn coeffs(e: &S, x: &str) -> Option<Vec<S>> {
         if c.len() <= k {
             c.resize(k + 1, ZERO);
         }
-        c[k] = add(vec![c[k].clone(), rest]);
+        let cur = c.get(k)?.clone();
+        *c.get_mut(k)? = add(vec![cur, rest]);
     }
     while c.len() > 1 && c.last() == Some(&ZERO) {
         c.pop();
@@ -70,16 +71,17 @@ pub(super) fn divide(a: &[S], b: &[S]) -> Option<(Vec<S>, Vec<S>)> {
     }
     let mut q = vec![ZERO; r.len() - b.len() + 1];
     for i in (0..q.len()).rev() {
-        let top = r[i + b.len() - 1].clone();
+        let top = r.get(i + b.len() - 1)?.clone();
         if is_zero(&top) {
             continue;
         }
         let t = simplify(&div(top, lead.clone()));
         for (j, bj) in b.iter().enumerate() {
-            r[i + j] = simplify(&expand(&add(vec![r[i + j].clone(), neg(mul(vec![t.clone(), bj.clone()]))])));
+            let cur = r.get(i + j)?.clone();
+            *r.get_mut(i + j)? = simplify(&expand(&add(vec![cur, neg(mul(vec![t.clone(), bj.clone()]))])));
         }
-        r[i + b.len() - 1] = ZERO;
-        q[i] = t;
+        *r.get_mut(i + b.len() - 1)? = ZERO;
+        *q.get_mut(i)? = t;
     }
     r.truncate(b.len() - 1);
     while r.len() > 1 && r.last().is_some_and(is_zero) {
@@ -154,9 +156,9 @@ pub(super) fn content(e: &S) -> (S, S) {
             .collect()
     };
     let mut shared: Vec<S> = Vec::new();
-    for (b, k0) in powers(&ts[0]) {
+    for (b, k0) in ts.first().map(powers).unwrap_or_default() {
         let mut k = k0;
-        let in_all = ts[1..].iter().all(|t| {
+        let in_all = ts.iter().skip(1).all(|t| {
             powers(t).iter().any(|(b2, k2)| {
                 if *b2 == b && k2.f() < k.f() {
                     k = *k2;
@@ -242,20 +244,23 @@ fn split_once(c: &[S], x: &str) -> Option<(S, S)> {
             return Some(found);
         }
     }
-    if c.len() == 3 {
+    if let [c0, c1, c2] = c {
         // a quadratic whose discriminant is a perfect square
-        let disc = add(vec![pow(c[1].clone(), n(2)), mul(vec![n(-4), c[2].clone(), c[0].clone()])]);
+        let disc = add(vec![pow(c1.clone(), n(2)), mul(vec![n(-4), c2.clone(), c0.clone()])]);
         if num_of(&disc).is_some_and(|d| d.f() < 0.0) {
             return None;
         }
         let root = exact_sqrt(&disc)?;
-        let r = simplify(&div(add(vec![neg(c[1].clone()), root]), mul(vec![n(2), c[2].clone()])));
+        let r = simplify(&div(add(vec![neg(c1.clone()), root]), mul(vec![n(2), c2.clone()])));
         return linear(r);
     }
-    if c.len() == 5 && is_zero(&c[1]) && is_zero(&c[3]) {
+    if let [c0, c1, c2, c3, c4] = c
+        && is_zero(c1)
+        && is_zero(c3)
+    {
         // a quadratic in x^2
         let y = "§y";
-        let q = [c[0].clone(), c[2].clone(), c[4].clone()];
+        let q = [c0.clone(), c2.clone(), c4.clone()];
         let (f, _) = split_once(&q, y)?;
         let f = subs(&f, y, &pow(sym(x), n(2)));
         return try_factor(f);
@@ -274,7 +279,7 @@ fn rational_roots(c: &[S]) -> Vec<S> {
     if k > 0 {
         return vec![ZERO];
     }
-    let (a0, an) = (ints[0], *ints.last().unwrap());
+    let (Some(&a0), Some(&an)) = (ints.first(), ints.last()) else { return vec![] };
     let (Some(ps), Some(qs)) = (divisors(a0), divisors(an)) else { return vec![] };
     let mut out = Vec::new();
     for p in &ps {

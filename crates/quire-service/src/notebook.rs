@@ -89,6 +89,23 @@ fn err(msg: impl Into<String>) -> ServiceError {
     ServiceError(msg.into())
 }
 
+/// Set `meta.title` of a document. A document opened from disk may hold anything, so a
+/// `meta` that is neither missing nor an object is reported instead of overwritten.
+fn set_title(doc: &mut Json, title: String) -> Result<()> {
+    let Some(root) = doc.as_object_mut() else {
+        return Err(err("the document is not an object"));
+    };
+    let meta = root.entry("meta").or_insert(Json::Null);
+    if meta.is_null() {
+        *meta = Json::Object(serde_json::Map::new());
+    }
+    let Some(meta) = meta.as_object_mut() else {
+        return Err(err("the document's meta is not an object"));
+    };
+    meta.insert("title".into(), Json::String(title));
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Paths and names
 // ---------------------------------------------------------------------------
@@ -393,7 +410,7 @@ pub fn create_note(root: &Path, dir: &str, title: &str, ext: &str, index: Option
     let path = unique(&folder, &title, Some(ext));
     let mut doc = crate::new_document();
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(title);
-    doc["meta"]["title"] = Json::String(stem);
+    set_title(&mut doc, stem)?;
     crate::save(&path, &doc, None)?;
     let rel = rel_of(root, &path);
     place(root, &rel, index)?;
@@ -524,7 +541,7 @@ pub fn duplicate(root: &Path, rel: &str) -> Result<String> {
     let stem = from.file_stem().unwrap_or_default().to_string_lossy().into_owned();
     let to = unique(from.parent().unwrap_or(root), &format!("{stem} copy"), Some(&ext));
     let mut doc = crate::open(&from)?;
-    doc["meta"]["title"] = Json::String(to.file_stem().unwrap_or_default().to_string_lossy().into_owned());
+    set_title(&mut doc, to.file_stem().unwrap_or_default().to_string_lossy().into_owned())?;
     crate::save(&to, &doc, Some(&from))?;
     let new_rel = rel_of(root, &to);
     let at = ordered_names(root, parent_rel(rel))?.iter().position(|n| n == file_name(rel)).map(|i| i + 1);
@@ -633,12 +650,12 @@ pub fn search(root: &Path, query: &str, limit: usize) -> Result<Vec<Hit>> {
         for (id, line) in &lines {
             let f = folded(line);
             if let Some((at, w)) = words.iter().filter_map(|w| f.find(w.as_str()).map(|i| (i, w))).min() {
-                let start_c = f[..at].chars().count();
+                let start_c = f.get(..at).map_or(0, |before| before.chars().count());
                 let len_c = w.chars().count();
                 let chars: Vec<char> = line.chars().collect();
                 let from = start_c.saturating_sub(40);
                 let to = (start_c + len_c + 80).min(chars.len());
-                let mut s: String = chars[from..to].iter().collect();
+                let mut s: String = chars.get(from..to).unwrap_or_default().iter().collect();
                 let mut offset = start_c - from;
                 if from > 0 {
                     s.insert(0, '…');
@@ -788,20 +805,22 @@ pub fn call(op: &str, args: &Json) -> Result<Json> {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     /// A scratch notebook that removes itself.
     struct Book(PathBuf);
     impl Book {
-        fn new(tag: &str) -> Book {
+        fn new(tag: &str) -> std::result::Result<Book, Box<dyn std::error::Error>> {
             let p = std::env::temp_dir().join(format!("quire-nb-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&p);
-            std::fs::create_dir_all(&p).unwrap();
-            Book(p)
+            std::fs::create_dir_all(&p)?;
+            Ok(Book(p))
         }
         fn names(&self, nodes: &[Node]) -> Vec<String> {
             nodes.iter().map(|n| n.name.clone()).collect()
         }
-        fn top(&self) -> Vec<String> {
-            self.names(&list(&self.0).unwrap().children)
+        fn top(&self) -> std::result::Result<Vec<String>, Box<dyn std::error::Error>> {
+            Ok(self.names(&list(&self.0)?.children))
         }
     }
     impl Drop for Book {
@@ -811,189 +830,204 @@ mod tests {
     }
 
     #[test]
-    fn lists_sections_first_then_notes_in_natural_order() {
-        let b = Book::new("list");
+    fn lists_sections_first_then_notes_in_natural_order() -> TestResult {
+        let b = Book::new("list")?;
         for n in ["Note 10", "note 2", "Ábaco"] {
-            create_note(&b.0, "", n, "quire", None).unwrap();
+            create_note(&b.0, "", n, "quire", None)?;
         }
-        create_section(&b.0, "", "Mechanics", None).unwrap();
-        std::fs::write(b.0.join("readme.txt"), "not a note").unwrap();
-        std::fs::create_dir(b.0.join(".git")).unwrap();
-        assert_eq!(b.top(), ["Mechanics", "Ábaco", "note 2", "Note 10"]);
-        let book = list(&b.0).unwrap();
-        assert_eq!(book.children[1].rel, "Ábaco.quire");
-        assert_eq!(book.children[1].kind, Kind::Note);
-        assert!(book.children[1].modified.is_some());
+        create_section(&b.0, "", "Mechanics", None)?;
+        std::fs::write(b.0.join("readme.txt"), "not a note")?;
+        std::fs::create_dir(b.0.join(".git"))?;
+        assert_eq!(b.top()?, ["Mechanics", "Ábaco", "note 2", "Note 10"]);
+        let book = list(&b.0)?;
+        let abaco = book.children.get(1).ok_or("missing the note Ábaco")?;
+        assert_eq!(abaco.rel, "Ábaco.quire");
+        assert_eq!(abaco.kind, Kind::Note);
+        assert!(abaco.modified.is_some());
         // a fresh notebook needs no settings file
         assert!(!b.0.join(META_FILE).exists());
+        Ok(())
     }
 
     #[test]
-    fn a_new_note_is_a_document_titled_after_its_file() {
-        let b = Book::new("new");
-        let a = create_note(&b.0, "", "Untitled", "quire", None).unwrap();
-        let c = create_note(&b.0, "", "Untitled", "quirez", None).unwrap();
+    fn a_new_note_is_a_document_titled_after_its_file() -> TestResult {
+        let b = Book::new("new")?;
+        let a = create_note(&b.0, "", "Untitled", "quire", None)?;
+        let c = create_note(&b.0, "", "Untitled", "quirez", None)?;
         assert_eq!(a, "Untitled.quire");
         assert_eq!(c, "Untitled 2.quirez", "the other format of a title counts as taken");
-        let doc = crate::open(&b.0.join(&c)).unwrap();
+        let doc = crate::open(&b.0.join(&c))?;
         assert_eq!(doc["meta"]["title"], "Untitled 2");
         assert!(create_note(&b.0, "", "a/b", "quire", None).is_err());
         assert!(create_note(&b.0, "", "  ", "quire", None).is_err());
         assert!(create_note(&b.0, "nowhere", "x", "quire", None).is_err());
+        Ok(())
     }
 
     #[test]
-    fn notebooks_start_with_a_note_and_refuse_full_folders() {
-        let b = Book::new("create");
+    fn notebooks_start_with_a_note_and_refuse_full_folders() -> TestResult {
+        let b = Book::new("create")?;
         let path = b.0.join("Physics 101");
-        assert_eq!(create_notebook(&path, "quire").unwrap(), "Untitled.quire");
+        assert_eq!(create_notebook(&path, "quire")?, "Untitled.quire");
         assert!(create_notebook(&path, "quire").is_err());
         assert!(list(&path.join("Untitled.quire")).is_err(), "a document is not a notebook");
+        Ok(())
     }
 
     #[test]
-    fn keeps_a_manual_order_and_new_items_go_where_asked() {
-        let b = Book::new("order");
+    fn keeps_a_manual_order_and_new_items_go_where_asked() -> TestResult {
+        let b = Book::new("order")?;
         for n in ["A", "B", "C"] {
-            create_note(&b.0, "", n, "quire", None).unwrap();
+            create_note(&b.0, "", n, "quire", None)?;
         }
-        move_item(&b.0, "C.quire", "", Some(0)).unwrap();
-        assert_eq!(b.top(), ["C", "A", "B"]);
-        create_note(&b.0, "", "D", "quire", Some(1)).unwrap();
-        assert_eq!(b.top(), ["C", "D", "A", "B"]);
+        move_item(&b.0, "C.quire", "", Some(0))?;
+        assert_eq!(b.top()?, ["C", "A", "B"]);
+        create_note(&b.0, "", "D", "quire", Some(1))?;
+        assert_eq!(b.top()?, ["C", "D", "A", "B"]);
         // an ordered folder adds new items at the end, not by name
-        create_note(&b.0, "", "0 first by name", "quire", None).unwrap();
-        assert_eq!(b.top().last().unwrap(), "0 first by name");
+        create_note(&b.0, "", "0 first by name", "quire", None)?;
+        assert_eq!(b.top()?.last().ok_or("empty listing")?, "0 first by name");
         // a file added outside Quire shows after the ordered ones
-        crate::save(&b.0.join("Z.quire"), &crate::new_document(), None).unwrap();
-        assert_eq!(b.top().last().unwrap(), "Z");
+        crate::save(&b.0.join("Z.quire"), &crate::new_document(), None)?;
+        assert_eq!(b.top()?.last().ok_or("empty listing")?, "Z");
+        Ok(())
     }
 
     #[test]
-    fn rename_keeps_the_format_order_and_style() {
-        let b = Book::new("rename");
-        create_section(&b.0, "", "Mech", None).unwrap();
-        let k = create_note(&b.0, "Mech", "Kin", "quirez", None).unwrap();
-        create_note(&b.0, "Mech", "Dyn", "quire", Some(0)).unwrap();
-        set_style(&b.0, "Mech", Style { color: Some("#3b82f6".into()), icon: Some("⚙️".into()) }).unwrap();
-        let k2 = rename(&b.0, &k, "Kinematics").unwrap();
+    fn rename_keeps_the_format_order_and_style() -> TestResult {
+        let b = Book::new("rename")?;
+        create_section(&b.0, "", "Mech", None)?;
+        let k = create_note(&b.0, "Mech", "Kin", "quirez", None)?;
+        create_note(&b.0, "Mech", "Dyn", "quire", Some(0))?;
+        set_style(&b.0, "Mech", Style { color: Some("#3b82f6".into()), icon: Some("⚙️".into()) })?;
+        let k2 = rename(&b.0, &k, "Kinematics")?;
         assert_eq!(k2, "Mech/Kinematics.quirez");
-        let m = rename(&b.0, "Mech", "Mechanics").unwrap();
+        let m = rename(&b.0, "Mech", "Mechanics")?;
         assert_eq!(m, "Mechanics");
-        let book = list(&b.0).unwrap();
-        let mech = &book.children[0];
+        let book = list(&b.0)?;
+        let mech = book.children.first().ok_or("no sections")?;
         assert_eq!(mech.color.as_deref(), Some("#3b82f6"));
         assert_eq!(b.names(&mech.children), ["Dyn", "Kinematics"], "order follows the rename");
         assert!(rename(&b.0, "Mechanics/Dyn.quire", "Kinematics").is_err(), "taken");
-        assert_eq!(rename(&b.0, "Mechanics/Dyn.quire", "dyn").unwrap(), "Mechanics/dyn.quire", "case only");
+        assert_eq!(rename(&b.0, "Mechanics/Dyn.quire", "dyn")?, "Mechanics/dyn.quire", "case only");
         assert!(rename(&b.0, "../x", "y").is_err());
+        Ok(())
     }
 
     #[test]
-    fn moves_between_sections_but_not_into_themselves() {
-        let b = Book::new("move");
-        create_section(&b.0, "", "A", None).unwrap();
-        create_section(&b.0, "A", "Inner", None).unwrap();
-        create_section(&b.0, "", "B", None).unwrap();
-        let n = create_note(&b.0, "A", "Note", "quire", None).unwrap();
-        set_style(&b.0, "A/Inner", Style { color: Some("#f00".into()), icon: None }).unwrap();
-        assert_eq!(move_item(&b.0, &n, "B", None).unwrap(), "B/Note.quire");
-        assert_eq!(move_item(&b.0, "A/Inner", "B", Some(0)).unwrap(), "B/Inner");
-        let book = list(&b.0).unwrap();
-        let bsec = book.children.iter().find(|s| s.name == "B").unwrap();
+    fn moves_between_sections_but_not_into_themselves() -> TestResult {
+        let b = Book::new("move")?;
+        create_section(&b.0, "", "A", None)?;
+        create_section(&b.0, "A", "Inner", None)?;
+        create_section(&b.0, "", "B", None)?;
+        let n = create_note(&b.0, "A", "Note", "quire", None)?;
+        set_style(&b.0, "A/Inner", Style { color: Some("#f00".into()), icon: None })?;
+        assert_eq!(move_item(&b.0, &n, "B", None)?, "B/Note.quire");
+        assert_eq!(move_item(&b.0, "A/Inner", "B", Some(0))?, "B/Inner");
+        let book = list(&b.0)?;
+        let bsec = book.children.iter().find(|s| s.name == "B").ok_or("no section B")?;
         assert_eq!(b.names(&bsec.children), ["Inner", "Note"]);
-        assert_eq!(bsec.children[0].color.as_deref(), Some("#f00"), "style follows the move");
+        assert_eq!(
+            bsec.children.first().and_then(|n| n.color.as_deref()),
+            Some("#f00"),
+            "style follows the move"
+        );
         assert!(move_item(&b.0, "B", "B/Inner", None).is_err());
-        create_note(&b.0, "", "Note", "quire", None).unwrap();
+        create_note(&b.0, "", "Note", "quire", None)?;
         assert!(move_item(&b.0, "Note.quire", "B", None).is_err(), "name taken there");
+        Ok(())
     }
 
     #[test]
-    fn duplicates_beside_the_original() {
-        let b = Book::new("dup");
+    fn duplicates_beside_the_original() -> TestResult {
+        let b = Book::new("dup")?;
         for n in ["A", "B"] {
-            create_note(&b.0, "", n, "quire", None).unwrap();
+            create_note(&b.0, "", n, "quire", None)?;
         }
-        move_item(&b.0, "B.quire", "", Some(0)).unwrap();
-        let c = duplicate(&b.0, "B.quire").unwrap();
+        move_item(&b.0, "B.quire", "", Some(0))?;
+        let c = duplicate(&b.0, "B.quire")?;
         assert_eq!(c, "B copy.quire");
-        assert_eq!(b.top(), ["B", "B copy", "A"]);
-        assert_eq!(crate::open(&b.0.join(c)).unwrap()["meta"]["title"], "B copy");
+        assert_eq!(b.top()?, ["B", "B copy", "A"]);
+        assert_eq!(crate::open(&b.0.join(c))?["meta"]["title"], "B copy");
+        Ok(())
     }
 
     #[test]
-    fn styles_are_checked() {
-        let b = Book::new("style");
-        create_note(&b.0, "", "A", "quire", None).unwrap();
+    fn styles_are_checked() -> TestResult {
+        let b = Book::new("style")?;
+        create_note(&b.0, "", "A", "quire", None)?;
         assert!(set_style(&b.0, "A.quire", Style { color: Some("red".into()), icon: None }).is_err());
-        set_style(&b.0, "A.quire", Style { color: None, icon: Some("📐".into()) }).unwrap();
-        assert_eq!(list(&b.0).unwrap().children[0].icon.as_deref(), Some("📐"));
-        set_style(&b.0, "A.quire", Style::default()).unwrap();
+        set_style(&b.0, "A.quire", Style { color: None, icon: Some("📐".into()) })?;
+        assert_eq!(list(&b.0)?.children.first().and_then(|n| n.icon.as_deref()), Some("📐"));
+        set_style(&b.0, "A.quire", Style::default())?;
         assert!(!b.0.join(META_FILE).exists(), "nothing left to keep");
+        Ok(())
     }
 
     #[test]
-    fn searches_titles_and_content_ignoring_case_and_accents() {
-        let b = Book::new("search");
-        create_section(&b.0, "", "Mecânica", None).unwrap();
-        let n = create_note(&b.0, "Mecânica", "Cálculo da viga", "quire", None).unwrap();
+    fn searches_titles_and_content_ignoring_case_and_accents() -> TestResult {
+        let b = Book::new("search")?;
+        create_section(&b.0, "", "Mecânica", None)?;
+        let n = create_note(&b.0, "Mecânica", "Cálculo da viga", "quire", None)?;
         let path = b.0.join(&n);
-        let mut doc = crate::open(&path).unwrap();
+        let mut doc = crate::open(&path)?;
         doc["regions"] = serde_json::json!([
             { "id": "t1", "kind": "text", "at": [0, 0], "text": "The *bending moment* of a simply supported beam." },
             { "id": "m1", "kind": "math", "at": [0, 40], "expr": "M := q*L^2/8" },
         ]);
-        crate::save(&path, &doc, None).unwrap();
-        create_note(&b.0, "", "Beam notes", "quire", None).unwrap();
+        crate::save(&path, &doc, None)?;
+        create_note(&b.0, "", "Beam notes", "quire", None)?;
 
-        let hits = search(&b.0, "calculo", 10).unwrap();
+        let hits = search(&b.0, "calculo", 10)?;
         assert_eq!(hits.len(), 1);
-        assert!(hits[0].title_match);
-        assert_eq!(hits[0].section, "Mecânica");
+        assert!(hits.first().ok_or("no hits")?.title_match);
+        assert_eq!(hits.first().ok_or("no hits")?.section, "Mecânica");
 
-        let hits = search(&b.0, "BENDING moment", 10).unwrap();
+        let hits = search(&b.0, "BENDING moment", 10)?;
         assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].snippet, "The bending moment of a simply supported beam.");
-        assert_eq!(hits[0].mark, Some((4, 11)));
-        assert_eq!(hits[0].region.as_deref(), Some("t1"));
+        assert_eq!(hits.first().ok_or("no hits")?.snippet, "The bending moment of a simply supported beam.");
+        assert_eq!(hits.first().ok_or("no hits")?.mark, Some((4, 11)));
+        assert_eq!(hits.first().ok_or("no hits")?.region.as_deref(), Some("t1"));
 
         // a title match comes before a content match
-        let hits = search(&b.0, "beam", 10).unwrap();
+        let hits = search(&b.0, "beam", 10)?;
         assert_eq!(
             hits.iter().map(|h| h.title.as_str()).collect::<Vec<_>>(),
             ["Beam notes", "Cálculo da viga"]
         );
-        assert!(search(&b.0, "q*L^2", 10).unwrap()[0].region.as_deref() == Some("m1"));
-        assert!(search(&b.0, "nothing like this", 10).unwrap().is_empty());
-        assert!(search(&b.0, "   ", 10).unwrap().is_empty());
+        assert!(search(&b.0, "q*L^2", 10)?.first().and_then(|h| h.region.as_deref()) == Some("m1"));
+        assert!(search(&b.0, "nothing like this", 10)?.is_empty());
+        assert!(search(&b.0, "   ", 10)?.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn plain_djot_drops_markup() {
+    fn plain_djot_drops_markup() -> TestResult {
         assert_eq!(plain_djot("{.center}\n# *Title* [u]{.underline} \\* x"), "Title u * x\n");
+        Ok(())
     }
 
     #[test]
-    fn calls_by_name_as_the_app_does() {
-        let b = Book::new("call");
+    fn calls_by_name_as_the_app_does() -> TestResult {
+        let b = Book::new("call")?;
         let root = b.0.to_string_lossy().into_owned();
-        let sec =
-            call("create_section", &serde_json::json!({ "root": root, "dir": "", "name": "Labs" })).unwrap();
+        let sec = call("create_section", &serde_json::json!({ "root": root, "dir": "", "name": "Labs" }))?;
         assert_eq!(sec, "Labs");
-        let note =
-            call("create_note", &serde_json::json!({ "root": root, "dir": "Labs", "ext": "quire" })).unwrap();
+        let note = call("create_note", &serde_json::json!({ "root": root, "dir": "Labs", "ext": "quire" }))?;
         assert_eq!(note, "Labs/Untitled.quire");
-        let book = call("list", &serde_json::json!({ "root": root })).unwrap();
+        let book = call("list", &serde_json::json!({ "root": root }))?;
         assert_eq!(book["children"][0]["children"][0]["name"], "Untitled");
         assert_eq!(book["children"][0]["kind"], "section");
         assert!(call("rename", &serde_json::json!({ "root": root, "rel": "Labs" })).is_err(), "missing name");
         assert!(call("explode", &serde_json::json!({})).is_err());
+        Ok(())
     }
 
     #[test]
-    fn natural_order() {
+    fn natural_order() -> TestResult {
         let mut v = vec!["b10", "B2", "a", "Á", "b1"];
         v.sort_by(|a, b| natural_cmp(a, b));
         assert_eq!(v, ["a", "Á", "b1", "B2", "b10"]);
+        Ok(())
     }
 }

@@ -28,13 +28,14 @@ fn bundles() -> Vec<PathBuf> {
 }
 
 #[test]
-fn reference_results_are_reproduced() {
+fn reference_results_are_reproduced() -> Result<(), Box<dyn std::error::Error>> {
     let bundles = bundles();
     assert!(!bundles.is_empty(), "no fixtures found");
     let mut failures = Vec::new();
     for path in &bundles {
-        let bundle = quire_doc::load(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let results = bundle.results.as_ref().expect("results.json");
+        let bundle = quire_doc::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let results =
+            bundle.results.as_ref().ok_or_else(|| format!("{}: no results.json", path.display()))?;
         let rows = compare(results, &evaluate(&bundle.document));
         assert_eq!(rows.len(), results.results.len(), "{}: a reference result has no region", path.display());
         for r in rows {
@@ -50,4 +51,5 @@ fn reference_results_are_reproduced() {
         }
     }
     assert!(failures.is_empty(), "{} result(s) changed:\n{}", failures.len(), failures.join("\n"));
+    Ok(())
 }

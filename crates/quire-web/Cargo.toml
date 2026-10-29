@@ -14,3 +14,6 @@ crate-type = ["cdylib", "rlib"]
 quire-service.workspace = true
 serde_json.workspace = true
 base64 = "0.22"
+
+[lints]
+workspace = true

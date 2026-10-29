@@ -11,7 +11,7 @@
 | [docs/05-testing.md](docs/05-testing.md) | Test layers, fixtures, end-to-end tests |
 | [docs/06-releasing.md](docs/06-releasing.md) | How a version is built, published and offered by the updater |
 | [schema/quire-1.schema.json](schema/quire-1.schema.json) | JSON Schema (draft 2020-12) for `document.json` |
-| [tools/sm2quire.py](tools/sm2quire.py) | SMath `.sm` → `.quire` importer (stdlib Python; the reference mapping) |
+| [crates/quire-smath](crates/quire-smath) | SMath `.sm` → Quire importer (the reference mapping; `quire import`) |
 
 ## Desktop app
 
@@ -32,7 +32,7 @@
   - Editing works like a spreadsheet: click a cell while typing a formula to insert its reference, ⌘D fills down, rows and columns are inserted from the right-click menu, and copy and paste use tab-separated cells.
   - A named table is a matrix for the math below it (`loads[4, 4]`); other tables read its cells as `loads!B2`.
   - **CSV files:** Insert ▸ Table from CSV… reads comma, semicolon or tab-separated files (as Excel writes them in any locale) into a table named after the file; right-click a table ▸ Export as CSV… writes its values as shown, with decimal commas and `;` for documents in languages that use them.
-- **2D plots** (Insert ▸ Plot, ⌥⌘P): functions over a range (`M(x)` for `x` from `0 m` to `L`) and data vectors, several series on one plot, axes in the units you work in (m, kN·m), hover to read values, maximum and minimum marked on request. Plots update with the worksheet and print as vector graphics; select a function first and Insert ▸ Plot plots it over a sensible range.
+- **2D plots** (Insert ▸ Plot, ⌥⌘P): functions over a range (`M(x)` for `x` from `0 m` to `L`) and data vectors, several series on one plot, axes in the units you work in (m, kN·m), hover to read values, maximum and minimum marked on request, SMath's marker styles and animations (play, pause, a frame slider) carried over from imported worksheets. Plots update with the worksheet and print as vector graphics; select a function first and Insert ▸ Plot plots it over a sensible range.
 - **Errors that help:** `cannot add a length (m) and a force (N)`; `x is defined further down` when a definition sits below its use; `did you mean A_net?` for a near miss and `did you mean the unit kN?` for `KN`.
 - **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
 - **Find and replace** (⌘F, ⌥⌘F) across math, text, notes, captions and area titles, with match case and whole names; Replace All is one undo step.
@@ -69,6 +69,7 @@
 - **Inspector** (⌥⌘I): region properties (result unit, decimals, notes, captions, sizes), document properties (title, authors, language, number formatting, caption labels) and page setup (paper, orientation, margins, headers/footers, first page, backgrounds).
 - **File ▸ Export as PDF…** (⌘E) writes exactly the page view with selectable text, and on macOS finishes it as a report: bookmarks for the numbered headings ("2.1 Bending"), cross-references and Contents / List of Figures / List of Tables / Summary of Checks entries that jump to their target, web links that stay clickable, the document's title, authors, company, keywords and language in the PDF's properties, and page numbers in the viewer that match the footer. On Windows and Linux it opens the system print dialog, where you choose Save as PDF / Print to File. Images are embedded at the resolution set in Settings ▸ PDF export. **Print…** (⌘P) opens the print dialog.
 - **Templates:** File ▸ New from Template… (⇧⌘N) starts from a calculation report, a beam check or a load-combination sheet, or from your own: File ▸ Save as Template… keeps page setup, headers, styles, regions and images.
+- **Opening SMath files:** File ▸ Open accepts SMath Studio `.sm` worksheets, and so does double-clicking one. Each opens as a new unsaved document: Save asks for a new name, and the `.sm` file is never changed. `quire import file.sm [out.quire]` does the same on the command line and writes a `.quire` bundle.
 - **Files:** a document is a `.quire` folder (shown as a single file in the Finder) or a `.quirez` single file, which is what Windows and Linux save and what to send by email. Both open by double-click; **File ▸ Open Recent** lists the last ten; unsaved work is kept aside and offered back if Quire quits unexpectedly.
 - Every change re-evaluates the whole worksheet in Rust (well under a millisecond for typical documents). Math is drawn as MathML for now; a dedicated Rust typesetter comes later.
 
@@ -124,7 +125,7 @@ Other commands: `quire eval <doc>` prints the full calculation listing; `quire f
 Convert any SMath file:
 
 ```bash
-python3 -I tools/sm2quire.py "path/to/file.sm" out.quire
+./target/release/quire import "path/to/file.sm" out.quire
 ```
 
 ## Contributing

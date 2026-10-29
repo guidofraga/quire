@@ -255,7 +255,7 @@ fn at(e: &S, x: &str, p: &Point) -> L {
         S::Pow(b, g) => {
             at(&func("exp", vec![mul(vec![(**g).clone(), func("ln", vec![(**b).clone()])])]), x, p)
         }
-        S::Fn(f, args) if args.len() == 1 => match (f.as_str(), at(&args[0], x, p)) {
+        S::Fn(f, args) if args.len() == 1 => match (f.as_str(), at(args.first().unwrap_or(&ZERO), x, p)) {
             ("ln" | "log", L::Fin(v)) if is_zero(&v) => L::Inf(-1),
             (_, L::Fin(v)) => L::Fin(func(f, vec![v])),
             ("exp" | "cosh", L::Inf(1)) => L::Inf(1),

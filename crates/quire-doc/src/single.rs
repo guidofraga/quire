@@ -68,7 +68,8 @@ fn files(dir: &Path, base: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()>
         if path.is_dir() {
             files(&path, base, out)?;
         } else {
-            out.push(path.strip_prefix(base).expect("walked from base").to_path_buf());
+            let rel = path.strip_prefix(base).map_err(std::io::Error::other)?;
+            out.push(rel.to_path_buf());
         }
     }
     Ok(())
@@ -138,15 +139,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trips_in_memory_with_the_document_first() {
+    fn round_trips_in_memory_with_the_document_first() -> Result<(), Box<dyn std::error::Error>> {
         let entries = vec![
             ("assets/0123456789abcdef.png".to_string(), vec![1, 2, 3]),
             ("document.json".to_string(), b"{\"format\":1}".to_vec()),
         ];
-        let bytes = write_bytes(entries).unwrap();
-        let back = read_bytes(&bytes).unwrap();
-        assert_eq!(back[0], ("document.json".to_string(), b"{\"format\":1}".to_vec()));
-        assert_eq!(back[1], ("assets/0123456789abcdef.png".to_string(), vec![1, 2, 3]));
-        assert!(read_bytes(b"not a zip").unwrap_err().0.starts_with("not a Quire document"));
+        let bytes = write_bytes(entries)?;
+        let back = read_bytes(&bytes)?;
+        let [first, second] = back.as_slice() else {
+            return Err(format!("expected 2 entries, found {}", back.len()).into());
+        };
+        assert_eq!(first, &("document.json".to_string(), b"{\"format\":1}".to_vec()));
+        assert_eq!(second, &("assets/0123456789abcdef.png".to_string(), vec![1, 2, 3]));
+        assert!(read_bytes(b"not a zip").err().is_some_and(|e| e.0.starts_with("not a Quire document")));
+        Ok(())
     }
 }

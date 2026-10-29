@@ -72,11 +72,12 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
     let chars: Vec<char> = src.chars().collect();
     let len = chars.len();
     let at = |i: usize| chars.get(i).copied();
+    let slice_str = |a: usize, b: usize| chars.get(a..b).unwrap_or_default().iter().collect::<String>();
     let mut out = Vec::new();
     let mut i = 0;
 
     'outer: while i < len {
-        let c = chars[i];
+        let Some(c) = at(i) else { break 'outer };
         let start = i;
         if c.is_whitespace() {
             i += 1;
@@ -105,7 +106,7 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
                     }
                 }
             }
-            out.push(Token { tok: Tok::Num(chars[start..i].iter().collect()), pos: start });
+            out.push(Token { tok: Tok::Num(slice_str(start, i)), pos: start });
             continue;
         }
 
@@ -120,7 +121,7 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
                     break;
                 }
             }
-            let word: String = chars[start..i].iter().collect();
+            let word: String = slice_str(start, i);
             let tok = match word.as_str() {
                 "and" => Tok::Sym("and"),
                 "or" => Tok::Sym("or"),
@@ -139,7 +140,7 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
             if i == start + 1 {
                 return Err(ParseError::new("expected a unit name after '", start));
             }
-            out.push(Token { tok: Tok::Unit(chars[start + 1..i].iter().collect()), pos: start });
+            out.push(Token { tok: Tok::Unit(slice_str(start + 1, i)), pos: start });
             continue;
         }
 

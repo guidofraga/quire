@@ -113,7 +113,79 @@ function binary(op: BinaryOp, a: Expr, b: Expr): string {
 
 const d = mi("d", true);
 
+// SMath's program constructs stand on rows of their own: a block is a column of statements
+// with a rule down its left, an `if` or a loop puts its body one step in.
+
+const isIf = (args: Expr[]) => args.length === 2 || args.length === 3;
+
+/** An assignment, a block or a loop, or an `if` holding one: such a value is drawn as rows. */
+function isProgram(e: Expr): boolean {
+  if (e.t === "Define") return true;
+  if (e.t !== "Call") return false;
+  const [name, args] = e.c;
+  if (name === "if") return isIf(args) && args.slice(1).some(isProgram);
+  return name === "block" || name === "for" || name === "while";
+}
+
+const keyword = (word: string) => `<mtext class="kw">${word}</mtext>`;
+const mtr = (html: string) => `<mtr><mtd>${html}</mtd></mtr>`;
+const indented = (html: string) => mtr(row(space(1.5), html));
+/** Rows stacked and left-aligned; `align="1"` puts the first row on the baseline of the line it sits in. */
+const column = (cls: string, rows: string, align = "top") =>
+  `<mtable class="${cls}" columnalign="left" align="${align}">${rows}</mtable>`;
+
+/**
+ * A block: one row per statement, with a rule down the statements (`.q-body`). A header such as
+ * `f(x) :=` sits in the first row, so it is level with the first statement; `align="top"` keeps
+ * the first row at the top of the line. Rows touch so the rule is unbroken.
+ */
+function program(args: Expr[], header?: string): string {
+  const rows = args
+    .map((s, i) => {
+      const body = `<mtd class="q-body">${stmt(s)}</mtd>`;
+      return header === undefined ? `<mtr>${body}</mtr>` : `<mtr><mtd>${i === 0 ? header : ""}</mtd>${body}</mtr>`;
+    })
+    .join("");
+  const columns = header === undefined ? "left" : "left left";
+  return `<mtable class="q-program" columnalign="${columns}" rowspacing="0" columnspacing="0.3em" align="top">${rows}</mtable>`;
+}
+
+/** A statement of a block: an `if` is drawn in rows even with plain values, anything else as usual. */
+function stmt(e: Expr): string {
+  return e.t === "Call" && e.c[0] === "if" && isIf(e.c[1]) ? ifColumn(e.c[1]) : m(e);
+}
+
+function ifColumn(args: Expr[]): string {
+  const [c, a] = args;
+  const head = mtr(row(keyword("if"), space(0.3), m(c))) + indented(stmt(a));
+  return column("q-stack", args.length === 3 ? head + mtr(keyword("else")) + indented(stmt(args[2])) : head);
+}
+
+/** `for(i, range, body)`, `for(init, cond, step, body)` and `while(cond, body)`. */
+function loop(name: string, args: Expr[]): string {
+  const [a, b, c] = args;
+  const head =
+    name === "while"
+      ? row(keyword("while"), space(0.3), m(a))
+      : args.length === 3
+        ? row(keyword("for"), space(0.3), m(a), mo("∈"), m(b))
+        : row(keyword("for"), space(0.3), m(a), mo(","), m(b), mo(","), m(c));
+  return column("q-stack", mtr(head) + indented(stmt(args[args.length - 1])));
+}
+
+/** `sys(e1, …, en, rows, cols)`: the elements in a column under a brace; rows and cols are not shown. */
+function system(args: Expr[]): string {
+  const rows = args.slice(0, -2).map((e) => mtr(m(e))).join("");
+  return row(mo("{", ' stretchy="true"'), column("q-sys", rows, "axis"));
+}
+
 function call(name: string, args: Expr[]): string {
+  if (name === "block") return program(args);
+  if (name === "sys" && args.length >= 3) return system(args);
+  if ((name === "for" && (args.length === 3 || args.length === 4)) || (name === "while" && args.length === 2)) {
+    return loop(name, args);
+  }
+  if (name === "if" && isIf(args) && args.slice(1).some(isProgram)) return ifColumn(args);
   const [x, y, z, w] = args;
   switch (`${name}/${args.length}`) {
     case "sqrt/1":
@@ -166,7 +238,8 @@ function m(e: Expr): string {
     case "Unit":
       return unit(e.c);
     case "Str":
-      return `<ms class="str">${esc(e.c)}</ms>`;
+      // the quotes are text: pseudo-elements inside a MathML token stack as separate boxes
+      return `<ms class="str">"${esc(e.c)}"</ms>`;
     case "Placeholder":
       return `<mi class="ph">□</mi>`;
     case "Paren":
@@ -191,8 +264,13 @@ function m(e: Expr): string {
     }
     case "Range":
       return row(m(e.c[0]), mo(".."), m(e.c[1]));
-    case "Define":
-      return row(m(e.c.lhs), mo(e.c.global ? "≡" : "≔"), m(e.c.rhs));
+    case "Define": {
+      const op = mo(e.c.global ? "≡" : "≔");
+      // a block on the right is drawn from its header, so `f(x) :=` sits level with its first statement
+      const rhs = e.c.rhs;
+      if (rhs.t === "Call" && rhs.c[0] === "block") return program(rhs.c[1], row(m(e.c.lhs), op));
+      return row(m(e.c.lhs), op, m(e.c.rhs));
+    }
   }
 }
 

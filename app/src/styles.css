@@ -384,6 +384,23 @@ math {
   color: #9aa3af;
 }
 
+/* SMath programs (math.ts): a block's statements run down a rule (currentColor follows the theme),
+   their cells are left-aligned, and a string literal never breaks across lines */
+.q-program > mtr > mtd,
+.q-stack > mtr > mtd,
+.q-sys > mtr > mtd {
+  text-align: left;
+}
+
+.q-program > mtr > .q-body {
+  border-left: 1.5px solid currentColor;
+  padding-left: 0.3em;
+}
+
+ms.str {
+  white-space: nowrap;
+}
+
 .math-line {
   display: flex;
   align-items: baseline;
@@ -677,11 +694,6 @@ math {
   background: rgba(30, 32, 38, 0.92);
   color: #fff;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
-}
-
-ms.str::before,
-ms.str::after {
-  content: "\"";
 }
 
 /* ---------------------------------------------------------------- view toggle */
@@ -3393,8 +3405,53 @@ a.xref-missing {
   color: var(--accent);
 }
 
-.app.printing .plot-tools {
+.app.printing .plot-tools,
+.app.printing .plot-anim {
   display: none;
+}
+
+/* animation: a bar under the drawing, play or pause and a slider over the frames */
+.plot-anim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid #e6e5e1;
+  background: #fff;
+}
+
+.plot-anim button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #dddcd7;
+  border-radius: 5px;
+  background: #fff;
+  color: #3d3d3a;
+  font: 10px -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.plot-anim button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.plot-anim input[type="range"] {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.plot-mark-line,
+.plot-mark-ring {
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 /* ---------------------------------------------------------------- accessibility */

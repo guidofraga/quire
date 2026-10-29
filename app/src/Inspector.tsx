@@ -391,6 +391,7 @@ const set = (path: string[]) => (value: unknown) => updateDoc((d) => setPath(d, 
 function DocumentTab() {
   const meta = () => state.doc.meta ?? {};
   const display = () => (state.doc.settings as { display?: Record<string, unknown> } | undefined)?.display ?? {};
+  const units = () => (state.doc.settings as { units?: Record<string, unknown> } | undefined)?.units ?? {};
   const numbering = () => state.doc.styles?.numbering ?? {};
   return (
     <>
@@ -458,6 +459,14 @@ function DocumentTab() {
           label="Group digits (12 500)"
           onChange={(on) => set(["settings", "display", "groupDigits"])(on || undefined)}
         />
+        {/* documents imported from SMath write every unit quoted; a bare name is a variable */}
+        <Show when={units().marked !== undefined}>
+          <Check
+            checked={units().marked === true}
+            label="SMath names ('m is a unit, m a variable)"
+            onChange={(on) => set(["settings", "units", "marked"])(on)}
+          />
+        </Show>
       </Section>
       <Section title="Numbering">
         <Check

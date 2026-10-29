@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 use quire_ast::{BinaryOp, CmpOp, Expr, UnaryOp};
 
+pub(crate) mod bridge;
 mod integrate;
 mod limit;
 mod poly;
@@ -200,6 +201,11 @@ pub(crate) enum S {
 
 pub(crate) type Res<T> = std::result::Result<T, String>;
 
+/// The `i`-th argument of a call. `call` checks the argument count first.
+fn ex(args: &[Expr], i: usize) -> Res<&Expr> {
+    args.get(i).ok_or_else(|| "missing argument".to_string())
+}
+
 const ZERO: S = S::N(Num::Rat(0, 1));
 const ONE: S = S::N(Num::Rat(1, 1));
 
@@ -259,8 +265,14 @@ fn coef(t: &S) -> (Num, S) {
         S::N(c) => (*c, ONE),
         S::Mul(fs) => match fs.first() {
             Some(S::N(c)) => {
-                let rest: Vec<S> = fs[1..].to_vec();
-                (*c, if rest.len() == 1 { rest[0].clone() } else { S::Mul(rest) })
+                let rest: Vec<S> = fs.iter().skip(1).cloned().collect();
+                (
+                    *c,
+                    match <[S; 1]>::try_from(rest) {
+                        Ok([only]) => only,
+                        Err(rest) => S::Mul(rest),
+                    },
+                )
             }
             _ => (Num::int(1), t.clone()),
         },
@@ -282,9 +294,10 @@ pub(crate) fn add(terms: Vec<S>) -> S {
         match t {
             S::Add(ts) => flat.extend(ts),
             // a number times a sum is spread over it, so (a + b) - (a - b) cancels
-            S::Mul(fs) if fs.len() == 2 && matches!((&fs[0], &fs[1]), (S::N(_), S::Add(_))) => {
-                let (S::N(c), S::Add(ts)) = (&fs[0], &fs[1]) else { unreachable!() };
-                flat.extend(ts.iter().map(|t| mul(vec![S::N(*c), t.clone()])));
+            S::Mul(fs) if matches!(fs.as_slice(), [S::N(_), S::Add(_)]) => {
+                if let [S::N(c), S::Add(ts)] = fs.as_slice() {
+                    flat.extend(ts.iter().map(|t| mul(vec![S::N(*c), t.clone()])));
+                }
             }
             t => flat.push(t),
         }
@@ -319,10 +332,13 @@ pub(crate) fn add(terms: Vec<S>) -> S {
     if !constant.is_zero() {
         out.push(S::N(constant));
     }
-    match out.len() {
-        0 => ZERO,
-        1 => out.pop().unwrap(),
-        _ => S::Add(out),
+    match out.pop() {
+        None => ZERO,
+        Some(only) if out.is_empty() => only,
+        Some(last) => {
+            out.push(last);
+            S::Add(out)
+        }
     }
 }
 
@@ -410,7 +426,7 @@ pub(crate) fn mul(factors: Vec<S>) -> S {
     }
     let mut out: Vec<S> = Vec::new();
     for k in order {
-        let (b, es) = bases.remove(&k).unwrap();
+        let Some((b, es)) = bases.remove(&k) else { continue };
         match pow(b, add(es)) {
             S::N(x) => c = c.mul(x),
             S::Mul(fs) => {
@@ -435,7 +451,14 @@ pub(crate) fn mul(factors: Vec<S>) -> S {
     if !c.is(1) || out.is_empty() {
         out.insert(0, S::N(c));
     }
-    if out.len() == 1 { out.pop().unwrap() } else { S::Mul(out) }
+    match out.pop() {
+        Some(only) if out.is_empty() => only,
+        Some(last) => {
+            out.push(last);
+            S::Mul(out)
+        }
+        None => S::Mul(out),
+    }
 }
 
 pub(crate) fn pow(base: S, e: S) -> S {
@@ -494,8 +517,37 @@ pub(crate) fn func(name: &str, args: Vec<S>) -> S {
     let one = args.len() == 1;
     let a = args.first();
     let zero = a.is_some_and(|x| *x == ZERO);
-    if one && let Some(v) = exact_value(name, &args[0]) {
+    if one
+        && let Some(x) = a
+        && let Some(v) = exact_value(name, x)
+    {
         return v;
+    }
+    // exp(ln(x)) = x, ln(exp(x)) = x, ln(e^k) = k
+    if let (true, Some(x)) = (one, a) {
+        match (name, x) {
+            ("ln", S::Pow(b, k)) if **b == sym("e") => return (**k).clone(),
+            ("exp", S::Fn(f, inner)) if f == "ln" => {
+                if let Some(v) = inner.first() {
+                    return v.clone();
+                }
+            }
+            ("ln", S::Fn(f, inner)) if f == "exp" => {
+                if let Some(v) = inner.first() {
+                    return v.clone();
+                }
+            }
+            _ => {}
+        }
+    }
+    // |n| for a number
+    if let (true, Some(x), "abs") = (one, a, name)
+        && let Some(n) = num_of(x)
+    {
+        return match n {
+            Num::Rat(p, q) => S::N(Num::rat(p.abs(), q)),
+            Num::Float(f) => S::N(Num::Float(f.abs())),
+        };
     }
     match name {
         "sin" | "tan" | "asin" | "atan" | "sinh" | "tanh" if one && zero => ZERO,
@@ -504,29 +556,17 @@ pub(crate) fn func(name: &str, args: Vec<S>) -> S {
         "ln" if one && a == Some(&ONE) => ZERO,
         "ln" if one && a == Some(&sym("e")) => ONE,
         // odd and even functions: sin(-x) = -sin(x), cos(-x) = cos(x)
-        "sin" | "tan" | "sinh" | "tanh" | "asin" | "atan" if one && negative(&args[0]) => {
-            neg(func(name, vec![neg(args[0].clone())]))
+        "sin" | "tan" | "sinh" | "tanh" | "asin" | "atan" if one && a.is_some_and(negative) => {
+            neg(func(name, vec![neg(first_arg(a))]))
         }
-        "cos" | "cosh" if one && negative(&args[0]) => func(name, vec![neg(args[0].clone())]),
-        "ln" if one && matches!(a, Some(S::Pow(b, _)) if **b == sym("e")) => match a {
-            Some(S::Pow(_, k)) => (**k).clone(),
-            _ => unreachable!(),
-        },
-        // exp(ln(x)) = x, ln(exp(x)) = x
-        "exp" if one && matches!(a, Some(S::Fn(f, _)) if f == "ln") => match a {
-            Some(S::Fn(_, inner)) => inner[0].clone(),
-            _ => unreachable!(),
-        },
-        "ln" if one && matches!(a, Some(S::Fn(f, _)) if f == "exp") => match a {
-            Some(S::Fn(_, inner)) => inner[0].clone(),
-            _ => unreachable!(),
-        },
-        "abs" if one && num_of(&args[0]).is_some() => match num_of(&args[0]).unwrap() {
-            Num::Rat(p, q) => S::N(Num::rat(p.abs(), q)),
-            Num::Float(f) => S::N(Num::Float(f.abs())),
-        },
+        "cos" | "cosh" if one && a.is_some_and(negative) => func(name, vec![neg(first_arg(a))]),
         _ => S::Fn(name.to_string(), args),
     }
+}
+
+/// The argument of a one-argument call; the callers check there is one.
+fn first_arg(a: Option<&S>) -> S {
+    a.cloned().unwrap_or(ZERO)
 }
 
 /// Values a table gives exactly: sin(π/6) = 1/2, cos(π) = -1, atan(1) = π/4.
@@ -659,24 +699,24 @@ pub(crate) fn from_expr(e: &Expr, cx: &mut Ctx) -> Res<S> {
 /// `a == b` as `a - b` (to be zero); a plain expression is taken as `… == 0`.
 fn equation(e: &Expr, cx: &mut Ctx) -> Res<S> {
     match e {
-        Expr::Compare(a, rest) if rest.len() == 1 && rest[0].0 == CmpOp::Eq => {
-            Ok(add(vec![from_expr(a, cx)?, neg(from_expr(&rest[0].1, cx)?)]))
-        }
-        Expr::Compare(..) => Err("solve needs an equation with ==, like solve(a*x == b, x)".into()),
+        Expr::Compare(a, rest) => match rest.as_slice() {
+            [(CmpOp::Eq, b)] => Ok(add(vec![from_expr(a, cx)?, neg(from_expr(b, cx)?)])),
+            _ => Err("solve needs an equation with ==, like solve(a*x == b, x)".into()),
+        },
         e => from_expr(e, cx),
     }
 }
 
 /// `series(f, x, x0, n)`: the Taylor polynomial's terms, lowest power first.
 fn series_call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<Vec<S>> {
-    let x = var_name(&args[1], &format!("the variable of {name}"))?;
-    let order = match &args[3] {
+    let x = var_name(ex(args, 1)?, &format!("the variable of {name}"))?;
+    let order = match ex(args, 3)? {
         Expr::Num(t) => t.parse::<usize>().ok().filter(|k| *k <= 20),
         _ => None,
     }
     .ok_or_else(|| format!("{name}'s order should be a whole number up to 20"))?;
-    let f = from_expr(&args[0], cx)?;
-    limit::series(&f, &x, &from_expr(&args[2], cx)?, order)
+    let f = from_expr(ex(args, 0)?, cx)?;
+    limit::series(&f, &x, &from_expr(ex(args, 2)?, cx)?, order)
 }
 
 /// An expression as the user would type it, for messages.
@@ -685,10 +725,10 @@ fn show(e: &S) -> String {
 }
 
 fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
-    let arg = |i: usize, cx: &mut Ctx| from_expr(&args[i], cx);
+    let arg = |i: usize, cx: &mut Ctx| from_expr(ex(args, i)?, cx);
     match (name, args.len()) {
         ("diff", 2 | 3) => {
-            let x = var_name(&args[1], "the variable of diff")?;
+            let x = var_name(ex(args, 1)?, "the variable of diff")?;
             let times = match args.get(2) {
                 Some(Expr::Num(t)) => {
                     t.parse::<usize>().map_err(|_| "diff's order should be a whole number")?
@@ -703,11 +743,11 @@ fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
             Ok(f)
         }
         ("int", 2) => {
-            let x = var_name(&args[1], "the variable of int")?;
+            let x = var_name(ex(args, 1)?, "the variable of int")?;
             integrate(&arg(0, cx)?, &x)
         }
         ("int", 4) => {
-            let x = var_name(&args[1], "the variable of int")?;
+            let x = var_name(ex(args, 1)?, "the variable of int")?;
             let f = integrate(&arg(0, cx)?, &x)?;
             let (a, b) = (arg(2, cx)?, arg(3, cx)?);
             // the antiderivative at the limits; a limit where it cannot simply be put in
@@ -720,7 +760,7 @@ fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
         ("simplify", 1) => Ok(simplify(&arg(0, cx)?)),
         ("factor", 1) => Ok(poly::factor(&arg(0, cx)?)),
         ("subs" | "substitute", 3) => {
-            let x = var_name(&args[1], &format!("the second argument of {name}"))?;
+            let x = var_name(ex(args, 1)?, &format!("the second argument of {name}"))?;
             Ok(subs(&arg(0, cx)?, &x, &arg(2, cx)?))
         }
         ("series" | "taylor", 4) => Ok(add(series_call(name, args, cx)?)),
@@ -728,10 +768,10 @@ fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
             Err(format!("write {name}(f, x, x0, n): f around x = x0, up to (x - x0)^n"))
         }
         ("lim" | "limit", 3) => {
-            let x = var_name(&args[1], "the variable of lim")?;
+            let x = var_name(ex(args, 1)?, "the variable of lim")?;
             limit::limit(&arg(0, cx)?, &x, &arg(2, cx)?)
         }
-        ("solve", 2) => match (&args[0], &args[1]) {
+        ("solve", 2) => match (ex(args, 0)?, ex(args, 1)?) {
             (Expr::Matrix(eqs), Expr::Matrix(xs)) => {
                 let eqs: Vec<S> = eqs.iter().flatten().map(|e| equation(e, cx)).collect::<Res<_>>()?;
                 let xs: Vec<String> =
@@ -751,7 +791,7 @@ fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
             let k = arg(1, cx)?;
             Ok(pow(arg(0, cx)?, pow(k, n(-1))))
         }
-        ("exp", 1) if args[0] == Expr::Num("1".into()) => Ok(sym("e")),
+        ("exp", 1) if args.first() == Some(&Expr::Num("1".into())) => Ok(sym("e")),
         _ => {
             if cx.depth < 32
                 && let Some((params, body)) = (cx.functions)(name, args.len())
@@ -796,12 +836,12 @@ pub(crate) fn diff(e: &S, x: &str) -> S {
     match e {
         S::Sym(_) => ONE,
         S::Add(ts) => add(ts.iter().map(|t| diff(t, x)).collect()),
-        S::Mul(fs) => add((0..fs.len())
-            .filter(|&i| fs[i].depends(x))
-            .map(|i| {
-                let mut f = fs.clone();
-                f[i] = diff(&fs[i], x);
-                mul(f)
+        S::Mul(fs) => add(fs
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.depends(x))
+            .map(|(i, _)| {
+                mul(fs.iter().enumerate().map(|(j, g)| if j == i { diff(g, x) } else { g.clone() }).collect())
             })
             .collect()),
         S::Pow(b, p) if !p.depends(x) => {
@@ -816,7 +856,8 @@ pub(crate) fn diff(e: &S, x: &str) -> S {
             ]),
         ]),
         S::Fn(f, args) if args.len() == 1 => {
-            let u = args[0].clone();
+            // the guard above checks there is exactly one argument
+            let u = args.first().cloned().unwrap_or(ZERO);
             let du = diff(&u, x);
             let outer = match f.as_str() {
                 "sin" => func("cos", vec![u]),
@@ -930,7 +971,10 @@ fn sum_expr(ts: &[S]) -> Expr {
     };
     // 1 - sqrt(5) rather than -sqrt(5) + 1
     let mut ts = ts.to_vec();
-    if ts.len() > 1 && negative(&ts[0]) && ts.last().is_some_and(|t| matches!(t, S::N(_)) && !negative(t)) {
+    if ts.len() > 1
+        && ts.first().is_some_and(negative)
+        && ts.last().is_some_and(|t| matches!(t, S::N(_)) && !negative(t))
+    {
         ts.rotate_right(1);
     }
     let mut it = ts.iter();
@@ -1039,7 +1083,7 @@ pub(crate) fn approx(e: &S, value: &dyn Fn(&str) -> Option<f64>) -> Option<f64> 
         S::Mul(fs) => fs.iter().map(v).product::<Option<f64>>()?,
         S::Pow(b, p) => v(b)?.powf(v(p)?),
         S::Fn(f, xs) if xs.len() == 1 => {
-            let a = v(&xs[0])?;
+            let a = v(xs.first()?)?;
             match f.as_str() {
                 "sin" => a.sin(),
                 "cos" => a.cos(),

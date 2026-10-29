@@ -7,9 +7,9 @@ use std::rc::Rc;
 use quire_ast::Expr;
 use quire_units::Dim;
 
-use crate::error::{Result, bail};
+use crate::error::{Result, bail, internal};
 use crate::format::describe_dim;
-use crate::interp::{Binding, Func, Interp, Scope, func_key};
+use crate::interp::{Binding, Func, Interp, Scope, arg, func_key};
 use crate::numeric;
 use crate::ops::same_dim;
 use crate::value::{Matrix, Quantity, Value};
@@ -37,6 +37,7 @@ fn quantities(v: &Value, what: &str) -> Result<Vec<Quantity>> {
         Value::Matrix(m) if m.is_vector() => m.data.iter().map(|x| x.as_num(what)).collect(),
         Value::Matrix(m) => bail!("{what} must be a vector, not a {}×{} matrix", m.rows, m.cols),
         Value::Str(_) => bail!("{what} must be a number or a vector, not a string"),
+        Value::Sym(_) => bail!("{what} must be a number or a vector, not a formula"),
     }
 }
 
@@ -77,14 +78,14 @@ impl Interp<'_> {
         args: &[Expr],
         who: &str,
     ) -> Result<(Ode, Vec<f64>, f64, f64, usize)> {
-        let y0 = self.eval(s, &args[0])?;
+        let y0 = self.eval(s, arg(args, 0)?)?;
         let scalar = matches!(y0, Value::Num(_));
         let y0 = quantities(&y0, "the initial value y0")?;
         if y0.is_empty() {
             bail!("{who} needs at least one initial value");
         }
-        let mut t0 = self.eval(s, &args[1])?.as_num("the start t0")?;
-        let mut t1 = self.eval(s, &args[2])?.as_num("the end t1")?;
+        let mut t0 = self.eval(s, arg(args, 1)?)?.as_num("the start t0")?;
+        let mut t1 = self.eval(s, arg(args, 2)?)?.as_num("the end t1")?;
         // a plain 0 start takes the end's units: `rkfixed(y0, 0, 10 s, …)`
         if t0.v == 0.0 && t0.dim.is_dimensionless() {
             t0.dim = t1.dim;
@@ -95,14 +96,14 @@ impl Interp<'_> {
         if t0.v == t1.v || !t0.v.is_finite() || !t1.v.is_finite() {
             bail!("{who} needs a start t0 and a different, finite end t1");
         }
-        let n = self.eval(s, &args[3])?.as_int("the number of steps")?;
+        let n = self.eval(s, arg(args, 3)?)?.as_int("the number of steps")?;
         if n < 1 || n as usize * (y0.len() + 1) > MAX_ODE_POINTS {
             bail!(
                 "{who} needs from 1 to {} steps for this many equations, not {n}",
                 MAX_ODE_POINTS / (y0.len() + 1)
             );
         }
-        let f = self.function_arg(s, &args[4], &["t", "y"], who)?;
+        let f = self.function_arg(s, arg(args, 4)?, &["t", "y"], who)?;
         let ode = Ode { f, tdim: t0.dim, dims: y0.iter().map(|q| q.dim).collect(), scalar };
         Ok((ode, y0.iter().map(|q| q.v).collect(), t0.v, t1.v, n as usize))
     }
@@ -110,8 +111,10 @@ impl Interp<'_> {
     /// D(t, y), checked to be the rate of change of each y.
     fn rate(&mut self, ode: &Ode, t: f64, y: &[f64]) -> Result<Vec<f64>> {
         self.tick()?;
-        let yv =
-            if ode.scalar { Value::Num(Quantity::new(y[0], ode.dims[0])) } else { column_of(y, &ode.dims) };
+        let yv = match (ode.scalar, y.first(), ode.dims.first()) {
+            (true, Some(&yi), Some(&d)) => Value::Num(Quantity::new(yi, d)),
+            _ => column_of(y, &ode.dims),
+        };
         let r = self.apply(&ode.f, vec![Value::Num(Quantity::new(t, ode.tdim)), yv])?;
         let name = &ode.f.name;
         let r = quantities(&r, &format!("the result of {name}(t, y)"))?;
@@ -164,8 +167,8 @@ impl Interp<'_> {
             let k2 = self.rate(&ode, t + h / 2.0, &step(&y, &k1, h / 2.0))?;
             let k3 = self.rate(&ode, t + h / 2.0, &step(&y, &k2, h / 2.0))?;
             let k4 = self.rate(&ode, t + h, &step(&y, &k3, h))?;
-            for j in 0..y.len() {
-                y[j] += h / 6.0 * (k1[j] + 2.0 * k2[j] + 2.0 * k3[j] + k4[j]);
+            for (yj, (((a, b), c), d)) in y.iter_mut().zip(k1.iter().zip(&k2).zip(&k3).zip(&k4)) {
+                *yj += h / 6.0 * (a + 2.0 * b + 2.0 * c + d);
             }
             rows.push((if i + 1 == n { t1 } else { t0 + (i + 1) as f64 * h }, y.clone()));
         }
@@ -217,28 +220,28 @@ impl Interp<'_> {
                 let hs = if last { target - t } else { h };
                 let mut ks = vec![k1.clone()];
                 let mut y5 = y.clone();
-                for (stage, a) in A.iter().enumerate() {
-                    let yi: Vec<f64> = (0..k)
-                        .map(|j| y[j] + hs * a.iter().zip(&ks).map(|(c, kk)| c * kk[j]).sum::<f64>())
-                        .collect();
-                    ks.push(self.rate(&ode, t + C[stage] * hs, &yi)?);
+                for (stage, (a, c)) in A.iter().zip(C).enumerate() {
+                    let sums = weighted_sum(a, &ks, k);
+                    let yi: Vec<f64> = y.iter().zip(&sums).map(|(yj, s)| yj + hs * s).collect();
+                    ks.push(self.rate(&ode, t + c * hs, &yi)?);
                     if stage == 5 {
                         y5 = yi;
                     }
                 }
                 let mut err: f64 = 0.0;
-                for j in 0..k {
-                    let e = hs * E.iter().zip(&ks).map(|(c, kk)| c * kk[j]).sum::<f64>();
-                    let sc = RTOL * (scale[j].max(y[j].abs()).max(y5[j].abs()));
+                let e_sums = weighted_sum(&E, &ks, k);
+                for (((es, yj), y5j), sj) in e_sums.iter().zip(&y).zip(&y5).zip(&scale) {
+                    let e = hs * es;
+                    let sc = RTOL * (sj.max(yj.abs()).max(y5j.abs()));
                     let r = if e == 0.0 { 0.0 } else { e.abs() / sc.max(f64::MIN_POSITIVE) };
                     err = err.max(r);
                 }
                 if err <= 1.0 {
                     t = if last { target } else { t + hs };
                     y = y5;
-                    k1 = ks.pop().expect("seven stages");
-                    for j in 0..k {
-                        scale[j] = scale[j].max(y[j].abs());
+                    k1 = ks.pop().ok_or_else(|| internal("the Runge-Kutta stages"))?;
+                    for (sc, yj) in scale.iter_mut().zip(&y) {
+                        *sc = sc.max(yj.abs());
                     }
                 }
                 let grow = if err == 0.0 { 5.0 } else { (0.9 * err.powf(-0.2)).clamp(0.2, 5.0) };
@@ -259,9 +262,9 @@ impl Interp<'_> {
     /// `linfit(vx, vy, F)`: the coefficients c minimising Σ(vy − c·F(vx))², where F(x)
     /// returns the vector of basis functions (Mathcad's linfit).
     pub(crate) fn linfit(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let xs = quantities(&self.eval(s, &args[0])?, "vx")?;
-        let ys = quantities(&self.eval(s, &args[1])?, "vy")?;
-        let f = self.function_arg(s, &args[2], &["x"], "linfit")?;
+        let xs = quantities(&self.eval(s, arg(args, 0)?)?, "vx")?;
+        let ys = quantities(&self.eval(s, arg(args, 1)?)?, "vy")?;
+        let f = self.function_arg(s, arg(args, 2)?, &["x"], "linfit")?;
         if xs.len() != ys.len() {
             bail!("linfit needs vx and vy of the same length, not {} and {}", xs.len(), ys.len());
         }
@@ -312,9 +315,9 @@ enum Unknowns {
 impl Interp<'_> {
     /// `solve` with a vector of unknowns: `[x; y]`, or a variable whose value is a vector.
     pub(crate) fn is_system(s: &Scope, args: &[Expr]) -> bool {
-        match &args[1] {
-            Expr::Matrix(_) => true,
-            Expr::Ident(n) => {
+        match args.get(1) {
+            Some(Expr::Matrix(_)) => true,
+            Some(Expr::Ident(n)) => {
                 matches!(s.get(n), Some(Binding::Val(Value::Matrix(_))))
                     || matches!(args.get(2), Some(Expr::Matrix(_)))
             }
@@ -325,9 +328,9 @@ impl Interp<'_> {
     /// `solve([f1 == g1; f2 == g2], [x; y])`: the x, y that satisfy every equation, found by
     /// damped Newton steps from their current values (or from `solve(…, [x; y], [x0; y0])`).
     pub(crate) fn solve_system(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let unknowns = match &args[1] {
+        let unknowns = match arg(args, 1)? {
             Expr::Matrix(rows) => {
-                if rows.len() != 1 && rows[0].len() != 1 {
+                if rows.len() != 1 && rows.first().is_none_or(|r| r.len() != 1) {
                     bail!("solve needs the unknowns as a vector, like [x; y]");
                 }
                 let mut names: Vec<String> = Vec::new();
@@ -370,7 +373,7 @@ impl Interp<'_> {
         if start.len() != count {
             bail!("solve needs {count} starting values, one for each unknown, not {}", start.len());
         }
-        let eqs = match &args[0] {
+        let eqs = match arg(args, 0)? {
             Expr::Matrix(rows) => {
                 Expr::Matrix(rows.iter().map(|r| r.iter().map(Self::residual).collect()).collect())
             }
@@ -455,22 +458,24 @@ impl Interp<'_> {
         let merit = |f: &[f64], w: &[f64]| f.iter().zip(w).map(|(a, b)| (a * b).powi(2)).sum::<f64>();
         for _ in 0..100 {
             let mut jac = vec![0.0; n * n];
-            for j in 0..n {
-                let h = 1e-7 * x[j].abs().max(typical[j]);
-                let mut xh = x.clone();
-                xh[j] += h;
+            for (j, (xj, tj)) in x.iter().zip(&typical).enumerate() {
+                let h = 1e-7 * xj.abs().max(*tj);
+                let xh: Vec<f64> =
+                    x.iter().enumerate().map(|(i, v)| if i == j { v + h } else { *v }).collect();
                 let fh = self.residuals(s, eqs, unknowns, dims, &xh, &mut rdims)?;
-                for i in 0..n {
-                    jac[i * n + j] = (fh[i] - f[i]) / h;
+                for (i, (fhi, fi)) in fh.iter().zip(&f).enumerate() {
+                    *numeric::el_mut(&mut jac, n, i, j).ok_or_else(|| internal("the Jacobian"))? =
+                        (fhi - fi) / h;
                 }
             }
             // each equation measured against the size of its own terms, so one in kN and
             // one in mm count alike
             let w = weights.get_or_insert_with(|| {
-                (0..n)
-                    .map(|i| {
+                jac.chunks_exact(n.max(1))
+                    .zip(&f)
+                    .map(|(row, fi)| {
                         let size =
-                            (0..n).map(|j| (jac[i * n + j] * typical[j]).abs()).fold(f[i].abs(), f64::max);
+                            row.iter().zip(&typical).map(|(a, t)| (a * t).abs()).fold(fi.abs(), f64::max);
                         if size > 0.0 { 1.0 / size } else { 1.0 }
                     })
                     .collect()
@@ -515,6 +520,18 @@ impl Interp<'_> {
 
 fn no_solution() -> crate::error::EvalError {
     crate::error::EvalError::new("no solution found near the starting values; try other starting values")
+}
+
+/// For each component i, Σₛ coefₛ·ks[s][i] with the stages added in order: the Runge–Kutta
+/// combinations. `len` is the number of components.
+fn weighted_sum(coef: &[f64], ks: &[Vec<f64>], len: usize) -> Vec<f64> {
+    let mut sums = vec![-0.0; len];
+    for (c, k) in coef.iter().zip(ks) {
+        for (acc, kj) in sums.iter_mut().zip(k) {
+            *acc += c * kj;
+        }
+    }
+    sums
 }
 
 #[cfg(test)]

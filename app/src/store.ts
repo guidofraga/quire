@@ -1,6 +1,6 @@
 // Editor state: the document (as the JSON it is on disk), evaluation results,
 // selection/editing, viewport, and undo history.
-import { createMemo, createRoot } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal } from "solid-js";
 import { createStore, produce, reconcile, unwrap } from "solid-js/store";
 import { pageGeom, type PageGeom, SHEET_GAP } from "./pages";
 import type { Doc, Localized, Region, Report, RegionView } from "./types";
@@ -154,6 +154,7 @@ export function redo() {
 
 /** `origin`: where images come from until the first save (a template's file). */
 export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
+  importSettle = null;
   undoStack.length = 0;
   redoStack.length = 0;
   undoChars = 0;
@@ -199,7 +200,10 @@ export interface Placed {
 export function localized(v: Localized | undefined, lang?: string): string {
   if (v === undefined) return "";
   if (typeof v === "string") return v;
-  const key = Object.keys(v).find((k) => lang?.startsWith(k)) ?? Object.keys(v)[0];
+  // the document's language, else English, else the first one written (SMath worksheets carry
+  // several translations and no document language, often with Russian first); as in Rust
+  const keys = Object.keys(v);
+  const key = keys.find((k) => lang?.startsWith(k)) ?? keys.find((k) => k === "en") ?? keys[0];
   return key ? v[key] : "";
 }
 
@@ -382,6 +386,220 @@ export function noteRoom(p: Placed, list: readonly Placed[], measured: Record<st
   }
   return Math.max(120, room);
 }
+
+// ---------------------------------------------------------------------------
+// Imported SMath worksheets: settle the positions once
+// ---------------------------------------------------------------------------
+
+/** Changed positions and heights, by region id. */
+export type Settling = Map<string, { at?: [number, number]; height?: number }>;
+
+/**
+ * SMath's pixel positions, made to fit Quire's taller maths: a region that overlaps one below
+ * it pushes that one (and everything below it at its level) down to the next grid line below its
+ * bottom, top to bottom so the pushes cascade. An area's height grows to hold its children, and
+ * what is below the area moves down by the growth. Works on a copy; the input is not changed.
+ *
+ * `pushers`: the regions that may push (default: every measured region). Areas are always
+ * re-fitted to their children, so running this again only changes what is new.
+ */
+export function settleRegions(
+  regions: Region[],
+  heights: Record<string, number>,
+  widths: Record<string, number>,
+  pushers?: Set<string>,
+): Settling {
+  const work = structuredClone(regions);
+  const extent = (r: Region): number | undefined => (r.kind === "area" ? r.height : heights[r.id]);
+  const width = (r: Region) => widths[r.id] ?? 40;
+
+  /** The height an area needs to hold its children, with the grid padding SMath leaves below them. */
+  const needed = (list: Region[]): number | undefined => {
+    let bottom: number | undefined;
+    for (const c of list) {
+      const h = extent(c);
+      if (h !== undefined) bottom = Math.max(bottom ?? 0, c.at[1] + h);
+    }
+    return bottom === undefined ? undefined : Math.ceil(bottom / GRID) * GRID + GRID;
+  };
+
+  const settleList = (list: Region[]) => {
+    const order = [...list].sort((a, b) => a.at[1] - b.at[1] || a.at[0] - b.at[0]);
+    for (let i = 0; i < order.length; i++) {
+      const r = order[i];
+      if (r.kind === "area") {
+        // a collapsed area's children are not drawn, so they cannot be measured: it stays as it is
+        if (r.collapsed || r.height === undefined) continue;
+        settleList(r.regions ?? []);
+        const want = needed(r.regions ?? []);
+        if (want !== undefined && want > r.height + 0.5) {
+          const grow = want - r.height;
+          const bottom = r.at[1] + r.height;
+          // everything below the area at its own level moves down by the growth
+          for (const q of list) if (q !== r && q.at[1] >= bottom - 0.5) q.at[1] += grow;
+          r.height = want;
+        }
+      }
+      if (pushers && !pushers.has(r.id)) continue;
+      const h = extent(r);
+      if (h === undefined) continue;
+      const bottom = r.at[1] + h;
+      const target = Math.ceil(bottom / GRID) * GRID + GRID;
+      const x0 = r.at[0];
+      const x1 = x0 + width(r);
+      for (let j = i + 1; j < order.length; j++) {
+        const q = order[j];
+        if (q.at[1] >= bottom + GRID) break;
+        if (extent(q) === undefined || !(q.at[0] < x1 && q.at[0] + width(q) > x0)) continue;
+        const dy = target - q.at[1];
+        if (dy <= 0) continue;
+        // q and everything after it (all at or below its top) keep their spacing
+        for (const x of order.slice(j)) x.at[1] += dy;
+      }
+    }
+  };
+  settleList(work);
+
+  const original = new Map<string, Region>();
+  const collect = (list: Region[]) => {
+    for (const r of list) {
+      original.set(r.id, r);
+      if (r.regions) collect(r.regions);
+    }
+  };
+  collect(regions);
+  const changes: Settling = new Map();
+  const compare = (list: Region[]) => {
+    for (const r of list) {
+      const old = original.get(r.id);
+      if (old) {
+        const moved = old.at[0] !== r.at[0] || old.at[1] !== r.at[1];
+        const grew = r.kind === "area" && r.height !== old.height;
+        if (moved || grew) {
+          const change: { at?: [number, number]; height?: number } = {};
+          if (moved) change.at = [r.at[0], r.at[1]];
+          if (grew) change.height = r.height;
+          changes.set(r.id, change);
+        }
+      }
+      if (r.regions) compare(r.regions);
+    }
+  };
+  compare(work);
+  return changes;
+}
+
+/** Ids of a region and everything inside it. */
+function subtreeIds(r: Region, out: Set<string>): Set<string> {
+  out.add(r.id);
+  for (const c of r.regions ?? []) subtreeIds(c, out);
+  return out;
+}
+
+function findRegion(regions: Region[], id: string): Region | undefined {
+  for (const r of regions) {
+    if (r.id === id) return r;
+    const inner = r.regions ? findRegion(r.regions, id) : undefined;
+    if (inner) return inner;
+  }
+  return undefined;
+}
+
+/** State of an imported SMath document whose positions are still to be settled. */
+interface ImportSettle {
+  /** Collapsed areas: their children are settled the first time they are expanded. */
+  collapsed: Set<string>;
+  /** The first pass (everything drawn at open) has run. */
+  openDone: boolean;
+  /** When the layout last changed: a pass waits until it has been quiet for a moment. */
+  lastChange: number;
+}
+
+const SETTLE_QUIET_MS = 300;
+const SETTLE_MAX_WAIT_MS = 3000;
+let importSettle: ImportSettle | null = null;
+let settleTimer: ReturnType<typeof setTimeout> | undefined;
+let fontsReady = typeof document === "undefined" || !document.fonts;
+const [settleTick, setSettleTick] = createSignal(0);
+if (!fontsReady) {
+  void document.fonts.ready.then(() => {
+    fontsReady = true;
+    setSettleTick((t) => t + 1);
+  });
+}
+
+/** Call once an imported SMath document is in place (after `loadDoc`). */
+export function settleImportedOnOpen() {
+  importSettle = { collapsed: new Set(), openDone: false, lastChange: Date.now() };
+  setSettleTick((t) => t + 1);
+}
+
+/** One undo step; the document stays unedited, as it was when opened. */
+function applySettling(changes: Settling) {
+  if (!changes.size) return;
+  const wasDirty = state.dirty;
+  mutate((d) => {
+    for (const [id, c] of changes) {
+      const r = findDraft(d, id);
+      if (!r) continue;
+      if (c.at) r.at = c.at;
+      if (c.height !== undefined) r.height = c.height;
+    }
+  });
+  if (!wasDirty) setState({ dirty: false });
+}
+
+function runImportSettle() {
+  const s = importSettle;
+  if (!s || !fontsReady) return;
+  const unmeasured = layout().list.some((p) => !p.hidden && heights[p.region.id] === undefined);
+  if (unmeasured && Date.now() - s.lastChange < SETTLE_MAX_WAIT_MS) {
+    settleTimer = setTimeout(runImportSettle, 200);
+    return;
+  }
+  const regions = unwrap(state.doc).regions;
+  if (!s.openDone) {
+    // the user started editing before the first pass: leave the worksheet as the user has it
+    if (state.dirty) {
+      importSettle = null;
+      return;
+    }
+    const collect = (list: Region[]) => {
+      for (const r of list) {
+        if (r.kind === "area" && r.collapsed) s.collapsed.add(r.id);
+        if (r.regions) collect(r.regions);
+      }
+    };
+    collect(regions);
+    applySettling(settleRegions(regions, heights, widths));
+    s.openDone = true;
+    return;
+  }
+  // areas expanded for the first time: the area and what is inside it settle now
+  const pushers = new Set<string>();
+  for (const id of [...s.collapsed]) {
+    const area = findRegion(regions, id);
+    if (!area) s.collapsed.delete(id);
+    else if (!area.collapsed) {
+      s.collapsed.delete(id);
+      subtreeIds(area, pushers);
+    }
+  }
+  if (pushers.size) applySettling(settleRegions(regions, heights, widths, pushers));
+}
+
+// Runs after each layout change (measured heights, edits, expanding an area), once fonts are ready.
+createRoot(() =>
+  createEffect(() => {
+    layout();
+    void state.rev;
+    void settleTick();
+    if (!importSettle) return;
+    importSettle.lastChange = Date.now();
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(runImportSettle, SETTLE_QUIET_MS);
+  }),
+);
 
 /**
  * Pages or canvas. The choice is kept in the document, but it is a way of looking at it

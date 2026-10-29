@@ -186,14 +186,17 @@ fn list(out: &mut String, args: &[Expr]) {
 mod tests {
     use crate::{Expr, parse, print};
 
-    fn roundtrip(src: &str) {
-        let e = parse(src).unwrap_or_else(|err| panic!("{src}: {err}"));
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn roundtrip(src: &str) -> TestResult {
+        let e = parse(src).map_err(|err| format!("{src}: {err}"))?;
         assert_eq!(print(&e), src, "print(parse(s)) != s");
-        assert_eq!(parse(&print(&e)).unwrap(), e, "parse(print(e)) != e");
+        assert_eq!(parse(&print(&e))?, e, "parse(print(e)) != e");
+        Ok(())
     }
 
     #[test]
-    fn canonical_text_roundtrips() {
+    fn canonical_text_roundtrips() -> TestResult {
         for src in [
             "L.span := 5.1 'm",
             "A.área := L.span*b.flange",
@@ -234,40 +237,43 @@ mod tests {
             "x ≡ ?",
             "[a, …; …, b]",
         ] {
-            roundtrip(src);
+            roundtrip(src)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn precedence() {
-        let e = parse("1 + 2*3^2").unwrap();
+    fn precedence() -> TestResult {
+        let e = parse("1 + 2*3^2")?;
         assert_eq!(print(&e), "1 + 2*3^2");
         // juxtaposed quantity is one primary: 10/5 'm is 10/(5 m)
-        let Expr::Binary(_, _, rhs) = parse("10/5 'm").unwrap() else { panic!() };
+        let Expr::Binary(_, _, rhs) = parse("10/5 'm")? else {
+            return Err("expected a binary expression".into());
+        };
         assert!(rhs.is_quantity());
-        let squared = Expr::Binary(
-            crate::BinaryOp::Pow,
-            Box::new(parse("5 'm").unwrap()),
-            Box::new(Expr::Num("2".into())),
-        );
+        let squared =
+            Expr::Binary(crate::BinaryOp::Pow, Box::new(parse("5 'm")?), Box::new(Expr::Num("2".into())));
         assert_eq!(print(&squared), "(5 'm)^2");
-        assert_eq!(print(&parse("-5 'm").unwrap()), "-5 'm");
+        assert_eq!(print(&parse("-5 'm")?), "-5 'm");
+        Ok(())
     }
 
     #[test]
-    fn aliases_normalize() {
-        assert_eq!(print(&parse("a <= b != c").unwrap()), "a ≤ b ≠ c");
-        assert_eq!(print(&parse("g ::= 1").unwrap()), "g ≡ 1");
-        assert_eq!(print(&parse("a·b×c").unwrap()), "a*b*c");
+    fn aliases_normalize() -> TestResult {
+        assert_eq!(print(&parse("a <= b != c")?), "a ≤ b ≠ c");
+        assert_eq!(print(&parse("g ::= 1")?), "g ≡ 1");
+        assert_eq!(print(&parse("a·b×c")?), "a*b*c");
+        Ok(())
     }
 
     #[test]
-    fn errors_point_at_the_problem() {
-        let err = parse("x = 2").unwrap_err();
+    fn errors_point_at_the_problem() -> TestResult {
+        let err = parse("x = 2").err().ok_or("expected a parse error")?;
         assert!(err.message.contains(":="), "{err}");
         assert_eq!(err.pos, 2);
-        assert!(parse("(1 + 2").unwrap_err().message.contains("')'"));
-        assert!(parse("[1, 2; 3]").unwrap_err().message.contains("different lengths"));
+        assert!(parse("(1 + 2").err().is_some_and(|e| e.message.contains("')'")));
+        assert!(parse("[1, 2; 3]").err().is_some_and(|e| e.message.contains("different lengths")));
         assert!(parse("5 '").is_err());
+        Ok(())
     }
 }

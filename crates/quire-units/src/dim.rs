@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::{Div, Mul};
+use std::ops::{Add, Div, Mul, Sub};
 
 use crate::Rational;
 
@@ -31,17 +31,26 @@ impl Dim {
     }
 }
 
+/// Combines the exponents of two dimensions component by component.
+fn zip_with(a: Dim, b: Dim, f: fn(Rational, Rational) -> Rational) -> Dim {
+    let mut out = a.0;
+    for (x, y) in out.iter_mut().zip(b.0) {
+        *x = f(*x, y);
+    }
+    Dim(out)
+}
+
 impl Mul for Dim {
     type Output = Dim;
     fn mul(self, o: Dim) -> Dim {
-        Dim(std::array::from_fn(|i| self.0[i] + o.0[i]))
+        zip_with(self, o, Add::add)
     }
 }
 
 impl Div for Dim {
     type Output = Dim;
     fn div(self, o: Dim) -> Dim {
-        Dim(std::array::from_fn(|i| self.0[i] - o.0[i]))
+        zip_with(self, o, Sub::sub)
     }
 }
 
@@ -71,11 +80,11 @@ pub fn format_product(parts: &[(&str, Rational)], quote: bool) -> String {
     let den: Vec<String> =
         parts.iter().filter(|(_, e)| e.numer() < 0).map(|(n, e)| power(n, e.abs(), quote)).collect();
     let mut s = if num.is_empty() && !den.is_empty() { "1".to_string() } else { num.join("*") };
-    match den.len() {
-        0 => {}
-        1 => {
+    match den.as_slice() {
+        [] => {}
+        [only] => {
             s.push('/');
-            s.push_str(&den[0]);
+            s.push_str(only);
         }
         _ => {
             s.push_str("/(");
