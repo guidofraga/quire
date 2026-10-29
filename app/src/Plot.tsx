@@ -795,6 +795,11 @@ export function OptionsEditor(props: { id: string }) {
   return (
     <>
       <Check checked={r().grid !== false} label="Grid" onChange={(on) => updateRegion(props.id, { grid: on ? true : false })} />
+      <Check
+        checked={!!r().polar}
+        label="Polar: r(θ), θ on the horizontal axis"
+        onChange={(on) => updateRegion(props.id, { polar: on || undefined })}
+      />
       <Field label="Legend" hint="Shown with two or more series">
         <Select<string>
           value={(r().legend as string | undefined) ?? "top-left"}

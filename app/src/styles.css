@@ -3540,3 +3540,29 @@ input[type="radio"]:focus-visible,
     --focus-ring: #a9c8ff;
   }
 }
+
+/* polar plots (PolarPlot.tsx) */
+.plot-polar .plot-grid circle {
+  stroke: #e6e5e1;
+  stroke-width: 1;
+}
+
+/* rays run at angles: no pixel snapping */
+.plot-polar .plot-grid line {
+  shape-rendering: auto;
+}
+
+.polar-tip {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  pointer-events: none;
+}
+
+.polar-unit {
+  position: absolute;
+  bottom: 4px;
+  right: 8px;
+  font-size: 11px;
+  color: #52514e;
+}

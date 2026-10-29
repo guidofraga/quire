@@ -300,6 +300,7 @@
                 }
               },
               "grid": { "type": "boolean" },
+              "polar": { "type": "boolean", "description": "plot2d: series are r(θ), the variable or x values being θ" },
               "extrema": { "type": "boolean" },
               "legend": { "enum": ["none", "top-left", "top-right", "bottom-left", "bottom-right"] },
               "render": { "type": "string" },

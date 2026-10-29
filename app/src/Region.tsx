@@ -8,6 +8,7 @@ import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
 import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
+import { PolarPlotBody } from "./PolarPlot";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
 import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
@@ -352,7 +353,9 @@ function PlotFigure(props: { p: Placed }) {
       <Show when={r().caption?.position === "above"}>
         <Caption p={props.p} />
       </Show>
-      <PlotBody r={r()} />
+      <Show when={r().polar} fallback={<PlotBody r={r()} />}>
+        <PolarPlotBody r={r()} />
+      </Show>
       <Show when={error()}>
         <div class="err" title={error()!}>
           <span class="err-text">{error()}</span>
