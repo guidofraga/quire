@@ -36,6 +36,7 @@ import { FindBar } from "./FindBar";
 import { importCsv, insertTable, isSheet, tableCommand } from "./TableEditor";
 import { insertPlot } from "./Plot";
 import { insertPlot3d } from "./Plot3D";
+import { autoOn, hasLinks, linkSpreadsheet, refreshData, setAuto, watchData } from "./datalinks";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
@@ -420,6 +421,12 @@ function runCommand(id: string) {
       return insertPlot();
     case "insert_plot3d":
       return insertPlot3d();
+    case "insert_data":
+      return void linkSpreadsheet();
+    case "refresh_data":
+      return void refreshData(true);
+    case "toggle_data_auto":
+      return setAuto(!autoOn());
     case "welcome":
       return setWelcomeOpen(true);
     case "check_updates":
@@ -649,6 +656,7 @@ export function App() {
     }
     void applyTheme();
     syncRecent();
+    watchData();
     await onMenu(runCommand);
     await guardClose(() => state.dirty, api.clearRecovery);
     window.addEventListener("keydown", browserShortcuts);
@@ -712,6 +720,21 @@ export function App() {
           <button onClick={() => runCommand("insert_toc")} title="Insert table of contents">
             <span class="glyph" aria-hidden="true">☰</span> <span class="tool-label">Contents</span>
           </button>
+          {/* linked Excel data: turn automatic updates on and off, or update now */}
+          <Show when={hasLinks()}>
+            <button
+              class="data-auto"
+              classList={{ on: autoOn() }}
+              aria-pressed={autoOn()}
+              onClick={() => setAuto(!autoOn())}
+              title={autoOn() ? "Excel data updates automatically when the file changes (click to stop)" : "Excel data does not update by itself (click to update automatically)"}
+            >
+              <span class="glyph" aria-hidden="true">⇅</span> <span class="tool-label">{autoOn() ? "Auto ✓" : "Auto ✗"}</span>
+            </button>
+            <button onClick={() => void refreshData(true)} title="Read the linked Excel files again now">
+              <span class="glyph" aria-hidden="true">⟳</span> <span class="tool-label">Update</span>
+            </button>
+          </Show>
         </div>
         <div class="status" data-tauri-drag-region role="toolbar" aria-label="Document" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
           <Show when={(state.report?.errorCount ?? 0) > 0}>

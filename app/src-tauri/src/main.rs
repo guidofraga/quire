@@ -27,6 +27,18 @@ fn open_document(path: PathBuf) -> CmdResult<Json> {
     quire_service::open(&path).map_err(err)
 }
 
+/// When each linked spreadsheet last changed (ms since 1970), for automatic updates.
+#[tauri::command]
+fn data_stamps(paths: Vec<String>) -> Vec<Option<u64>> {
+    quire_service::data_stamps(&paths)
+}
+
+/// A linked spreadsheet's sheets.
+#[tauri::command]
+fn read_data(path: PathBuf) -> CmdResult<Json> {
+    quire_service::read_data(&path).map_err(err)
+}
+
 /// An SMath Studio worksheet, converted: opens as a new, untitled document.
 #[tauri::command]
 fn import_sm(path: PathBuf) -> CmdResult<quire_service::ImportedSm> {
@@ -292,6 +304,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "import_csv", "Table from CSV…", None)?,
             &item(app, "insert_plot", "Plot", Some("CmdOrCtrl+Alt+P"))?,
             &item(app, "insert_plot3d", "3D Plot", None)?,
+            &item(app, "insert_data", "Excel Data…", None)?,
             &item(app, "insert_area", "Area", None)?,
             &sep()?,
             &item(app, "insert_toc", "Table of Contents", None)?,
@@ -470,6 +483,8 @@ fn main() {
             report,
             open_document,
             import_sm,
+            data_stamps,
+            read_data,
             save_document,
             read_asset,
             new_document,

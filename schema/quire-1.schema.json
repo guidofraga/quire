@@ -65,6 +65,15 @@
         }
       }
     },
+    "dataLinks": {
+      "description": "Where each spreadsheet in data comes from: name -> { path, auto (re-read it when the file changes; default true), stamp (ms since 1970 when it was last read) }",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path"],
+        "properties": { "path": { "type": "string" }, "auto": { "type": "boolean" }, "stamp": { "type": "number" } }
+      }
+    },
     "styles": {
       "type": "object",
       "properties": {

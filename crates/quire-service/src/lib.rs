@@ -787,6 +787,23 @@ pub fn import_sm(path: &Path) -> Result<ImportedSm> {
     })
 }
 
+/// Linked spreadsheets (`dataLinks`): when each file last changed, in milliseconds since
+/// 1970 (`None` when it can't be read), so the app re-reads only the ones that changed.
+pub fn data_stamps(paths: &[String]) -> Vec<Option<u64>> {
+    paths
+        .iter()
+        .map(|p| {
+            let modified = std::fs::metadata(p).and_then(|m| m.modified()).ok()?;
+            modified.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
+        })
+        .collect()
+}
+
+/// A linked spreadsheet's sheets, as the document's `data` keeps them.
+pub fn read_data(path: &Path) -> Result<Json> {
+    quire_smath::read_sheets(path).map_err(|e| ServiceError(format!("{}: {e}", path.display())))
+}
+
 /// The bundle directory for a path that may point at the bundle or its document.json.
 pub fn bundle_dir(path: &Path) -> PathBuf {
     if path.file_name().is_some_and(|n| n == "document.json") {

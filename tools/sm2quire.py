@@ -548,6 +548,7 @@ class Converter:
         self.seq = 0
         self.stats = Counter()
         self.warnings = []
+        self.links = {}  # dataLinks: spreadsheet name -> where it was read from
         self.math_sizes = Counter()
         self.text_fonts = Counter()
 
@@ -591,6 +592,8 @@ class Converter:
         data = self.data_files(regions)
         if data:
             doc["data"] = data
+            # where each table came from, so the app can re-read it when the file changes
+            doc["dataLinks"] = self.links
         if not doc["page"]:
             del doc["page"]
         deps = self.dependencies(settings)
@@ -845,6 +848,7 @@ class Converter:
                 self.warnings.append(f"importData: {base} read from {path}")
             try:
                 data[base] = read_csv(path) if path.suffix.lower() in (".csv", ".txt") else read_xlsx(path)
+                self.links[base] = {"path": str(path), "auto": True}
             except Exception as ex:  # a damaged or old .xls file: say so, keep going
                 self.warnings.append(f"importData: cannot read {base}: {ex}")
         return data

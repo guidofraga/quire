@@ -29,6 +29,15 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             serde_json::to_value(quire_service::report(doc).map_err(err)?).map_err(|e| e.to_string())
         }
         "open_document" => quire_service::open(Path::new(arg(body, "path")?)).map_err(err),
+        "data_stamps" => {
+            let paths: Vec<String> = body
+                .get("paths")
+                .and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(|p| p.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            serde_json::to_value(quire_service::data_stamps(&paths)).map_err(|e| e.to_string())
+        }
+        "read_data" => quire_service::read_data(Path::new(arg(body, "path")?)).map_err(err),
         "import_sm" => {
             serde_json::to_value(quire_service::import_sm(Path::new(arg(body, "path")?)).map_err(err)?)
                 .map_err(|e| e.to_string())

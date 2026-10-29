@@ -126,6 +126,8 @@ struct Converter<'s> {
     warnings: Vec<String>,
     math_sizes: Tally<String>,
     text_fonts: Tally<(String, String)>,
+    /// `dataLinks`: spreadsheet name → where it was read from.
+    links: Map<String, Json>,
 }
 
 impl Converter<'_> {
@@ -177,6 +179,8 @@ impl Converter<'_> {
         doc.insert("regions".into(), Json::Array(regions));
         if !data.is_empty() {
             doc.insert("data".into(), Json::Object(data));
+            // where each table came from, so the app can re-read it when the file changes
+            doc.insert("dataLinks".into(), Json::Object(std::mem::take(&mut self.links)));
         }
         if doc["page"].as_object().is_some_and(Map::is_empty) {
             doc.remove("page");
@@ -541,6 +545,9 @@ impl Converter<'_> {
                 if ext == "csv" || ext == "txt" { sheets::read_csv(path) } else { sheets::read_xlsx(path) };
             match read {
                 Ok(v) => {
+                    let shown = path.display().to_string();
+                    let full = shown.trim_start_matches(r"\\?\").to_string();
+                    self.links.insert(base.clone(), json!({ "path": full, "auto": true }));
                     data.insert(base, v);
                 }
                 // a damaged or old .xls file: say so, keep going
@@ -1117,6 +1124,7 @@ pub fn import(bytes: &[u8], path: &Path) -> Result<Imported, String> {
         warnings: Vec::new(),
         math_sizes: Tally::default(),
         text_fonts: Tally::default(),
+        links: Map::new(),
     };
     let document = c.run(xml.root_element());
     Ok(Imported {
@@ -1126,6 +1134,13 @@ pub fn import(bytes: &[u8], path: &Path) -> Result<Imported, String> {
         warnings: c.warnings,
         stats: c.stats,
     })
+}
+
+/// The sheets of a spreadsheet (`.xlsx`, or `.csv`/`.txt`), as the document's `data` keeps
+/// them: sheet name → rows from A1 (numbers, strings, null).
+pub fn read_sheets(path: &Path) -> Result<Json, String> {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if ext == "csv" || ext == "txt" { sheets::read_csv(path) } else { sheets::read_xlsx(path) }
 }
 
 /// Write `document.json`, `results.json` (when SMath saved results) and `assets/`.
