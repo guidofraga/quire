@@ -2,15 +2,29 @@
 //!
 //! Names stay symbols: `q*x*(L - x)/2 →` keeps `q` and `L`, and the document's functions
 //! are expanded into their bodies. On top of simplification (like terms collected,
-//! numbers folded exactly, powers combined) it knows `diff`, `int` (indefinite and
-//! definite), `expand`, `simplify` and `solve` for equations of degree one and two.
+//! numbers folded exactly, powers combined, fractions cancelled) it knows `diff`, `int`
+//! (indefinite and definite), `expand`, `factor`, `simplify`, `solve` (polynomials,
+//! equations with fractions, simple transcendental ones and linear systems), `series`
+//! (`taylor`), `lim` and `subs`.
 //!
 //! Expressions are kept in a canonical form built by the smart constructors [`add`],
-//! [`mul`], [`pow`] and [`func`], so two equal expressions have equal keys.
+//! [`mul`], [`pow`] and [`func`], so two equal expressions have equal keys. Names are
+//! taken to be positive, as lengths, areas and stiffnesses are: `sqrt(h^2) → h`.
 
 use std::collections::HashMap;
 
 use quire_ast::{BinaryOp, CmpOp, Expr, UnaryOp};
+
+mod integrate;
+mod limit;
+mod poly;
+mod simplify;
+mod solve;
+#[cfg(test)]
+mod tests;
+
+use integrate::integrate;
+use simplify::{simplify, tidy};
 
 // ---------------------------------------------------------------------------
 // Numbers: exact rationals, falling back to floats for decimals and overflow
@@ -28,6 +42,26 @@ fn gcd(a: i128, b: i128) -> i128 {
         (a, b) = (b, a % b);
     }
     a.max(1)
+}
+
+fn lcm(a: i128, b: i128) -> Option<i128> {
+    (a / gcd(a, b)).checked_mul(b).map(i128::abs)
+}
+
+/// `n = a^q * r` with `a` as large as possible: 12 → (2, 3) for square roots.
+fn perfect_part(n: i128, q: u32) -> (i128, i128) {
+    let (mut a, mut r) = (1i128, n);
+    let mut p = 2i128;
+    while p.checked_pow(q).is_some_and(|pq| pq <= r) && p <= 1_000_000 {
+        let pq = p.pow(q);
+        if r % pq == 0 {
+            r /= pq;
+            a *= p;
+        } else {
+            p += 1;
+        }
+    }
+    (a, r)
 }
 
 impl Num {
@@ -63,6 +97,23 @@ impl Num {
             Num::Rat(n, 1) => Some(n),
             _ => None,
         }
+    }
+
+    /// As an exact fraction; a typed decimal like 0.25 counts as 1/4.
+    fn ratio(self) -> Option<(i128, i128)> {
+        match self {
+            Num::Rat(..) => Some(self),
+            Num::Float(x) if x.is_finite() && x.abs() < 1e12 => (0..=9).find_map(|k| {
+                let d = 10f64.powi(k);
+                let n = (x * d).round();
+                ((n - x * d).abs() < 1e-9 * d).then(|| Num::rat(n as i128, 10i128.pow(k as u32)))
+            }),
+            _ => None,
+        }
+        .and_then(|r| match r {
+            Num::Rat(n, d) => Some((n, d)),
+            Num::Float(_) => None,
+        })
     }
 
     fn add(self, o: Num) -> Num {
@@ -402,6 +453,23 @@ pub(crate) fn pow(base: S, e: S) -> S {
             if let Some(v) = b.pow(k) {
                 return S::N(v);
             }
+            // roots pulled out where they can be: sqrt(12) = 2*sqrt(3), sqrt(1/2) = 1/sqrt(2)
+            if let (Num::Rat(bn, bd), Num::Rat(p @ (1 | -1), q @ 2..=4)) = (b, k)
+                && bn > 0
+            {
+                let ((an, rn), (ad, rd)) = (perfect_part(bn, q as u32), perfect_part(bd, q as u32));
+                if an > 1 || ad > 1 || rd > 1 {
+                    let surd = |r: i128, s: i128| match r {
+                        1 => ONE,
+                        r => S::Pow(Box::new(n(r)), Box::new(S::N(Num::rat(s, q)))),
+                    };
+                    return mul(vec![
+                        S::N(Num::rat(an, ad).pow(Num::int(p)).unwrap_or(Num::int(1))),
+                        surd(rn, p),
+                        surd(rd, -p),
+                    ]);
+                }
+            }
         }
     }
     if let Some(b) = num_of(&base)
@@ -426,11 +494,24 @@ pub(crate) fn func(name: &str, args: Vec<S>) -> S {
     let one = args.len() == 1;
     let a = args.first();
     let zero = a.is_some_and(|x| *x == ZERO);
+    if one && let Some(v) = exact_value(name, &args[0]) {
+        return v;
+    }
     match name {
         "sin" | "tan" | "asin" | "atan" | "sinh" | "tanh" if one && zero => ZERO,
         "cos" | "cosh" | "exp" if one && zero => ONE,
+        "exp" if one && a == Some(&ONE) => sym("e"),
         "ln" if one && a == Some(&ONE) => ZERO,
         "ln" if one && a == Some(&sym("e")) => ONE,
+        // odd and even functions: sin(-x) = -sin(x), cos(-x) = cos(x)
+        "sin" | "tan" | "sinh" | "tanh" | "asin" | "atan" if one && negative(&args[0]) => {
+            neg(func(name, vec![neg(args[0].clone())]))
+        }
+        "cos" | "cosh" if one && negative(&args[0]) => func(name, vec![neg(args[0].clone())]),
+        "ln" if one && matches!(a, Some(S::Pow(b, _)) if **b == sym("e")) => match a {
+            Some(S::Pow(_, k)) => (**k).clone(),
+            _ => unreachable!(),
+        },
         // exp(ln(x)) = x, ln(exp(x)) = x
         "exp" if one && matches!(a, Some(S::Fn(f, _)) if f == "ln") => match a {
             Some(S::Fn(_, inner)) => inner[0].clone(),
@@ -445,6 +526,54 @@ pub(crate) fn func(name: &str, args: Vec<S>) -> S {
             Num::Float(f) => S::N(Num::Float(f.abs())),
         },
         _ => S::Fn(name.to_string(), args),
+    }
+}
+
+/// Values a table gives exactly: sin(π/6) = 1/2, cos(π) = -1, atan(1) = π/4.
+fn exact_value(name: &str, a: &S) -> Option<S> {
+    let half = |k: i128| S::N(Num::rat(k, 2));
+    let root = |r: i128| pow(n(r), half(1));
+    let pi_times = |c: Num| mul(vec![S::N(c), sym("π")]);
+    match name {
+        "asin" if *a == ONE => return Some(pi_times(Num::rat(1, 2))),
+        "acos" if *a == ONE => return Some(ZERO),
+        "acos" if *a == ZERO => return Some(pi_times(Num::rat(1, 2))),
+        "atan" if *a == ONE => return Some(pi_times(Num::rat(1, 4))),
+        _ => {}
+    }
+    // a rational multiple of π, in twelfths of a turn
+    let (c, rest) = coef(a);
+    if rest != sym("π") && *a != sym("π") {
+        return None;
+    }
+    let c = if *a == sym("π") { Num::int(1) } else { c };
+    let Num::Rat(p, q) = c else { return None };
+    if 12 % q != 0 {
+        return None;
+    }
+    let k = (p * (12 / q)).rem_euclid(24); // angle in units of π/12
+    // sin of k·π/12 for k = 0, 2, 3, 4, 6 (0°, 30°, 45°, 60°, 90°), by symmetry elsewhere
+    let sin_k = |k: i128| -> Option<S> {
+        let (k, sign) = if k >= 12 { (k - 12, -1) } else { (k, 1) };
+        let k = if k > 6 { 12 - k } else { k };
+        let v = match k {
+            0 => ZERO,
+            2 => half(1),
+            3 => mul(vec![half(1), root(2)]),
+            4 => mul(vec![half(1), root(3)]),
+            6 => ONE,
+            _ => return None,
+        };
+        Some(mul(vec![n(sign), v]))
+    };
+    match name {
+        "sin" => sin_k(k),
+        "cos" => sin_k((k + 6) % 24),
+        "tan" => {
+            let (s, c) = (sin_k(k)?, sin_k((k + 6) % 24)?);
+            (c != ZERO).then(|| div(s, c))
+        }
+        _ => None,
     }
 }
 
@@ -527,6 +656,34 @@ pub(crate) fn from_expr(e: &Expr, cx: &mut Ctx) -> Res<S> {
     })
 }
 
+/// `a == b` as `a - b` (to be zero); a plain expression is taken as `… == 0`.
+fn equation(e: &Expr, cx: &mut Ctx) -> Res<S> {
+    match e {
+        Expr::Compare(a, rest) if rest.len() == 1 && rest[0].0 == CmpOp::Eq => {
+            Ok(add(vec![from_expr(a, cx)?, neg(from_expr(&rest[0].1, cx)?)]))
+        }
+        Expr::Compare(..) => Err("solve needs an equation with ==, like solve(a*x == b, x)".into()),
+        e => from_expr(e, cx),
+    }
+}
+
+/// `series(f, x, x0, n)`: the Taylor polynomial's terms, lowest power first.
+fn series_call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<Vec<S>> {
+    let x = var_name(&args[1], &format!("the variable of {name}"))?;
+    let order = match &args[3] {
+        Expr::Num(t) => t.parse::<usize>().ok().filter(|k| *k <= 20),
+        _ => None,
+    }
+    .ok_or_else(|| format!("{name}'s order should be a whole number up to 20"))?;
+    let f = from_expr(&args[0], cx)?;
+    limit::series(&f, &x, &from_expr(&args[2], cx)?, order)
+}
+
+/// An expression as the user would type it, for messages.
+fn show(e: &S) -> String {
+    print(&to_expr(&tidy(e)))
+}
+
 fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
     let arg = |i: usize, cx: &mut Ctx| from_expr(&args[i], cx);
     match (name, args.len()) {
@@ -553,23 +710,42 @@ fn call(name: &str, args: &[Expr], cx: &mut Ctx) -> Res<S> {
             let x = var_name(&args[1], "the variable of int")?;
             let f = integrate(&arg(0, cx)?, &x)?;
             let (a, b) = (arg(2, cx)?, arg(3, cx)?);
-            Ok(add(vec![subs(&f, &x, &b), neg(subs(&f, &x, &a))]))
+            // the antiderivative at the limits; a limit where it cannot simply be put in
+            let at = |p: &S| {
+                limit::limit(&f, &x, p).map_err(|e| format!("the integral at {x} = {}: {e}", show(p)))
+            };
+            Ok(add(vec![at(&b)?, neg(at(&a)?)]))
         }
         ("expand", 1) => Ok(expand(&arg(0, cx)?)),
-        ("simplify", 1) => arg(0, cx),
-        ("solve", 2) => {
-            let x = var_name(&args[1], "the unknown of solve")?;
-            let lhs = match &args[0] {
-                Expr::Compare(a, rest) if rest.len() == 1 && rest[0].0 == CmpOp::Eq => {
-                    add(vec![from_expr(a, cx)?, neg(from_expr(&rest[0].1, cx)?)])
-                }
-                Expr::Compare(..) => {
-                    return Err("solve needs an equation with ==, like solve(a*x == b, x)".into());
-                }
-                e => from_expr(e, cx)?,
-            };
-            solve(&lhs, &x)
+        ("simplify", 1) => Ok(simplify(&arg(0, cx)?)),
+        ("factor", 1) => Ok(poly::factor(&arg(0, cx)?)),
+        ("subs" | "substitute", 3) => {
+            let x = var_name(&args[1], &format!("the second argument of {name}"))?;
+            Ok(subs(&arg(0, cx)?, &x, &arg(2, cx)?))
         }
+        ("series" | "taylor", 4) => Ok(add(series_call(name, args, cx)?)),
+        ("series" | "taylor", _) => {
+            Err(format!("write {name}(f, x, x0, n): f around x = x0, up to (x - x0)^n"))
+        }
+        ("lim" | "limit", 3) => {
+            let x = var_name(&args[1], "the variable of lim")?;
+            limit::limit(&arg(0, cx)?, &x, &arg(2, cx)?)
+        }
+        ("solve", 2) => match (&args[0], &args[1]) {
+            (Expr::Matrix(eqs), Expr::Matrix(xs)) => {
+                let eqs: Vec<S> = eqs.iter().flatten().map(|e| equation(e, cx)).collect::<Res<_>>()?;
+                let xs: Vec<String> =
+                    xs.iter().flatten().map(|v| var_name(v, "each unknown of solve")).collect::<Res<_>>()?;
+                solve::solve_system(&eqs, &xs)
+            }
+            (Expr::Matrix(_), _) => {
+                Err("list the unknowns too: solve([x + y == 3; x - y == 1], [x; y])".into())
+            }
+            (eq, v) => {
+                let x = var_name(v, "the unknown of solve")?;
+                solve::solve(&equation(eq, cx)?, &x)
+            }
+        },
         ("sqrt", 1) => Ok(pow(arg(0, cx)?, S::N(Num::rat(1, 2)))),
         ("root", 2) => {
             let k = arg(1, cx)?;
@@ -664,66 +840,6 @@ pub(crate) fn diff(e: &S, x: &str) -> S {
     }
 }
 
-/// The slope of `u` if it is `a*x + b`.
-fn linear(u: &S, x: &str) -> Option<S> {
-    let a = diff(u, x);
-    (!a.depends(x) && a != ZERO).then_some(a)
-}
-
-pub(crate) fn integrate(e: &S, x: &str) -> Res<S> {
-    if !e.depends(x) {
-        return Ok(mul(vec![e.clone(), sym(x)]));
-    }
-    let fail = || Err(format!("cannot integrate {} symbolically", print(&to_expr(e))));
-    match e {
-        S::Add(ts) => Ok(add(ts.iter().map(|t| integrate(t, x)).collect::<Res<_>>()?)),
-        S::Mul(fs) => {
-            let (dep, constant): (Vec<S>, Vec<S>) = fs.iter().cloned().partition(|f| f.depends(x));
-            if dep.len() == 1 {
-                return Ok(mul(vec![mul(constant), integrate(&dep[0], x)?]));
-            }
-            let expanded = expand(e);
-            if expanded != *e {
-                return integrate(&expanded, x);
-            }
-            fail()
-        }
-        S::Sym(_) => Ok(mul(vec![S::N(Num::rat(1, 2)), pow(sym(x), n(2))])),
-        S::Pow(b, p) if !p.depends(x) => {
-            let Some(a) = linear(b, x) else {
-                let expanded = expand(e);
-                return if expanded != *e { integrate(&expanded, x) } else { fail() };
-            };
-            if num_of(p).is_some_and(|k| k.is(-1)) {
-                return Ok(div(func("ln", vec![(**b).clone()]), a));
-            }
-            let k1 = add(vec![(**p).clone(), ONE]);
-            Ok(div(pow((**b).clone(), k1.clone()), mul(vec![a, k1])))
-        }
-        // c^(a*x + b) = c^(…)/(a ln c)
-        S::Pow(b, p) if !b.depends(x) => match linear(p, x) {
-            Some(a) => Ok(div(e.clone(), mul(vec![a, func("ln", vec![(**b).clone()])]))),
-            None => fail(),
-        },
-        S::Fn(f, args) if args.len() == 1 => {
-            let u = &args[0];
-            let Some(a) = linear(u, x) else { return fail() };
-            let primitive = match f.as_str() {
-                "sin" => neg(func("cos", vec![u.clone()])),
-                "cos" => func("sin", vec![u.clone()]),
-                "exp" => e.clone(),
-                "sinh" => func("cosh", vec![u.clone()]),
-                "cosh" => func("sinh", vec![u.clone()]),
-                "ln" => add(vec![mul(vec![u.clone(), func("ln", vec![u.clone()])]), neg(u.clone())]),
-                "tan" => neg(func("ln", vec![func("cos", vec![u.clone()])])),
-                _ => return fail(),
-            };
-            Ok(div(primitive, a))
-        }
-        _ => fail(),
-    }
-}
-
 /// Products of sums multiplied out, whole powers of sums expanded.
 pub(crate) fn expand(e: &S) -> S {
     match e {
@@ -760,113 +876,6 @@ fn distribute(a: &S, b: &S) -> S {
     add(out)
 }
 
-/// Roots of a polynomial of degree one or two in `x`.
-pub(crate) fn solve(e: &S, x: &str) -> Res<S> {
-    let p = expand(e);
-    let mut c = [ZERO, ZERO, ZERO];
-    for t in terms(&p) {
-        let (k, rest) = power_of(&t, x).ok_or_else(|| {
-            format!(
-                "solve handles equations of degree one or two in {x}; this one is not a polynomial in {x}"
-            )
-        })?;
-        if k > 2 {
-            return Err(format!("solve handles equations of degree one or two in {x}; this one has {x}^{k}"));
-        }
-        c[k] = add(vec![c[k].clone(), rest]);
-    }
-    let [c0, c1, c2] = c;
-    if c2 == ZERO {
-        if c1 == ZERO {
-            return Err(format!("there is no {x} to solve for"));
-        }
-        return Ok(neg(div(c0, c1)));
-    }
-    let disc = add(vec![pow(c1.clone(), n(2)), mul(vec![n(-4), c2.clone(), c0])]);
-    if num_of(&disc).is_some_and(|d| d.f() < 0.0) {
-        return Err("no real solutions".into());
-    }
-    let two_a = mul(vec![n(2), c2]);
-    if disc == ZERO {
-        return Ok(neg(div(c1, two_a)));
-    }
-    let root = pow(disc, S::N(Num::rat(1, 2)));
-    Ok(S::Vec(vec![
-        div(add(vec![neg(c1.clone()), neg(root.clone())]), two_a.clone()),
-        div(add(vec![neg(c1), root]), two_a),
-    ]))
-}
-
-/// A term as `rest*x^k` with `rest` free of `x`.
-fn power_of(t: &S, x: &str) -> Option<(usize, S)> {
-    if !t.depends(x) {
-        return Some((0, t.clone()));
-    }
-    let factors = match t {
-        S::Mul(fs) => fs.clone(),
-        f => vec![f.clone()],
-    };
-    let mut k = 0;
-    let mut rest = Vec::new();
-    for f in factors {
-        if !f.depends(x) {
-            rest.push(f);
-            continue;
-        }
-        let (b, e) = base_exp(&f);
-        if b != sym(x) {
-            return None;
-        }
-        k += usize::try_from(num_of(&e)?.integer()?).ok()?;
-    }
-    Some((k, mul(rest)))
-}
-
-/// Common factors pulled out of sums, for display: `q*(L - x)/2 - q*x/2` → `q*(L - 2*x)/2`.
-pub(crate) fn tidy(e: &S) -> S {
-    match e {
-        S::Add(ts) => {
-            let ts: Vec<S> = ts.iter().map(tidy).collect();
-            let factors = |t: &S| match t {
-                S::Mul(fs) => fs.iter().filter(|f| !matches!(f, S::N(_))).cloned().collect::<Vec<_>>(),
-                S::N(_) => vec![],
-                f => vec![f.clone()],
-            };
-            let first = factors(&ts[0]);
-            let common: Vec<S> =
-                first.into_iter().filter(|f| ts[1..].iter().all(|t| factors(t).contains(f))).collect();
-            // a common numeric fraction, like the 1/2 in q*x/2 + q*L/2
-            let coefs: Vec<Num> = ts.iter().map(|t| coef(t).0).collect();
-            let shared = match coefs.first() {
-                Some(Num::Rat(_, d))
-                    if *d > 1 && coefs.iter().all(|c| matches!(c, Num::Rat(_, e) if e == d)) =>
-                {
-                    Some(Num::rat(1, *d))
-                }
-                _ => None,
-            };
-            if common.is_empty() && shared.is_none() {
-                return add(ts);
-            }
-            let mut out = common.clone();
-            let inv: Vec<S> = common.iter().map(|f| pow(f.clone(), n(-1))).collect();
-            let factor = shared.unwrap_or(Num::int(1));
-            let inner = add(ts
-                .iter()
-                .map(|t| mul([vec![t.clone(), S::N(factor.recip())], inv.clone()].concat()))
-                .collect());
-            out.push(S::N(factor));
-            out.push(inner);
-            mul(out)
-        }
-        S::Mul(fs) => mul(fs.iter().map(tidy).collect()),
-        S::Pow(b, p) => pow(tidy(b), tidy(p)),
-        S::Fn(f, xs) => func(f, xs.iter().map(tidy).collect()),
-        S::Vec(xs) => S::Vec(xs.iter().map(tidy).collect()),
-        _ => e.clone(),
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Back to the AST, the way people write it
 // ---------------------------------------------------------------------------
@@ -876,12 +885,10 @@ fn num_expr(x: Num) -> Expr {
         Num::Rat(a, 1) if a < 0 => Expr::Unary(UnaryOp::Neg, Box::new(Expr::Num((-a).to_string()))),
         Num::Rat(a, 1) => Expr::Num(a.to_string()),
         Num::Rat(a, b) => {
-            let frac = Expr::Binary(
-                BinaryOp::Div,
-                Box::new(Expr::Num(a.abs().to_string())),
-                Box::new(Expr::Num(b.to_string())),
-            );
-            if a < 0 { Expr::Unary(UnaryOp::Neg, Box::new(frac)) } else { frac }
+            // -1/2 rather than -(1/2)
+            let top = Expr::Num(a.abs().to_string());
+            let top = if a < 0 { Expr::Unary(UnaryOp::Neg, Box::new(top)) } else { top };
+            Expr::Binary(BinaryOp::Div, Box::new(top), Box::new(Expr::Num(b.to_string())))
         }
         Num::Float(f) if f < 0.0 => Expr::Unary(UnaryOp::Neg, Box::new(Expr::Num(format_float(-f)))),
         Num::Float(f) => Expr::Num(format_float(f)),
@@ -914,23 +921,37 @@ fn negate_leading(e: Expr) -> Expr {
     }
 }
 
+/// Terms written one after another, in the order given: `a - b + c`.
+fn sum_expr(ts: &[S]) -> Expr {
+    let term = |t: &S| match to_expr(t) {
+        // a bare sum as a term of another, as in a series in (x - 1): keep its brackets
+        e @ Expr::Binary(BinaryOp::Add | BinaryOp::Sub, ..) => Expr::Paren(Box::new(e)),
+        e => e,
+    };
+    // 1 - sqrt(5) rather than -sqrt(5) + 1
+    let mut ts = ts.to_vec();
+    if ts.len() > 1 && negative(&ts[0]) && ts.last().is_some_and(|t| matches!(t, S::N(_)) && !negative(t)) {
+        ts.rotate_right(1);
+    }
+    let mut it = ts.iter();
+    let Some(first) = it.next() else { return Expr::Num("0".into()) };
+    let mut out = term(first);
+    for t in it {
+        out = if negative(t) {
+            Expr::Binary(BinaryOp::Sub, Box::new(out), Box::new(term(&neg(t.clone()))))
+        } else {
+            Expr::Binary(BinaryOp::Add, Box::new(out), Box::new(term(t)))
+        };
+    }
+    out
+}
+
 pub(crate) fn to_expr(e: &S) -> Expr {
     match e {
         S::N(x) => num_expr(*x),
         S::Sym(s) => Expr::Ident(s.clone()),
         S::Unit(u) => Expr::Unit(u.clone()),
-        S::Add(ts) => {
-            let mut it = ts.iter();
-            let mut out = to_expr(it.next().unwrap());
-            for t in it {
-                out = if negative(t) {
-                    Expr::Binary(BinaryOp::Sub, Box::new(out), Box::new(to_expr(&neg(t.clone()))))
-                } else {
-                    Expr::Binary(BinaryOp::Add, Box::new(out), Box::new(to_expr(t)))
-                };
-            }
-            out
-        }
+        S::Add(ts) => sum_expr(ts),
         S::Mul(_) => {
             let (c, rest) = coef(e);
             if c.f() < 0.0 {
@@ -986,70 +1007,59 @@ fn print(e: &Expr) -> String {
 /// `expr →`: the expression worked out symbolically, as linear text.
 pub(crate) fn evaluate(e: &Expr, functions: Functions) -> Res<String> {
     let mut cx = Ctx::new(functions);
+    // a series reads from the lowest power up, so it is written out term by term
+    if let Expr::Call(f, args) = e
+        && matches!(f.as_str(), "series" | "taylor")
+        && args.len() == 4
+    {
+        let terms: Vec<S> = series_call(f, args, &mut cx)?.iter().map(tidy).collect();
+        return Ok(print(&sum_expr(&terms)));
+    }
     let s = from_expr(e, &mut cx)?;
-    // expand() asks for the expanded form; anything else is shown factored where it can be
+    // expand() and factor() ask for a form; anything else is simplified and shown
+    // factored where it can be
     let shown = match e {
-        Expr::Call(f, _) if f == "expand" => s,
-        _ => tidy(&s),
+        Expr::Call(f, _) if f == "expand" || f == "factor" => s,
+        _ => tidy(&simplify(&s)),
     };
     Ok(print(&to_expr(&shown)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sym_eval(src: &str) -> String {
-        let none = |_: &str, _: usize| None;
-        evaluate(&quire_ast::parse(src).unwrap(), &none).unwrap_or_else(|e| format!("error: {e}"))
-    }
-
-    #[test]
-    fn simplifies() {
-        assert_eq!(sym_eval("x + x + 2*x"), "4*x");
-        assert_eq!(sym_eval("x*x*y/x"), "x*y");
-        assert_eq!(sym_eval("2/4 + 1/4"), "3/4");
-        assert_eq!(sym_eval("(a + b) - (a - b)"), "2*b");
-        assert_eq!(sym_eval("2 'm + 3 'm"), "5*'m");
-        assert_eq!(sym_eval("sqrt(16)"), "4");
-        assert_eq!(sym_eval("x^2*x^3"), "x^5");
-    }
-
-    #[test]
-    fn expands() {
-        assert_eq!(sym_eval("expand((x + 1)^2)"), "x^2 + 2*x + 1");
-        assert_eq!(sym_eval("expand((a + b)*(a - b))"), "a^2 - b^2");
-        assert_eq!(sym_eval("expand((a + b)^3)"), "a^3 + 3*a^2*b + 3*a*b^2 + b^3");
-    }
-
-    #[test]
-    fn differentiates() {
-        assert_eq!(sym_eval("diff(x^3, x)"), "3*x^2");
-        assert_eq!(sym_eval("diff(sin(2*x), x)"), "2*cos(2*x)");
-        assert_eq!(sym_eval("diff(q*x*(L - x)/2, x)"), "q*(L - 2*x)/2");
-        assert_eq!(sym_eval("diff(x^4, x, 2)"), "12*x^2");
-        assert_eq!(sym_eval("diff(ln(x), x)"), "1/x");
-    }
-
-    #[test]
-    fn integrates() {
-        assert_eq!(sym_eval("int(x^2, x)"), "x^3/3");
-        assert_eq!(sym_eval("int(q, x)"), "q*x");
-        assert_eq!(sym_eval("int(cos(3*x), x)"), "sin(3*x)/3");
-        assert_eq!(sym_eval("int(1/x, x)"), "ln(x)");
-        assert_eq!(sym_eval("int(x^2, x, 0, L)"), "L^3/3");
-        assert_eq!(sym_eval("int(q*x*(L - x)/2, x, 0, L)"), "L^3*q/12");
-    }
-
-    #[test]
-    fn solves() {
-        assert_eq!(sym_eval("solve(2*x + 4 == 0, x)"), "-2");
-        assert_eq!(sym_eval("solve(a*x == b, x)"), "b/a");
-        assert_eq!(sym_eval("solve(x^2 - 5*x + 6, x)"), "[2; 3]");
-        assert_eq!(
-            sym_eval("solve(a*x^2 + b*x + c, x)"),
-            "[(-b - sqrt(b^2 - 4*a*c))/(2*a); (-b + sqrt(b^2 - 4*a*c))/(2*a)]"
-        );
-        assert!(sym_eval("solve(x^2 + 1, x)").contains("no real solutions"));
-    }
+/// The value of `e` as a float, given values for its names (units count as 1).
+pub(crate) fn approx(e: &S, value: &dyn Fn(&str) -> Option<f64>) -> Option<f64> {
+    let v = |t: &S| approx(t, value);
+    Some(match e {
+        S::N(x) => x.f(),
+        S::Sym(s) if s == "π" => std::f64::consts::PI,
+        S::Sym(s) if s == "e" => std::f64::consts::E,
+        S::Sym(s) if s == "∞" => f64::INFINITY,
+        S::Sym(s) => value(s)?,
+        S::Unit(_) => 1.0,
+        S::Add(ts) => ts.iter().map(v).sum::<Option<f64>>()?,
+        S::Mul(fs) => fs.iter().map(v).product::<Option<f64>>()?,
+        S::Pow(b, p) => v(b)?.powf(v(p)?),
+        S::Fn(f, xs) if xs.len() == 1 => {
+            let a = v(&xs[0])?;
+            match f.as_str() {
+                "sin" => a.sin(),
+                "cos" => a.cos(),
+                "tan" => a.tan(),
+                "asin" => a.asin(),
+                "acos" => a.acos(),
+                "atan" => a.atan(),
+                "sinh" => a.sinh(),
+                "cosh" => a.cosh(),
+                "tanh" => a.tanh(),
+                "asinh" => a.asinh(),
+                "exp" => a.exp(),
+                "ln" => a.ln(),
+                "log" => a.log10(),
+                "abs" => a.abs(),
+                "sign" => a.signum(),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    })
+    .filter(|x| !x.is_nan())
 }
