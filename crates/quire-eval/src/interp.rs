@@ -333,9 +333,9 @@ impl<'u> Interp<'u> {
             ("sum", 4) => self.fold(s, args, BinaryOp::Add),
             ("prod" | "product", 4) => self.fold(s, args, BinaryOp::Mul),
             ("int", 4) => self.integrate(s, args),
-            ("int", 2) => Err(EvalError::new(
-                "indefinite integrals need symbolic evaluation, which isn't available yet",
-            )),
+            ("int", 2) => {
+                Err(EvalError::new("an indefinite integral is symbolic: end the line with → instead of ="))
+            }
             ("diff", 2 | 3) => self.differentiate(s, args),
             ("root" | "solve", 4) => self.solve_in(s, args),
             ("solve", 2 | 3) if Self::is_system(s, args) => self.solve_system(s, args),
@@ -347,7 +347,7 @@ impl<'u> Interp<'u> {
                 Err(EvalError::new(format!("{name} takes 5 arguments: {name}(y0, t0, t1, n, D)")))
             }
             ("linfit", _) => Err(EvalError::new("linfit takes 3 arguments: linfit(vx, vy, F)")),
-            ("lim", _) => Err(EvalError::new("limits need symbolic evaluation, which isn't available yet")),
+            ("lim", _) => Err(EvalError::new("a limit is symbolic: end the line with → instead of =")),
             _ => return None,
         })
     }
@@ -635,7 +635,7 @@ impl<'u> Interp<'u> {
         let x0 = match s.get(var) {
             Some(Binding::Val(Value::Num(q))) => *q,
             _ => bail!(
-                "{var} has no value here; give it one for a numeric derivative (symbolic differentiation isn't available yet)"
+                "{var} has no value here; give it one for a numeric derivative, or end the line with → for the derivative as a formula"
             ),
         };
         if !(1..=2).contains(&order) {
