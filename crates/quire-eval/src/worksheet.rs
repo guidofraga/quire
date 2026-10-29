@@ -1161,6 +1161,10 @@ mod tests {
             shown(&["line(s := 0, for(k, 1..10, line(if(k > 4, break), s := s + k)), s)", "if(1 > 2, 5)"]);
         assert_eq!(r[0], "10", "if without else");
         assert_eq!(r[1], "0");
+        // `line` of statements is SMath's block; `line(vx, vy)` of values is the line fit
+        let r = shown(&["line([1; 2; 3], [3; 5; 7])", "line(a := 2, a + 1)"]);
+        assert_eq!(r[0], "[1; 2]");
+        assert_eq!(r[1], "3");
     }
 
     #[test]
