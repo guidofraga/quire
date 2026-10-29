@@ -91,6 +91,8 @@ function binary(op: BinaryOp, a: Expr, b: Expr): string {
     case "Juxt":
       return row(m(a), space(0.2), m(b));
     case "Mul":
+      // a unit after a unit is a compound unit (54 kN·m), as in the unit lists and plots
+      if (isUnitTerm(b) && a.t !== "Num" && quantity(a)) return row(m(a), tight("·"), m(b));
       // numbers and units sit side by side (5.1 m, 2·900 kgf); everything else gets a dot
       return isUnitTerm(b) ? row(m(a), space(0.2), m(b)) : row(m(a), mo("·"), m(b));
     case "Div":

@@ -7,3 +7,7 @@ dist/
 /app/src-tauri/gen/
 .vite/
 
+
+# Playwright
+/app/test-results/
+/app/playwright-report/

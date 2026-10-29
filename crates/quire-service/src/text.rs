@@ -1,7 +1,35 @@
 //! Djot → HTML for text regions. Documents are untrusted input, so raw HTML
 //! passthrough is dropped and only http(s)/mailto/fragment links survive.
 
+use std::borrow::Cow;
+
 use jotdown::{Container, Event};
+
+/// Earlier versions wrote text colours unquoted (`[x]{color=#c00}`), which Djot does not
+/// accept as an attribute value; quote them so those documents keep their colours.
+fn quote_colors(src: &str) -> Cow<'_, str> {
+    if !src.contains("color=#") {
+        return Cow::Borrowed(src);
+    }
+    let mut out = String::with_capacity(src.len() + 8);
+    let mut rest = src;
+    while let Some(i) = rest.find("color=#") {
+        let value = &rest[i + 6..];
+        let hex = value[1..].bytes().take_while(u8::is_ascii_hexdigit).count();
+        let ends = matches!(value.as_bytes().get(1 + hex), Some(b' ' | b'}'));
+        out.push_str(&rest[..i + 6]);
+        if (3..=8).contains(&hex) && ends {
+            out.push('"');
+            out.push_str(&value[..1 + hex]);
+            out.push('"');
+            rest = &value[1 + hex..];
+        } else {
+            rest = value;
+        }
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
+}
 
 fn safe_link(url: &str) -> bool {
     let lower = url.trim().to_ascii_lowercase();
@@ -16,7 +44,7 @@ fn safe_link(url: &str) -> bool {
 pub fn inline_math(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current: Option<String> = None;
-    for e in jotdown::Parser::new(src) {
+    for e in jotdown::Parser::new(&quote_colors(src)) {
         match e {
             Event::Start(Container::Math { .. }, _) => current = Some(String::new()),
             Event::End(Container::Math { .. }) => out.extend(current.take()),
@@ -72,10 +100,11 @@ fn render(src: &str, math_prefix: Option<&str>) -> String {
     } else {
         src
     };
+    let src = quote_colors(src);
     let mut raw_depth = 0usize;
     let mut math_index = 0usize;
     let mut in_math = false;
-    let events = jotdown::Parser::new(src).filter_map(|e| {
+    let events = jotdown::Parser::new(&src).filter_map(|e| {
         match &e {
             Event::Start(Container::RawBlock { .. } | Container::RawInline { .. }, _) => {
                 raw_depth += 1;
@@ -139,6 +168,15 @@ mod tests {
             render_djot("# Assumptions"),
             "<section id=\"Assumptions\">\n<h1>Assumptions</h1>\n</section>\n"
         );
+    }
+
+    #[test]
+    fn colours_quoted_or_not() {
+        let want = "<p><span color=\"#c00\" size=\"9\">red</span></p>\n";
+        assert_eq!(render_djot("[red]{color=\"#c00\" size=9}"), want);
+        assert_eq!(render_djot("[red]{color=#c00 size=9}"), want);
+        assert!(render_djot("[u]{.underline color=#1a2b3c}").contains("color=\"#1a2b3c\""));
+        assert_eq!(render_djot("a color=#zz b"), "<p>a color=#zz b</p>\n");
     }
 
     #[test]

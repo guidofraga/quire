@@ -481,9 +481,13 @@ impl Worksheet {
         let mut interp = Interp::new(&self.units);
         let mut scope = Scope::new(&globals);
         let (cells, value, written) = crate::sheet::evaluate(t, &mut interp, &mut scope, &self.settings);
-        let mut units: std::collections::BTreeSet<String> = std::mem::take(&mut interp.unit_idents);
-        units.extend(written);
-        out.units = units.into_iter().collect();
+        // in the order they are written: the first units in a table are its working units
+        // (`4.5 kN/m` and `100 N` → kN/m, not N/m)
+        let mut units = written;
+        units.extend(std::mem::take(&mut interp.unit_idents));
+        let mut seen = std::collections::HashSet::new();
+        units.retain(|u| seen.insert(u.clone()));
+        out.units = units;
         out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
         drop(scope);
         let errors: Vec<(String, &str)> = cells
@@ -1180,5 +1184,38 @@ mod tests {
         let out = ws.run(&regions);
         assert_eq!(out[0].shown.as_deref(), Some("293.15 'K"));
         assert_eq!(out[1].shown.as_deref(), Some("19.613 'kN"));
+    }
+
+    #[test]
+    fn table_cells_in_the_units_they_are_typed_in() {
+        let rows: &[&[&str]] =
+            &[&["Load", "q", "twice"], &["Dead", "4.5 kN/m", "=B2*2"], &["Point", "100 N", "=B3*3 m"]];
+        let table = MathInput {
+            id: "t".into(),
+            expr: String::new(),
+            show: true,
+            display: DisplaySpec::default(),
+            table: Some(crate::sheet::TableInput {
+                rows: rows.iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect(),
+                ..Default::default()
+            }),
+            plot: None,
+            symbolic: false,
+        };
+        let cells = |settings: DisplaySettings| -> Vec<Vec<String>> {
+            Worksheet::new(settings).run(std::slice::from_ref(&table))[0]
+                .cells
+                .iter()
+                .map(|row| row.iter().map(|c| c.shown.clone().unwrap_or_default()).collect())
+                .collect()
+        };
+        // results in the units the table is written in, first ones first: 9 kN/m, not 9000 N/m
+        let r = cells(DisplaySettings { working_units: true, ..Default::default() });
+        assert_eq!(r[1][1..], ["4.5 'kN/'m", "9 'kN/'m"]);
+        assert_eq!(r[2][1..], ["100 'N", "0.3 'kN*'m"]);
+        // in coherent SI, values still read as typed, as definitions do; formulas are SI
+        let r = cells(DisplaySettings::default());
+        assert_eq!(r[1][1..], ["4.5 'kN/'m", "9000 'N/'m"]);
+        assert_eq!(r[2][1..], ["100 'N", "300 'J"]);
     }
 }

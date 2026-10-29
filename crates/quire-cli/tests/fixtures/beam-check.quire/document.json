@@ -1,0 +1,249 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Beam check (regression)"
+  },
+  "regions": [
+    {
+      "id": "q",
+      "kind": "math",
+      "at": [
+        0,
+        0
+      ],
+      "expr": "q := 12 'kN/'m"
+    },
+    {
+      "id": "L",
+      "kind": "math",
+      "at": [
+        0,
+        27
+      ],
+      "expr": "L := 6 'm"
+    },
+    {
+      "id": "M",
+      "kind": "math",
+      "at": [
+        0,
+        54
+      ],
+      "expr": "M := q*L^2/8",
+      "show": "value",
+      "display": {
+        "unit": "kN*m"
+      }
+    },
+    {
+      "id": "V",
+      "kind": "math",
+      "at": [
+        0,
+        81
+      ],
+      "expr": "V := q*L/2",
+      "show": "value",
+      "display": {
+        "unit": "kN"
+      }
+    },
+    {
+      "id": "E",
+      "kind": "math",
+      "at": [
+        0,
+        108
+      ],
+      "expr": "E := 210 'GPa"
+    },
+    {
+      "id": "I",
+      "kind": "math",
+      "at": [
+        0,
+        135
+      ],
+      "expr": "I := 8356 'cm^4"
+    },
+    {
+      "id": "W",
+      "kind": "math",
+      "at": [
+        0,
+        162
+      ],
+      "expr": "W := 557 'cm^3"
+    },
+    {
+      "id": "sig",
+      "kind": "math",
+      "at": [
+        0,
+        189
+      ],
+      "expr": "σ := M/W",
+      "show": "value",
+      "display": {
+        "unit": "MPa",
+        "decimals": 2
+      }
+    },
+    {
+      "id": "dfl",
+      "kind": "math",
+      "at": [
+        0,
+        216
+      ],
+      "expr": "δ := 5*q*L^4/(384*E*I)",
+      "show": "value",
+      "display": {
+        "unit": "mm",
+        "decimals": 2
+      }
+    },
+    {
+      "id": "lim",
+      "kind": "math",
+      "at": [
+        0,
+        243
+      ],
+      "expr": "δ.lim := L/250",
+      "show": "value",
+      "display": {
+        "unit": "mm"
+      }
+    },
+    {
+      "id": "chk",
+      "kind": "math",
+      "at": [
+        0,
+        270
+      ],
+      "expr": "σ ≤ 235 'MPa/1.1",
+      "show": "value"
+    },
+    {
+      "id": "ok",
+      "kind": "math",
+      "at": [
+        0,
+        297
+      ],
+      "expr": "if(δ < δ.lim, \"OK\", \"FAIL\")",
+      "show": "value"
+    },
+    {
+      "id": "f",
+      "kind": "math",
+      "at": [
+        0,
+        324
+      ],
+      "expr": "f(x) := x^2 + 1"
+    },
+    {
+      "id": "f3",
+      "kind": "math",
+      "at": [
+        0,
+        351
+      ],
+      "expr": "f(3)",
+      "show": "value"
+    },
+    {
+      "id": "sum",
+      "kind": "math",
+      "at": [
+        0,
+        378
+      ],
+      "expr": "sum(i^2, i, 1, 10)",
+      "show": "value"
+    },
+    {
+      "id": "int",
+      "kind": "math",
+      "at": [
+        0,
+        405
+      ],
+      "expr": "int(x^2, x, 0, 3)",
+      "show": "value",
+      "display": {
+        "decimals": 4
+      }
+    },
+    {
+      "id": "root",
+      "kind": "math",
+      "at": [
+        0,
+        432
+      ],
+      "expr": "solve(x^2 - 2 == 0, x, 0, 2)",
+      "show": "value",
+      "display": {
+        "decimals": 4
+      }
+    },
+    {
+      "id": "ls",
+      "kind": "math",
+      "at": [
+        0,
+        459
+      ],
+      "expr": "lsolve([2, 1; 1, 3], [3; 5])",
+      "show": "value",
+      "display": {
+        "decimals": 4
+      }
+    },
+    {
+      "id": "inch",
+      "kind": "math",
+      "at": [
+        0,
+        486
+      ],
+      "expr": "1 'in",
+      "show": "value",
+      "display": {
+        "unit": "mm"
+      }
+    },
+    {
+      "id": "psi",
+      "kind": "math",
+      "at": [
+        0,
+        513
+      ],
+      "expr": "1 'psi",
+      "show": "value",
+      "display": {
+        "unit": "kPa",
+        "decimals": 3
+      }
+    },
+    {
+      "id": "kgf",
+      "kind": "math",
+      "at": [
+        0,
+        540
+      ],
+      "expr": "1000 'kgf",
+      "show": "value",
+      "display": {
+        "unit": "kN",
+        "decimals": 3
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 import { createSignal } from "solid-js";
 import { api } from "./api";
 import { mathml } from "./math";
-import { insertIntoMath } from "./Region";
+import { insertIntoMath } from "./MathEditor";
 import { activeView, insertMathChip, insertText } from "./richtext";
 import { insertAtCaret } from "./store";
 import { STRUCTURES } from "./symbols";

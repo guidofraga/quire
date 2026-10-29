@@ -4,38 +4,64 @@ import { setCaptionToEdit } from "./Region";
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
 import { latex } from "./latex";
-import { insertTable, isSheet, parseTsv, tableMenuItems } from "./TableEditor";
-import { prettyValue } from "./math";
+import { cellText, columnsOf, exportCsv, insertTable, isSheet, parseTsv, rowsOf, tableMenuItems } from "./TableEditor";
+import { mathml, prettyValue } from "./math";
+import { looksLikeProse } from "./MathEditor";
+import { captionLabel } from "./labels";
+import { fillRefs } from "./xref";
+import {
+  assetRefs,
+  type Clip,
+  clipFromHtml,
+  clipHtml,
+  decodeClip,
+  encodeClip,
+  escapeHtml,
+  htmlText,
+  mathParagraph,
+  piecesFromText,
+  portableHtml,
+  REGIONS_TYPE,
+  tableFromHtml,
+  tableHtml,
+  tsv,
+} from "./clipboard";
 import { closeMenu, type MenuItems, setRegionMenuBuilder } from "./menu";
 import type { Background } from "./pages";
 import {
   availableWidth,
   commitEditing,
+  contentBottom,
   convertRegion,
   deleteRegions,
+  editText,
+  findDraft,
   flash,
   GRID,
+  heights,
+  LINE,
   layout,
+  localized,
   mutate,
   newId,
   type Placed,
   setState,
   snap,
+  splitShow,
   startEditing,
   state,
   updateRegion,
 } from "./store";
 import type { Region } from "./types";
 
-const MIME = "application/x-quire-regions";
 const IMAGE_EXT = /\.(png|jpe?g|gif|svg|webp)$/i;
 
 // ---------------------------------------------------------------------------
 // Clipboard
 // ---------------------------------------------------------------------------
 
-/** Regions copied in this session (the context menu can't read the system clipboard). */
-let internalClipboard: Region[] = [];
+/** What was copied last in this window: the fallback when the system clipboard can't be read. */
+let internalClipboard: Clip | null = null;
 
 function cloneWithNewIds(r: Region): Region {
   const copy = structuredClone(unwrap(r)) as Region;
@@ -55,11 +81,86 @@ function selectedRegions(): Region[] {
     .map((p: Placed) => ({ ...structuredClone(unwrap(p.region)), at: [p.x, p.y] as [number, number] }));
 }
 
-function plainTextOf(regions: Region[]): string {
-  return regions
-    .map((r) => (r.kind === "math" ? (r.expr ?? "") + (r.show ? " =" : "") : typeof r.text === "string" ? r.text : ""))
-    .filter(Boolean)
-    .join("\n");
+/** Regions with the images they show, so they paste into another document too. */
+function clipOf(regions: Region[]): Clip {
+  const assets: Record<string, string> = {};
+  for (const src of assetRefs(regions)) if (state.assets[src]) assets[src] = state.assets[src];
+  return { regions, assets };
+}
+
+/** Rendered text (or a caption) as it reads on the page: live math, references, heading number. */
+function renderedHtml(key: string, number?: string): string | null {
+  const html = state.report?.html[key];
+  if (html === undefined) return null;
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  for (const span of el.querySelectorAll<HTMLElement>("[data-math]")) {
+    const v = state.views[span.dataset.math!];
+    span.innerHTML = v?.input ? mathml(v.input, v.error ? null : v.result, v.units, v.constants, v.symbolic) : "";
+  }
+  fillRefs(el);
+  const heading = el.querySelector("h1, h2, h3, h4, h5, h6");
+  if (number && heading && state.doc.styles?.numbering?.headings !== "") heading.prepend(`${number}. `);
+  return el.innerHTML;
+}
+
+/** A spreadsheet table's cells as they read on the page. */
+function shownCells(r: Region): string[][] {
+  const cells = state.views[r.id]?.cells;
+  return rowsOf(r).map((row, i) => row.map((raw, j) => cellText(raw, cells?.[i]?.[j])));
+}
+
+function captionHtml(r: Region): string {
+  if (!r.caption) return "";
+  const number = layout().byId.get(r.id)?.number;
+  const label = number ? `${captionLabel(r.kind === "table" ? "table" : "figure", number)} ` : "";
+  const text = renderedHtml(`${r.id}:caption`) ?? escapeHtml(localized(r.caption.text, state.doc.meta?.lang));
+  return `<p><i>${escapeHtml(label)}</i>${portableHtml(text)}</p>`;
+}
+
+/** One region for other apps: HTML, and plain text lines. */
+function exportRegion(r: Region): { html: string; text: string } {
+  const lang = state.doc.meta?.lang;
+  switch (r.kind) {
+    case "math": {
+      const v = state.views[r.id];
+      const line = editText(r);
+      const html = v?.input
+        ? mathParagraph(mathml(v.input, v.error ? null : v.result, v.units, v.constants, v.symbolic), line)
+        : `<p>${escapeHtml(line)}</p>`;
+      return { html, text: line };
+    }
+    case "text": {
+      const html = renderedHtml(r.id, layout().byId.get(r.id)?.number);
+      if (html === null) {
+        const t = localized(r.text, lang);
+        return { html: `<p>${escapeHtml(t)}</p>`, text: t };
+      }
+      return { html: portableHtml(html), text: htmlText(html) };
+    }
+    case "image": {
+      const url = r.src ? state.assets[r.src] : undefined;
+      const [w, h] = r.size ?? [200, 150];
+      const img = url ? `<p><img src="${escapeHtml(url)}" width="${w}" height="${h}" alt=""></p>` : "";
+      const caption = captionHtml(r);
+      return { html: r.caption?.position === "above" ? caption + img : img + caption, text: "" };
+    }
+    case "area": {
+      const title = localized(r.title, lang);
+      const parts = [...(r.regions ?? [])].sort((a, b) => a.at[1] - b.at[1] || a.at[0] - b.at[0]).map(exportRegion);
+      return {
+        html: (title ? `<p><b>${escapeHtml(title)}</b></p>` : "") + parts.map((p) => p.html).join(""),
+        text: [title, ...parts.map((p) => p.text)].filter(Boolean).join("\n"),
+      };
+    }
+  }
+  if (isSheet(r)) {
+    const cells = shownCells(r);
+    const table = tableHtml(cells, { headerRow: r.header?.row, headerColumn: r.header?.column, align: columnsOf(r).map((c) => c.align) });
+    const caption = captionHtml(r);
+    return { html: r.caption?.position === "below" ? table + caption : caption + table, text: tsv(cells) };
+  }
+  return { html: captionHtml(r), text: "" };
 }
 
 /** Text for the next copy event (Copy Result, Copy as LaTeX). */
@@ -72,6 +173,10 @@ function copyText(text: string, what: string) {
   flash(ok ? `Copied ${what}` : "Could not copy");
 }
 
+/**
+ * Copy the selected regions: as regions for Quire (any window, any document, after a
+ * restart), as HTML for Word and the like, and as plain text.
+ */
 export function onCopy(e: ClipboardEvent, cut: boolean) {
   if (pendingText !== null) {
     e.clipboardData?.setData("text/plain", pendingText);
@@ -80,9 +185,12 @@ export function onCopy(e: ClipboardEvent, cut: boolean) {
   }
   if (state.editing || isTextField(e.target) || !state.selection.length) return;
   const regions = selectedRegions();
-  internalClipboard = regions;
-  e.clipboardData?.setData(MIME, JSON.stringify(regions));
-  e.clipboardData?.setData("text/plain", plainTextOf(regions));
+  const clip = clipOf(regions);
+  internalClipboard = clip;
+  const parts = regions.map(exportRegion);
+  e.clipboardData?.setData(REGIONS_TYPE, encodeClip(clip));
+  e.clipboardData?.setData("text/html", clipHtml(parts.map((p) => p.html).join(""), clip));
+  e.clipboardData?.setData("text/plain", parts.map((p) => p.text).filter(Boolean).join("\n"));
   e.preventDefault();
   if (cut) deleteRegions(state.selection);
 }
@@ -109,56 +217,165 @@ export function pasteRegions(regions: Region[]) {
   setState({ selection: pasted.map((r) => r.id), caret: null });
 }
 
-const looksLikeMath = (t: string) => !t.includes("\n") && /(:=|=|[+\-*/^]|\d)/.test(t) && t.trim().split(/\s+/).length <= 6;
+const IMAGE_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/svg+xml": "svg", "image/webp": "webp" };
+
+/** Regions from another window or document: their images are added to this one first. */
+async function pasteClip(clip: Clip) {
+  const renamed = new Map<string, string>();
+  for (const [src, url] of Object.entries(clip.assets)) {
+    if (state.assets[src]) continue;
+    const m = /^data:([^;,]+);base64,(.*)$/s.exec(url);
+    const ext = m && IMAGE_TYPES[m[1]];
+    if (!m || !ext) continue;
+    try {
+      const staged = await api.stageImage(m[2], ext);
+      setState("assets", staged, url);
+      if (staged !== src) renamed.set(src, staged);
+    } catch (err) {
+      flash(`Could not paste an image: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  const relink = (r: Region) => {
+    if (r.src && renamed.has(r.src)) r.src = renamed.get(r.src);
+    r.regions?.forEach(relink);
+  };
+  const regions = structuredClone(clip.regions);
+  regions.forEach(relink);
+  pasteRegions(regions);
+}
 
 function escapeDjot(t: string) {
   return t.replace(/[\\*_[\]{}`~^$<>#|]/g, "\\$&");
+}
+
+/** Cells as a new table; a header row when marked so, or when labels sit over numbers. */
+function pasteTable(rows: string[][], header: boolean) {
+  commitEditing();
+  const id = insertTable(rows);
+  const numeric = (s: string) => /^[-+]?[\d.,]+/.test(s.trim());
+  if (header || (rows.length > 1 && rows[0].every((c) => !numeric(c)) && rows.slice(1).some((r) => r.some(numeric))))
+    updateRegion(id, { header: { row: true } });
+  else updateRegion(id, { header: undefined });
+}
+
+/** Lines of text: one region each, math or text as if typed; LaTeX becomes linear math. */
+function pasteLines(text: string) {
+  const pieces = piecesFromText(text, (s) => looksLikeProse(s, ""));
+  if (!pieces.length) return;
+  commitEditing();
+  const [x, y] = state.caret ?? [36, snap(contentBottom() + LINE)];
+  const made: Region[] = pieces.map((p, i): Region => {
+    const at: [number, number] = [x, y + i * 3 * GRID];
+    if (p.kind === "text") return { id: newId(), kind: "text", at, text: escapeDjot(p.text) };
+    const { expr, show, unit } = splitShow(p.text);
+    return { id: newId(), kind: "math", at, expr, ...(show ? { show } : {}), ...(unit ? { display: { unit } } : {}) };
+  });
+  mutate((d) => {
+    d.regions.push(...made);
+  });
+  setState({ selection: made.map((r) => r.id), caret: null });
+  if (made.length > 1) stackPasted(made.map((r) => r.id));
+}
+
+/**
+ * Once pasted lines are drawn with their results, move each below the one before it if it
+ * grew into it (a fraction, a matrix). Part of the paste's undo step.
+ */
+function stackPasted(ids: string[]) {
+  let frames = 0;
+  let settled = 0;
+  const step = () => {
+    const ready = ids.every((id) => heights[id] && (layout().byId.get(id)?.region.kind !== "math" || state.views[id]));
+    // results arrive with the next evaluation; give their rendering a few frames
+    if (++frames < 120 && (!ready || settled++ < 3)) return void requestAnimationFrame(step);
+    mutate((d) => {
+      let bottom = -Infinity;
+      for (const id of ids) {
+        const r = findDraft(d, id);
+        if (!r) continue;
+        if (r.at[1] < bottom + GRID) r.at = [r.at[0], Math.ceil((bottom + GRID) / GRID) * GRID];
+        bottom = r.at[1] + (heights[id] ?? LINE);
+      }
+    }, false);
+  };
+  requestAnimationFrame(step);
+}
+
+/** What a paste offers, read from the paste event or the async clipboard API. */
+interface Offer {
+  regions?: string;
+  html?: string;
+  text?: string;
+  image?: Blob;
+}
+
+/** Paste the best of what the clipboard offers; false when there was nothing to paste. */
+async function pasteOffer(o: Offer): Promise<boolean> {
+  const clip = decodeClip(o.regions) ?? clipFromHtml(o.html);
+  if (clip) {
+    await pasteClip(clip);
+    return true;
+  }
+  const text = o.text?.trim() ?? "";
+  const tsvRows = text.includes("\t") ? parseTsv(text) : null;
+  const table = tableFromHtml(o.html);
+  // cells copied in Quire carry their formulas in the text; from elsewhere the HTML table
+  // is the better copy (cells with line breaks, merged cells)
+  if (table && !(tsvRows && tsvRows.length === table.rows.length)) {
+    pasteTable(table.rows, table.header);
+    return true;
+  }
+  if (tsvRows) {
+    pasteTable(tsvRows, !!table?.header);
+    return true;
+  }
+  if (o.image) {
+    await insertImageBlob(o.image);
+    return true;
+  }
+  if (!text) return false;
+  pasteLines(text);
+  return true;
 }
 
 export async function onPaste(e: ClipboardEvent) {
   if (state.editing || isTextField(e.target)) return;
   const data = e.clipboardData;
   if (!data) return;
-  const json = data.getData(MIME);
-  if (json) {
-    e.preventDefault();
-    pasteRegions(JSON.parse(json) as Region[]);
-    return;
-  }
-  const image = [...data.files].find((f) => f.type.startsWith("image/"));
-  if (image) {
-    e.preventDefault();
-    await insertImageBlob(image);
-    return;
-  }
-  const text = data.getData("text/plain").trim();
-  if (!text) return;
+  // read everything now: the data is gone once the event is over
+  const offer: Offer = {
+    regions: data.getData(REGIONS_TYPE) || undefined,
+    html: data.getData("text/html") || undefined,
+    text: data.getData("text/plain") || undefined,
+    image: [...data.files].find((f) => f.type.startsWith("image/")),
+  };
   e.preventDefault();
-  commitEditing();
-  // cells copied from a spreadsheet become a table
-  if (text.includes("\t")) {
-    const rows = parseTsv(text);
-    const id = insertTable(rows);
-    const numeric = (s: string) => /^[-+]?[\d.,]+/.test(s.trim());
-    if (rows.length > 1 && rows[0].every((c) => !numeric(c)) && rows.slice(1).some((r) => r.some(numeric)))
-      updateRegion(id, { header: { row: true } });
-    else updateRegion(id, { header: undefined });
-    return;
+  await pasteOffer(offer);
+}
+
+/** Paste from a menu, where there is no paste event: read the system clipboard. */
+export async function pasteFromMenu() {
+  closeMenu();
+  try {
+    const items = await navigator.clipboard.read();
+    const offer: Offer = {};
+    for (const item of items) {
+      for (const type of item.types) {
+        if (type === "text/html") offer.html ??= await (await item.getType(type)).text();
+        else if (type === "text/plain") offer.text ??= await (await item.getType(type)).text();
+        else if (type.startsWith("image/")) offer.image ??= await item.getType(type);
+      }
+    }
+    if (await pasteOffer(offer)) return;
+  } catch {
+    // not allowed to read it: what was copied in this window is still at hand
   }
-  const [x, y] = state.caret ?? [GRID * 4, GRID * 4];
-  const id = newId();
-  mutate((d) => {
-    d.regions.push(
-      looksLikeMath(text)
-        ? { id, kind: "math", at: [x, y], expr: text.replace(/\s*=\s*$/, ""), ...(/=\s*$/.test(text) && !/:=\s*$/.test(text) ? { show: "value" } : {}) }
-        : { id, kind: "text", at: [x, y], text: text.split(/\n{2,}/).map((p) => escapeDjot(p).replace(/\n/g, "\\\n")).join("\n\n") },
-    );
-  });
-  setState({ selection: [id], caret: null });
+  if (internalClipboard) await pasteClip(internalClipboard);
+  else flash("Nothing to paste");
 }
 
 export function copyToInternal() {
-  internalClipboard = selectedRegions();
+  internalClipboard = clipOf(selectedRegions());
 }
 
 export function duplicateSelection() {
@@ -282,12 +499,13 @@ export function installContextMenus(run: (command: string) => void) {
     };
     if (!id) {
       return [
-        { label: "Paste", shortcut: "⌘V", disabled: !internalClipboard.length, run: () => (closeMenu(), pasteRegions(internalClipboard)) },
+        { label: "Paste", shortcut: "⌘V", run: () => void pasteFromMenu() },
         null,
         { label: "Insert Math", run: go("insert_math") },
         { label: "Insert Text", run: go("insert_text") },
         { label: "Insert Image…", run: go("insert_image") },
         { label: "Insert Table", run: go("insert_table") },
+        { label: "Insert Table from CSV…", run: go("import_csv") },
         { label: "Insert Plot", run: go("insert_plot") },
         { label: "Insert Area", run: go("insert_area") },
         null,
@@ -313,10 +531,11 @@ export function installContextMenus(run: (command: string) => void) {
     else if (!many && r?.kind === "plot2d") items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({ label: isSheet(r) ? "Edit Table" : "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
+    if (!many && r && isSheet(r)) items.push({ label: "Export as CSV…", run: () => (closeMenu(), void exportCsv(id)) }, null);
     items.push(
       { label: "Cut", shortcut: "⌘X", run: () => (closeMenu(), copyToInternal(), document.execCommand("cut") || deleteRegions(state.selection)) },
       { label: "Copy", shortcut: "⌘C", run: () => (closeMenu(), copyToInternal(), document.execCommand("copy")) },
-      { label: "Paste", shortcut: "⌘V", disabled: !internalClipboard.length, run: () => (closeMenu(), pasteRegions(internalClipboard)) },
+      { label: "Paste", shortcut: "⌘V", run: () => void pasteFromMenu() },
       { label: "Duplicate", shortcut: "⌘D", run: go("duplicate") },
       { label: "Delete", shortcut: "⌫", run: () => (closeMenu(), deleteRegions(state.selection)) },
       null,

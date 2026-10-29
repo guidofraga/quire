@@ -1,4 +1,4 @@
-# Engine tests and the front-end type check on every push.
+# Engine tests, front-end type check, unit tests and an end-to-end smoke test on every push.
 name: CI
 
 on:
@@ -29,3 +29,17 @@ jobs:
       - name: Front-end type check
         run: npm ci && npx tsc --noEmit
         working-directory: app
+      - name: Front-end unit tests
+        run: npm test
+        working-directory: app
+      - name: End-to-end smoke test (WebKit)
+        run: |
+          npx playwright install --with-deps webkit
+          npm run e2e
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: app/test-results/
+          if-no-files-found: ignore

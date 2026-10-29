@@ -87,15 +87,32 @@ const undoStack: string[] = [];
 const redoStack: string[] = [];
 const snapshot = () => JSON.stringify(unwrap(state.doc));
 
+/** Undo keeps up to 300 steps, fewer for a long document: at most ~40 MB of snapshots, never under 20 steps. */
+const MAX_STEPS = 300;
+const MIN_STEPS = 20;
+const MAX_CHARS = 20_000_000;
+let undoChars = 0;
+
 function touch() {
   setState({ dirty: true, rev: state.rev + 1 });
 }
 
-export function checkpoint() {
-  undoStack.push(snapshot());
-  if (undoStack.length > 300) undoStack.shift();
+/** Record the document as it was before a change. */
+function record(before: string) {
+  if (undoStack[undoStack.length - 1] === before) return; // an earlier step that changed nothing
+  undoStack.push(before);
+  undoChars += before.length;
+  while (undoStack.length > MAX_STEPS || (undoChars > MAX_CHARS && undoStack.length > MIN_STEPS))
+    undoChars -= undoStack.shift()!.length;
   redoStack.length = 0;
 }
+
+export function checkpoint() {
+  record(snapshot());
+}
+
+/** For tests: how much undo history is kept. */
+export const undoDepth = () => ({ steps: undoStack.length, chars: undoChars });
 
 /** Apply a change to the document; with `history`, it can be undone. */
 export function mutate(fn: (d: Doc) => void, history = true) {
@@ -113,16 +130,22 @@ function restore(json: string) {
 }
 
 export function undo() {
-  const prev = undoStack.pop();
+  const now = snapshot();
+  let prev = undoStack.pop();
+  // a step whose change turned out to be nothing would make Undo look broken: skip it
+  while (prev === now) prev = undoStack.pop();
   if (prev === undefined) return;
-  redoStack.push(snapshot());
+  undoChars = undoStack.reduce((n, s) => n + s.length, 0);
+  redoStack.push(now);
   restore(prev);
 }
 
 export function redo() {
   const next = redoStack.pop();
   if (next === undefined) return;
-  undoStack.push(snapshot());
+  const now = snapshot();
+  undoStack.push(now);
+  undoChars += now.length;
   restore(next);
 }
 
@@ -130,6 +153,7 @@ export function redo() {
 export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
   undoStack.length = 0;
   redoStack.length = 0;
+  undoChars = 0;
   setState({
     doc,
     path,
@@ -637,10 +661,7 @@ export function commitEditing() {
     touch();
     setState({ selection: [] });
   }
-  if (editSnapshot !== null && editSnapshot !== snapshot()) {
-    undoStack.push(editSnapshot);
-    redoStack.length = 0;
-  }
+  if (editSnapshot !== null && editSnapshot !== snapshot()) record(editSnapshot);
   editSnapshot = null;
   if (r && !empty) justCommitted = { id, until: Date.now() + 3000 };
   setState({ editing: null });

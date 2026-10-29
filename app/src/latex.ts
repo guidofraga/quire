@@ -63,6 +63,9 @@ function call(name: string, args: Expr[]): string {
     case "substitute/3":
       return `\\left.${x}\\right|_{${y} = ${z}}`;
   }
+  // the sample/population spellings read as stdev_s, var_p
+  const variant = /^(stdev|var)\.([sp])$/.exec(name);
+  if (variant) return `\\operatorname{${variant[1]}}_{\\mathrm{${variant[2]}}}\\left(${args.map(t).join(", ")}\\right)`;
   const head = FUNCS.has(name) ? `\\${name}` : name.length > 1 && !name.includes(".") ? `\\operatorname{${name}}` : ident(name);
   return `${head}\\left(${args.map(t).join(", ")}\\right)`;
 }
