@@ -63,29 +63,45 @@ export function FindBar() {
             onClick={() => setReplaceOpen(!replaceOpen())}
             title="Show replace"
             aria-label="Show replace"
+            aria-expanded={replaceOpen()}
           >
             {replaceOpen() ? "▾" : "▸"}
           </button>
           <input
             ref={findInput}
+            aria-label="Find"
             value={query()}
             onInput={(e) => setQuery(e.currentTarget.value)}
             placeholder="Find in math and text"
             spellcheck={false}
           />
-          <span class="find-status" title={query() ? `${occurrences()} occurrences` : ""}>
+          <span class="find-status" role="status" title={query() ? `${occurrences()} occurrences` : ""}>
             {status()}
           </span>
-          <button class="find-opt" classList={{ on: matchCase() }} onClick={() => setMatchCase(!matchCase())} title="Match case">
+          <button
+            class="find-opt"
+            classList={{ on: matchCase() }}
+            onClick={() => setMatchCase(!matchCase())}
+            title="Match case"
+            aria-label="Match case"
+            aria-pressed={matchCase()}
+          >
             Aa
           </button>
-          <button class="find-opt" classList={{ on: wholeWord() }} onClick={() => setWholeWord(!wholeWord())} title="Whole names only">
+          <button
+            class="find-opt"
+            classList={{ on: wholeWord() }}
+            onClick={() => setWholeWord(!wholeWord())}
+            title="Whole names only"
+            aria-label="Whole names only"
+            aria-pressed={wholeWord()}
+          >
             <u>ab</u>
           </button>
-          <button class="find-nav" onClick={() => findStep(-1)} disabled={!hits().length} title="Previous (⇧↩)">
+          <button class="find-nav" onClick={() => findStep(-1)} disabled={!hits().length} title="Previous (⇧↩)" aria-label="Previous match">
             ‹
           </button>
-          <button class="find-nav" onClick={() => findStep(1)} disabled={!hits().length} title="Next (↩)">
+          <button class="find-nav" onClick={() => findStep(1)} disabled={!hits().length} title="Next (↩)" aria-label="Next match">
             ›
           </button>
           <button class="find-nav" onClick={close} title="Close (Esc)" aria-label="Close">
@@ -96,6 +112,7 @@ export function FindBar() {
           <div class="find-row">
             <span class="find-toggle" />
             <input
+              aria-label="Replace with"
               value={replacement()}
               onInput={(e) => setReplacement(e.currentTarget.value)}
               placeholder="Replace with"
@@ -109,6 +126,7 @@ export function FindBar() {
               onClick={() => say(replaceHits(hits().map((h) => h.id)))}
               disabled={!hits().length}
               title="Replace everywhere (one undo step)"
+              aria-label="Replace all"
             >
               All
             </button>

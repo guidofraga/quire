@@ -1,5 +1,6 @@
 // ⌘K: one box for every command, variable and symbol.
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { useModal } from "./a11y";
 import { isMac } from "./api";
 import { insertSnippet } from "./insert";
 import { activeView } from "./richtext";
@@ -189,13 +190,21 @@ function Dialog(props: { runCommand: (id: string) => void }) {
   };
   onMount(() => input.focus());
   onCleanup(() => setActive(0));
+  let el!: HTMLDivElement;
+  useModal(() => el);
 
   return (
     <div class="modal-backdrop palette-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="palette" role="dialog" aria-label="Command palette">
+      <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette" ref={el}>
         <input
           ref={input}
           class="palette-input"
+          role="combobox"
+          aria-label="Command, variable or symbol"
+          aria-expanded="true"
+          aria-controls="palette-list"
+          aria-autocomplete="list"
+          aria-activedescendant={results().length ? `palette-item-${active()}` : undefined}
           placeholder="Search commands, variables and symbols"
           value={query()}
           spellcheck={false}
@@ -206,16 +215,19 @@ function Dialog(props: { runCommand: (id: string) => void }) {
           }}
           onKeyDown={onKey}
         />
-        <div class="palette-list" ref={list} role="listbox">
+        <div class="palette-list" ref={list} role="listbox" id="palette-list" aria-label="Results">
           <For each={results()} fallback={<div class="palette-empty">Nothing matches</div>}>
             {(item, i) => (
               <>
                 <Show when={i() === 0 || results()[i() - 1].group !== item.group}>
-                  <div class="palette-group">{item.group}</div>
+                  <div class="palette-group" aria-hidden="true">
+                    {item.group}
+                  </div>
                 </Show>
                 <div
                   class="palette-item"
                   classList={{ active: i() === active() }}
+                  id={`palette-item-${i()}`}
                   data-i={i()}
                   role="option"
                   aria-selected={i() === active()}

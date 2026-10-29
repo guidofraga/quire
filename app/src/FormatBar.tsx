@@ -2,6 +2,8 @@
 // each group enabled by context instead of swapping controls in and out.
 import { AllSelection, type Command } from "prosemirror-state";
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { arrowFocus, focusables, fromKeyboard, toolbarKeys } from "./a11y";
+import { focusCanvas } from "./Canvas";
 import { insertSnippet, library, loadLibrary, loadPreviews, previews, valueText } from "./insert";
 import {
   activeView,
@@ -29,12 +31,18 @@ import { STRUCTURES, SYMBOLS, type Sym } from "./symbols";
 
 const keep = (e: MouseEvent) => e.preventDefault(); // never steal focus from the editor
 
-function Btn(props: { title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: JSX.Element }) {
+/** The name a screen reader gives a button: its tooltip without the shortcut. */
+const nameOf = (title: string) => title.split("  ")[0];
+
+function Btn(props: { title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: JSX.Element; hiddenLabel?: boolean }) {
   return (
     <button
       class="fb-btn"
       classList={{ on: !!props.active }}
       title={props.title}
+      // content hidden from screen readers (x²) leaves the tooltip as the name
+      aria-label={props.hiddenLabel ? undefined : nameOf(props.title)}
+      aria-pressed={props.active === undefined ? undefined : !!props.active}
       disabled={props.disabled}
       onMouseDown={keep}
       onClick={() => props.onClick()}
@@ -44,42 +52,123 @@ function Btn(props: { title: string; active?: boolean; disabled?: boolean; onCli
   );
 }
 
+let popSeq = 0;
+
+/**
+ * A button with a popover under it: a menu of choices (`kind: "menu"`) or a gallery.
+ * From the keyboard, opening it moves focus in, arrows move between its items and Esc
+ * closes it and returns to the button; with the mouse, focus stays in the editor.
+ */
 function Dropdown(props: {
   label: JSX.Element;
   title: string;
+  /** What a screen reader calls the button (its text by default), and the popover. */
+  name?: string;
+  popName?: string;
+  kind?: "menu" | "gallery";
   disabled?: boolean;
   class?: string;
   onOpen?: () => void;
   children: (close: () => void) => JSX.Element;
 }) {
   const [open, setOpen] = createSignal(false);
+  const popId = `fb-pop-${++popSeq}`;
   let root!: HTMLDivElement;
+  let button!: HTMLButtonElement;
+  let pop: HTMLDivElement | undefined;
+  const items = () =>
+    pop ? (props.kind === "menu" ? [...pop.querySelectorAll<HTMLElement>("[role^=menuitem]")] : focusables(pop)) : [];
+  const close = () => {
+    const inside = root.contains(document.activeElement);
+    setOpen(false);
+    if (inside) button.focus();
+  };
+  const show = () => {
+    props.onOpen?.();
+    setOpen(true);
+    if (!fromKeyboard()) return;
+    // the current choice (or selected tab) first, else the first item
+    requestAnimationFrame(() => (pop?.querySelector<HTMLElement>("[aria-checked=true], [aria-selected=true]") ?? items()[0])?.focus());
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (!open()) {
+      if (e.key === "ArrowDown" && e.target === button) {
+        e.preventDefault();
+        e.stopPropagation();
+        show();
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+      button.focus();
+    } else if (e.key === "Tab" && props.kind === "menu") {
+      e.preventDefault();
+      close();
+    } else if (pop?.contains(e.target as Node)) {
+      // a gallery with tabs: ←/→ between the tabs, ↓ into the tab's symbols, ↑ from the top row back
+      const tabs = [...pop.querySelectorAll<HTMLElement>("[role=tab]")];
+      const target = e.target as HTMLElement;
+      if (target.matches("[role=tab]")) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          pop.querySelector<HTMLElement>("[role=tabpanel] button")?.focus();
+        } else arrowFocus(e, tabs, "horizontal");
+        return;
+      }
+      if (arrowFocus(e, items().filter((el) => !tabs.includes(el)), props.kind === "menu" ? "vertical" : "both") && document.activeElement === target && e.key === "ArrowUp")
+        pop.querySelector<HTMLElement>("[role=tab][aria-selected=true]")?.focus();
+    }
+  };
   const onDoc = (e: MouseEvent) => {
     if (!root.contains(e.target as Node)) setOpen(false);
   };
   onMount(() => document.addEventListener("mousedown", onDoc));
   onCleanup(() => document.removeEventListener("mousedown", onDoc));
   return (
-    <div class="fb-dropdown" ref={root}>
+    <div
+      class="fb-dropdown"
+      ref={root}
+      onKeyDown={onKey}
+      onFocusOut={(e) => {
+        // Tab out of a gallery closes it
+        if (open() && e.relatedTarget && !root.contains(e.relatedTarget as Node)) setOpen(false);
+      }}
+    >
       <button
+        ref={button}
         class="fb-btn fb-select"
         classList={{ on: open() }}
         title={props.title}
+        aria-label={props.name}
+        aria-haspopup={props.kind === "menu" ? "menu" : "dialog"}
+        aria-expanded={open()}
+        aria-controls={open() ? popId : undefined}
         disabled={props.disabled}
         onMouseDown={keep}
-        onClick={() => {
-          if (!open()) props.onOpen?.();
-          setOpen(!open());
-        }}
+        onClick={() => (open() ? setOpen(false) : show())}
       >
         {props.label}
-        <svg class="chevron" width="8" height="8" viewBox="0 0 8 8">
+        <svg class="chevron" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
           <path d="M1.5 3l2.5 2.5L6.5 3" fill="none" stroke="currentColor" stroke-width="1.2" />
         </svg>
       </button>
       <Show when={open()}>
-        <div class={`fb-pop ${props.class ?? ""}`} onMouseDown={keep} ref={keepInWindow}>
-          {props.children(() => setOpen(false))}
+        <div
+          id={popId}
+          class={`fb-pop ${props.class ?? ""}`}
+          role={props.kind === "menu" ? "menu" : "dialog"}
+          aria-label={props.popName ?? props.name ?? props.title}
+          onMouseDown={keep}
+          ref={(el) => {
+            pop = el;
+            keepInWindow(el);
+          }}
+        >
+          {props.children(close)}
         </div>
       </Show>
     </div>
@@ -116,6 +205,7 @@ const STYLES: [BlockStyle, string][] = [
   ["h3", "Heading 3"],
 ];
 const COLORS = ["#1b1d22", "#6b7280", "#d1302a", "#e8730c", "#c79a00", "#2e8b3a", "#1d6fd1", "#6a3fc8", "#c2185b", "#0f766e"];
+const COLOR_NAMES = ["Automatic", "Grey", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Teal"];
 const SIZES = [7, 8, 9, 10, 11, 12, 14, 16, 18, 24, 32];
 const ALIGN_ICONS: Record<Align, string> = {
   left: "M2 3h12M2 6.5h8M2 10h12M2 13.5h8",
@@ -156,6 +246,8 @@ function TextGroup() {
     <div class="fb-group">
       <Dropdown
         title="Paragraph style"
+        name={`Paragraph style${editing() ? `: ${STYLES.find(([s]) => s === currentStyle())?.[1] ?? ""}` : ""}`}
+        kind="menu"
         disabled={!textEnabled()}
         label={<span class="fb-style">{editing() ? STYLES.find(([s]) => s === currentStyle())?.[1] : "Style"}</span>}
       >
@@ -165,6 +257,8 @@ function TextGroup() {
               <button
                 class={`fb-item style-${s}`}
                 classList={{ on: editing() && currentStyle() === s }}
+                role="menuitemradio"
+                aria-checked={editing() && currentStyle() === s}
                 onClick={() => {
                   close();
                   void applyText(commands.style(s));
@@ -188,25 +282,30 @@ function TextGroup() {
       <Btn title="Strikethrough" disabled={!textEnabled()} active={markActive("strike")} onClick={() => applyText(commands.strike)}>
         <s>S</s>
       </Btn>
-      <Btn title="Superscript" disabled={!textEnabled()} active={markActive("sup")} onClick={() => applyText(commands.sup)}>
-        x<sup>2</sup>
+      <Btn title="Superscript" hiddenLabel disabled={!textEnabled()} active={markActive("sup")} onClick={() => applyText(commands.sup)}>
+        <span aria-hidden="true">x<sup>2</sup></span>
       </Btn>
-      <Btn title="Subscript" disabled={!textEnabled()} active={markActive("sub")} onClick={() => applyText(commands.sub)}>
-        x<sub>2</sub>
+      <Btn title="Subscript" hiddenLabel disabled={!textEnabled()} active={markActive("sub")} onClick={() => applyText(commands.sub)}>
+        <span aria-hidden="true">x<sub>2</sub></span>
       </Btn>
       <Dropdown
         title="Text colour"
+        name="Text colour"
+        kind="menu"
         disabled={!textEnabled()}
         label={<span class="fb-swatch" style={{ background: (currentMarkAttr("color") as string) ?? "#1b1d22" }} />}
       >
         {(close) => (
           <div class="fb-swatches">
             <For each={COLORS}>
-              {(c) => (
+              {(c, i) => (
                 <button
                   class="fb-swatch big"
                   style={{ background: c }}
-                  title={c}
+                  title={COLOR_NAMES[i()]}
+                  role="menuitemradio"
+                  aria-label={COLOR_NAMES[i()]}
+                  aria-checked={((currentMarkAttr("color") as string | null) ?? COLORS[0]) === c}
                   onClick={() => {
                     close();
                     void applyText(commands.color(c === COLORS[0] ? null : c));
@@ -219,6 +318,8 @@ function TextGroup() {
       </Dropdown>
       <Dropdown
         title="Font size"
+        name={`Font size${currentMarkAttr("size") ? `: ${currentMarkAttr("size")} pt` : ""}`}
+        kind="menu"
         disabled={!textEnabled()}
         label={<span class="fb-num">{(currentMarkAttr("size") as number | null) ?? "Size"}</span>}
       >
@@ -226,6 +327,8 @@ function TextGroup() {
           <>
             <button
               class="fb-item"
+              role="menuitemradio"
+              aria-checked={!currentMarkAttr("size")}
               onClick={() => {
                 close();
                 void applyText(commands.size(null));
@@ -238,6 +341,8 @@ function TextGroup() {
                 <button
                   class="fb-item"
                   classList={{ on: currentMarkAttr("size") === sz }}
+                  role="menuitemradio"
+                  aria-checked={currentMarkAttr("size") === sz}
                   onClick={() => {
                     close();
                     void applyText(commands.size(sz));
@@ -288,8 +393,8 @@ function StructuresGallery(props: { close: () => void }) {
     <div class="gallery">
       <For each={STRUCTURES}>
         {(cat) => (
-          <section class="gallery-section">
-            <h4>{cat.title}</h4>
+          <section class="gallery-section" aria-label={cat.title}>
+            <h4 aria-hidden="true">{cat.title}</h4>
             <div class="gallery-grid structures">
               <For each={cat.items}>
                 {(item) => (
@@ -302,7 +407,7 @@ function StructuresGallery(props: { close: () => void }) {
                     }}
                   >
                     <Show when={previews()[item.name]} fallback={<code>{item.insert}</code>}>
-                      <span innerHTML={previews()[item.name]} />
+                      <span innerHTML={previews()[item.name]} aria-hidden="true" />
                     </Show>
                   </button>
                 )}
@@ -318,6 +423,9 @@ function StructuresGallery(props: { close: () => void }) {
 const SYMBOL_TABS = [...SYMBOLS.map((c) => [c.id, c.title] as const), ["constants", "Constants"] as const, ["units", "Units"] as const];
 const [symbolTab, setSymbolTab] = createSignal<string>("greek");
 
+/** The list or grid a symbol tab shows. */
+const panel = (id: string) => ({ id: `sympanel-${id}`, role: "tabpanel" as const, "aria-labelledby": `symtab-${id}` });
+
 function SymbolsGallery(props: { close: () => void }) {
   const pick = (sym: Sym) => {
     props.close();
@@ -329,17 +437,24 @@ function SymbolsGallery(props: { close: () => void }) {
   };
   return (
     <div class="gallery symbols">
-      <div class="gallery-tabs">
+      <div class="gallery-tabs" role="tablist" aria-label="Symbol sets">
         <For each={SYMBOL_TABS}>
           {([id, title]) => (
-            <button classList={{ on: symbolTab() === id }} onClick={() => setSymbolTab(id)}>
+            <button
+              classList={{ on: symbolTab() === id }}
+              role="tab"
+              id={`symtab-${id}`}
+              aria-selected={symbolTab() === id}
+              aria-controls={`sympanel-${id}`}
+              onClick={() => setSymbolTab(id)}
+            >
               {title}
             </button>
           )}
         </For>
       </div>
       <Show when={symbolTab() === "constants"}>
-        <div class="gallery-list">
+        <div class="gallery-list" {...panel("constants")}>
           <For each={library()?.constants ?? []}>
             {(c) => (
               <button class="gallery-row" onClick={() => pickName(c.name)}>
@@ -352,7 +467,7 @@ function SymbolsGallery(props: { close: () => void }) {
         </div>
       </Show>
       <Show when={symbolTab() === "units"}>
-        <div class="gallery-list">
+        <div class="gallery-list" {...panel("units")}>
           <For each={library()?.units ?? []}>
             {(u) => (
               <button class="gallery-row" onClick={() => pickName(u.name)}>
@@ -367,10 +482,15 @@ function SymbolsGallery(props: { close: () => void }) {
       <For each={SYMBOLS}>
         {(cat) => (
           <Show when={symbolTab() === cat.id}>
-            <div class="gallery-grid">
+            <div class="gallery-grid" {...panel(cat.id)}>
               <For each={cat.items}>
                 {(sym) => (
-                  <button class="gallery-tile symbol" classList={{ "text-only": !!sym.textOnly }} title={`\\${sym.name}`} onClick={() => pick(sym)}>
+                  <button
+                    class="gallery-tile symbol"
+                    classList={{ "text-only": !!sym.textOnly }}
+                    title={`\\${sym.name}`}
+                    onClick={() => pick(sym)}
+                  >
                     {sym.insert}
                   </button>
                 )}
@@ -388,11 +508,12 @@ function EquationGroup() {
     <div class="fb-group">
       <Dropdown
         title="Equation structures: fractions, roots, integrals, matrices…"
+        popName="Structures"
         class="wide"
         onOpen={loadPreviews}
         label={
           <span class="fb-eq">
-            <span class="math-font">∑</span> Structures
+            <span class="math-font" aria-hidden="true">∑</span> Structures
           </span>
         }
       >
@@ -400,11 +521,12 @@ function EquationGroup() {
       </Dropdown>
       <Dropdown
         title="Symbols, constants and units (or type \name, e.g. \Delta)"
+        popName="Symbols"
         class="wide"
         onOpen={loadLibrary}
         label={
           <span class="fb-eq">
-            <span class="math-font">Ω</span> Symbols
+            <span class="math-font" aria-hidden="true">Ω</span> Symbols
           </span>
         }
       >
@@ -486,22 +608,22 @@ export function FormatBar() {
   });
   const inBar = (id: string) => !hidden().includes(id);
   return (
-    <div class="formatbar" ref={bar}>
+    <div class="formatbar" ref={bar} role="toolbar" aria-label="Format" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
       <For each={GROUPS}>
         {(g) => (
           <Show when={inBar(g.id)}>
-            <div class="fb-slot" data-group={g.id}>
+            <div class="fb-slot" data-group={g.id} role="group" aria-label={g.title}>
               <g.Group />
             </div>
           </Show>
         )}
       </For>
       <Show when={hidden().length}>
-        <Dropdown label={<span class="fb-more">⋯</span>} title="More formatting" class="wide fb-more-pop">
+        <Dropdown label={<span class="fb-more" aria-hidden="true">⋯</span>} title="More formatting" name="More formatting" class="wide fb-more-pop">
           {() => (
             <For each={GROUPS.filter((g) => !inBar(g.id))}>
               {(g) => (
-                <div class="fb-more-row">
+                <div class="fb-more-row" role="group" aria-label={g.title}>
                   <span class="fb-more-title">{g.title}</span>
                   <g.Group />
                 </div>

@@ -1,5 +1,6 @@
 // The `\name` autocomplete list shared by the math and text editors.
 import { createSignal, For, Show } from "solid-js";
+import { announce } from "./a11y";
 import { isTemplate, type Sym } from "./symbols";
 
 interface Popup {
@@ -36,6 +37,9 @@ export function completionKey(e: KeyboardEvent): boolean {
     // the first arrow on a suggestion list selects its first entry
     const index = p.soft && !p.touched ? (e.key === "ArrowDown" ? 0 : n - 1) : (p.index + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
     setPopup({ ...p, index, touched: true });
+    // the list isn't focused (the editor keeps the caret), so say what the arrows landed on
+    const item = p.items[index];
+    announce(`${item.label ?? item.insert}, ${item.note ?? item.name}`);
     return true;
   }
   if (e.key === "Enter" && p.soft) {
@@ -63,17 +67,24 @@ export function CompletionPopup() {
         <div
           class="completion"
           classList={{ units: !!p().soft }}
+          role="listbox"
+          aria-label={p().soft ? "Show in" : "Completions"}
           style={{ left: `${p().x}px`, top: `${p().y}px` }}
           onMouseDown={(e) => e.preventDefault()}
         >
           <Show when={p().soft}>
-            <div class="completion-head">Show in</div>
+            <div class="completion-head" aria-hidden="true">
+              Show in
+            </div>
           </Show>
           <For each={p().items}>
             {(item, i) => (
               <button
                 class="completion-item"
                 classList={{ on: i() === p().index && (!p().soft || !!p().touched) }}
+                role="option"
+                tabIndex={-1}
+                aria-selected={i() === p().index && (!p().soft || !!p().touched)}
                 onMouseEnter={() => setPopup({ ...p(), index: i(), touched: true })}
                 onClick={() => {
                   p().pick(item);

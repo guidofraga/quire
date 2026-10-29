@@ -31,6 +31,7 @@
 - **Built-in constants** (π, e, g, c, G, h, ħ, k_B, N_A, R, …). Units are blue and constants purple; hover a name to see what it means. When a name is ambiguous (`g`: gravity or gram), position decides (`500 g` is grams, `m*g` is gravity) and a note under the editor offers the other reading.
 - **Find and replace** (⌘F, ⌥⌘F) across math, text, notes, captions and area titles, with match case and whole names; Replace All is one undo step.
 - Right-click a math region to **Copy Result** (`800 cm²`) or **Copy as LaTeX** for papers and Word's equation editor.
+- **Keyboard and screen readers:** everything works without a mouse. Tab and ⇧Tab move between regions, Enter edits, ⇧F10 opens the right-click menu; F6 moves between the toolbar, the format bar, the page and the inspector, arrows move inside menus and galleries, and Esc closes them and goes back. With VoiceOver, math is read as words ("M is defined as q times L squared over 8, equals 54 kilonewton metres"), tables being edited are grids with named cells (B2), and messages and errors are spoken. Quire follows Reduce motion and Increase contrast, and meets WCAG AA contrast in light and dark.
 - `~` types a global definition `≡`, as in SMath. **Help ▸ Quire Help** (⇧⌘/, F1) is a one-page quick reference.
 - Click a selected box again (or double-click it) to edit with the caret where you clicked. With a text box selected but not being edited, the ribbon formats the whole box.
 

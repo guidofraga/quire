@@ -1,5 +1,6 @@
 // Insert ▸ Cross-Reference…: pick a heading, figure or table and how the reference reads.
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { useModal } from "./a11y";
 import { activeView, commands, run as runText } from "./richtext";
 import { type RefStyle, refText, type Target, targets } from "./xref";
 
@@ -61,12 +62,20 @@ function Dialog() {
     e.preventDefault();
   };
   onMount(() => input.focus());
+  let el!: HTMLDivElement;
+  useModal(() => el);
   return (
     <div class="modal-backdrop palette-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="palette" role="dialog" aria-label="Insert cross-reference">
+      <div class="palette" role="dialog" aria-modal="true" aria-label="Insert cross-reference" ref={el}>
         <input
           ref={input}
           class="palette-input"
+          role="combobox"
+          aria-label="Heading, figure or table"
+          aria-expanded="true"
+          aria-controls="ref-list"
+          aria-autocomplete="list"
+          aria-activedescendant={results().length ? `ref-item-${active()}` : undefined}
           placeholder="Reference a heading, figure or table"
           value={query()}
           spellcheck={false}
@@ -97,7 +106,7 @@ function Dialog() {
             )}
           </For>
         </div>
-        <div class="palette-list" ref={list} role="listbox">
+        <div class="palette-list" ref={list} role="listbox" id="ref-list" aria-label="Targets">
           <For
             each={results()}
             fallback={
@@ -109,11 +118,14 @@ function Dialog() {
             {(t, i) => (
               <>
                 <Show when={i() === 0 || results()[i() - 1].kind !== t.kind}>
-                  <div class="palette-group">{GROUP[t.kind]}</div>
+                  <div class="palette-group" aria-hidden="true">
+                    {GROUP[t.kind]}
+                  </div>
                 </Show>
                 <div
                   class="palette-item"
                   classList={{ active: i() === active() }}
+                  id={`ref-item-${i()}`}
                   data-i={i()}
                   role="option"
                   aria-selected={i() === active()}

@@ -1,6 +1,7 @@
 // Inspector: properties of the selected region, the document and its pages.
 import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEditor";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { arrowFocus } from "./a11y";
 import { type Background, PX_PER_MM, toPx } from "./pages";
 import { commitEditing, layout, localized, state, updateDoc, updateRegion } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
@@ -597,8 +598,17 @@ function PageTab(props: { onAddBackground: () => void }) {
 
 export function Inspector(props: { onAddBackground: () => void }) {
   return (
-    <aside class="inspector" onPointerDown={(e) => e.stopPropagation()}>
-      <div class="insp-tabs">
+    <aside class="inspector" aria-label="Inspector" onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        class="insp-tabs"
+        role="tablist"
+        aria-label="Properties of"
+        onKeyDown={(e) => {
+          // arrows move between the tabs and open the one they land on
+          const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=tab]")];
+          if (arrowFocus(e, tabs, "horizontal")) (document.activeElement as HTMLElement).click();
+        }}
+      >
         <For
           each={
             [
@@ -609,13 +619,21 @@ export function Inspector(props: { onAddBackground: () => void }) {
           }
         >
           {([t, label]) => (
-            <button classList={{ on: tab() === t }} onClick={() => setTab(t)}>
+            <button
+              classList={{ on: tab() === t }}
+              role="tab"
+              id={`insp-tab-${t}`}
+              aria-selected={tab() === t}
+              aria-controls="insp-panel"
+              tabIndex={tab() === t ? 0 : -1}
+              onClick={() => setTab(t)}
+            >
               {label}
             </button>
           )}
         </For>
       </div>
-      <div class="insp-body">
+      <div class="insp-body" id="insp-panel" role="tabpanel" aria-labelledby={`insp-tab-${tab()}`}>
         <Switch>
           <Match when={tab() === "region"}>
             <RegionTab />

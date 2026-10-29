@@ -1,6 +1,7 @@
 // File ▸ New from Template… and File ▸ Save as Template….
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
+import { useModal } from "./a11y";
 import { api, type TemplateInfo } from "./api";
 import { flash, localized, state } from "./store";
 import type { Doc } from "./types";
@@ -32,10 +33,18 @@ function Dialog(props: Props & { mode: "new" | "save" }) {
   };
   onMount(() => window.addEventListener("keydown", onKey, true));
   onCleanup(() => window.removeEventListener("keydown", onKey, true));
+  let el!: HTMLDivElement;
+  useModal(() => el);
   return (
     <div class="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="settings templates" role="dialog" aria-label={props.mode === "new" ? "New from template" : "Save as template"}>
-        <header>
+      <div
+        class="settings templates"
+        role="dialog"
+        aria-modal="true"
+        aria-label={props.mode === "new" ? "New from template" : "Save as template"}
+        ref={el}
+      >
+        <header role="none">
           <h2>{props.mode === "new" ? "New from template" : "Save as template"}</h2>
           <button class="settings-close" onClick={close} aria-label="Close">
             ✕

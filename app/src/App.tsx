@@ -27,7 +27,9 @@ import {
   onCopy,
   onPaste,
 } from "./actions";
-import { Canvas, clientToDoc, reveal, zoomCenter, zoomToFit } from "./Canvas";
+import { announce, cyclePanes, fromKeyboard, spoken, spokenNow, toolbarKeys } from "./a11y";
+import { Canvas, clientToDoc, focusCanvas, reveal, zoomCenter, zoomToFit } from "./Canvas";
+import { describeRegion } from "./describe";
 import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
@@ -513,8 +515,48 @@ function browserShortcuts(e: KeyboardEvent) {
 
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__quire = { state, layout };
 
+/** What a screen reader hears without asking: messages, new errors, regions selected from the keyboard. */
+function speakChanges() {
+  createEffect(on(() => state.message, (m) => m && announce(m)));
+  // the error of the region just edited, once the edit ends and evaluation catches up
+  let edited: string | null = null;
+  createEffect(
+    on(
+      () => state.editing,
+      (now, before) => {
+        if (before && !now) edited = before;
+      },
+    ),
+  );
+  createEffect(
+    on(
+      () => state.report,
+      () => {
+        if (!edited || state.editing) return;
+        const error = state.views[edited]?.error;
+        edited = null;
+        if (error) announce(`Error: ${error}`, true);
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => state.selection.join(),
+      () => {
+        if (!fromKeyboard() || state.editing) return;
+        const n = state.selection.length;
+        if (n === 1) announce(describeRegion(state.selection[0]));
+        else if (n > 1) announce(`${n} regions selected`);
+      },
+      { defer: true },
+    ),
+  );
+}
+
 export function App() {
   createEffect(on(() => state.rev, scheduleReport));
+  speakChanges();
   createEffect(on(() => [state.path, state.origin, layout()] as const, loadAssets));
   createEffect(() => {
     void setWindowTitle(`${fileName(state.path)}${state.dirty ? " — Edited" : ""}`);
@@ -534,6 +576,17 @@ export function App() {
           e.stopPropagation();
           setPaletteOpen(true);
         }
+      },
+      true,
+    );
+    // F6 / ⇧F6: between the toolbar, the format bar, the page and the inspector
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key !== "F6" || e.metaKey || e.altKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        cyclePanes(e.shiftKey ? -1 : 1, focusCanvas);
       },
       true,
     );
@@ -600,46 +653,46 @@ export function App() {
   return (
     <div class="app" classList={{ tauri: isTauri, printing: state.printing }}>
       <header class="toolbar" data-tauri-drag-region>
-        <div class="title" data-tauri-drag-region>
+        <h1 class="title" data-tauri-drag-region>
           {fileName(state.path)}
           <Show when={state.dirty}>
             <span class="edited"> — Edited</span>
           </Show>
-        </div>
-        <div class="tools">
+        </h1>
+        <div class="tools" role="toolbar" aria-label="Insert" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => runCommand("insert_math")} title="Insert math (⇧⌘M); inside text, math in the line">
-            <span class="glyph math-glyph">
+            <span class="glyph math-glyph" aria-hidden="true">
               x<sup>2</sup>
             </span>
             <span class="tool-label">Math</span>
           </button>
           <button onClick={() => insertAtCaret("text")} title="Insert text (⇧⌘T)">
-            <span class="glyph">¶</span> <span class="tool-label">Text</span>
+            <span class="glyph" aria-hidden="true">¶</span> <span class="tool-label">Text</span>
           </button>
           <button onClick={() => runCommand("insert_image")} title="Insert image">
-            <span class="glyph">▣</span> <span class="tool-label">Image</span>
+            <span class="glyph" aria-hidden="true">▣</span> <span class="tool-label">Image</span>
           </button>
           <button onClick={() => insertTable()} title="Insert table (⌥⌘T)">
-            <span class="glyph">▦</span> <span class="tool-label">Table</span>
+            <span class="glyph" aria-hidden="true">▦</span> <span class="tool-label">Table</span>
           </button>
           <button onClick={() => insertPlot()} title="Insert plot (⌥⌘P)">
-            <span class="glyph">∿</span> <span class="tool-label">Plot</span>
+            <span class="glyph" aria-hidden="true">∿</span> <span class="tool-label">Plot</span>
           </button>
           <button onClick={insertArea} title="Insert area">
-            <span class="glyph">▤</span> <span class="tool-label">Area</span>
+            <span class="glyph" aria-hidden="true">▤</span> <span class="tool-label">Area</span>
           </button>
           <button onClick={() => runCommand("insert_toc")} title="Insert table of contents">
-            <span class="glyph">☰</span> <span class="tool-label">Contents</span>
+            <span class="glyph" aria-hidden="true">☰</span> <span class="tool-label">Contents</span>
           </button>
         </div>
-        <div class="status" data-tauri-drag-region>
+        <div class="status" data-tauri-drag-region role="toolbar" aria-label="Document" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
           <Show when={(state.report?.errorCount ?? 0) > 0}>
-            <button class="errors" onClick={openErrorsMenu} title="List the errors (⌘' goes to the next one)">
+            <button class="errors" onClick={openErrorsMenu} title="List the errors (⌘' goes to the next one)" aria-haspopup="menu">
               {state.report!.errorCount} {state.report!.errorCount === 1 ? "error" : "errors"}
             </button>
           </Show>
           <Show when={checks().length}>
-            <button class="checks-pill" classList={{ failing: failing().length > 0 }} onClick={openChecksMenu} title="List the checks">
+            <button class="checks-pill" classList={{ failing: failing().length > 0 }} onClick={openChecksMenu} title="List the checks" aria-haspopup="menu">
               {failing().length ? `✗ ${failing().length} of ${checks().length} failing` : `✓ ${checks().length} ${checks().length === 1 ? "check" : "checks"}`}
             </button>
           </Show>
@@ -648,10 +701,10 @@ export function App() {
             {layout().pageView ? ` · ${layout().contentPages} ${layout().contentPages === 1 ? "page" : "pages"}` : ""}
           </span>
           <div class="segmented" role="group" aria-label="View">
-            <button classList={{ on: !layout().pageView }} onClick={() => layout().pageView && togglePageView()} title="Free canvas">
+            <button classList={{ on: !layout().pageView }} aria-pressed={!layout().pageView} onClick={() => layout().pageView && togglePageView()} title="Free canvas">
               Canvas
             </button>
-            <button classList={{ on: layout().pageView }} onClick={() => !layout().pageView && togglePageView()} title="Page view (⇧⌘P)">
+            <button classList={{ on: layout().pageView }} aria-pressed={layout().pageView} onClick={() => !layout().pageView && togglePageView()} title="Page view (⇧⌘P)">
               Pages
             </button>
           </div>
@@ -660,13 +713,15 @@ export function App() {
             classList={{ on: state.inspector }}
             onClick={() => runCommand("toggle_inspector")}
             title="Inspector (⌥⌘I)"
+            aria-label="Inspector"
+            aria-pressed={state.inspector}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
               <path d="M10 2.5v11" />
             </svg>
           </button>
-          <button class="zoom" onClick={(e) => openZoomMenu(e)} title="Zoom">
+          <button class="zoom" onClick={(e) => openZoomMenu(e)} title="Zoom" aria-label={`Zoom ${Math.round(state.view.zoom * 100)}%`} aria-haspopup="menu">
             {Math.round(state.view.zoom * 100)}%
           </button>
         </div>
@@ -708,10 +763,17 @@ export function App() {
         onBlank={newDocument}
       />
       <Show when={state.message}>
-        <div class="toast" onClick={() => setState({ message: null })}>
+        <div class="toast" aria-hidden="true" onClick={() => setState({ message: null })}>
           {state.message}
         </div>
       </Show>
+      {/* what a screen reader says on its own: messages, errors, the region the keyboard selected */}
+      <div class="sr-only" role="status" aria-live="polite">
+        {spoken()}
+      </div>
+      <div class="sr-only" role="alert" aria-live="assertive">
+        {spokenNow()}
+      </div>
     </div>
   );
 }

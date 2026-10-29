@@ -14,6 +14,8 @@ import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switc
 import { produce } from "solid-js/store";
 import { api } from "./api";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
+import { mathWords } from "./describe";
+import { spokenMath } from "./speech";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
 import { createEditor, placeCaret, plainText, releaseEditor } from "./richtext";
 import {
@@ -74,6 +76,9 @@ function fillInlineMath(el: HTMLElement) {
     span.classList.toggle("inline-error", !!v?.error);
     span.title = v?.error ?? "";
     span.innerHTML = v?.input ? mathml(v.input, v.result, v.units, v.constants, v.symbolic) : `<code class="raw">?</code>`;
+    // read as words, not as the MathML
+    if (v?.input) span.setAttribute("aria-label", spokenMath(v.input, v.result, v.units, v.constants, v.symbolic));
+    span.setAttribute("role", "img");
   }
 }
 
@@ -167,6 +172,7 @@ function Caption(props: { p: Placed }) {
             value={localized(r().caption!.text, lang())}
             size={Math.max(12, localized(r().caption!.text, lang()).length + 2)}
             spellcheck={true}
+            aria-label="Caption"
             // after the menu that opened it has closed and handed focus back to the page
             ref={(el) => setTimeout(() => (el.focus(), el.select()), 60)}
             onPointerDown={(e) => e.stopPropagation()}
@@ -255,12 +261,15 @@ function MathBody(props: { r: Region }) {
       <div
         class="math-line"
         classList={{ preview: editing(), "check-pass": check() === true, "check-fail": check() === false }}
+        aria-hidden={editing() || undefined}
       >
         <Show when={rendered()} fallback={<code class="raw">{props.r.expr || " "}</code>}>
-          <span class="m" innerHTML={rendered()!} />
+          {/* screen readers get the formula in words; the MathML would be read symbol by symbol */}
+          <span class="sr-only">{mathWords(props.r.id, false)}</span>
+          <span class="m" innerHTML={rendered()!} aria-hidden="true" />
         </Show>
         <Show when={comparison()}>
-          <span class="check-badge" classList={{ pass: check() === true, fail: check() === false }} title={check() ? "This check passes" : "This check fails"}>
+          <span class="check-badge" aria-hidden="true" classList={{ pass: check() === true, fail: check() === false }} title={check() ? "This check passes" : "This check fails"}>
             {check() ? "✓" : "✗ fails"}
           </span>
         </Show>
@@ -323,7 +332,7 @@ function ImageBody(props: { p: Placed }) {
         <Caption p={props.p} />
       </Show>
       <Show when={url()} fallback={<div class="img-missing" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }} />}>
-        <img src={url()} width={size()[0]} height={size()[1]} draggable={false} alt="" />
+        <img src={url()} width={size()[0]} height={size()[1]} draggable={false} alt={r().caption ? "" : "Image"} />
       </Show>
       <Show when={r().caption?.position !== "above"}>
         <Caption p={props.p} />
@@ -369,6 +378,8 @@ function AreaBody(props: { p: Placed }) {
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => toggleArea(r().id)}
           title={r().collapsed ? "Expand" : "Collapse"}
+          aria-label={r().collapsed ? "Expand area" : "Collapse area"}
+          aria-expanded={!r().collapsed}
         >
           {r().collapsed ? "▸" : "▾"}
         </button>
@@ -730,6 +741,7 @@ export function RegionBox(props: RegionProps) {
         <button
           class="plot-this"
           title="Plot this function below it"
+          aria-label="Plot this function"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();

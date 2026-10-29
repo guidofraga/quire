@@ -2,6 +2,7 @@
 // axis or series, a caption's label. Closes on Escape, a click outside, or Done.
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { useModal } from "./a11y";
 
 interface Open {
   x: number;
@@ -52,9 +53,10 @@ function Panel(props: Open) {
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("pointerdown", onDown, true);
   });
+  useModal(() => el);
   return (
     <Portal>
-      <div ref={el} class="page-popover insp-body" role="dialog" aria-label={props.title} style={{ left: `${props.x}px`, top: `${props.y + 8}px` }}>
+      <div ref={el} class="page-popover insp-body" role="dialog" aria-modal="true" aria-label={props.title} style={{ left: `${props.x}px`, top: `${props.y + 8}px` }}>
         <div class="page-popover-head">
           <span>{props.title}</span>
           <button class="insp-mini" onClick={closePopover} aria-label="Close">

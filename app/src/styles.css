@@ -3339,3 +3339,161 @@ a.xref-missing {
 .app.printing .plot-tools {
   display: none;
 }
+
+/* ---------------------------------------------------------------- accessibility */
+
+/* read by screen readers, never drawn */
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.app.printing .sr-only {
+  display: none;
+}
+
+/* the document name is the page's heading; it looks as before */
+h1.title {
+  margin: 0;
+  font-size: inherit;
+}
+
+/* a clear ring on whatever the keyboard is on, in both themes */
+:root {
+  --focus-ring: #1d5fd0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --focus-ring: #7fb0ff;
+  }
+}
+
+button:focus-visible,
+select:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="option"]:focus-visible,
+[role^="menuitem"]:focus-visible,
+[tabindex]:focus-visible,
+.welcome-item:focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 1px;
+}
+
+.insp-input:focus-visible,
+.findbar input:focus-visible,
+.palette-input:focus-visible,
+.caption-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+/* menu items and gallery tiles look chosen when focused, as when hovered */
+.cm-item:focus-visible:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+  outline-offset: -2px;
+}
+
+.gallery-tile:focus-visible,
+.gallery-row:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* the page's hidden typing field has no box; the insertion point shows where typing goes */
+.key-sink:focus-visible {
+  outline: none !important;
+}
+
+/* a plot's zoom buttons appear for the keyboard as for the pointer */
+.plot-tools:focus-within {
+  opacity: 1;
+}
+
+/* contrast (WCAG AA, 4.5:1 for text): muted text on the window chrome and on buttons,
+   and accent-coloured text on the tinted "on" state */
+:root {
+  --muted: #5b616d;
+  --accent-text: #1f56b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --muted: #b8bec7;
+    --accent-text: #8fb8ff;
+  }
+}
+
+.fb-btn.on,
+.gallery-tabs button.on,
+.ref-style.on {
+  color: var(--accent-text);
+}
+
+.palette-item.active .palette-hint {
+  color: #fff;
+}
+
+.page-label {
+  color: color-mix(in srgb, var(--accent) 60%, #000);
+}
+
+/* units in the Symbols gallery sit on the dark window, not on paper */
+@media (prefers-color-scheme: dark) {
+  .fb-pop .unit-color {
+    color: #7fb3ff;
+  }
+}
+
+/* motion: popovers, the caret and toolbars appear without animating */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Increase contrast (macOS Accessibility ▸ Display) */
+@media (prefers-contrast: more) {
+  :root {
+    --muted: #3d424b;
+    --chrome-border: #8a8f98;
+    --button: rgba(0, 0, 0, 0.1);
+    --focus-ring: #0040b0;
+  }
+
+  button:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    outline-width: 3px !important;
+  }
+
+  .fb-btn,
+  .toolbar button,
+  .insp-input {
+    box-shadow: inset 0 0 0 1px var(--chrome-border);
+  }
+}
+
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root {
+    --muted: #d0d4da;
+    --button: rgba(255, 255, 255, 0.16);
+    --focus-ring: #a9c8ff;
+  }
+}

@@ -22,7 +22,12 @@ export function setRegionMenuBuilder(fn: (id: string | null) => MenuItems) {
 }
 
 export function openRegionMenu(e: MouseEvent, id: string | null) {
-  setMenu({ x: e.clientX, y: e.clientY, items: regionMenuBuilder(id) });
+  openRegionMenuAt(e.clientX, e.clientY, id);
+}
+
+/** The same menu at a point (from the keyboard: ⇧F10 or the menu key). */
+export function openRegionMenuAt(x: number, y: number, id: string | null) {
+  setMenu({ x, y, items: regionMenuBuilder(id) });
 }
 
 export function closeMenu() {

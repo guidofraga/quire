@@ -281,6 +281,7 @@ export function MathEditor(props: { r: Region }) {
     <input
       ref={input}
       class="math-input"
+      aria-label="Math"
       value={initial}
       spellcheck={false}
       autocomplete="off"
@@ -308,13 +309,15 @@ export function MathEditor(props: { r: Region }) {
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") updateCompletion();
       }}
       onClick={traceCaret}
-      onBlur={() => {
+      onBlur={(e) => {
         hideCompletions();
         setCaretName(null);
         // switching to text unmounts this input: that blur must not end the edit
         const stillMath = layout().byId.get(props.r.id)?.region.kind === "math";
-        // nor does the command palette, which puts what it inserts at this caret
-        if (state.editing === props.r.id && stillMath && !paletteOpen()) commitEditing();
+        // nor does the command palette, which puts what it inserts at this caret, nor the
+        // format bar reached from the keyboard (F6), whose galleries insert here too
+        const toBar = (e.relatedTarget as Element | null)?.closest?.(".formatbar");
+        if (state.editing === props.r.id && stillMath && !paletteOpen() && !toBar) commitEditing();
       }}
       style={{ width: `${Math.max(6, initial.length + 2)}ch` }}
     />

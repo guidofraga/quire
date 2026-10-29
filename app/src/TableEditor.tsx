@@ -732,6 +732,10 @@ export function SheetGrid(props: { p: Placed }) {
     <div
       class="sheet-wrap"
       tabIndex={editing() ? 0 : -1}
+      // while editing, a spreadsheet grid whose active cell (B2) a screen reader follows
+      role={editing() ? "group" : undefined}
+      aria-label={editing() ? `Table ${(r().name as string | undefined) ?? ""}`.trim() : undefined}
+      aria-activedescendant={editing() && draft() === null ? `${r().id}-cell-${sel().r}-${sel().c}` : undefined}
       data-sheet={r().id}
       onKeyDown={onGridKey}
       onCopy={onCopy}
@@ -739,7 +743,7 @@ export function SheetGrid(props: { p: Placed }) {
       onPaste={pasteCells}
     >
       <Show when={editing()}>
-        <div class="sheet-bar" onPointerDown={(e) => e.stopPropagation()}>
+        <div class="sheet-bar" aria-hidden="true" onPointerDown={(e) => e.stopPropagation()}>
           <span class="sheet-ref">
             {(() => {
               const { r0, r1, c0, c1 } = range(sel());
@@ -755,6 +759,9 @@ export function SheetGrid(props: { p: Placed }) {
         ref={tableEl}
         class="sheet"
         classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column, editing: editing() }}
+        role={editing() ? "grid" : undefined}
+        aria-label={(r().name as string | undefined) ?? "Table"}
+        aria-multiselectable={editing() || undefined}
         onPointerEnter={measureEdges}
       >
         <colgroup>
@@ -766,7 +773,7 @@ export function SheetGrid(props: { p: Placed }) {
         <Show when={editing()}>
           <thead>
             <tr>
-              <th class="corner" onPointerDown={(e) => (e.preventDefault(), tableCommand("select_all"))} />
+              <th class="corner" aria-label="Select all" onPointerDown={(e) => (e.preventDefault(), tableCommand("select_all"))} />
               <For each={colIdx()}>
                 {(j) => (
                   <th
@@ -813,6 +820,9 @@ export function SheetGrid(props: { p: Placed }) {
                 <For each={colIdx()}>
                   {(j) => (
                     <td
+                      id={`${r().id}-cell-${i}-${j}`}
+                      role={editing() ? "gridcell" : undefined}
+                      aria-selected={editing() ? inSel(i, j) : undefined}
                       data-r={i}
                       data-c={j}
                       classList={{
@@ -836,9 +846,13 @@ export function SheetGrid(props: { p: Placed }) {
                         if (editing() && !inSel(i, j)) select(i, j);
                       }}
                     >
+                      <Show when={editing()}>
+                        <span class="sr-only">{cellName(i, j)} </span>
+                      </Show>
                       <Show when={active(i, j) && draft() !== null} fallback={<span class="cell" innerHTML={cellContent(i, j)} />}>
                         <input
                           class="cell-input"
+                          aria-label={`Cell ${cellName(i, j)}`}
                           value={draft() ?? ""}
                           spellcheck={false}
                           autocomplete="off"

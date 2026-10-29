@@ -33,7 +33,7 @@ export function NameTooltip() {
   return (
     <Show when={tip()}>
       {(t) => (
-        <div class="name-tooltip" style={{ left: `${t().x}px`, top: `${t().y}px` }}>
+        <div class="name-tooltip" role="tooltip" style={{ left: `${t().x}px`, top: `${t().y}px` }}>
           <b>{t().name.replace(".", "")}</b> {t().title}
           <Show when={t().value}>
             <span class="tip-value">= {t().value}</span>
