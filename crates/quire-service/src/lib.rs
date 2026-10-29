@@ -694,8 +694,12 @@ pub fn bundle_dir(path: &Path) -> PathBuf {
     }
 }
 
-/// Load a bundle's document as JSON (validated against the model first).
+/// Load a bundle's document as JSON (validated against the model first). An SMath
+/// Studio worksheet (`.sm`) is converted; see [`open_smath`].
 pub fn open(path: &Path) -> Result<Json> {
+    if is_smath_file(path) {
+        return open_smath(&std::fs::read(path)?, path.file_name().and_then(|n| n.to_str()));
+    }
     if quire_doc::is_single_file(path) {
         quire_doc::load(path)?;
         let bytes = quire_doc::read_entry(path, "document.json")?.unwrap_or_default();
@@ -733,6 +737,11 @@ impl Drop for TempDir {
 /// `from` is the bundle the document was opened from: on Save As its images are
 /// copied along. Images inserted since opening are written from the staging area.
 pub fn save(path: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
+    if is_smath_file(path) {
+        return Err(ServiceError(
+            "an SMath worksheet is not saved over: save to a .quire or .quirez file".into(),
+        ));
+    }
     let _: Document = serde_json::from_value(doc.clone())?;
     // images to carry over may sit inside a single file: unpack it first
     let unpacked = match from {
@@ -771,6 +780,9 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
 /// A document held in memory, for the browser build: a `.quirez` (its images are staged, so
 /// `read_asset` finds them) or a bare `document.json`.
 pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
+    if is_smath(bytes) {
+        return open_smath(bytes, None);
+    }
     let doc: Json = if bytes.first() == Some(&b'{') {
         serde_json::from_slice(bytes)?
     } else {
@@ -787,6 +799,48 @@ pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
     };
     let _: Document = serde_json::from_value(doc.clone())?;
     Ok(doc)
+}
+
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// An SMath Studio worksheet is named `.sm` (any case); its contents decide the rest.
+fn is_smath_file(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("sm"))
+}
+
+/// SMath worksheets are XML: after an optional byte-order mark and whitespace, a `<` and
+/// the worksheet namespace (or a bare `<regions>` root from SMath 0.55).
+fn is_smath(bytes: &[u8]) -> bool {
+    let body = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+    let start = body.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(body.len());
+    let body = body.get(start..).unwrap_or_default();
+    let contains = |needle: &[u8]| body.windows(needle.len()).any(|w| w == needle);
+    body.first() == Some(&b'<') && (contains(b"smath.info/schemas/worksheet") || contains(b"<regions"))
+}
+
+/// Convert the bytes of an SMath worksheet with `quire_smath`: the document and its images.
+/// `file_name` (`Beam.sm`) is recorded as the document's source when known.
+pub fn import_smath(bytes: &[u8], file_name: Option<&str>) -> Result<quire_smath::Imported> {
+    let body = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+    let text = std::str::from_utf8(body)
+        .map_err(|e| ServiceError(format!("not a readable SMath worksheet: {e}")))?;
+    match file_name {
+        Some(name) => quire_smath::convert_file(text, name),
+        None => quire_smath::convert(text),
+    }
+    .map_err(|e| ServiceError(e.to_string()))
+}
+
+/// An SMath worksheet as an unsaved document. Its images are staged like the ones a `.quirez`
+/// brings, so they show without a bundle on disk. The caller starts it without a path, so
+/// Save asks for a new file and the `.sm` is never written.
+fn open_smath(bytes: &[u8], file_name: Option<&str>) -> Result<Json> {
+    let imported = import_smath(bytes, file_name)?;
+    let _: Document = serde_json::from_value(imported.document.clone())?;
+    for asset in imported.assets {
+        assets::stage_named(&asset.path, asset.data)?;
+    }
+    Ok(imported.document)
 }
 
 /// A document as `.quirez` bytes, with the images it uses (they must have been staged).
@@ -819,7 +873,7 @@ pub fn new_document() -> Json {
 }
 
 /// Asset references are content-addressed names inside the bundle: `assets/<16 hex>.<ext>`.
-pub(crate) fn checked_asset(src: &str) -> Result<&str> {
+pub fn checked_asset(src: &str) -> Result<&str> {
     let ok = src.strip_prefix("assets/").and_then(|f| f.split_once('.')).is_some_and(|(hash, ext)| {
         hash.len() == 16
             && hash.bytes().all(|b| b.is_ascii_hexdigit())
@@ -847,6 +901,35 @@ mod tests {
     use super::*;
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfake";
+
+    #[test]
+    fn a_garbage_sm_file_is_an_error_not_a_panic() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let path = std::env::temp_dir().join(format!("quire-garbage-{}.SM", std::process::id()));
+        std::fs::write(&path, "not an SMath worksheet")?;
+        let opened = open(&path);
+        std::fs::remove_file(&path)?;
+        assert!(opened.is_err(), "garbage must not open");
+        assert!(open_bytes(b"<regions").is_err(), "a truncated worksheet must not open");
+        assert!(open_bytes(b"\xEF\xBB\xBF  <?xml version=\"1.0\"?><smath.info/schemas/worksheet>").is_err());
+        assert!(open_bytes(b"\xFF\xFE<regions").is_err(), "invalid UTF-8 must not open");
+        Ok(())
+    }
+
+    #[test]
+    fn an_smath_worksheet_opens_as_a_document() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let xml = concat!(
+            r#"<regions xmlns="http://smath.info/schemas/worksheet/1.0"><settings/>"#,
+            r#"<region left="0" top="0" width="200" height="20"><text><p>Hello</p></text></region>"#,
+            r#"<region left="0" top="40" width="200" height="30"><math><input>"#,
+            r#"<e type="operand">x</e><e type="operand">2</e><e type="operator" args="2">:</e>"#,
+            r#"</input></math></region></regions>"#
+        );
+        let doc = open_bytes(xml.as_bytes())?;
+        let exprs: Vec<&str> =
+            doc["regions"].as_array().into_iter().flatten().filter_map(|r| r["expr"].as_str()).collect();
+        assert_eq!(exprs, ["x := 2"]);
+        Ok(())
+    }
 
     #[test]
     fn results_offer_the_units_they_can_be_shown_in() {

@@ -56,20 +56,30 @@ impl<'e> Scope<'e> {
     }
 
     fn set(&mut self, name: &str, b: Binding) {
-        self.frames.last_mut().expect("scope has a frame").insert(name.to_string(), b);
+        if let Some(frame) = self.frames.last_mut() {
+            frame.insert(name.to_string(), b);
+        }
     }
 
     /// Bind a loop/summation variable, returning what it shadowed in the frame.
     pub(crate) fn bind(&mut self, name: &str, v: Value) -> Option<Binding> {
-        self.frames.last_mut().expect("scope has a frame").insert(name.to_string(), Binding::Val(v))
+        let frame = self.frames.last_mut()?;
+        frame.insert(name.to_string(), Binding::Val(v))
     }
 
     pub(crate) fn restore(&mut self, name: &str, prev: Option<Binding>) {
-        let frame = self.frames.last_mut().expect("scope has a frame");
-        match prev {
-            Some(b) => frame.insert(name.to_string(), b),
-            None => frame.remove(name),
-        };
+        if let Some(frame) = self.frames.last_mut() {
+            match prev {
+                Some(b) => frame.insert(name.to_string(), b),
+                None => frame.remove(name),
+            };
+        }
+    }
+
+    /// The bindings assigned in the outermost frame during evaluation: the names a
+    /// worksheet's top-level expression wrote (`while`, `for`, `if`, `block` assignments).
+    pub(crate) fn into_writes(self) -> HashMap<String, Binding> {
+        self.frames.into_iter().next().unwrap_or_default()
     }
 }
 

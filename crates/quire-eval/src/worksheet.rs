@@ -270,18 +270,18 @@ impl Worksheet {
     pub fn run(&mut self, regions: &[MathInput]) -> Vec<Outcome> {
         let parsed: Vec<_> = regions.iter().map(|r| parse(&r.expr)).collect();
         let mut out: Vec<Option<Outcome>> = vec![None; regions.len()];
-        for (i, r) in regions.iter().enumerate() {
-            if let Ok(e @ Expr::Define { global: true, .. }) = &parsed[i] {
-                out[i] = Some(self.step(r, e));
+        for ((r, p), slot) in regions.iter().zip(&parsed).zip(out.iter_mut()) {
+            if let Ok(e @ Expr::Define { global: true, .. }) = p {
+                *slot = Some(self.step(r, e));
             }
         }
-        for (i, r) in regions.iter().enumerate() {
+        for ((r, p), slot) in regions.iter().zip(&parsed).zip(out.iter_mut()) {
             if let Some(t) = &r.table {
-                out[i] = Some(self.step_table(r, t));
-            } else if let Some(p) = &r.plot {
-                out[i] = Some(self.step_plot(r, p));
-            } else if out[i].is_none() {
-                out[i] = Some(match &parsed[i] {
+                *slot = Some(self.step_table(r, t));
+            } else if let Some(pl) = &r.plot {
+                *slot = Some(self.step_plot(r, pl));
+            } else if slot.is_none() {
+                *slot = Some(match p {
                     Ok(e) => self.step(r, e),
                     Err(err) => {
                         Outcome { error: Some(EvalError::from(err.clone()).message), ..Outcome::new(&r.id) }
@@ -289,7 +289,11 @@ impl Worksheet {
                 });
             }
         }
-        let mut out: Vec<Outcome> = out.into_iter().map(|o| o.expect("every region evaluated")).collect();
+        let mut out: Vec<Outcome> = out
+            .into_iter()
+            .zip(regions.iter())
+            .map(|(o, r)| o.unwrap_or_else(|| Outcome::new(&r.id)))
+            .collect();
         self.explain_undefined(&parsed, &mut out);
         if self.settings.working_units {
             self.show_in_working_units(regions, &parsed, &mut out);
@@ -461,9 +465,15 @@ impl Worksheet {
         }
     }
 
+    /// Evaluate a top-level expression. Assignments it makes (in `while`, `for`, `if`,
+    /// `block`) persist into the worksheet's globals, as in SMath, but only when it succeeds.
     fn eval(&mut self, e: &Expr) -> Result<Value> {
         let mut interp = Interp::new(&self.units);
-        let r = interp.eval(&mut Scope::new(&self.globals), e);
+        let (r, writes) = {
+            let mut scope = Scope::new(&self.globals);
+            let r = interp.eval(&mut scope, e);
+            (r, scope.into_writes())
+        };
         let units = std::mem::take(&mut interp.unit_idents);
         let constants = std::mem::take(&mut interp.constant_idents);
         let shadowing = std::mem::take(&mut interp.shadowing);
@@ -472,6 +482,13 @@ impl Worksheet {
         self.used_constants.extend(constants);
         self.used_shadowing.extend(shadowing);
         self.used_over_variables.extend(over);
+        if r.is_ok() {
+            let mut writes: Vec<(String, Binding)> = writes.into_iter().collect();
+            writes.sort_by(|a, b| a.0.cmp(&b.0));
+            for (name, b) in writes {
+                self.bind(name, b);
+            }
+        }
         r
     }
 
@@ -1217,5 +1234,44 @@ mod tests {
         let r = cells(DisplaySettings::default());
         assert_eq!(r[1][1..], ["4.5 'kN/'m", "9000 'N/'m"]);
         assert_eq!(r[2][1..], ["100 'N", "300 'J"]);
+    }
+
+    #[test]
+    fn loop_assignments_persist_into_the_worksheet() {
+        assert_eq!(shown(&["n := 0", "while(n < 5, n := n + 1)", "n"]), ["0", "5", "5"]);
+    }
+
+    #[test]
+    fn for_loop_fills_a_vector_and_its_variable_leaks() {
+        assert_eq!(
+            shown(&["a := [0; 0; 0]", "for(i, range(1, 3), a[i] := i)", "a", "i"]),
+            ["[0; 0; 0]", "3", "[1; 2; 3]", "3"]
+        );
+    }
+
+    #[test]
+    fn if_and_block_assignments_persist() {
+        assert_eq!(shown(&["if(1 < 2, block(x := 1, y := 2), 0)", "x + y"]), ["2", "3"]);
+    }
+
+    #[test]
+    fn block_on_the_right_side_of_a_definition_leaks_its_variables() {
+        assert_eq!(shown(&["w := block(t := 2, t * 3)", "w", "t"]), ["6", "6", "2"]);
+    }
+
+    #[test]
+    fn failed_expression_discards_its_assignments() {
+        assert_eq!(
+            shown(&["n := 1", "while(n < 5, block(n := n + 1, nosuchname))", "n"]),
+            ["1", "nosuchname is not defined", "1"]
+        );
+    }
+
+    #[test]
+    fn function_body_assignments_do_not_leak() {
+        assert_eq!(
+            shown(&["f(x) := block(z := x, z)", "f(2)", "z"]),
+            ["", "2", "z is not defined; did you mean f?"]
+        );
     }
 }
