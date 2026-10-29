@@ -299,14 +299,18 @@ export function PlotBody(props: { r: Region }) {
   const palette = () => (r().palette === "smath" ? SMATH_COLORS : SERIES_COLORS);
   const color = (i: number) => series()[i]?.style?.color ?? palette()[i % palette().length];
   /** The styled points of a series (SMath's marker columns), inside the plot's box. */
-  const markNodes = (s: { i: number; xs: (number | null)[]; ys: (number | null)[]; marks?: (PlotMarkView | null)[] }) =>
-    (s.marks ?? []).flatMap((m, k) => {
+  const markNodes = (s: { i: number; xs: (number | null)[]; ys: (number | null)[]; marks?: (PlotMarkView | null)[] }) => {
+    const nodes = (s.marks ?? []).flatMap((m, k) => {
       const x = s.xs[k];
       const y = s.ys[k];
       return m && x !== null && y !== null && Number.isFinite(x) && Number.isFinite(y)
         ? [{ m, c: m.color ?? color(s.i), cx: layout().sx(x), cy: layout().sy(y) }]
         : [];
     });
+    // as with its series, SMath paints a marker matrix's first row on top (the wheel's centre
+    // over the wheel)
+    return r().palette === "smath" ? nodes.reverse() : nodes;
+  };
   const name = (i: number) => series()[i]?.label || series()[i]?.y || `Series ${i + 1}`;
   const isData = (i: number) => !series()[i]?.range;
 
@@ -498,25 +502,59 @@ export function PlotBody(props: { r: Region }) {
         <clipPath id={`clip-${r().id}`}>
           <rect x={layout().left} y={layout().top} width={layout().w - layout().left - layout().right} height={layout().h - layout().top - layout().bottom} />
         </clipPath>
-        <g clip-path={`url(#clip-${r().id})`}>
-          <For each={drawn()}>
-            {(s) => (
-              <>
-                <Show when={s.connect !== false && drawAs(s.i) !== "points"}>
-                  <path
-                    class="plot-line"
-                    d={path(s.xs, s.ys)}
-                    stroke={color(s.i)}
-                    stroke-width={series()[s.i]?.style?.width ?? 2}
-                    stroke-dasharray={dash(s.i)}
-                  />
-                </Show>
-                {/* a wide invisible stroke: double-click the curve to edit its series */}
-                <path class="plot-hit" d={s.connect === false ? "" : path(s.xs, s.ys)} onDblClick={(e) => editSeries(e, r().id, s.i)} />
-              </>
-            )}
-          </For>
-        </g>
+        {/* each series whole, line then its styled points, so a later series paints over an
+            earlier one (SMath's order is reversed in drawn()); lines are clipped to the plot
+            area, SMath's styled points (a dot, a ring, a cross, a label) are not */}
+        <For each={drawn()}>
+          {(s) => (
+            <g>
+              <Show when={s.connect !== false && drawAs(s.i) !== "points"}>
+                <path
+                  class="plot-line"
+                  clip-path={`url(#clip-${r().id})`}
+                  d={path(s.xs, s.ys)}
+                  stroke={color(s.i)}
+                  stroke-width={series()[s.i]?.style?.width ?? 2}
+                  stroke-dasharray={dash(s.i)}
+                />
+              </Show>
+              {/* a wide invisible stroke: double-click the curve to edit its series */}
+              <path
+                class="plot-hit"
+                clip-path={`url(#clip-${r().id})`}
+                d={s.connect === false ? "" : path(s.xs, s.ys)}
+                onDblClick={(e) => editSeries(e, r().id, s.i)}
+              />
+              <For each={markNodes(s)}>
+                {(node) => {
+                  // a label is set below its point, in the row's colour and size
+                  if (node.m.shape === "text") {
+                    return (
+                      <text class="plot-mark-text" x={node.cx} y={node.cy + node.m.size + 2} text-anchor="middle" fill={node.c} font-size={`${node.m.size}px`}>
+                        {node.m.text}
+                      </text>
+                    );
+                  }
+                  const r0 = markerDiameter(node.m.shape, node.m.size) / 2;
+                  if (node.m.shape === "." || node.m.shape === "o") {
+                    const ring = node.m.shape === "o";
+                    return (
+                      <circle
+                        class={ring ? "plot-mark-ring" : "plot-mark"}
+                        cx={node.cx}
+                        cy={node.cy}
+                        r={r0}
+                        stroke={ring ? node.c : undefined}
+                        fill={ring ? "none" : node.c}
+                      />
+                    );
+                  }
+                  return <path class="plot-mark-line" d={markerPath(node.m.shape, node.cx, node.cy, r0)} stroke={node.c} fill="none" />;
+                }}
+              </For>
+            </g>
+          )}
+        </For>
         {/* points, whole even on the edge of the plot */}
         <For each={drawn().filter((s) => drawAs(s.i) !== "line" && !s.marks?.length)}>
           {(s) => (
@@ -531,38 +569,6 @@ export function PlotBody(props: { r: Region }) {
                   fill={color(s.i)}
                 />
               )}
-            </For>
-          )}
-        </For>
-        {/* SMath's styled points: each in its own marker, size and colour (a dot, a ring, or a cross) */}
-        <For each={drawn().filter((s) => s.marks?.length)}>
-          {(s) => (
-            <For each={markNodes(s)}>
-              {(node) => {
-                // a label is set below its point, in the row's colour and size
-                if (node.m.shape === "text") {
-                  return (
-                    <text class="plot-mark-text" x={node.cx} y={node.cy + node.m.size + 2} text-anchor="middle" fill={node.c} font-size={`${node.m.size}px`}>
-                      {node.m.text}
-                    </text>
-                  );
-                }
-                const r0 = markerDiameter(node.m.shape, node.m.size) / 2;
-                if (node.m.shape === "." || node.m.shape === "o") {
-                  const ring = node.m.shape === "o";
-                  return (
-                    <circle
-                      class={ring ? "plot-mark-ring" : "plot-mark"}
-                      cx={node.cx}
-                      cy={node.cy}
-                      r={r0}
-                      stroke={ring ? node.c : undefined}
-                      fill={ring ? "none" : node.c}
-                    />
-                  );
-                }
-                return <path class="plot-mark-line" d={markerPath(node.m.shape, node.cx, node.cy, r0)} stroke={node.c} fill="none" />;
-              }}
             </For>
           )}
         </For>
