@@ -27,10 +27,35 @@ test("evaluates math with units as you type", async ({ page }) => {
   await expect(page.locator(".status .muted").first()).toContainText("3 math");
 });
 
+test("typing starts right after choosing Blank document", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await typeLines(page, "a:=2", "b:=a*3=");
+  await expect(regions(page)).toHaveCount(2);
+  await expect(regions(page).nth(1)).toContainText(/=6$/);
+});
+
 test("explains a unit mismatch", async ({ page }) => {
   await blank(page);
   await typeLines(page, "x:=1 m + 2 kN=");
   await expect(regions(page).first()).toContainText(/cannot add a length \(m\) and a force/);
+});
+
+test("fits data and solves an ODE with units", async ({ page }) => {
+  await blank(page);
+  await typeLines(
+    page,
+    "x:=[1;2;3;4] m",
+    "F:=[5;7;9;11] kN",
+    "slope(x, F)=kN/m",
+    "D(t, y):=-y/(2 s)",
+    "Y:=rkfixed(10 mm, 0, 4 s, 40, D)",
+    "Y[41, 2]=mm",
+  );
+  await expect(regions(page)).toHaveCount(6);
+  await expect(regions(page).nth(2)).toContainText(/=2\s*kN\W?m$/);
+  // 10 mm·e^−2
+  await expect(regions(page).nth(5)).toContainText(/=1\.3534\s*mm$/);
 });
 
 test("a word followed by a space becomes text", async ({ page }) => {

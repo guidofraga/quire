@@ -5,6 +5,7 @@ import { api, isTauri } from "./api";
 import { esc, prettyValue } from "./math";
 import { verdictOf } from "./checks";
 import { decimalComma, parseCsv, tableNameFrom, toCsv, withDecimalComma } from "./csv";
+import { tableFromHtml } from "./clipboard";
 import { commitEditing, contentBottom, flash, insertRegion, layout, type Placed, LINE, redo, setState, snap, startEditing, state, undo, updateRegion } from "./store";
 import type { Region } from "./types";
 
@@ -348,10 +349,12 @@ function pasteCells(e: ClipboardEvent) {
   const t = editingTable();
   if (!t || draft() !== null) return;
   const text = e.clipboardData?.getData("text/plain");
+  // a table from Word or a web page may come without tabs in its text
+  const html = text?.includes("\t") ? null : tableFromHtml(e.clipboardData?.getData("text/html"));
   e.preventDefault();
   e.stopPropagation();
-  if (!text) return;
-  const block = parseTsv(text);
+  if (!text && !html) return;
+  const block = html?.rows ?? parseTsv(text!);
   const { r, c } = sel();
   setCells(t.id, [r, c], block);
   setSel({ r, c, r2: r + block.length - 1, c2: c + Math.max(...block.map((b) => b.length)) - 1 });

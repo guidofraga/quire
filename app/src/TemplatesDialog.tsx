@@ -104,7 +104,7 @@ function Chooser(props: Props & { close: () => void }) {
       <h3 class="templates-heading">Your templates</h3>
       <Show
         when={group(false).length}
-        fallback={<p class="templates-empty">None yet. Open a document you like to start from and choose File ▸ Save as Template….</p>}
+        fallback={<p class="templates-empty">None yet. Open a document you like to start from and choose File ▸ Save as Template…</p>}
       >
         <div class="template-grid">
           <For each={group(false)}>

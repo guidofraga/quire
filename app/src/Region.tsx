@@ -474,7 +474,7 @@ function ChecksBody(props: { p: Placed }) {
         </div>
         <For each={checks()}>
           {(c) => (
-            <div class="contents-row" onPointerDown={(ev) => ev.stopPropagation()} onClick={() => revealRegion(c.id)} title="Go to">
+            <div class="contents-row" data-ref={c.id} onPointerDown={(ev) => ev.stopPropagation()} onClick={() => revealRegion(c.id)} title="Go to">
               <span class="checks-mark" classList={{ pass: c.pass, fail: !c.pass }}>
                 {c.pass ? "✓" : "✗"}
               </span>
@@ -524,6 +524,7 @@ function ContentsBody(props: { p: Placed }) {
           {(e) => (
             <div
               class={`contents-row lvl-${e.level}`}
+              data-ref={e.id}
               onPointerDown={(ev) => ev.stopPropagation()}
               onClick={() => revealRegion(e.id)}
               title="Go to"

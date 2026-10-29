@@ -215,7 +215,7 @@ function RegionTab() {
                   <Field label="Decimals">
                     <Num
                       value={r().display?.decimals}
-                      placeholder="doc"
+                      placeholder="document"
                       onCommit={(v) => updateRegion(r().id, (d) => {
                         d.display = { ...d.display, decimals: v };
                         if (d.display.decimals === undefined) delete d.display.decimals;
@@ -286,7 +286,7 @@ function RegionTab() {
                   <Field label="Decimals" hint="For the whole table">
                     <Num
                       value={r().display?.decimals}
-                      placeholder="doc"
+                      placeholder="document"
                       onCommit={(v) => updateRegion(r().id, (d) => {
                         d.display = { ...d.display, decimals: v };
                         if (d.display.decimals === undefined) delete d.display.decimals;

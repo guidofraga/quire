@@ -223,7 +223,8 @@ pub(crate) struct Sheet<'a, 'u, 's> {
     settings: &'a DisplaySettings,
 }
 
-/// Evaluate a table: per-cell outcomes, the matrix it defines and the units it is written in.
+/// Evaluate a table: per-cell outcomes, the matrix it defines and the units it is written in
+/// (in order, repeats included).
 pub(crate) fn evaluate(
     t: &TableInput,
     interp: &mut Interp,
@@ -291,12 +292,20 @@ pub(crate) fn evaluate(
                             CV::Blank => None,
                             CV::Bool(b) => Some(if *b { "\"TRUE\"" } else { "\"FALSE\"" }.into()),
                             CV::V(v) => {
+                                // a value is shown in the units it was typed in, as a
+                                // definition is; formulas follow the document's result units
+                                let typed = typed_units(t, r, c, sheet.interp.units);
+                                let as_typed = DisplaySettings { working_units: true, ..settings.clone() };
+                                let (settings, vocab) = match &typed {
+                                    Some(units) => (&as_typed, units.as_slice()),
+                                    None => (settings, vocab.as_slice()),
+                                };
                                 // a unit set on the column that doesn't fit (a text column, a
                                 // count) is ignored rather than turning the cell into an error
-                                let shown = format_value_in(v, &spec, settings, sheet.interp.units, &vocab)
+                                let shown = format_value_in(v, &spec, settings, sheet.interp.units, vocab)
                                     .or_else(|_| {
                                         let plain = DisplaySpec { unit: None, ..spec.clone() };
-                                        format_value_in(v, &plain, settings, sheet.interp.units, &vocab)
+                                        format_value_in(v, &plain, settings, sheet.interp.units, vocab)
                                     });
                                 out.value = Some(v.clone());
                                 match shown {
@@ -319,8 +328,25 @@ pub(crate) fn evaluate(
         }
         outcomes.push(row);
     }
-    let units = written.into_iter().collect::<BTreeSet<_>>().into_iter().collect();
-    (outcomes, Value::Matrix(Matrix::new(nrows, ncols, data)), units)
+    (outcomes, Value::Matrix(Matrix::new(nrows, ncols, data)), written)
+}
+
+/// The units cell (r, c) was typed in when it holds a value (`4.5 kN/m` → kN, m);
+/// `None` for formulas, text and blanks.
+fn typed_units(t: &TableInput, r: usize, c: usize, units: &UnitRegistry) -> Option<Vec<WorkingUnit>> {
+    let e = literal(t.rows.get(r)?.get(c)?, units)?;
+    let mut names = Vec::new();
+    unit_names(&e, &mut names);
+    let mut out: Vec<WorkingUnit> = Vec::new();
+    for name in names {
+        if out.iter().any(|w| w.name == name) {
+            continue;
+        }
+        if let Some(unit) = units.lookup(&name).filter(|u| u.offset == 0.0 && !u.dim.is_dimensionless()) {
+            out.push(WorkingUnit { name, unit });
+        }
+    }
+    Some(out)
 }
 
 /// How column `c` is shown: its own unit and decimals, else the table's.
@@ -339,10 +365,11 @@ pub(crate) fn reformat(
     units: &UnitRegistry,
     vocab: &[WorkingUnit],
 ) {
-    for row in cells.iter_mut() {
+    for (r, row) in cells.iter_mut().enumerate() {
         for (c, cell) in row.iter_mut().enumerate() {
             let spec = cell_spec(t, c);
-            if spec.unit.is_some() || cell.error.is_some() {
+            // values stay as typed
+            if spec.unit.is_some() || cell.error.is_some() || typed_units(t, r, c, units).is_some() {
                 continue;
             }
             if let Some(v @ Value::Num(_)) = &cell.value

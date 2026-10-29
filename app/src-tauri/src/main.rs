@@ -147,8 +147,9 @@ async fn export_pdf(
     paper: print::Paper,
     title: String,
     compress: bool,
+    info: Option<print::PdfInfo>,
 ) -> CmdResult<()> {
-    print::export_pdf(&window, path, paper, title, compress)
+    print::export_pdf(&window, path, paper, title, compress, info.unwrap_or_default())
 }
 
 /// End of a headless `--export-pdf` run.

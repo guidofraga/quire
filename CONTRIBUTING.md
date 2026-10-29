@@ -32,6 +32,7 @@ Day to day:
 | Test the engine | `cargo test --workspace --exclude quire-app` |
 | Test the UI's logic | `npm --prefix app test` (Vitest; `run test:watch` while you work) |
 | Try the UI end to end | `npm --prefix app run e2e` (Playwright in WebKit; starts `quire serve` and the dev server, or reuses running ones; once: `npx --prefix app playwright install webkit`) |
+| Check PDF export end to end (macOS) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored`: exports `app/src-tauri/tests/fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links. Not run in CI, which has no macOS desktop; run it when you change printing or `pdf.rs` |
 | Work on the UI in a browser | `cargo run -p quire-cli -- serve` in one terminal, `npm --prefix app run dev` in another, then open http://localhost:5173 |
 | Run the desktop app while developing | `npm --prefix app run tauri dev` |
 | Build `Quire.app` / the installers | `npm --prefix app run tauri build` (add `-- --bundles app` for just the macOS app) |
