@@ -373,6 +373,28 @@ async function runExportJob(job: { open: string; pdf: string }) {
   }
 }
 
+/** Insert ▾ in the toolbar: everything but math and text, which have their own buttons. */
+function openInsertMenu(e: MouseEvent) {
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const item = (label: string, id: string, shortcut?: string) => ({ label, shortcut, run: () => (closeMenu(), runCommand(id)) });
+  setMenu({
+    x: box.left,
+    y: box.bottom + 4,
+    items: [
+      item("Image…", "insert_image"),
+      item("Table", "insert_table", "⌥⌘T"),
+      item("Table from CSV…", "import_csv"),
+      item("Plot", "insert_plot", "⌥⌘P"),
+      item("Area", "insert_area"),
+      null,
+      item("Contents", "insert_toc"),
+      item("List of Figures", "insert_figures"),
+      item("List of Tables", "insert_tables"),
+      item("Summary of Checks", "insert_checks"),
+    ],
+  });
+}
+
 /** The toolbar's zoom percentage: common sizes, and fitting the page to the window. */
 function openZoomMenu(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -508,7 +530,7 @@ function runCommand(id: string) {
     case "insert_ref":
       // a reference goes into text, at the caret
       if (activeView()) return setRefPickerOpen(true);
-      return flash("Click in text where the reference should go, then choose Insert ▸ Cross-Reference…");
+      return flash("Put the cursor in text first");
     case "insert_toc":
       return insertContents("headings");
     case "insert_figures":
@@ -787,9 +809,7 @@ export function App() {
     if (isWeb) keepLinkCurrent();
   });
 
-  const regionCount = () => state.report?.regions.length ?? 0;
-
-  return (
+    return (
     <div class="app" classList={{ tauri: isTauri, printing: state.printing, "with-sidebar": sidebarShown() }}>
       {/* with a notebook the sidebar stays mounted, so hiding and showing it can slide */}
       <Show when={nb.book || sidebarShown()}>
@@ -819,34 +839,22 @@ export function App() {
         </h1>
         </div>
         <div class="tools" role="toolbar" aria-label="Insert" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
-          <button onMouseDown={(e) => e.preventDefault()} onClick={() => runCommand("insert_math")} title="Insert math (⇧⌘M); inside text, math in the line">
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => runCommand("insert_math")} title="Math (⇧⌘M)">
             <span class="glyph math-glyph" aria-hidden="true">
               x<sup>2</sup>
             </span>
             <span class="tool-label">Math</span>
           </button>
-          <button onClick={() => insertAtCaret("text")} title="Insert text (⇧⌘T)">
+          <button onClick={() => insertAtCaret("text")} title="Text (⇧⌘T)">
             <span class="glyph" aria-hidden="true">¶</span> <span class="tool-label">Text</span>
           </button>
-          <button onClick={() => runCommand("insert_image")} title="Insert image">
-            <span class="glyph" aria-hidden="true">▣</span> <span class="tool-label">Image</span>
-          </button>
-          <button onClick={() => insertTable()} title="Insert table (⌥⌘T)">
-            <span class="glyph" aria-hidden="true">▦</span> <span class="tool-label">Table</span>
-          </button>
-          <button onClick={() => insertPlot()} title="Insert plot (⌥⌘P)">
-            <span class="glyph" aria-hidden="true">∿</span> <span class="tool-label">Plot</span>
-          </button>
-          <button onClick={insertArea} title="Insert area">
-            <span class="glyph" aria-hidden="true">▤</span> <span class="tool-label">Area</span>
-          </button>
-          <button onClick={() => runCommand("insert_toc")} title="Insert table of contents">
-            <span class="glyph" aria-hidden="true">☰</span> <span class="tool-label">Contents</span>
+          <button onClick={(e) => openInsertMenu(e)} title="Insert" aria-haspopup="menu">
+            <span class="glyph" aria-hidden="true">＋</span> <span class="tool-label">Insert</span>
           </button>
         </div>
         <div class="status" data-tauri-drag-region role="toolbar" aria-label="Document" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
           <Show when={(state.report?.errorCount ?? 0) > 0}>
-            <button class="errors" onClick={openErrorsMenu} title="List the errors (⌘' goes to the next one)" aria-haspopup="menu">
+            <button class="errors" onClick={openErrorsMenu} title="Errors (⌘' for the next)" aria-haspopup="menu">
               {state.report!.errorCount} {state.report!.errorCount === 1 ? "error" : "errors"}
             </button>
           </Show>
@@ -855,10 +863,6 @@ export function App() {
               {failing().length ? `✗ ${failing().length} of ${checks().length} failing` : `✓ ${checks().length} ${checks().length === 1 ? "check" : "checks"}`}
             </button>
           </Show>
-          <span class="muted" data-tauri-drag-region title={`Evaluated in ${(state.report?.elapsedMs ?? 0).toFixed(2)} ms`}>
-            {regionCount()} math
-            {layout().pageView ? ` · ${layout().contentPages} ${layout().contentPages === 1 ? "page" : "pages"}` : ""}
-          </span>
           <div class="segmented" role="group" aria-label="View">
             <button classList={{ on: !layout().pageView }} aria-pressed={!layout().pageView} onClick={() => layout().pageView && togglePageView()} title="Free canvas">
               Canvas
@@ -867,7 +871,7 @@ export function App() {
               Pages
             </button>
           </div>
-          <button class="share-btn" onClick={() => runCommand("share_link")} title="Share a link to this document">
+          <button class="share-btn" onClick={() => runCommand("share_link")} title="Share a link">
             Share
           </button>
           <button

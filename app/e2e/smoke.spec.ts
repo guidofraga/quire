@@ -24,7 +24,6 @@ test("evaluates math with units as you type", async ({ page }) => {
   await expect(regions(page)).toHaveCount(3);
   // the result keeps the units of the inputs: 54 kN·m, not 54000 J
   await expect(regions(page).nth(2)).toContainText(/=54\s*kN\W?m$/);
-  await expect(page.locator(".status .muted").first()).toContainText("3 math");
 });
 
 test("typing starts right after choosing Blank document", async ({ page }) => {
@@ -59,7 +58,7 @@ test("an empty page says how to start, until there is content", async ({ page })
   await page.goto("/");
   await page.getByRole("button", { name: /Blank document/ }).click();
   const hint = page.locator(".empty-hint");
-  await expect(hint).toHaveText(/Click anywhere and type/);
+  await expect(hint).toHaveText(/Click anywhere to start typing/);
   await page.emulateMedia({ media: "print" });
   await expect(hint).toBeHidden();
   await page.emulateMedia({ media: "screen" });
@@ -157,4 +156,18 @@ test("imports a CSV file as a table and exports its values", async ({ page }) =>
   expect(lines[0]).toBe("Load,q,twice");
   expect(lines[1]).toMatch(/^Dead,4\.5 kN\/m,9\b/);
   expect(lines[2]).toMatch(/^"Live, roof",1\.5 kN\/m,3\b/);
+});
+
+test("the Insert menu adds tables, plots and contents, from the mouse or the keyboard", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.getByRole("button", { name: "Insert" }).click();
+  await page.getByRole("menuitem", { name: /^Table/ }).first().click();
+  await expect(page.locator(".region.table")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Insert" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("menuitem").first()).toBeFocused();
+  await page.getByRole("menuitem", { name: "Contents" }).click();
+  await expect(page.locator(".region.toc")).toHaveCount(1);
 });

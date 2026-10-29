@@ -530,7 +530,7 @@ function EquationGroup() {
   return (
     <div class="fb-group">
       <Dropdown
-        title="Equation structures: fractions, roots, integrals, matrices…"
+        title="Fractions, roots, integrals, matrices"
         popName="Structures"
         class="wide"
         onOpen={loadPreviews}
@@ -543,7 +543,7 @@ function EquationGroup() {
         {(close) => <StructuresGallery close={close} />}
       </Dropdown>
       <Dropdown
-        title="Symbols, constants and units (or type \name, e.g. \Delta)"
+        title="Symbols, constants and units (\name)"
         popName="Symbols"
         class="wide"
         onOpen={loadLibrary}

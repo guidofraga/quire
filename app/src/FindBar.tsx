@@ -118,14 +118,14 @@ export function FindBar() {
               placeholder="Replace with"
               spellcheck={false}
             />
-            <button class="find-act" onClick={replaceOne} disabled={!hits().length} title="Replace in the selected region (↩)">
+            <button class="find-act" onClick={replaceOne} disabled={!hits().length} title="Replace (↩)">
               Replace
             </button>
             <button
               class="find-act"
               onClick={() => say(replaceHits(hits().map((h) => h.id)))}
               disabled={!hits().length}
-              title="Replace everywhere (one undo step)"
+              title="Replace all"
               aria-label="Replace all"
             >
               All

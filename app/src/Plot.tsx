@@ -532,7 +532,7 @@ export function PlotBody(props: { r: Region }) {
       </svg>
       {/* zoom: shown on hover, never printed */}
       <div class="plot-tools" onPointerDown={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()}>
-        <button title="Zoom in (or ⌥ + scroll)" aria-label="Zoom in" onClick={() => zoomBy(0.5)}>
+        <button title="Zoom in (⌥ scroll)" aria-label="Zoom in" onClick={() => zoomBy(0.5)}>
           ＋
         </button>
         <button title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(2)}>
@@ -542,7 +542,7 @@ export function PlotBody(props: { r: Region }) {
           <button title="Back to the whole plot" aria-label="Back to the whole plot" onClick={() => setZoomed(null)}>
             ⤢
           </button>
-          <button title="Keep this view: it becomes the axes' limits, which print" aria-label="Keep this view" onClick={keepView}>
+          <button title="Keep this view as the axis limits" aria-label="Keep this view" onClick={keepView}>
             Keep
           </button>
         </Show>

@@ -514,8 +514,8 @@ function NoNotebook() {
   const recent = recentNotebooks();
   return (
     <div class="nb-welcome">
-      <p class="nb-welcome-title">Keep your notes in a notebook</p>
-      <p class="nb-welcome-text">A notebook is a folder of notes, organised in sections. Notes save themselves as you write.</p>
+      <p class="nb-welcome-title">Notebooks</p>
+      <p class="nb-welcome-text">Folders of notes that save themselves.</p>
       <button class="nb-primary" onClick={() => void newNotebookDialog()}>
         New Notebook…
       </button>

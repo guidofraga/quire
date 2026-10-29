@@ -90,7 +90,7 @@ function Chooser(props: Props & { close: () => void }) {
           }}
         >
           <span class="template-name">Blank document</span>
-          <span class="template-desc">An empty page with your default settings.</span>
+          <span class="template-desc">Your default settings</span>
         </button>
         <For each={group(true)}>
           {(t) => (
@@ -104,7 +104,7 @@ function Chooser(props: Props & { close: () => void }) {
       <h3 class="templates-heading">Your templates</h3>
       <Show
         when={group(false).length}
-        fallback={<p class="templates-empty">None yet. Open a document you like to start from and choose File ▸ Save as Template…</p>}
+        fallback={<p class="templates-empty">Save any document with File ▸ Save as Template…</p>}
       >
         <div class="template-grid">
           <For each={group(false)}>
@@ -132,7 +132,7 @@ function SaveForm(props: { close: () => void }) {
   const save = async () => {
     try {
       await api.saveTemplate(name(), description(), unwrap(state.doc), state.path ?? state.origin);
-      flash(`Saved the template “${name().trim()}”; find it in File ▸ New from Template…`);
+      flash(`Saved template “${name().trim()}”`);
       props.close();
     } catch (e) {
       flash(`Could not save the template: ${(e as Error).message}`);
@@ -146,10 +146,6 @@ function SaveForm(props: { close: () => void }) {
         void save();
       }}
     >
-      <p class="templates-note">
-        The whole document is kept — page setup, headers and footers, styles, regions and images — so new documents start from
-        it.
-      </p>
       <label class="insp-field">
         <span class="insp-label">Name</span>
         <input class="insp-input" value={name()} onInput={(e) => setName(e.currentTarget.value)} autofocus />

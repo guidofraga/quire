@@ -16,7 +16,7 @@ const [dismissed, setDismissed] = createSignal(false);
 /** Ask GitHub for the latest release; `manual` reports "up to date" and errors too. */
 export async function checkForUpdates(manual = false) {
   if (!isTauri) {
-    if (manual) flash("Updates are checked in the desktop app");
+    if (manual) flash("Updates come with the desktop app");
     return;
   }
   try {

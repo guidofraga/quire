@@ -148,7 +148,7 @@ function Caption(props: { p: Placed }) {
       <div class="caption">
         <span
           class="caption-num"
-          title="Double-click to change what every caption of this kind says"
+          title="Double-click to rename all"
           onDblClick={(e) => editCaptionLabel(e, r().kind === "table" ? "table" : "figure")}
         >
           {captionPrefix(r(), props.p.number)}
@@ -158,7 +158,7 @@ function Caption(props: { p: Placed }) {
           fallback={
             <span
               class="caption-edit-target"
-              title="Double-click to edit the caption"
+              title="Double-click to edit"
               onDblClick={(e) => {
                 e.stopPropagation();
                 setEditing(true);

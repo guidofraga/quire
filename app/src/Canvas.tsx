@@ -682,7 +682,7 @@ export function Canvas() {
         </Show>
         <Show when={caretScene() && !state.doc.regions.length && !state.printing}>
           <div class="empty-hint" aria-hidden="true" style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }}>
-            Click anywhere and type — math by default, a word and a space for text
+            Click anywhere to start typing
           </div>
         </Show>
         <textarea

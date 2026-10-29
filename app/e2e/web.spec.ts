@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("evaluates in the browser, with nothing that needs files on disk offered", async ({ page }) => {
-  await expect(page.getByText("Running in your browser.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Get the desktop app" })).toBeVisible();
   await expect(page.getByRole("button", { name: /New notebook/ })).toHaveCount(0);
   await page.getByRole("button", { name: /Blank document/ }).click();
   await expect(page.getByRole("button", { name: "Show the sidebar" })).toHaveCount(0);

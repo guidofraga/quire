@@ -359,7 +359,7 @@ function useVariable(name: string) {
   const re = new RegExp(`([\\p{N}\\]])\\s*${escaped}(?![\\p{L}\\p{N}_.])`, "gu");
   const next = input.value.replace(re, `$1*${name}`);
   // inside a unit (`100 km/h` with a variable h) there is no number to split from
-  if (next === input.value) return flash(`Write *${name} where you mean your variable ${name}`);
+  if (next === input.value) return flash(`Write *${name} for your variable`);
   input.focus();
   input.select();
   document.execCommand("insertText", false, next);
@@ -374,22 +374,22 @@ export function NameNotes(props: { id: string }) {
     for (const name of v?.constants ?? []) {
       const c = g[`constant:${name}`];
       if (c?.meanings.includes("unit"))
-        out.push({ name, text: `${c.title} = ${prettyValue(c.value)}`, action: [`Use the unit ${name}`, () => forceUnit(name)] });
+        out.push({ name, text: `${c.title} = ${prettyValue(c.value)}`, action: [`Use unit ${name}`, () => forceUnit(name)] });
     }
     for (const name of v?.units ?? []) {
       const u = g[`unit:${name}`];
-      if (u?.meanings.includes("constant")) out.push({ name, text: `unit, ${prettyValue(u.value)} (after a number). Write *${name} for the constant` });
+      if (u?.meanings.includes("constant")) out.push({ name, text: `unit, ${prettyValue(u.value)} · *${name} for the constant` });
     }
     for (const name of v?.unitsOverVariables ?? []) {
       out.push({
         name,
-        text: `the unit here (after a number), not your variable ${name}`,
-        action: [`Use the variable ${name}`, () => useVariable(name)],
+        text: `unit here, not your variable`,
+        action: [`Use variable ${name}`, () => useVariable(name)],
       });
     }
     for (const name of v?.shadowing ?? []) {
       const c = g[`constant:${name}`];
-      if (c) out.push({ name, text: `your variable here, not the constant ${c.title}` });
+      if (c) out.push({ name, text: `your variable, not ${c.title}` });
     }
     return out;
   };

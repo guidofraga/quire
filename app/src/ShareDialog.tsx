@@ -65,10 +65,7 @@ function Dialog() {
           </button>
         </header>
         <div class="settings-body share-body">
-          <p>
-            Anyone with this link can open the document in their browser, change the numbers and see the results update. It
-            doesn't need Quire installed, and the document isn't uploaded anywhere: it travels inside the link.
-          </p>
+          <p>Anyone with the link can open and edit a copy in their browser. Nothing is uploaded.</p>
           <div class="share-row">
             <input
               ref={field}
@@ -83,18 +80,14 @@ function Dialog() {
             </button>
           </div>
           <Show when={made()?.error}>
-            <p class="share-note">Could not make a link here: {made()?.error}</p>
+            <p class="share-note">Could not make a link: {made()?.error}</p>
           </Show>
           <Show when={hasImages(doc)}>
-            <p class="share-note">Images are left out of links. To send them too, use File ▸ Save As… and send the .quirez file.</p>
+            <p class="share-note">Links leave out images. Send the .quirez file to include them.</p>
           </Show>
           <Show when={(link()?.length ?? 0) > LONG_LINK}>
-            <p class="share-note">
-              This link is long ({Math.round((link()?.length ?? 0) / 1000)}k characters). Some chat apps shorten long links; email
-              keeps them whole.
-            </p>
+            <p class="share-note">Long link ({Math.round((link()?.length ?? 0) / 1000)}k characters): some chat apps cut it short.</p>
           </Show>
-          <p class="share-note">Changes made after you copy it aren't in the link: share again to send them.</p>
         </div>
       </div>
     </div>

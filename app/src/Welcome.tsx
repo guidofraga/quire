@@ -67,7 +67,6 @@ function Screen(props: Props) {
       <div class="welcome" role="dialog" aria-modal="true" aria-label="Welcome to Quire" ref={el}>
         <div class="welcome-head">
           <div class="welcome-title">Quire</div>
-          <div class="welcome-sub">Engineering calculations with live math, units, plots and reports</div>
         </div>
         <div class="welcome-cols">
           <section>
@@ -76,7 +75,6 @@ function Screen(props: Props) {
               <span class="welcome-icon" aria-hidden="true">＋</span>
               <span>
                 <b>Blank document</b>
-                <small>Click anywhere on the page and type</small>
               </span>
             </button>
             <Show when={!isWeb}>
@@ -89,7 +87,6 @@ function Screen(props: Props) {
               </span>
               <span>
                 <b>New notebook…</b>
-                <small>A folder of notes in sections, saved as you write</small>
               </span>
             </button>
             </Show>
@@ -97,7 +94,6 @@ function Screen(props: Props) {
               <span class="welcome-icon" aria-hidden="true">⌘O</span>
               <span>
                 <b>Open…</b>
-                <small>{isWeb ? "A .quirez file from your computer" : "A Quire document from your computer"}</small>
               </span>
             </button>
             <Show when={!isWeb}>
@@ -105,11 +101,10 @@ function Screen(props: Props) {
               <span class="welcome-icon" aria-hidden="true">⇧⌘O</span>
               <span>
                 <b>Open notebook…</b>
-                <small>A folder of Quire notes</small>
               </span>
             </button>
             <h3>Recent</h3>
-            <Show when={recent.length} fallback={<p class="welcome-empty">Documents you open or save show up here.</p>}>
+            <Show when={recent.length} fallback={<p class="welcome-empty">No recent documents</p>}>
               <For each={recent}>
                 {(path) => (
                   <button class="welcome-item" title={path} onClick={() => void run(() => props.openPath(path))}>
@@ -144,27 +139,25 @@ function Screen(props: Props) {
             when={!isWeb}
             fallback={
               <span class="welcome-hint">
-                Running in your browser.{" "}
                 <a href="https://github.com/guidofraga/quire/releases/latest" target="_blank" rel="noopener">
                   Get the desktop app
-                </a>{" "}
-                for notebooks and PDF reports.
+                </a>
               </span>
             }
           >
           <label>
-            When Quire starts
+            At launch
             <select
               value={prefs.onLaunch}
               onChange={(e) => setPref("onLaunch", e.currentTarget.value as Prefs["onLaunch"])}
             >
-              <option value="welcome">Show this screen</option>
-              <option value="last">Reopen the last document</option>
-              <option value="blank">Start a blank document</option>
+              <option value="welcome">Welcome screen</option>
+              <option value="last">Last document</option>
+              <option value="blank">Blank document</option>
             </select>
           </label>
           </Show>
-          <span class="welcome-hint">⌘K finds any command · F1 for help</span>
+          <span class="welcome-hint">⌘K Commands · F1 Help</span>
         </div>
       </div>
     </div>

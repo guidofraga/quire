@@ -2352,8 +2352,7 @@ ms.str::after {
   text-transform: uppercase;
 }
 
-.templates-empty,
-.templates-note {
+.templates-empty {
   margin: 0 0 12px;
   color: var(--muted);
   line-height: 1.45;
@@ -2482,14 +2481,8 @@ ms.str::after {
   justify-self: end;
 }
 
-@container main (max-width: 1080px) {
+@container main (max-width: 760px) {
   .toolbar .tool-label {
-    display: none;
-  }
-}
-
-@container main (max-width: 860px) {
-  .status .muted {
     display: none;
   }
 }
@@ -3146,11 +3139,6 @@ a.xref-missing {
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.01em;
-}
-
-.welcome-sub {
-  margin-top: 2px;
-  color: var(--muted);
 }
 
 .welcome-cols {

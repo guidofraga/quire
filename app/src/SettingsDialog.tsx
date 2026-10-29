@@ -51,7 +51,7 @@ function Dialog() {
                 onChange={(v) => setPref("theme", v)}
               />
             </Field>
-            <Check checked={prefs.flatUnits} label="Write units on one line (80 km/h, not a fraction)" onChange={toggle("flatUnits")} />
+            <Check checked={prefs.flatUnits} label="Inline units (km/h)" onChange={toggle("flatUnits")} />
             <Field label="Canvas background">
               <Select<CanvasPattern>
                 value={prefs.canvasPattern}
@@ -64,15 +64,15 @@ function Dialog() {
                 onChange={(v) => setPref("canvasPattern", v)}
               />
             </Field>
-            <Check checked={prefs.pageBreaks} label="Show page breaks on the canvas" onChange={toggle("pageBreaks")} />
+            <Check checked={prefs.pageBreaks} label="Page breaks on the canvas" onChange={toggle("pageBreaks")} />
           </Section>
           <Section title="Editing">
-            <Check checked={prefs.latex} label="Convert LaTeX names as you type (\alpha → α)" onChange={toggle("latex")} />
-            <Check checked={prefs.nameNotes} label="Point out names that could mean a unit or a constant" onChange={toggle("nameNotes")} />
-            <Check checked={prefs.tooltips} label="Explain units and constants on hover" onChange={toggle("tooltips")} />
+            <Check checked={prefs.latex} label="LaTeX shortcuts (\alpha → α)" onChange={toggle("latex")} />
+            <Check checked={prefs.nameNotes} label="Flag ambiguous names" onChange={toggle("nameNotes")} />
+            <Check checked={prefs.tooltips} label="Unit and constant tooltips" onChange={toggle("tooltips")} />
             <Check
               checked={prefs.shiftContent}
-              label="Return and Delete on empty space move the content below"
+              label="Return and Delete push content down"
               onChange={toggle("shiftContent")}
             />
           </Section>
@@ -81,15 +81,15 @@ function Dialog() {
               <Select
                 value={String(prefs.exportDpi)}
                 options={[
-                  ["300", "300 dpi — print"],
-                  ["150", "150 dpi — screen, smaller files"],
+                  ["300", "300 dpi"],
+                  ["150", "150 dpi (smaller)"],
                   ["0", "Original images"],
                 ]}
                 onChange={(v) => setPref("exportDpi", Number(v))}
               />
             </Field>
             <Show when={directPdf}>
-              <Check checked={prefs.compressPhotos} label="Compress photos (drawings stay lossless)" onChange={toggle("compressPhotos")} />
+              <Check checked={prefs.compressPhotos} label="Compress photos" onChange={toggle("compressPhotos")} />
             </Show>
           </Section>
           <Section title="New documents">
