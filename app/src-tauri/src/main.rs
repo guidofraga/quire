@@ -1,7 +1,7 @@
 // Quire desktop app — GPL-3.0-or-later. The engine crates it calls are MIT OR Apache-2.0.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod pdf;
 mod print;
 

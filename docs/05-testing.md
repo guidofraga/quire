@@ -13,7 +13,7 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 | SMath examples | `crates/quire-cli/tests/smath_examples.rs` | `cargo test -p quire-cli --test smath_examples -- --nocapture` | Every worksheet in the SMath corpus imports, evaluates, and reproduces at least its floor of SMath's cached results |
 | SMath robustness | `crates/quire-cli/tests/smath_robustness.rs` | the same `cargo test` | The importer never panics on hostile input, corpus prefixes or mutations |
 | Accessibility | `app/e2e/a11y.spec.ts`, plus axe in `notebook.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
-| PDF export | `app/src-tauri/tests/` (macOS, by hand) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
+| PDF export | `app/src-tauri/tests/` (macOS and Linux, by hand) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
 
 Run the PDF test when you change printing, `export.ts`, `print.rs` or `pdf.rs`; CI has no macOS desktop.
 

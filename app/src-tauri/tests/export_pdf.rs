@@ -1,13 +1,13 @@
 //! End to end: `quire-app --export-pdf` on a small report, read back with lopdf.
 //!
 //! It drives the real app (WebKit lays out and prints the page view), so it needs the
-//! built front end embedded in the binary and a logged-in macOS session:
+//! built front end embedded in the binary and a logged-in desktop session (macOS or Linux):
 //!
 //! ```sh
 //! npm --prefix app run build
 //! cargo test -p quire-app --features tauri/custom-protocol -- --ignored
 //! ```
-#![cfg(target_os = "macos")]
+#![cfg(any(target_os = "macos", target_os = "linux"))]
 
 use std::path::Path;
 use std::process::Command;
@@ -106,7 +106,10 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
             }
         }
     }
-    assert_eq!(web, ["https://example.com/eurocode"]);
+    // WebKit keeps web links only on macOS; WebKitGTK's PDF print writes them as plain text
+    if cfg!(target_os = "macos") {
+        assert_eq!(web, ["https://example.com/eurocode"]);
+    }
     // six contents-list rows on page 0, then "Table 1" and "Figure 1", "1" and "Figure 1",
     // "Section 2.1" and the Summary of Checks row for the check above it
     let expected =

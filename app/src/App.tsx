@@ -363,7 +363,7 @@ async function withPrintLayout(run: () => Promise<unknown>) {
 const docTitle = () => fileName(state.path);
 
 async function exportPdf(target?: string) {
-  // Windows and Linux save PDFs from the system print dialog
+  // Windows saves PDFs from the system print dialog
   if (isTauri && !directPdf && !target) return printDocument();
   const path = target ?? (await pickPdfPath(`${docTitle()}.pdf`));
   if (!path) return;
@@ -376,7 +376,8 @@ async function exportPdf(target?: string) {
 
 async function printDocument() {
   await withPrintLayout(async () => {
-    if (isTauri && directPdf) await api.print(paperPoints(layout().geom), docTitle());
+    // Print stays a dialog everywhere; only macOS hands the job to the native print engine
+    if (isTauri && isMac) await api.print(paperPoints(layout().geom), docTitle());
     // blocks until the dialog closes, so the print layout stays up while it previews
     else window.print();
   });
