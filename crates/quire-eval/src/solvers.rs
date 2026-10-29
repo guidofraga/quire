@@ -1,5 +1,6 @@
-//! Numeric tools that call your functions: ODE solvers (`rkfixed`, `Rkadapt`) and least
-//! squares on basis functions (`linfit`).
+//! Numeric tools that call your functions or re-evaluate your equations: ODE solvers
+//! (`rkfixed`, `Rkadapt`), least squares on basis functions (`linfit`) and systems of
+//! equations (`solve` with a vector of unknowns).
 
 use std::rc::Rc;
 
@@ -301,6 +302,221 @@ impl Interp<'_> {
         Ok(Value::Matrix(Matrix::column(data)))
     }
 }
+
+/// The unknowns of a system: `[x; y]` (each a number), or one vector variable `v`.
+enum Unknowns {
+    Names(Vec<String>),
+    Vector(String),
+}
+
+impl Interp<'_> {
+    /// `solve` with a vector of unknowns: `[x; y]`, or a variable whose value is a vector.
+    pub(crate) fn is_system(s: &Scope, args: &[Expr]) -> bool {
+        match &args[1] {
+            Expr::Matrix(_) => true,
+            Expr::Ident(n) => {
+                matches!(s.get(n), Some(Binding::Val(Value::Matrix(_))))
+                    || matches!(args.get(2), Some(Expr::Matrix(_)))
+            }
+            _ => false,
+        }
+    }
+
+    /// `solve([f1 == g1; f2 == g2], [x; y])`: the x, y that satisfy every equation, found by
+    /// damped Newton steps from their current values (or from `solve(…, [x; y], [x0; y0])`).
+    pub(crate) fn solve_system(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let unknowns = match &args[1] {
+            Expr::Matrix(rows) => {
+                if rows.len() != 1 && rows[0].len() != 1 {
+                    bail!("solve needs the unknowns as a vector, like [x; y]");
+                }
+                let mut names: Vec<String> = Vec::new();
+                for cell in rows.iter().flatten() {
+                    let Expr::Ident(n) = cell else { bail!("the unknowns [x; y] must be variable names") };
+                    if names.contains(n) {
+                        bail!("{n} appears twice among the unknowns");
+                    }
+                    names.push(n.clone());
+                }
+                Unknowns::Names(names)
+            }
+            Expr::Ident(n) => Unknowns::Vector(n.clone()),
+            _ => bail!("the unknowns must be variable names, like [x; y]"),
+        };
+        let start: Vec<Quantity> = match (args.get(2), &unknowns) {
+            (Some(g), _) => quantities(&self.eval(s, g)?, "the starting values")?,
+            (None, Unknowns::Names(names)) => {
+                let mut v = Vec::new();
+                for n in names {
+                    match s.get(n) {
+                        Some(Binding::Val(Value::Num(q))) => v.push(*q),
+                        _ => bail!(
+                            "give {n} a starting value first, or pass them all: solve(…, [{}], [guesses])",
+                            names.join("; ")
+                        ),
+                    }
+                }
+                v
+            }
+            (None, Unknowns::Vector(n)) => match s.get(n) {
+                Some(Binding::Val(v)) => quantities(&v.clone(), "the starting value")?,
+                _ => bail!("give {n} a starting value first"),
+            },
+        };
+        let count = match &unknowns {
+            Unknowns::Names(n) => n.len(),
+            Unknowns::Vector(_) => start.len(),
+        };
+        if start.len() != count {
+            bail!("solve needs {count} starting values, one for each unknown, not {}", start.len());
+        }
+        let eqs = match &args[0] {
+            Expr::Matrix(rows) => {
+                Expr::Matrix(rows.iter().map(|r| r.iter().map(Self::residual).collect()).collect())
+            }
+            e => Self::residual(e),
+        };
+        let names: Vec<String> = match &unknowns {
+            Unknowns::Names(n) => n.clone(),
+            Unknowns::Vector(n) => vec![n.clone()],
+        };
+        let prev: Vec<_> = names.iter().map(|n| s.get(n).cloned()).collect();
+        let dims: Vec<Dim> = start.iter().map(|q| q.dim).collect();
+        let x0: Vec<f64> = start.iter().map(|q| q.v).collect();
+        let r = self.newton(s, &eqs, &unknowns, &dims, x0);
+        for (n, p) in names.iter().zip(prev) {
+            s.restore(n, p);
+        }
+        Ok(column_of(&r?, &dims))
+    }
+
+    /// The equations' residuals with the unknowns set to x.
+    fn residuals(
+        &mut self,
+        s: &mut Scope,
+        eqs: &Expr,
+        unknowns: &Unknowns,
+        dims: &[Dim],
+        x: &[f64],
+        rdims: &mut Option<Vec<Dim>>,
+    ) -> Result<Vec<f64>> {
+        self.tick()?;
+        match unknowns {
+            Unknowns::Names(names) => {
+                for ((n, v), d) in names.iter().zip(x).zip(dims) {
+                    s.bind(n, Value::Num(Quantity::new(*v, *d)));
+                }
+            }
+            Unknowns::Vector(n) => {
+                s.bind(n, column_of(x, dims));
+            }
+        }
+        let r = quantities(&self.eval(s, eqs)?, "the equations")?;
+        if r.len() != x.len() {
+            bail!(
+                "solve needs as many equations as unknowns, not {} equations for {} unknowns",
+                r.len(),
+                x.len()
+            );
+        }
+        match rdims {
+            None => *rdims = Some(r.iter().map(|q| q.dim).collect()),
+            Some(d) => {
+                for (q, d) in r.iter().zip(d.iter()) {
+                    if !fits(*q, *d) {
+                        same_dim(*d, q.dim, "solve an equation that mixes")?;
+                    }
+                }
+            }
+        }
+        if r.iter().any(|q| !q.v.is_finite()) {
+            bail!(
+                "the equations have no finite value at these values of the unknowns; try other starting values"
+            );
+        }
+        Ok(r.iter().map(|q| q.v).collect())
+    }
+
+    /// Newton's method with a numerical Jacobian, halving the step until the (scaled)
+    /// residuals shrink.
+    fn newton(
+        &mut self,
+        s: &mut Scope,
+        eqs: &Expr,
+        unknowns: &Unknowns,
+        dims: &[Dim],
+        mut x: Vec<f64>,
+    ) -> Result<Vec<f64>> {
+        let n = x.len();
+        let mut rdims = None;
+        let typical: Vec<f64> = x.iter().map(|v| v.abs().max(1e-3)).collect();
+        let mut f = self.residuals(s, eqs, unknowns, dims, &x, &mut rdims)?;
+        let mut weights: Option<Vec<f64>> = None;
+        let merit = |f: &[f64], w: &[f64]| f.iter().zip(w).map(|(a, b)| (a * b).powi(2)).sum::<f64>();
+        for _ in 0..100 {
+            let mut jac = vec![0.0; n * n];
+            for j in 0..n {
+                let h = 1e-7 * x[j].abs().max(typical[j]);
+                let mut xh = x.clone();
+                xh[j] += h;
+                let fh = self.residuals(s, eqs, unknowns, dims, &xh, &mut rdims)?;
+                for i in 0..n {
+                    jac[i * n + j] = (fh[i] - f[i]) / h;
+                }
+            }
+            // each equation measured against the size of its own terms, so one in kN and
+            // one in mm count alike
+            let w = weights.get_or_insert_with(|| {
+                (0..n)
+                    .map(|i| {
+                        let size =
+                            (0..n).map(|j| (jac[i * n + j] * typical[j]).abs()).fold(f[i].abs(), f64::max);
+                        if size > 0.0 { 1.0 / size } else { 1.0 }
+                    })
+                    .collect()
+            });
+            let phi = merit(&f, w);
+            if phi.sqrt() <= 1e-13 {
+                return Ok(x);
+            }
+            let Some(dx) = numeric::solve(jac, f.iter().map(|v| -v).collect()) else {
+                bail!(
+                    "the equations don't determine the unknowns here (their Jacobian is singular); try other starting values"
+                );
+            };
+            let mut lambda = 1.0;
+            loop {
+                let xt: Vec<f64> = x.iter().zip(&dx).map(|(a, b)| a + lambda * b).collect();
+                let ft = self.residuals(s, eqs, unknowns, dims, &xt, &mut rdims);
+                if let Ok(ft) = ft
+                    && (merit(&ft, w) <= (1.0 - 1e-4 * lambda) * phi || lambda < 1e-3)
+                {
+                    let small =
+                        dx.iter().zip(&xt).all(|(d, v)| (lambda * d).abs() <= 1e-14 * v.abs().max(1e-300));
+                    x = xt;
+                    f = ft;
+                    if small {
+                        return if merit(&f, w).sqrt() <= 1e-8 { Ok(x) } else { Err(no_solution()) };
+                    }
+                    break;
+                }
+                lambda /= 2.0;
+                if lambda < 1e-3 / 2.0 {
+                    return Err(no_solution());
+                }
+            }
+        }
+        match weights {
+            Some(w) if merit(&f, &w).sqrt() <= 1e-8 => Ok(x),
+            _ => Err(no_solution()),
+        }
+    }
+}
+
+fn no_solution() -> crate::error::EvalError {
+    crate::error::EvalError::new("no solution found near the starting values; try other starting values")
+}
+
 #[cfg(test)]
 mod tests {
     use crate::stats::tests::shown_with;
@@ -408,5 +624,36 @@ mod tests {
         assert_eq!(r[6], "linfit: the functions in G(x) are not independent at these x values");
         assert_eq!(r[7], "linfit needs at least as many points (2) as basis functions (3)");
         assert_eq!(r[8], "H(x) is not defined; linfit calls it with (x), so define H(x) := … above");
+    }
+
+    #[test]
+    fn systems_of_equations() {
+        let r = shown(&[
+            "x := 2 'm",
+            "y := 0.5 'm",
+            "solve([x^2 + y^2 == 4 'm^2; x*y == 1 'm^2], [x; y])",
+            "solve([a^2 == 4 'm^2; a*F == 10 'kN*'m], [a; F], [1 'm; 1 'kN])",
+            "v := [1; 1]",
+            "G(v) := [v[1]^2 + v[2]^2 - 4; v[1] - v[2]]",
+            "solve(G(v), v)",
+            "solve(cos(z) == z, z, 1)",
+            "solve([x + y == 1 'm; 2*x + 2*y == 2 'm], [x; y])",
+            "solve([x + y == 1 'm], [x; y])",
+            "solve([p + q == 1; p - q == 0], [p; q])",
+            "solve([u^2 + 1 == 0; w == 1], [u; w], [1; 0])",
+            "solve([x + y == 1 'm; x - y == 0], [x; y])",
+            "solve([2*x + y == 4 'm; x - y == -1 'm], [x; x])",
+        ]);
+        // (x + y)² = 6 and (x − y)² = 2
+        assert_eq!(r[2], "[1.931852 'm; 0.517638 'm]");
+        assert_eq!(r[3], "[2 'm; 5000 'N]");
+        assert_eq!(r[6], "[1.414214; 1.414214]");
+        assert_eq!(r[7], "0.739085");
+        assert!(r[8].starts_with("the equations don't determine the unknowns here"), "{}", r[8]);
+        assert_eq!(r[9], "solve needs as many equations as unknowns, not 1 equations for 2 unknowns");
+        assert!(r[10].starts_with("give p a starting value first"), "{}", r[10]);
+        assert!(r[11].starts_with("no solution found near the starting values"), "{}", r[11]);
+        assert_eq!(r[12], "cannot subtract a length (m) and a plain number: units don't match");
+        assert_eq!(r[13], "x appears twice among the unknowns");
     }
 }

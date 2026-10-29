@@ -338,7 +338,8 @@ impl<'u> Interp<'u> {
             )),
             ("diff", 2 | 3) => self.differentiate(s, args),
             ("root" | "solve", 4) => self.solve_in(s, args),
-            ("solve", 2) => self.solve_from(s, args),
+            ("solve", 2 | 3) if Self::is_system(s, args) => self.solve_system(s, args),
+            ("solve", 2 | 3) => self.solve_from(s, args),
             ("rkfixed", 5) => self.rkfixed(s, args),
             ("Rkadapt", 5) => self.rkadapt(s, args),
             ("linfit", 3) => self.linfit(s, args),
@@ -508,7 +509,7 @@ impl<'u> Interp<'u> {
     }
 
     /// `f(x)` as written, or `lhs - rhs` for an equation `lhs == rhs`.
-    fn residual(e: &Expr) -> Expr {
+    pub(crate) fn residual(e: &Expr) -> Expr {
         match e {
             Expr::Compare(l, rest) if rest.len() == 1 && rest[0].0 == quire_ast::CmpOp::Eq => {
                 Expr::Binary(BinaryOp::Sub, l.clone(), Box::new(rest[0].1.clone()))
@@ -584,11 +585,13 @@ impl<'u> Interp<'u> {
         Ok(Value::Num(Quantity::new(r?, dim)))
     }
 
-    /// `solve(f(x), x)`: a root near the current value of x (secant steps).
+    /// `solve(f(x), x)`: a root near the current value of x (secant steps), or near a
+    /// starting value given as `solve(f(x), x, x0)`.
     fn solve_from(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
         let var = ident(&args[1], "the unknown")?;
-        let x0 = match s.get(var) {
-            Some(Binding::Val(Value::Num(q))) => *q,
+        let x0 = match (args.get(2), s.get(var)) {
+            (Some(g), _) => self.eval(s, g)?.as_num("the starting value")?,
+            (None, Some(Binding::Val(Value::Num(q)))) => *q,
             _ => bail!("give {var} a starting value first (or search a range: solve(…, {var}, a, b))"),
         };
         let f = Self::residual(&args[0]);
