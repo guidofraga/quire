@@ -1,6 +1,6 @@
-//! The `Converter` class of tools/sm2quire.py: settings, metadata, page model, every region
-//! kind, the post-processing (captions, default fonts) and the results/stats it reports.
-//! OWNER: converter agent.
+//! The converter (first written in Python as tools/sm2quire.py, since removed): settings,
+//! metadata, page model, every region kind, the post-processing (captions, default fonts) and
+//! the results/stats it reports.
 //!
 //! Python exceptions map onto this port as follows: a region that Python would fail on
 //! becomes a warning plus a `legacy` region (the same fallback Python uses); a bad
@@ -1437,7 +1437,7 @@ mod tests {
 
     #[test]
     fn ids_match_python_reference() {
-        // expected values from tools/sm2quire.py Converter.new_id, one converter, in order
+        // expected values from the Python importer's Converter.new_id, one converter, in order
         let got = ids_for(&["", "1,2", "a1b2", "1,2"]);
         assert_eq!(got, ["az3hst", "zue3jq", "gat2zu", "2shca9"]);
     }

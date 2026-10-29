@@ -186,7 +186,7 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 3. Anywhere else a constant wins over a unit (`m*g` is gravity, `c*1 s` is a distance).
 4. `'g` always means the unit.
 
-In a **marked** document (`"settings": {"units": {"marked": true}}`, which the SMath importer writes for every worksheet, since SMath marks every unit) a bare name is never a unit or a constant. Only `π`, `pi`, `e` and `∞` resolve without a definition; anything else not defined is an error such as `c is not defined`, and `10 m` is an error where `10 'm` is ten metres. The "did you mean the unit …?" hint is not given there. Quoted units work as before.
+In a **marked** document (`"settings": {"units": {"marked": true}}`, which the SMath importer writes for every worksheet, since SMath marks every unit) a bare name is never a unit or a constant. Only `π`, `pi`, `e` and `∞` resolve without a definition. As in SMath, any other name with no value is a symbol: `y := Fz*2` defines `y` as the formula `2*Fz`, and `→` works with it. Showing such a value with `=` asks for a number, so it is an error naming the first undefined name (`Fz is not defined; did you mean F?`, or `m is not defined; for the unit, write 'm` when the name is a unit). Quoted units work as before. The Inspector's Document tab shows the setting for these documents and can turn it off.
 
 The report tells the editor how each name was resolved, and which variables hide a constant. The editor colours units blue and constants purple, explains a name on hover, and offers a one-click "use the unit" fix while you type.
 

@@ -142,7 +142,9 @@ mod tests {
         let doc = dispatch("open_template", &json!({ "id": "builtin:beam" }))?["doc"].clone();
         let data = dispatch("save_bytes", &json!({ "doc": doc }))?;
         let back = dispatch("open_bytes", &json!({ "data": data }))?;
-        assert!(back["regions"].is_array());
+        let count = |d: &Json| d.get("regions").and_then(Json::as_array).map(Vec::len);
+        assert!(count(&doc).is_some_and(|n| n > 0));
+        assert_eq!(count(&back), count(&doc));
         assert_eq!(back["regions"].as_array().map(Vec::len), doc["regions"].as_array().map(Vec::len));
         Ok(())
     }

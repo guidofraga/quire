@@ -652,7 +652,25 @@ impl Worksheet {
         match result {
             Ok(None) => {} // function definition: nothing to display
             Ok(Some(v)) => {
-                if r.show {
+                // SMath mode keeps names with no value as symbols (for →), but `=` asks for a
+                // number: a formula left over means a name was never defined, a typo say
+                // a definition or a loop is a statement; only an expression shown with `=` is
+                let statement = matches!(e, Expr::Define { .. })
+                    || matches!(e, Expr::Call(name, _) if matches!(name.as_str(), "for" | "while" | "block"));
+                let asks_number = r.show && !statement;
+                let undefined =
+                    if asks_number && self.settings.marked_units && crate::symbolic::bridge::has_sym(&v) {
+                        crate::symbolic::bridge::free_name(&v)
+                    } else {
+                        None
+                    };
+                if let Some(name) = undefined {
+                    out.error = Some(if self.units.lookup(&name).is_some() {
+                        format!("{name} is not defined; for the unit, write '{name}")
+                    } else {
+                        format!("{name} is not defined")
+                    });
+                } else if r.show {
                     match crate::format::format_shown(&v, &r.display, &self.settings, &self.units) {
                         Ok(s) => out.shown = Some(s),
                         Err(err) => out.error = Some(err.message),
@@ -931,18 +949,19 @@ mod tests {
         run_with(lines, DisplaySettings { marked_units: true, ..Default::default() })
     }
 
+    /// Each line shows its value; a line ending in ` →` is worked out symbolically instead.
     fn run_with(lines: &[&str], settings: DisplaySettings) -> Vec<Outcome> {
         let regions: Vec<MathInput> = lines
             .iter()
             .enumerate()
             .map(|(i, l)| MathInput {
                 id: i.to_string(),
-                expr: l.to_string(),
+                expr: l.strip_suffix(" →").unwrap_or(l).to_string(),
                 show: true,
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
-                symbolic: false,
+                symbolic: l.ends_with(" →"),
             })
             .collect();
         Worksheet::new(settings).run(&regions)
@@ -959,8 +978,36 @@ mod tests {
     }
 
     #[test]
+    fn smath_documents_report_names_never_defined_when_a_number_is_asked_for() {
+        let settings = DisplaySettings { marked_units: true, ..DisplaySettings::default() };
+        let mut ws = Worksheet::new(settings);
+        let inputs: Vec<MathInput> = ["F := 12 'kN", "y := Fz*2", "y", "L := 10 m", "L", "Fz*2"]
+            .iter()
+            .enumerate()
+            .map(|(i, e)| MathInput {
+                id: format!("r{i}"),
+                expr: (*e).into(),
+                show: i == 2 || i == 4,
+                display: DisplaySpec::default(),
+                table: None,
+                plot: None,
+                symbolic: i == 5,
+            })
+            .collect();
+        let out = ws.run(&inputs);
+        // definitions keep the formula, as SMath does; `=` asks for a number and says why not
+        assert!(out[1].error.is_none());
+        assert_eq!(out[2].error.as_deref(), Some("Fz is not defined; did you mean F?"));
+        assert_eq!(out[4].error.as_deref(), Some("m is not defined; for the unit, write 'm"));
+        // `→` still works with the symbol
+        assert_eq!(out[5].shown.as_deref(), Some("2*Fz"));
+    }
+
+    #[test]
     fn marked_units_a_bare_name_is_a_variable_only() {
-        let outs = run_marked(&["c", "t", "KN", "10 m", "10 'm", "pi", "e", "x := 3", "x*c", "x*2", "x*'m"]);
+        let outs = run_marked(&[
+            "c →", "t →", "KN →", "10 m →", "10 'm", "pi", "e", "x := 3", "x*c →", "x*2", "x*'m",
+        ]);
         // a name with no value is a formula (SMath's symbol), never a unit or a constant
         assert_eq!(errors(&outs), ["ok"; 11]);
         assert_eq!(shown_at(&outs, 0), Some("c"));
@@ -972,7 +1019,7 @@ mod tests {
 
     #[test]
     fn marked_units_reach_definition_bodies_and_tables() {
-        let outs = run_marked(&["f(x) := x*c", "f(2)", "g(x) := x*'m", "g(2)"]);
+        let outs = run_marked(&["f(x) := x*c", "f(2) →", "g(x) := x*'m", "g(2)"]);
         assert_eq!(errors(&outs), ["ok"; 4]);
         assert_eq!(shown_at(&outs, 1), Some("2*c"));
         assert_eq!(shown_at(&outs, 3), Some("2 'm"));
@@ -988,10 +1035,10 @@ mod tests {
             "for(j := 1, j ≤ n, j := j + 1, for(k := 1, k ≤ n, k := k + 1, m[j, k] := diff(diff(f, x[k]), x[j])))",
             "Hesse(x) := m",
             "Hessian(x) := det(Hesse(x))",
-            "Hesse(x)",
+            "Hesse(x) →",
             "a := [1; 2]",
             "Hesse(a)",
-            "Hessian(x)",
+            "Hessian(x) →",
             "Hessian(a)",
         ]);
         assert_eq!(errors(&outs), ["ok"; 10]);
@@ -1053,7 +1100,7 @@ mod tests {
         let outs = run(&["x := 2", "diff(x^3, x, 0)", "diff(x^3, x, -1)"]);
         assert_eq!(errors(&outs), ["ok", "ok", "a derivative order cannot be negative, but this one is -1"]);
         assert_eq!(shown_at(&outs, 1), Some("8"));
-        let outs = run_marked(&["diff(y^2, y, 0)", "H(z) := diff(z^2, z, 0)", "H(3)"]);
+        let outs = run_marked(&["diff(y^2, y, 0) →", "H(z) := diff(z^2, z, 0)", "H(3)"]);
         assert_eq!(errors(&outs), ["ok", "ok", "ok"]);
         assert_eq!(shown_at(&outs, 0), Some("y^2"));
         assert_eq!(shown_at(&outs, 2), Some("9"));

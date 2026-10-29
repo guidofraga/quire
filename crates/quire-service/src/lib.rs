@@ -1100,20 +1100,21 @@ mod tests {
         let regions = serde_json::json!([
             { "id": "aaaaaa", "kind": "math", "at": [0, 0], "expr": "c", "show": "value" },
             { "id": "bbbbbb", "kind": "math", "at": [0, 40], "expr": "10 'm", "show": "value" },
-            { "id": "cccccc", "kind": "math", "at": [0, 80], "expr": "10 c", "show": "value" }
+            { "id": "cccccc", "kind": "math", "at": [0, 80], "expr": "10 c", "show": "value" },
+            { "id": "dddddd", "kind": "math", "at": [0, 120], "expr": "10 c", "show": "symbolic" }
         ]);
         let doc = |settings: Json| serde_json::json!({ "format": "quire/1", "settings": settings, "regions": regions.clone() });
         // unmarked: `c` is the speed of light and `m` is metres
         let plain = report(&doc(serde_json::json!({})))?;
         assert!(plain.regions[0].error.is_none(), "c is a constant unless the document is marked");
         assert_ne!(plain.regions[2].result_text.as_deref(), Some("10*c"));
-        // marked (SMath): a bare `c` with no value is a symbol, not the speed of light, and
-        // `10 c` is a formula in c; quoted units still work
+        // marked (SMath): a bare `c` with no value is a symbol, not the speed of light, so
+        // `=` (a number) says it is not defined, `→` works with it, and quoted units still work
         let marked = report(&doc(serde_json::json!({ "units": { "marked": true } })))?;
-        assert!(marked.regions[0].error.is_none(), "{:?}", marked.regions[0].error);
-        assert_eq!(marked.regions[0].result_text.as_deref(), Some("c"));
+        assert_eq!(marked.regions[0].error.as_deref(), Some("c is not defined"));
         assert_eq!(marked.regions[1].result_text.as_deref(), Some("10 'm"));
-        assert_eq!(marked.regions[2].result_text.as_deref(), Some("10*c"));
+        assert_eq!(marked.regions[2].error.as_deref(), Some("c is not defined"));
+        assert_eq!(marked.regions[3].result_text.as_deref(), Some("10*c"));
         let unmarked: Document =
             serde_json::from_value(doc(serde_json::json!({ "units": { "marked": false } })))?;
         assert!(!settings_of(&unmarked).marked_units);

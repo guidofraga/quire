@@ -26,6 +26,20 @@ pub(crate) fn has_sym(v: &Value) -> bool {
     }
 }
 
+/// The first name left in a formula: the one to report when the formula is shown with `=`,
+/// which asks for a number (SMath says the variable is not defined).
+pub(crate) fn free_name(v: &Value) -> Option<String> {
+    let found = std::cell::RefCell::new(None);
+    let e = expr_of(v).ok()?;
+    rewrite(&e, &|x| {
+        if let Expr::Ident(n) = x {
+            found.borrow_mut().get_or_insert_with(|| n.clone());
+        }
+        None
+    });
+    found.into_inner()
+}
+
 /// The name of the element `base[idx]` as a symbol.
 pub(crate) fn element_name(base: &str, idx: &[Expr]) -> String {
     print(&Expr::Index(Box::new(Expr::Ident(base.to_string())), idx.to_vec()))
