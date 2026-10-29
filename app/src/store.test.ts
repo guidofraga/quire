@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, redo, state, undo, undoDepth, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, state, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -171,5 +171,23 @@ describe("computeLayout pages", () => {
     const l = computeLayout(doc([area, math("below", 400, "y")]), {}, false, false);
     expect(l.byId.get("in")!.hidden).toBe(true);
     expect(l.byId.get("below")!.top).toBe(400 - (200 - AREA_COLLAPSED_HEIGHT));
+  });
+});
+
+describe("noteRoom", () => {
+  const at = (id: string, x: number, y: number): Region => ({ id, kind: "math", at: [x, y], expr: "1" });
+  const measured = { a: 40 };
+  const l = computeLayout(doc([at("a", 0, 0), at("b", 300, 0), at("c", 200, 100), at("d", 500, 9)]), measured, false, false);
+  const room = (id: string) => noteRoom(l.byId.get(id)!, l.list, measured, 640);
+  it("stops at the nearest region to the right on the same rows", () => {
+    expect(room("a")).toBe(300 - 12);
+    expect(room("b")).toBe(200 - 12);
+  });
+  it("has the printable width when nothing is beside it", () => {
+    expect(room("c")).toBe(640);
+  });
+  it("never shrinks below a readable width", () => {
+    const tight = computeLayout(doc([at("a", 0, 0), at("b", 40, 0)]), {}, false, false);
+    expect(noteRoom(tight.byId.get("a")!, tight.list, {}, 640)).toBe(120);
   });
 });

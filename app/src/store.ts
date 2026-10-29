@@ -364,6 +364,22 @@ export function availableWidth(x: number): number {
   return Math.max(120, (l.pageView ? l.geom.contentW : PAGE_WIDTH) - x);
 }
 
+/**
+ * How wide a region's error note may be: up to the next region to its right whose rows it
+ * shares, and within the printable width (`available`), so a long note wraps instead of
+ * running into its neighbour.
+ */
+export function noteRoom(p: Placed, list: readonly Placed[], measured: Record<string, number>, available: number): number {
+  const height = (q: Placed) => measured[q.region.id] ?? DEFAULT_HEIGHT;
+  const bottom = p.top + height(p);
+  let room = available;
+  for (const q of list) {
+    if (q === p || q.hidden || q.page !== p.page || q.left <= p.left) continue;
+    if (q.top < bottom && q.top + height(q) > p.top) room = Math.min(room, q.left - p.left - 12);
+  }
+  return Math.max(120, room);
+}
+
 export function togglePageView() {
   mutate((d) => {
     d.page = { ...(d.page ?? {}), view: d.page?.view === "pages" ? "canvas" : "pages" };

@@ -426,10 +426,11 @@ math {
   font: 11px -apple-system, system-ui, sans-serif;
 }
 
+/* long notes wrap within the room they have (noteRoom), never under a neighbour */
 .err-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .err-fix {
