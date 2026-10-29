@@ -6,6 +6,8 @@ export interface MenuItem {
   shortcut?: string;
   disabled?: boolean;
   checked?: boolean;
+  /** A colour dot before the label (section colours). */
+  swatch?: string;
   run?: () => void;
 }
 

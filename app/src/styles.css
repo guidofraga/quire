@@ -85,8 +85,17 @@ body {
 
 .app {
   display: flex;
-  flex-direction: column;
   height: 100%;
+}
+
+/* everything right of the notebook sidebar; the toolbar fits itself to this width, not the
+   window's, so it compacts when the sidebar takes room */
+.main {
+  container: main / inline-size;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 /* ---------------------------------------------------------------- toolbar */
@@ -2415,6 +2424,13 @@ ms.str::after {
   min-width: 0;
 }
 
+.toolbar-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .toolbar .title {
   justify-self: start;
   max-width: 100%;
@@ -2429,19 +2445,19 @@ ms.str::after {
   justify-self: end;
 }
 
-@media (max-width: 1080px) {
+@container main (max-width: 1080px) {
   .toolbar .tool-label {
     display: none;
   }
 }
 
-@media (max-width: 860px) {
+@container main (max-width: 860px) {
   .status .muted {
     display: none;
   }
 }
 
-@media (max-width: 640px) {
+@container main (max-width: 640px) {
   .status .segmented,
   .status .zoom {
     display: none;
@@ -3511,5 +3527,744 @@ input[type="radio"]:focus-visible,
     --muted: #d0d4da;
     --button: rgba(255, 255, 255, 0.16);
     --focus-ring: #a9c8ff;
+  }
+}
+
+/* ================================================================ notebook sidebar */
+
+:root {
+  --sidebar: #f7f7f5;
+  --sidebar-border: #e4e4e1;
+  --nb-hover: rgba(0, 0, 0, 0.045);
+  --nb-current: rgba(0, 0, 0, 0.075);
+  --nb-section: #b4b6bd;
+  --nb-row: 28px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sidebar: #232427;
+    --sidebar-border: #34353a;
+    --nb-hover: rgba(255, 255, 255, 0.05);
+    --nb-current: rgba(255, 255, 255, 0.09);
+    --nb-section: #6c6f78;
+  }
+}
+
+.sidebar {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  max-width: 420px;
+  height: 100%;
+  background: var(--sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  color: var(--chrome-ink);
+}
+
+.sidebar-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  height: 40px;
+  padding: 0 8px;
+}
+
+/* the window's traffic lights sit over the sidebar, as in Notes and Obsidian */
+.app.tauri .sidebar-top {
+  height: 44px;
+  padding-left: 78px;
+}
+
+.app.tauri.with-sidebar .toolbar {
+  padding-left: 14px;
+}
+
+.sb-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.sb-icon:hover {
+  background: var(--nb-hover);
+  color: var(--chrome-ink);
+}
+
+.toolbar .sb-show {
+  flex: none;
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.toolbar .sb-show:hover {
+  color: var(--chrome-ink);
+}
+
+/* ---------------------------------------------------------------- switcher and search */
+
+.nb-switcher {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+.nb-switcher:hover {
+  background: var(--nb-hover);
+}
+
+.nb-book {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.nb-book svg {
+  width: 12px;
+  height: 12px;
+}
+
+.nb-book-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-switcher .chevron {
+  flex: none;
+  opacity: 0.55;
+}
+
+.nb-search {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 10px 8px;
+  color: var(--muted);
+}
+
+.nb-search > svg {
+  position: absolute;
+  left: 8px;
+  pointer-events: none;
+}
+
+.nb-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 52px 0 27px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: var(--nb-hover);
+  color: var(--chrome-ink);
+  font: inherit;
+  outline: none;
+}
+
+.nb-search input::placeholder {
+  color: var(--muted);
+}
+
+.nb-search input:focus {
+  background: var(--field);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.nb-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.nb-kbd {
+  position: absolute;
+  right: 8px;
+  font: 11px -apple-system, system-ui, sans-serif;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- tree */
+
+.nb-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 6px 12px;
+}
+
+.nb-tree,
+.nb-group,
+.nb-results,
+.nb-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nb-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--nb-row);
+  padding-right: 4px;
+  border-radius: 6px;
+  cursor: default;
+  outline: none;
+}
+
+.nb-row:hover {
+  background: var(--nb-hover);
+}
+
+.nb-row.current {
+  background: var(--nb-current);
+  font-weight: 500;
+}
+
+.nb-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--focus-ring, var(--accent));
+}
+
+.nb-row.section .nb-name {
+  font-weight: 600;
+}
+
+.nb-row.dragging {
+  opacity: 0.4;
+}
+
+.nb-row.drop-before::before,
+.nb-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.nb-row.drop-before::before {
+  top: -1px;
+}
+
+.nb-row.drop-after::after {
+  bottom: -1px;
+}
+
+.nb-row.drop-inside {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.nb-chevron {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.nb-chevron.open {
+  transform: rotate(90deg);
+}
+
+.nb-chevron.none {
+  visibility: hidden;
+}
+
+.nb-chevron:not(.none):hover {
+  background: var(--nb-hover);
+  color: var(--chrome-ink);
+}
+
+.nb-glyph {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.nb-row.current .nb-glyph {
+  color: var(--chrome-ink);
+}
+
+.nb-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.nb-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-actions {
+  flex: none;
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+}
+
+.nb-row:hover .nb-actions,
+.nb-row:focus-within .nb-actions {
+  opacity: 1;
+}
+
+.nb-act {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.nb-act:hover {
+  background: var(--nb-hover);
+  color: var(--chrome-ink);
+}
+
+.nb-rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  margin-left: -4px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--field);
+  color: var(--field-ink);
+  font: inherit;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.nb-empty-section {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  outline: none;
+  cursor: default;
+}
+
+.nb-empty-section:hover .nb-link,
+.nb-empty-section:focus-visible .nb-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.nb-empty-section:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--focus-ring, var(--accent));
+}
+
+.nb-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.nb-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.nb-hint {
+  margin: 10px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- search results */
+
+.nb-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 1px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.nb-hit:hover,
+.nb-hit:focus-visible {
+  background: var(--nb-hover);
+  outline: none;
+}
+
+.nb-hit.current {
+  background: var(--nb-current);
+}
+
+.nb-hit-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-hit-section {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.nb-snippet {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.nb-snippet mark {
+  background: rgba(250, 204, 21, 0.38);
+  color: var(--chrome-ink);
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------- foot, resize, no notebook */
+
+.sidebar-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.nb-new {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+}
+
+.nb-new:hover {
+  background: var(--nb-hover);
+  color: var(--chrome-ink);
+}
+
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.sidebar-resize:hover,
+body.resizing-sidebar .sidebar-resize {
+  background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px);
+}
+
+body.resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.nb-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 16px;
+}
+
+.nb-welcome-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.nb-welcome-text {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.nb-welcome-head {
+  margin: 12px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.nb-primary,
+.nb-secondary {
+  height: 30px;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 500;
+}
+
+.nb-primary {
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+}
+
+.nb-primary:hover {
+  filter: brightness(1.08);
+}
+
+.nb-secondary {
+  border: 1px solid var(--chrome-border);
+  background: var(--field);
+  color: var(--chrome-ink);
+}
+
+.nb-secondary:hover {
+  background: var(--nb-hover);
+}
+
+/* ---------------------------------------------------------------- the note's title in the toolbar */
+
+.note-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crumb {
+  flex: 0 1 auto;
+  min-width: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.crumb-sep {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+.toolbar .crumb-note,
+.crumb-note {
+  flex: 0 1 auto;
+  min-width: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.toolbar .crumb-note {
+  display: inline-block;
+  height: auto;
+}
+
+.toolbar .crumb-note:hover,
+.crumb-note:hover {
+  background: var(--button);
+}
+
+.crumb-input {
+  width: 220px;
+  flex: none;
+  font-weight: 600;
+}
+
+.cm-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.app.printing .sidebar,
+.app.printing .sb-show {
+  display: none;
+}
+
+@media print {
+  .sidebar,
+  .sb-show {
+    display: none !important;
+  }
+}
+
+/* ================================================================ motion
+   Short and eased: things slide or unfold from where they come from. Reduce Motion
+   (the accessibility block) turns all of it off. */
+
+:root {
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* the sidebar slides away rather than vanishing; hidden, it can't be reached */
+.sidebar {
+  transition:
+    margin-left 240ms var(--ease-out),
+    opacity 200ms ease,
+    visibility 0s linear 0s;
+}
+
+.sidebar.collapsed {
+  margin-left: calc(-1 * var(--sb-width) - 1px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    margin-left 240ms var(--ease-out),
+    opacity 200ms ease,
+    visibility 0s linear 240ms;
+}
+
+.app.tauri .toolbar {
+  transition: padding-left 240ms var(--ease-out);
+}
+
+/* a section's notes unfold */
+.nb-group {
+  animation: nb-unfold 180ms var(--ease-out);
+  transform-origin: top;
+}
+
+@keyframes nb-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.nb-results,
+.nb-hint,
+.nb-welcome {
+  animation: fade-in 140ms ease-out;
+}
+
+.nb-row,
+.nb-hit,
+.nb-new,
+.sb-icon,
+.nb-act,
+.nb-switcher,
+.crumb-note,
+.cm-item,
+.toolbar button,
+.segmented button,
+.welcome-item,
+.insp-tab {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.nb-actions {
+  transition: opacity 120ms ease;
+}
+
+.nb-row.drop-inside {
+  transition: background-color 80ms ease;
+}
+
+/* the inspector slides in from the right */
+.inspector {
+  animation: panel-in-right 200ms var(--ease-out);
+}
+
+@keyframes panel-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* messages rise into place */
+.toast {
+  animation: toast-in 200ms var(--ease-out);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
   }
 }

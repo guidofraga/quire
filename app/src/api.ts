@@ -45,6 +45,8 @@ export const api = {
     call<null>("export_pdf", { path, paper, title, compress, info }),
   finishExport: (error: string | null) => call<null>("finish_export", { error }),
   exportCsv: (path: string, contents: string) => call<null>("export_csv", { path, contents }),
+  /** Notebook operations (crates/quire-service/src/notebook.rs). */
+  notebook: <T>(op: string, args: Record<string, unknown>) => call<T>("notebook", { op, args }),
   /** Documents the system asked to open before the UI was ready (Finder, Explorer, command line). */
   saveRecovery: (doc: Doc, path: string | null) =>
     isTauri ? call<null>("save_recovery", { doc, path }) : Promise.resolve(null),
@@ -69,6 +71,25 @@ export interface Paper {
 
 /** Set by `quire-app --export-pdf <in> <out>` (headless export). */
 export const exportJob = (window as unknown as { __QUIRE_EXPORT__?: { open: string; pdf: string } }).__QUIRE_EXPORT__;
+
+/** Open Notebook…: a folder. */
+export async function pickNotebookFolder(): Promise<string | null> {
+  if (isTauri) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const p = await open({ title: "Open Notebook", directory: true });
+    return typeof p === "string" ? p : null;
+  }
+  return window.prompt("Path to a notebook folder");
+}
+
+/** New Notebook…: where to make its folder, and its name. */
+export async function pickNewNotebookPath(): Promise<string | null> {
+  if (isTauri) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    return await save({ title: "New Notebook", defaultPath: "Notebook" });
+  }
+  return window.prompt("Path of the new notebook folder");
+}
 
 export async function pickPdfPath(suggested: string): Promise<string | null> {
   let p: string | null;
@@ -164,7 +185,7 @@ export async function setWindowTitle(title: string) {
   }
 }
 
-export async function guardClose(isDirty: () => boolean, onDiscard: () => Promise<unknown>) {
+export async function guardClose(isDirty: () => boolean, onDiscard: () => Promise<unknown>, beforeClose?: () => Promise<unknown>) {
   if (!isTauri) {
     window.addEventListener("beforeunload", (e) => {
       if (isDirty()) e.preventDefault();
@@ -173,6 +194,8 @@ export async function guardClose(isDirty: () => boolean, onDiscard: () => Promis
   }
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   await getCurrentWindow().onCloseRequested(async (e) => {
+    // a note in a notebook is written before the window goes
+    await beforeClose?.().catch(() => {});
     if (!isDirty()) return;
     if (await confirmDiscard()) await onDiscard().catch(() => {});
     else e.preventDefault();

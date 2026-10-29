@@ -75,7 +75,12 @@ export function ContextMenu() {
                   <span class="cm-check" aria-hidden="true">
                     {item.checked ? "✓" : ""}
                   </span>
-                  <span class="cm-label">{item.label}</span>
+                  <span class="cm-label">
+                    <Show when={item.swatch}>
+                      <span class="cm-swatch" style={{ background: item.swatch }} aria-hidden="true" />
+                    </Show>
+                    {item.label}
+                  </span>
                   <span class="cm-shortcut">{item.shortcut ?? ""}</span>
                 </button>
               )

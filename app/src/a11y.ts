@@ -157,10 +157,10 @@ export function toolbarKeys(e: KeyboardEvent, escape: () => void) {
 }
 
 // ---------------------------------------------------------------------------
-// F6: between the toolbar, the format bar, the page and the inspector
+// F6: between the sidebar, the toolbar, the format bar, the page and the inspector
 // ---------------------------------------------------------------------------
 
-const PANES = [".toolbar", ".formatbar", ".viewport", ".findbar", ".inspector"];
+const PANES = [".sidebar:not(.collapsed)", ".toolbar", ".formatbar", ".viewport", ".findbar", ".inspector"];
 
 /** Focus the next (or previous) part of the window; the page is reached through `focusPage`. */
 export function cyclePanes(by: 1 | -1, focusPage: () => void) {

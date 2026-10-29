@@ -98,9 +98,9 @@ test.describe("keyboard", () => {
   });
 
   test("insert a symbol from the Symbols gallery, and Esc returns to the button", async ({ page }) => {
-    // F6 from the page: the toolbar, then the format bar
+    // F6 from the page: the toolbar (its first control is the sidebar button), then the format bar
     await page.keyboard.press("F6");
-    await expect(page.getByRole("toolbar", { name: "Insert" }).getByRole("button").first()).toBeFocused();
+    await expect(page.getByRole("button", { name: "Show the sidebar" })).toBeFocused();
     await page.keyboard.press("F6");
     const symbols = page.getByRole("button", { name: "Symbols" });
     await symbols.focus();

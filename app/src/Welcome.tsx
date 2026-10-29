@@ -1,4 +1,5 @@
 // The welcome screen at launch: a blank document, recent documents and templates.
+import { newNotebookDialog, openNotebookDialog } from "./Sidebar";
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useModal } from "./a11y";
 import { api, type TemplateInfo } from "./api";
@@ -78,11 +79,30 @@ function Screen(props: Props) {
                 <small>Click anywhere on the page and type</small>
               </span>
             </button>
+            <button class="welcome-item" onClick={() => void run(newNotebookDialog)}>
+              <span class="welcome-icon" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2">
+                  <path d="M2.5 2.2h7.2a1.3 1.3 0 0 1 1.3 1.3v8.3H3.8a1.3 1.3 0 0 1-1.3-1.3z" stroke-linejoin="round" />
+                  <path d="M2.5 10.5a1.3 1.3 0 0 1 1.3-1.3H11" />
+                </svg>
+              </span>
+              <span>
+                <b>New notebook…</b>
+                <small>A folder of notes in sections, saved as you write</small>
+              </span>
+            </button>
             <button class="welcome-item" onClick={() => void run(props.openDialog)}>
               <span class="welcome-icon" aria-hidden="true">⌘O</span>
               <span>
                 <b>Open…</b>
                 <small>A Quire document from your computer</small>
+              </span>
+            </button>
+            <button class="welcome-item" onClick={() => void run(openNotebookDialog)}>
+              <span class="welcome-icon" aria-hidden="true">⇧⌘O</span>
+              <span>
+                <b>Open notebook…</b>
+                <small>A folder of Quire notes</small>
               </span>
             </button>
             <h3>Recent</h3>

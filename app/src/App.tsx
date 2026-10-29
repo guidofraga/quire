@@ -49,6 +49,8 @@ import { checks, failing, tableName } from "./checks";
 import { PagePopover } from "./Popover";
 import { checkForUpdates, UpdateBanner } from "./Updates";
 import { setWelcomeOpen, Welcome } from "./Welcome";
+import { adoptPath, flushSave, installAutosave, lastNotebook, nb, newNote, newSection, sidebarShown, toggleSidebar } from "./notebook";
+import { focusNotebookSearch, newNotebookDialog, NoteTitle, openNotebookDialog, openNotebookAt, Sidebar, SidebarToggle } from "./Sidebar";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
@@ -156,19 +158,24 @@ function keepRecovery() {
 }
 
 async function guardUnsaved(): Promise<boolean> {
+  // a note in a notebook saves itself: finish that, nothing to ask
+  if (nb.current) return flushSave().then(() => true);
   return !state.dirty || (await confirmDiscard());
 }
 
 export async function newDocument() {
   if (!(await guardUnsaved())) return;
   loadDoc(withDefaults(await api.newDocument()), null);
+  adoptPath(null);
 }
 
 export async function openPath(path: string) {
   try {
+    await flushSave();
     const doc = await api.open(path);
     loadDoc(doc, path);
-    addRecent(path);
+    adoptPath(path);
+    if (!nb.current) addRecent(path);
   } catch (e) {
     flash(`Could not open ${fileName(path)}: ${(e as Error).message}`);
     // a moved or deleted file shouldn't stay in Open Recent
@@ -183,6 +190,8 @@ async function openDocument() {
 }
 
 async function save(as = false) {
+  // ⌘S in a notebook just makes sure the note is on disk now
+  if (nb.current && !as) return void flushSave();
   commitEditing();
   let path = state.path;
   if (!path || as) {
@@ -425,7 +434,19 @@ function runCommand(id: string) {
     case "page_setup":
       return showInspector("page");
     case "new":
+      return nb.book ? newNote() : newDocument();
+    case "new_document":
       return newDocument();
+    case "new_section":
+      return nb.book ? newSection("") : openNotebookDialog();
+    case "new_notebook":
+      return newNotebookDialog();
+    case "open_notebook":
+      return openNotebookDialog();
+    case "toggle_sidebar":
+      return toggleSidebar();
+    case "search_notebook":
+      return nb.book ? focusNotebookSearch() : openNotebookDialog();
     case "open":
       return openDocument();
     case "save":
@@ -484,8 +505,9 @@ function browserShortcuts(e: KeyboardEvent) {
   const key = e.altKey && e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
   const map: Record<string, string> = {
     s: e.shiftKey ? "save_as" : "save",
-    o: "open",
-    n: e.shiftKey ? "new_from_template" : "",
+    o: e.shiftKey ? "open_notebook" : "open",
+    n: e.altKey ? "new_section" : e.shiftKey ? "new_from_template" : "new",
+    "\\": "toggle_sidebar",
     z: e.shiftKey ? "redo" : "undo",
     p: e.altKey ? "insert_plot" : e.shiftKey ? "page_view" : "print",
     e: "export_pdf",
@@ -495,7 +517,7 @@ function browserShortcuts(e: KeyboardEvent) {
     "-": "zoom_out",
     "0": "zoom_reset",
     "'": "next_error",
-    f: e.altKey ? "find_replace" : "find",
+    f: e.altKey ? "find_replace" : e.shiftKey ? "search_notebook" : "find",
     m: e.shiftKey ? "insert_math" : "",
     r: e.shiftKey ? "insert_ref" : "",
     t: e.altKey ? "insert_table" : "",
@@ -622,7 +644,8 @@ export function App() {
     void applyTheme();
     syncRecent();
     await onMenu(runCommand);
-    await guardClose(() => state.dirty, api.clearRecovery);
+    await guardClose(() => state.dirty && !nb.current, api.clearRecovery, flushSave);
+    installAutosave();
     window.addEventListener("keydown", browserShortcuts);
     if (exportJob) return runExportJob(exportJob);
     // a quiet look for a new version once the window has settled
@@ -636,7 +659,14 @@ export function App() {
       loadDoc(recovered.doc, recovered.path);
       setState({ dirty: true });
     } else {
-      const open = requested.map(documentPath)[0] ?? new URLSearchParams(location.search).get("open");
+      const params = new URLSearchParams(location.search);
+      const open = requested.map(documentPath)[0] ?? params.get("open");
+      // a notebook comes back as you left it, whatever the launch setting says about documents
+      const book = params.get("notebook") ?? (open || params.has("open") ? null : lastNotebook());
+      if (book && !open) {
+        await openNotebookAt(book);
+        if (nb.book) return keepRecovery();
+      }
       const last = prefs.onLaunch === "last" ? recentList()[0] : undefined;
       if (open) await openPath(open);
       else if (last) await openPath(last).catch(() => undefined);
@@ -651,14 +681,34 @@ export function App() {
   const regionCount = () => state.report?.regions.length ?? 0;
 
   return (
-    <div class="app" classList={{ tauri: isTauri, printing: state.printing }}>
+    <div class="app" classList={{ tauri: isTauri, printing: state.printing, "with-sidebar": sidebarShown() }}>
+      {/* with a notebook the sidebar stays mounted, so hiding and showing it can slide */}
+      <Show when={nb.book || sidebarShown()}>
+        <Sidebar collapsed={!sidebarShown()} />
+      </Show>
+      <div class="main">
       <header class="toolbar" data-tauri-drag-region>
+        {/* the first column of the toolbar's grid: the sidebar button (when the sidebar is hidden) and the title */}
+        <div class="toolbar-lead" data-tauri-drag-region>
+        <Show when={!sidebarShown()}>
+          <SidebarToggle />
+        </Show>
         <h1 class="title" data-tauri-drag-region>
-          {fileName(state.path)}
-          <Show when={state.dirty}>
-            <span class="edited"> — Edited</span>
+          <Show
+            when={nb.current}
+            fallback={
+              <>
+                {fileName(state.path)}
+                <Show when={state.dirty}>
+                  <span class="edited"> — Edited</span>
+                </Show>
+              </>
+            }
+          >
+            <NoteTitle />
           </Show>
         </h1>
+        </div>
         <div class="tools" role="toolbar" aria-label="Insert" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => runCommand("insert_math")} title="Insert math (⇧⌘M); inside text, math in the line">
             <span class="glyph math-glyph" aria-hidden="true">
@@ -735,6 +785,7 @@ export function App() {
         <Show when={state.inspector}>
           <Inspector onAddBackground={() => addBackground().catch((e) => flash(String(e)))} />
         </Show>
+      </div>
       </div>
       <ContextMenu />
       <CompletionPopup />

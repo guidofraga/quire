@@ -7,6 +7,7 @@ import { activeView } from "./richtext";
 import { layout, revealRegion, state } from "./store";
 import { isTemplate, STRUCTURES, SYMBOLS } from "./symbols";
 import { baseName } from "./trace";
+import { nb, notes, openNote, trail } from "./notebook";
 
 export const [paletteOpen, setPaletteOpen] = createSignal(false);
 
@@ -24,7 +25,13 @@ const alt = isMac ? "⌥" : "Alt+";
 
 /** Menu commands: id, label, shortcut. Formatting and arranging appear only when they apply. */
 const COMMANDS: [string, string, string][] = [
-  ["new", "New Document", `${mod}N`],
+  ["new", "New Note", `${mod}N`],
+  ["new_document", "New Document", ""],
+  ["new_section", "New Section", `${alt}${mod}N`],
+  ["new_notebook", "New Notebook…", ""],
+  ["open_notebook", "Open Notebook…", `${shift}${mod}O`],
+  ["search_notebook", "Search Notebook…", `${shift}${mod}F`],
+  ["toggle_sidebar", "Show or Hide Sidebar", `${mod}\\`],
   ["new_from_template", "New from Template…", `${shift}${mod}N`],
   ["open", "Open…", `${mod}O`],
   ["save", "Save", `${mod}S`],
@@ -98,6 +105,11 @@ const SNIPPETS = [...SYMBOLS, ...STRUCTURES].flatMap((c) =>
 function items(runCommand: (id: string) => void): Item[] {
   const cmds = [...COMMANDS, ...(activeView() ? TEXT_COMMANDS : []), ...(state.selection.length > 1 ? ARRANGE_COMMANDS : [])];
   const out: Item[] = cmds.map(([id, label, hint]) => ({ label, hint, group: "Commands", run: () => runCommand(id) }));
+  // every note of the notebook, with its section ("Kinematics — Mechanics")
+  for (const n of nb.book ? notes() : []) {
+    const where = trail(n.rel).map((s) => s.name).join(" › ");
+    out.push({ label: where ? `${n.name} — ${where}` : n.name, hint: "note", group: "Go to", run: () => void openNote(n.rel) });
+  }
   // each variable once, at its first definition
   const seen = new Set<string>();
   for (const p of layout().list) {

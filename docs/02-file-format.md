@@ -32,6 +32,34 @@ Report.quire/                 ← a directory; on macOS registered as a document
 
 **Why JSON and not YAML?** YAML reads nicer, but it has implicit typing (`no` → `false`, `1.10` → `1.1`, `NO` the country code becomes a boolean), and the Rust YAML ecosystem is in flux (`serde_yaml` is archived). We get the readability back through (a) math stored as linear text, (b) text stored as Djot, and (c) a canonical formatter that keeps short values on one line (§5). JSON then gives us `serde_json`, JSON Schema validation, and `jq`/`git diff` tooling for free.
 
+### Notebooks
+
+A **notebook** is an ordinary folder of documents, the way Obsidian keeps a vault. Nothing about a document changes when it lives in one.
+
+```
+Physics 101/                  ← the notebook: any folder
+├── .quire-notebook.json      ← OPTIONAL: manual order, colours and icons
+├── Mechanics/                ← a section: a subfolder (sections nest)
+│   ├── Kinematics.quire      ← a note: an ordinary document; its file name is its title
+│   └── Newton's laws.quire
+├── Lab reports/
+└── Syllabus.quirez
+```
+
+- **Notes** are `.quire` or `.quirez` documents. The file name (without extension) is the note's title; renaming the note renames the file, and the app writes the same title into `meta.title` when it saves, for headers and PDFs.
+- **Sections** are subfolders. Names that start with `.` are ignored, as are files that aren't documents, so a notebook can sit in a Git repository or next to other files.
+- **Order.** Without `.quire-notebook.json`, sections come first, then notes, in natural order ignoring case and accents (`Note 2` before `Note 10`). Once the user drags something, the order of that folder is kept:
+
+```json
+{
+  "order": { "": ["Syllabus.quirez", "Mechanics", "Lab reports"], "Mechanics": ["Newton's laws.quire", "Kinematics.quire"] },
+  "style": { "Mechanics": { "color": "#3e63dd" }, "Lab reports": { "color": "#30a46c", "icon": "🧪" } }
+}
+```
+
+  Keys are paths from the notebook's folder, `/`-separated on every system. Items the order doesn't list (added in Finder, say) come after the ones it does; listed items that no longer exist are ignored. Unknown keys are kept. Deleting the file only loses the manual order and the colours.
+- Names must work as file names everywhere: not empty, no leading `.`, none of `/ \ : * ? " < > |`, at most 120 characters.
+
 ## 3. Top-level structure
 
 ```jsonc
