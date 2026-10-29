@@ -136,7 +136,14 @@ function call(name: string, args: Expr[]): string {
     case "diff/3":
       return row(`<mfrac><msup>${d}${m(z)}</msup>${row(d, `<msup>${m(y)}${m(z)}</msup>`)}</mfrac>`, m(x));
     case "lim/3":
+    case "limit/3":
       return row(`<munder>${mi("lim", true)}${row(m(y), mo("→"), m(z))}</munder>`, m(x));
+    case "series/4":
+    case "taylor/4":
+      return row(mi(name, true), mo("("), m(x), mo(";"), m(y), mo("="), m(z), mo(","), m(w), mo(")"));
+    case "subs/3":
+    case "substitute/3":
+      return `<msub>${row(m(unparen(x)), mo("|", ' stretchy="true"'))}${row(m(y), mo("="), m(z))}</msub>`;
   }
   return row(ident(name), mo("("), args.map(m).join(mo(",")), mo(")"));
 }
