@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -200,5 +200,90 @@ describe("noteRoom", () => {
   it("never shrinks below a readable width", () => {
     const tight = computeLayout(doc([at("a", 0, 0), at("b", 40, 0)]), {}, false, false);
     expect(noteRoom(tight.byId.get("a")!, tight.list, {}, 640)).toBe(120);
+  });
+});
+
+describe("settleRegions (imported SMath positions)", () => {
+  const box = (id: string, x: number, y: number, extra: Partial<Region> = {}): Region => ({ id, kind: "text", at: [x, y], text: "t", ...extra });
+  const area = (id: string, x: number, y: number, height: number, regions: Region[], extra: Partial<Region> = {}): Region => ({
+    id,
+    kind: "area",
+    at: [x, y],
+    height,
+    regions,
+    ...extra,
+  });
+  const wide = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, 100]));
+
+  it("pushes an overlapping region below to the next grid line under the one above", () => {
+    const regions = [box("r", 0, 0), box("q", 0, 20)];
+    const changes = settleRegions(regions, { r: 40, q: 30 }, wide(["r", "q"]));
+    // 40 px bottom → the grid line at 45, one grid step further: 54
+    expect(changes.get("q")?.at).toEqual([0, 54]);
+    expect(changes.has("r")).toBe(false);
+  });
+
+  it("leaves regions alone that do not share a column", () => {
+    const regions = [box("r", 0, 0), box("q", 200, 20)];
+    expect(settleRegions(regions, { r: 40, q: 30 }, wide(["r", "q"])).size).toBe(0);
+  });
+
+  it("cascades: a pushed region pushes what it now overlaps", () => {
+    const regions = [box("r", 0, 0), box("q1", 0, 20), box("q2", 0, 50)];
+    const changes = settleRegions(regions, { r: 40, q1: 30, q2: 20 }, wide(["r", "q1", "q2"]));
+    expect(changes.get("q1")?.at).toEqual([0, 54]);
+    expect(changes.get("q2")?.at).toEqual([0, 99]);
+  });
+
+  it("moves an area's height to hold its children, and what is below it", () => {
+    const a = area("a", 0, 0, 90, [box("c", 0, 30)]);
+    const below = box("b", 0, 120);
+    const changes = settleRegions([a, below], { c: 100, b: 20 }, wide(["c", "b", "a"]));
+    // children end at 130: the grid line under it is 135, plus one step of padding: 144
+    expect(changes.get("a")?.height).toBe(144);
+    // the area grew by 54: what was at 120 is now at 174
+    expect(changes.get("b")?.at).toEqual([0, 174]);
+  });
+
+  it("settles a nested area first, then the area that holds it", () => {
+    const inner = area("b", 0, 10, 50, [box("c", 0, 5, {})]);
+    const d = box("d", 0, 60);
+    const outer = area("a", 0, 0, 90, [inner, d]);
+    const e = box("e", 0, 100);
+    const changes = settleRegions([outer, e], { c: 80, d: 20, e: 20 }, wide(["c", "d", "e", "a", "b"]));
+    expect(changes.get("b")?.height).toBe(99);
+    // d moved down with the growth of b, then was pushed by b's new bottom
+    expect(changes.get("d")?.at).toEqual([0, 126]);
+    expect(changes.get("a")?.height).toBe(162);
+    expect(changes.get("e")?.at).toEqual([0, 172]);
+  });
+
+  it("leaves a collapsed area's children and its height alone", () => {
+    const a = area("a", 0, 0, 90, [box("c", 0, 30)], { collapsed: true });
+    const changes = settleRegions([a], { c: 300 }, wide(["c"]));
+    expect(changes.size).toBe(0);
+  });
+
+  it("does not move regions it has no measurement for, and moves what is below a pushed region with it", () => {
+    const unmeasured = box("x", 0, 20);
+    expect(settleRegions([box("r", 0, 0), unmeasured], { r: 40 }, wide(["r"])).size).toBe(0);
+
+    const q = box("q", 0, 20);
+    const below = box("x", 200, 60);
+    const changes = settleRegions([box("r", 0, 0), q, below], { r: 40, q: 30 }, wide(["r", "q"]));
+    expect(changes.get("q")?.at).toEqual([0, 54]);
+    expect(changes.get("x")?.at).toEqual([200, 94]);
+  });
+
+  it("pushes only from the regions it is asked about", () => {
+    const regions = [box("r", 0, 0), box("q", 0, 20)];
+    expect(settleRegions(regions, { r: 40, q: 30 }, wide(["r", "q"]), new Set(["q"])).size).toBe(0);
+    expect(settleRegions(regions, { r: 40, q: 30 }, wide(["r", "q"]), new Set(["r"])).get("q")?.at).toEqual([0, 54]);
+  });
+
+  it("does not change its input", () => {
+    const regions = [box("r", 0, 0), box("q", 0, 20)];
+    settleRegions(regions, { r: 40, q: 30 }, wide(["r", "q"]));
+    expect(regions[1].at).toEqual([0, 20]);
   });
 });

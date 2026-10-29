@@ -84,6 +84,7 @@ import {
   selectAll,
   showReport,
   setState,
+  settleImportedOnOpen,
   state,
   togglePageView,
   undo,
@@ -182,6 +183,7 @@ function openImported(doc: Doc, file: string) {
   const name = file.split(/[\\/]/).pop() ?? "";
   loadDoc({ ...doc, meta: { ...doc.meta, title: name.replace(/\.sm$/i, "") } }, null);
   adoptPath(null);
+  settleImportedOnOpen();
 }
 
 export async function openPath(path: string) {
@@ -255,7 +257,11 @@ async function openUrl(url: string) {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`the server answered ${res.status}`);
-    loadDoc(await api.openBytes(base64(new Uint8Array(await res.arrayBuffer()))), null);
+    const doc = await api.openBytes(base64(new Uint8Array(await res.arrayBuffer())));
+    // an SMath worksheet opens as an import: titled after the file, its regions settled
+    const file = new URL(url, location.href).pathname.split("/").pop() ?? url;
+    if (isSmathPath(file)) openImported(doc, file);
+    else loadDoc(doc, null);
   } catch (e) {
     flash(`Could not open ${url}: ${(e as Error).message}`);
   }

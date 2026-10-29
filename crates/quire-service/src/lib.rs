@@ -164,7 +164,12 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
         .unwrap_or_default();
     let axis = |a: &str| text(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
     // `axes` is a boolean or an object of axis settings; only `false` hides them
-    let axes = !matches!(r.extra.get("axes"), Some(Json::Bool(false)));
+    // `"axes": false`, or a window with `"visible": false` (an SMath plot drawn without axes)
+    let axes = match r.extra.get("axes") {
+        Some(Json::Bool(b)) => *b,
+        Some(a) => a.get("visible").and_then(Json::as_bool).unwrap_or(true),
+        None => true,
+    };
     let grid = !matches!(r.extra.get("grid"), Some(Json::Bool(false)));
     let equal = text(r.extra.get("aspect")).as_deref() == Some("equal");
     let animate = r.extra.get("animate").and_then(|a| {

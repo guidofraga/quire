@@ -144,9 +144,9 @@ export function PlotBody(props: { r: Region }) {
   /** Every frame's series, so the axes of an animation fit all of its frames and do not jump. */
   const everyFrame = () => (frames().length ? frames().flat() : (view()?.series ?? [])).filter((s) => !s.error && s.xs.length);
   const showAxes = () => view()?.axes !== false;
-  // the animation bar takes the bottom of the box; printing has none, so the drawing gets all of it
+  // the drawing keeps the whole box, as in SMath; the animation bar sits below it (printing has none)
   const animated = () => frames().length > 1 && !state.printing;
-  const drawH = () => size()[1] - (animated() ? ANIM_BAR : 0);
+  const drawH = () => size()[1];
   const showGrid = () => view()?.grid ?? r().grid !== false;
 
   // a temporary zoomed or panned view (⌥ + scroll, ⌥ + drag, the + − buttons); not saved
@@ -365,7 +365,7 @@ export function PlotBody(props: { r: Region }) {
   };
 
   return (
-    <div class="plot" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }}>
+    <div class="plot" style={{ width: `${size()[0]}px`, height: `${size()[1] + (animated() ? ANIM_BAR : 0)}px` }}>
       <svg
         role="img"
         aria-label={`Plot of ${series().map((s) => s.label || s.y).join(", ") || "nothing yet"}${series()[0]?.x ? ` against ${series()[0].x}` : ""}`}

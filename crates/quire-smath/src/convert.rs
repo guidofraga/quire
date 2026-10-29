@@ -158,13 +158,43 @@ fn req_int(el: Node, name: &str) -> Res<i64> {
 /// axis shows `6·z` px per unit (HermitePolynomials, Legendre).
 const SMATH_PX_PER_UNIT: f64 = 6.0;
 
+/// Pixels per unit at zoom 1 for plots saved by SMath's Plot Region 1.9 and later, per pixel of
+/// the plot's width: those views scale with the region (Beam: zoom 1.105 in a 556 px plot
+/// shows its supports 15 units apart 246 px apart, 16.4 px per unit). 1.8 and earlier use a
+/// fixed 6 px per unit (PlanetaryGear, Hermite, Legendre).
+const SMATH_PX_PER_UNIT_PER_WIDTH: f64 = 1.0 / 37.5;
+
+/// How many px one unit takes in this plot at `zoom`.
+fn px_per_unit(p: Node, zoom: f64, width: i64) -> f64 {
+    if plot_region_scales_with_width(p) {
+        zoom * width as f64 * SMATH_PX_PER_UNIT_PER_WIDTH
+    } else {
+        SMATH_PX_PER_UNIT * zoom
+    }
+}
+
+/// Whether the worksheet was saved with Plot Region 1.9 or later (its `<dependencies>` list).
+fn plot_region_scales_with_width(p: Node) -> bool {
+    let Some(version) = p
+        .document()
+        .descendants()
+        .find(|n| n.tag_name().name() == "assembly" && n.attribute("name") == Some("Plot Region"))
+        .and_then(|n| n.attribute("version"))
+    else {
+        return false;
+    };
+    let mut parts = version.split('.').map(|x| x.trim().parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (1, 9)
+}
+
 /// The x values visible across a 2D SMath plot `width` px wide, from its view attributes.
 /// SMath keeps the horizontal zoom in `scale_y` (and the vertical one in `scale_x`), and
 /// `transpose_x` moves the drawing right by that many px: x = 0 sits at `width/2 + transpose_x`.
 /// Beam's view does not fit this model, but its curves are explicit data, so nothing relies on it.
 fn visible_x(p: Node, width: i64) -> Option<(f64, f64)> {
     let zoom = p.attribute("scale_y").unwrap_or("1").trim().parse::<f64>().ok()?;
-    let px_per_unit = SMATH_PX_PER_UNIT * zoom;
+    let px_per_unit = px_per_unit(p, zoom, width);
     if !(px_per_unit.is_finite() && px_per_unit > 0.0) {
         return None;
     }
@@ -174,18 +204,18 @@ fn visible_x(p: Node, width: i64) -> Option<(f64, f64)> {
 }
 
 /// The y values visible across a 2D SMath plot `height` px tall, from its view attributes. The
-/// vertical zoom is in `scale_x` (6 px per unit at zoom 1, as for x), and `transpose_y` moves the
-/// drawing down by that many px, so the window moves up. Read off the Hermite screenshot: a
-/// 351 px plot at zoom 2.78 shows about ±10.5 units, the ±10 of its axis labels.
-fn visible_y(p: Node, height: i64) -> Option<(f64, f64)> {
+/// vertical zoom is in `scale_x` (the same px per unit as x), and the window's centre sits
+/// `-transpose_y` px above y = 0: Beam (transpose_y = -34) shows its beam, at y = 2, in the
+/// middle. Read off the Hermite screenshot: a 351 px plot at zoom 2.78 shows about ±10.5 units.
+fn visible_y(p: Node, width: i64, height: i64) -> Option<(f64, f64)> {
     let zoom = p.attribute("scale_x")?.trim().parse::<f64>().ok()?;
-    let px_per_unit = SMATH_PX_PER_UNIT * zoom;
+    let px_per_unit = px_per_unit(p, zoom, width);
     if !(px_per_unit.is_finite() && px_per_unit > 0.0) {
         return None;
     }
     let shift = p.attribute("transpose_y").unwrap_or("0").trim().parse::<f64>().ok()?;
     let half = height as f64 / 2.0;
-    Some(((shift - half) / px_per_unit, (shift + half) / px_per_unit))
+    Some(((-shift - half) / px_per_unit, (-shift + half) / px_per_unit))
 }
 
 /// Whether an expression reads the variable `x`.
@@ -1239,7 +1269,7 @@ impl Converter {
         let mut series: Vec<Json> = Vec::new();
         // SMath sweeps a free x over the visible range without saying so: give it explicitly
         let view = if kind == "plot2d" { visible_x(p, width) } else { None };
-        let view_y = if kind == "plot2d" { visible_y(p, size[1]) } else { None };
+        let view_y = if kind == "plot2d" { visible_y(p, width, size[1]) } else { None };
         if let Some(ast) = math_of(child(p, "input"))? {
             let is_sys = ast.kind == Kind::Call && ast.value == "sys";
             let mut items: Vec<&Ast> = if is_sys { ast.args.iter().collect() } else { vec![&ast] };
@@ -1258,17 +1288,25 @@ impl Converter {
         }
         reg.insert("series".into(), Json::Array(series));
         reg.insert("grid".into(), json!(p.attribute("grid") == Some("true")));
-        // SMath shows the axes unless the plot says otherwise
-        // with the axes shown, the y range is SMath's window (the curves beyond it are clipped)
+        // SMath draws a fixed window (its zoom and pan), never fitting the data: carry the window
+        // over whether or not the axes are shown, so a drawing keeps its size next to markers
+        // whose sizes are in pixels (PlanetaryGear's star against its wheel)
         let axes_shown = p.attribute("axes") != Some("false");
-        match view_y.filter(|_| axes_shown && kind == "plot2d") {
-            Some((lo, hi)) => {
-                let round = |v: f64| (v * 1000.0).round() / 1000.0;
-                reg.insert("axes".into(), json!({"y": {"min": round(lo), "max": round(hi)}}));
+        let round = |v: f64| (v * 1000.0).round() / 1000.0;
+        let mut axes = serde_json::Map::new();
+        if let Some((lo, hi)) = view {
+            axes.insert("x".into(), json!({"min": round(lo), "max": round(hi)}));
+        }
+        if let Some((lo, hi)) = view_y {
+            axes.insert("y".into(), json!({"min": round(lo), "max": round(hi)}));
+        }
+        if axes.is_empty() {
+            reg.insert("axes".into(), json!(axes_shown));
+        } else {
+            if !axes_shown {
+                axes.insert("visible".into(), json!(false));
             }
-            None => {
-                reg.insert("axes".into(), json!(axes_shown));
-            }
+            reg.insert("axes".into(), Json::Object(axes));
         }
         // SMath's plots have no legend, and they use SMath's own series colours in order
         reg.insert("legend".into(), json!(false));
@@ -1527,7 +1565,10 @@ mod tests {
         let plot = regions.first().ok_or("no plot")?;
         assert_eq!(plot.get("animate"), Some(&json!({"var": "t", "over": "step", "fps": 20.0})));
         assert_eq!(plot.get("aspect"), Some(&json!("equal")));
-        assert_eq!(plot.get("axes"), Some(&json!(false)));
+        // SMath's window is kept, with the axes hidden
+        let axes = plot.get("axes").ok_or("no axes")?;
+        assert_eq!(axes.get("visible"), Some(&json!(false)));
+        assert!(axes.get("x").and_then(|x| x.get("max")).is_some());
         Ok(())
     }
 

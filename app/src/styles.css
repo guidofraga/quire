@@ -384,6 +384,23 @@ math {
   color: #9aa3af;
 }
 
+/* SMath programs (math.ts): a block's statements run down a rule (currentColor follows the theme),
+   their cells are left-aligned, and a string literal never breaks across lines */
+.q-program > mtr > mtd,
+.q-stack > mtr > mtd,
+.q-sys > mtr > mtd {
+  text-align: left;
+}
+
+.q-program > mtr > .q-body {
+  border-left: 1.5px solid currentColor;
+  padding-left: 0.3em;
+}
+
+ms.str {
+  white-space: nowrap;
+}
+
 .math-line {
   display: flex;
   align-items: baseline;
@@ -677,11 +694,6 @@ math {
   background: rgba(30, 32, 38, 0.92);
   color: #fff;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
-}
-
-ms.str::before,
-ms.str::after {
-  content: "\"";
 }
 
 /* ---------------------------------------------------------------- view toggle */
