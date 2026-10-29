@@ -186,6 +186,156 @@ pub fn para_block(body: &str, st: &Css, family: &str, size: &str) -> String {
     if attrs.is_empty() { body.to_string() } else { format!("{{{}}}\n{body}", attrs.join(" ")) }
 }
 
+/// `&#193;`, `&amp;`… in SMath's Writer HTML.
+fn unentity(s: &str) -> String {
+    static ENTITY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|amp|lt|gt|quot|apos|nbsp);").unwrap());
+    ENTITY
+        .replace_all(s, |c: &regex::Captures| {
+            let e = &c[1];
+            let ch = if let Some(h) = e.strip_prefix("#x").or_else(|| e.strip_prefix("#X")) {
+                u32::from_str_radix(h, 16).ok().and_then(char::from_u32)
+            } else if let Some(d) = e.strip_prefix('#') {
+                d.parse::<u32>().ok().and_then(char::from_u32)
+            } else {
+                Some(match e {
+                    "amp" => '&',
+                    "lt" => '<',
+                    "gt" => '>',
+                    "quot" => '"',
+                    "apos" => '\'',
+                    _ => '\u{a0}',
+                })
+            };
+            ch.map_or(c[0].to_string(), String::from)
+        })
+        .into_owned()
+}
+
+/// SMath's Writer region (rich text kept as HTML: div/p paragraphs, span styles, strong…)
+/// → (Djot paragraph, its CSS) per paragraph, and the region's (family, size).
+pub fn writer_paragraphs(src: &str) -> (Vec<(String, Css)>, (String, String)) {
+    static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<(/?)([a-zA-Z0-9]+)([^>]*?)(/?)>").unwrap());
+    static STYLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"style="([^"]*)""#).unwrap());
+    let mut family = "Arial".to_string();
+    let mut size = "10".to_string();
+    let mut paras: Vec<(String, Css)> = Vec::new();
+    let mut cur: Vec<String> = Vec::new();
+    let mut sizes: Vec<String> = Vec::new();
+    let mut stack: Vec<(String, Css)> = Vec::new();
+    let mut para_css = Css::new();
+    let mut first_span = true;
+    let style = |stack: &[(String, Css)]| {
+        let mut st = Css::new();
+        for (t, c) in stack {
+            st.extend(c.clone());
+            match t.as_str() {
+                "strong" | "b" => {
+                    st.insert("font-weight".into(), "bold".into());
+                }
+                "em" | "i" => {
+                    st.insert("font-style".into(), "italic".into());
+                }
+                "u" => {
+                    st.insert("text-decoration".into(), "underline".into());
+                }
+                _ => {}
+            }
+        }
+        st
+    };
+    let flush =
+        |cur: &mut Vec<String>, sizes: &mut Vec<String>, para_css: &Css, paras: &mut Vec<(String, Css)>| {
+            let body = cur.concat().trim().to_string();
+            if !body.is_empty() {
+                let mut st = para_css.clone();
+                // the largest size in the paragraph (the first of equals, as Python's max)
+                let mut best: Option<&String> = None;
+                for s in sizes.iter() {
+                    let v = s.parse::<f64>().unwrap_or(0.0);
+                    if best.is_none_or(|b| v > b.parse::<f64>().unwrap_or(0.0)) {
+                        best = Some(s);
+                    }
+                }
+                if let Some(b) = best {
+                    st.insert("font-size".into(), b.clone());
+                }
+                paras.push((body, st));
+            }
+            cur.clear();
+            sizes.clear();
+        };
+    let text = |t: &str, stack: &[(String, Css)], cur: &mut Vec<String>, sizes: &mut Vec<String>| {
+        let t = ws(&unentity(t));
+        if t.is_empty() {
+            return;
+        }
+        let st = style(stack);
+        let mut run = Css::new();
+        for k in ["font-weight", "font-style", "text-decoration"] {
+            if let Some(v) = st.get(k) {
+                run.insert(k.into(), v.clone());
+            }
+        }
+        let color = st.get("color").map(|c| c.to_lowercase()).unwrap_or_default();
+        if !color.is_empty() && !matches!(color.as_str(), "windowtext" | "black" | "#000000") {
+            run.insert("color".into(), color);
+        }
+        if !t.trim().is_empty() {
+            let s = st
+                .get("font-size")
+                .map(|s| s.replace("pt", "").replace("px", "").trim().to_string())
+                .unwrap_or_default();
+            if !s.is_empty() {
+                sizes.push(s);
+            }
+        }
+        cur.push(wrap_inline(&esc(&t), &run));
+    };
+    let mut pos = 0;
+    for m in TAG.captures_iter(src) {
+        let whole = m.get(0).unwrap();
+        text(&src[pos..whole.start()], &stack, &mut cur, &mut sizes);
+        pos = whole.end();
+        let (closing, name, attrs, selfclose) = (&m[1] == "/", m[2].to_lowercase(), &m[3], &m[4] == "/");
+        if name == "br" {
+            cur.push("\\\n".into());
+            continue;
+        }
+        if closing {
+            while let Some((t, _)) = stack.pop() {
+                if t == name {
+                    break;
+                }
+            }
+            if name == "div" || name == "p" {
+                flush(&mut cur, &mut sizes, &para_css, &mut paras);
+            }
+            continue;
+        }
+        let c = css(STYLE.captures(attrs).map(|s| s.get(1).unwrap().as_str()));
+        if name == "span" && first_span {
+            first_span = false;
+            if let Some(f) = c.get("font-family") {
+                family = f.trim_matches(['\'', '"']).to_string();
+            }
+            if let Some(s) = c.get("font-size") {
+                size = s.replace("pt", "").replace("px", "").trim().to_string();
+            }
+        }
+        if !selfclose {
+            stack.push((name.clone(), c));
+        }
+        if name == "div" || name == "p" {
+            flush(&mut cur, &mut sizes, &para_css, &mut paras);
+            para_css = style(&stack).into_iter().filter(|(k, v)| k == "text-align" && v != "left").collect();
+        }
+    }
+    text(&src[pos..], &stack, &mut cur, &mut sizes);
+    flush(&mut cur, &mut sizes, &para_css, &mut paras);
+    (paras, (family, size))
+}
+
 /// Djot without its markup, for pattern matching.
 pub fn plain(djot: &str) -> String {
     static ATTRS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{[^}]*\}").unwrap());

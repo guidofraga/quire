@@ -431,6 +431,99 @@ def para_block(body, st, region_font):
     return ("{" + " ".join(attrs) + "}\n" if attrs else "") + body
 
 
+# SMath's Writer region: rich text stored as HTML (div/p paragraphs, span styles, strong…)
+WRITER_TAG = re.compile(r"<(/?)([a-zA-Z0-9]+)([^>]*?)(/?)>")
+ENTITY = re.compile(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|amp|lt|gt|quot|apos|nbsp);")
+
+
+def unentity(s):
+    def one(m):
+        e = m.group(1)
+        if e[:2] in ("#x", "#X"):
+            return chr(int(e[2:], 16))
+        if e[0] == "#":
+            return chr(int(e[1:]))
+        return {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'", "nbsp": " "}[e]
+    return ENTITY.sub(one, s)
+
+
+def writer_paragraphs(src):
+    """-> ([(djot_paragraph, css)], {"family", "size"}) for a Writer region's HTML."""
+    font = {"family": "Arial", "size": "10"}
+    paras, cur, sizes, stack = [], [], [], []
+    para_css = {}
+    first_span = True
+
+    def style():
+        st = {}
+        for t, c in stack:
+            st.update(c)
+            if t in ("strong", "b"):
+                st["font-weight"] = "bold"
+            if t in ("em", "i"):
+                st["font-style"] = "italic"
+            if t == "u":
+                st["text-decoration"] = "underline"
+        return st
+
+    def flush():
+        body = "".join(cur).strip()
+        if body:
+            st = dict(para_css)
+            if sizes:
+                st["font-size"] = max(sizes, key=lambda v: float(v))
+            paras.append((body, st))
+        cur.clear()
+        sizes.clear()
+
+    def text(t):
+        t = ws(unentity(t))
+        if not t:
+            return
+        st = style()
+        run = {k: v for k, v in st.items() if k in ("font-weight", "font-style", "text-decoration")}
+        color = st.get("color", "").lower()
+        if color and color not in ("windowtext", "black", "#000000"):
+            run["color"] = color
+        if t.strip():
+            size = st.get("font-size", "").replace("pt", "").replace("px", "").strip()
+            if size:
+                sizes.append(size)
+        cur.append(wrap_inline(esc(t), run))
+
+    pos = 0
+    for m in WRITER_TAG.finditer(src):
+        text(src[pos:m.start()])
+        pos = m.end()
+        closing, name, attrs, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
+        if name == "br":
+            cur.append("\\\n")
+            continue
+        if closing:
+            while stack:
+                if stack.pop()[0] == name:
+                    break
+            if name in ("div", "p"):
+                flush()
+            continue
+        sm = re.search(r'style="([^"]*)"', attrs)
+        c = css(sm.group(1) if sm else None)
+        if name == "span" and first_span:
+            first_span = False
+            if c.get("font-family"):
+                font["family"] = c["font-family"].strip("'\"")
+            if c.get("font-size"):
+                font["size"] = c["font-size"].replace("pt", "").replace("px", "").strip()
+        if not selfclose:
+            stack.append((name, c))
+        if name in ("div", "p"):
+            flush()
+            para_css = {k: v for k, v in style().items() if k == "text-align" and v != "left"}
+    text(src[pos:])
+    flush()
+    return paras, font
+
+
 def plain(djot):
     """Strip Djot markup for pattern matching."""
     s = re.sub(r"\{[^}]*\}", "", djot)
@@ -664,6 +757,12 @@ class Converter:
                 return [self.base(r, origin, "pagebreak")]
             if t == "radiobuttonlist":
                 return [self.radio(r, body, origin)]
+            if t == "writer":
+                return [self.writer(r, body, origin)]
+            if t == "image":
+                return [self.image_plugin(r, body, origin)]
+            if t == "xyplot":
+                return [self.xyplot(r, body, origin)]
         except Exception as ex:  # never lose content: fall through to legacy
             self.warnings.append(f"region at top={r.get('top')}: {t}: {ex}")
         return [self.legacy(r, t, origin)]
@@ -769,6 +868,84 @@ class Converter:
             f"- *{k} = {esc(item)}* ✓" if k == chosen else f"- {k} = {esc(item)}"
             for k, item in enumerate(items, 1)
         )
+        return reg
+
+    def image_plugin(self, r, im, origin):
+        """SMath's Image region: the picture kept in base64 inside <imagefile>."""
+        f = child(im, "imagefile")
+        if f is None or not (f.text or "").strip():
+            raise ValueError("image without data")
+        reg = self.base(r, origin, "image")
+        ext = (f.get("renderExt") or Path(f.get("filename") or "x.png").suffix or ".png").lstrip(".").lower()
+        reg["src"] = self.asset(base64.b64decode(f.text), ext)
+        reg["size"] = [int(f.get("width") or r.get("width")), int(f.get("height") or r.get("height"))]
+        return reg
+
+    def writer(self, r, w, origin):
+        """SMath's Writer region (rich text kept as HTML) -> a text region."""
+        reg = self.base(r, origin, "text")
+        paras, font = writer_paragraphs(w.text or "")
+        reg["text"] = "\n\n".join(para_block(b, st, font) for b, st in paras if b)
+        if r.get("width"):
+            reg["width"] = int(r.get("width"))
+        reg["font"] = font
+        self.text_fonts[(font["family"], font["size"])] += 1
+        return reg
+
+    def xyplot(self, r, x, origin):
+        """SMath's XY plot: series from <input> (a sys(…) of point matrices or vectors), the
+        traces' colours and styles, axis labels and limits, grid, legend and title."""
+        reg = self.base(r, origin, "plot2d")
+        reg["size"] = [int(r.get("width")), int(r.get("height"))]
+        ast = math_expr(child(x, "input"))
+        items = []
+        if ast is not None:
+            items = ast.args if ast.kind == "call" and ast.value == "sys" else [ast]
+            if ast.kind == "call" and ast.value == "sys" and len(items) > 2:
+                items = items[:-2]  # sys(..., rows, cols)
+        traces_el = child(x, "traces")
+        traces = children(traces_el, "trace") if traces_el is not None else []
+        series = []
+        for k, item in enumerate(items):
+            s = {"y": to_linear(item)}
+            t = traces[k] if k < len(traces) else None
+            if t is not None:
+                if t.get("seriesname"):
+                    s["label"] = t.get("seriesname")
+                style = {}
+                color = (t.get("linecolor") or "").strip()
+                if re.fullmatch(r"[A-Za-z]+", color):
+                    style["color"] = color.lower()
+                lines = (t.get("plotmethod") or "Lines") != "Points"
+                marks = (t.get("symboltype") or "None") != "None" or not lines
+                style["draw"] = "line+points" if lines and marks else ("points" if marks else "line")
+                dash = {"Dash": "dashed", "DashDot": "dashed", "Dot": "dotted"}.get(t.get("linepattern") or "")
+                if dash:
+                    style["dash"] = dash
+                s["style"] = style
+            series.append(s)
+        reg["series"] = series
+        g = child(x, "grid")
+        reg["grid"] = g is None or g.get("isxgrid") == "true" or g.get("isygrid") == "true"
+        lab = child(x, "xylabel")
+        axes = {}
+        for a, el in (("x", child(x, "xaxes")), ("y", child(x, "yaxes"))):
+            spec = {}
+            if lab is not None and lab.get(a + "label"):
+                spec["label"] = lab.get(a + "label")
+            if el is not None and el.get(a + "min") and el.get(a + "max"):
+                spec["min"] = num(el.get(a + "min"))
+                spec["max"] = num(el.get(a + "max"))
+            if spec:
+                axes[a] = spec
+        if axes:
+            reg["axes"] = axes
+        leg = child(x, "legend")
+        if leg is not None and leg.get("islegendvisible") == "false":
+            reg["legend"] = "none"
+        title = child(x, "title2d")
+        if title is not None and (title.get("title") or "").strip():
+            reg["caption"] = {"text": esc(title.get("title").strip()), "position": "above"}
         return reg
 
     def text(self, r, variants, origin):

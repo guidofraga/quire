@@ -388,6 +388,9 @@ impl Converter<'_> {
             "plot" => self.plot(r, body, origin).map(|x| vec![x]),
             "pagebreak" => Ok(vec![Json::Object(self.base(r, origin, "pagebreak"))]),
             "radiobuttonlist" => self.radio(r, body, origin).map(|x| vec![x]),
+            "writer" => Ok(vec![self.writer(r, body, origin)]),
+            "image" => self.image_plugin(r, body, origin).map(|x| vec![x]),
+            "xyplot" => self.xyplot(r, body, origin).map(|x| vec![x]),
             _ => Err(String::new()),
         };
         match done {
@@ -581,6 +584,141 @@ impl Converter<'_> {
             })
             .collect();
         reg.insert("note".into(), json!(note.join("\n")));
+        Ok(Json::Object(reg))
+    }
+
+    /// SMath's Image region: the picture kept in base64 inside <imagefile>.
+    fn image_plugin(&mut self, r: XNode, im: XNode, origin: (i64, i64)) -> Result<Json, String> {
+        let f = child(im, "imagefile").ok_or("image without data")?;
+        let b64: String = f.text().unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
+        if b64.is_empty() {
+            return Err("image without data".into());
+        }
+        let data = base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| e.to_string())?;
+        let mut reg = self.base(r, origin, "image");
+        let from_name = attr(f, "filename")
+            .and_then(|n| Path::new(n).extension())
+            .map(|e| e.to_string_lossy().into_owned());
+        let ext = attr(f, "renderExt")
+            .filter(|e| !e.is_empty())
+            .map(String::from)
+            .or(from_name)
+            .unwrap_or_else(|| "png".into())
+            .trim_start_matches('.')
+            .to_lowercase();
+        let src = self.asset(data, &ext);
+        reg.insert("src".into(), json!(src));
+        let dim =
+            |a: &str, b: &str| attr(f, a).filter(|v| !v.is_empty()).map_or_else(|| int(r, b), |_| int(f, a));
+        reg.insert("size".into(), json!([dim("width", "width"), dim("height", "height")]));
+        Ok(Json::Object(reg))
+    }
+
+    /// SMath's Writer region (rich text kept as HTML) → a text region.
+    fn writer(&mut self, r: XNode, w: XNode, origin: (i64, i64)) -> Json {
+        let mut reg = self.base(r, origin, "text");
+        let html: String = w.children().filter_map(|c| c.text()).collect();
+        let (paras, (family, size)) = text::writer_paragraphs(&html);
+        let blocks: Vec<String> = paras
+            .iter()
+            .filter(|(b, _)| !b.is_empty())
+            .map(|(b, st)| para_block(b, st, &family, &size))
+            .collect();
+        reg.insert("text".into(), json!(blocks.join("\n\n")));
+        if let Some(w) = attr(r, "width").filter(|s| !s.is_empty()) {
+            reg.insert("width".into(), json!(w.trim().parse::<f64>().map_or(0, |v| v as i64)));
+        }
+        reg.insert("font".into(), json!({ "family": family, "size": size }));
+        self.text_fonts.add((family, size));
+        Json::Object(reg)
+    }
+
+    /// SMath's XY plot: series from <input> (a sys(…) of point matrices or vectors), the
+    /// traces' colours and styles, axis labels and limits, grid, legend and title.
+    fn xyplot(&mut self, r: XNode, x: XNode, origin: (i64, i64)) -> Result<Json, String> {
+        static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]+$").unwrap());
+        let mut reg = self.base(r, origin, "plot2d");
+        reg.insert("size".into(), json!([int(r, "width"), int(r, "height")]));
+        let mut items: Vec<math::Node> = Vec::new();
+        if let Some(ast) = expr(child(x, "input"))? {
+            let sys = ast.kind == Kind::Call && ast.value == "sys";
+            items = if sys { ast.args.clone() } else { vec![ast] };
+            if sys && items.len() > 2 {
+                items.truncate(items.len() - 2); // sys(..., rows, cols)
+            }
+        }
+        let traces: Vec<XNode> =
+            child(x, "traces").map(|t| children(t, "trace").collect()).unwrap_or_default();
+        let mut series = Vec::new();
+        for (k, item) in items.iter().enumerate() {
+            let mut s = Map::new();
+            s.insert("y".into(), json!(to_linear(item, false)));
+            if let Some(t) = traces.get(k) {
+                if let Some(name) = attr(*t, "seriesname").filter(|n| !n.is_empty()) {
+                    s.insert("label".into(), json!(name));
+                }
+                let mut style = Map::new();
+                let color = attr(*t, "linecolor").unwrap_or("").trim();
+                if NAME.is_match(color) {
+                    style.insert("color".into(), json!(color.to_lowercase()));
+                }
+                let lines = attr(*t, "plotmethod").unwrap_or("Lines") != "Points";
+                let marks = attr(*t, "symboltype").unwrap_or("None") != "None" || !lines;
+                let draw = if lines && marks {
+                    "line+points"
+                } else if marks {
+                    "points"
+                } else {
+                    "line"
+                };
+                style.insert("draw".into(), json!(draw));
+                let dash = match attr(*t, "linepattern").unwrap_or("") {
+                    "Dash" | "DashDot" => Some("dashed"),
+                    "Dot" => Some("dotted"),
+                    _ => None,
+                };
+                if let Some(d) = dash {
+                    style.insert("dash".into(), json!(d));
+                }
+                s.insert("style".into(), Json::Object(style));
+            }
+            series.push(Json::Object(s));
+        }
+        reg.insert("series".into(), json!(series));
+        let g = child(x, "grid");
+        let grid = g.is_none_or(|g| attr(g, "isxgrid") == Some("true") || attr(g, "isygrid") == Some("true"));
+        reg.insert("grid".into(), json!(grid));
+        let lab = child(x, "xylabel");
+        let mut axes = Map::new();
+        for (a, el) in [("x", child(x, "xaxes")), ("y", child(x, "yaxes"))] {
+            let mut spec = Map::new();
+            if let Some(l) = lab.and_then(|l| attr(l, &format!("{a}label"))).filter(|l| !l.is_empty()) {
+                spec.insert("label".into(), json!(l));
+            }
+            if let Some(el) = el
+                && let (Some(lo), Some(hi)) = (
+                    attr(el, &format!("{a}min")).filter(|v| !v.is_empty()),
+                    attr(el, &format!("{a}max")).filter(|v| !v.is_empty()),
+                )
+            {
+                spec.insert("min".into(), num(lo));
+                spec.insert("max".into(), num(hi));
+            }
+            if !spec.is_empty() {
+                axes.insert(a.into(), Json::Object(spec));
+            }
+        }
+        if !axes.is_empty() {
+            reg.insert("axes".into(), Json::Object(axes));
+        }
+        if child(x, "legend").is_some_and(|l| attr(l, "islegendvisible") == Some("false")) {
+            reg.insert("legend".into(), json!("none"));
+        }
+        if let Some(title) =
+            child(x, "title2d").and_then(|t| attr(t, "title")).map(str::trim).filter(|t| !t.is_empty())
+        {
+            reg.insert("caption".into(), json!({ "text": esc(title), "position": "above" }));
+        }
         Ok(Json::Object(reg))
     }
 
@@ -1043,6 +1181,41 @@ mod tests {
         let ids: HashSet<&str> = r.iter().map(|x| x["id"].as_str().unwrap()).collect();
         assert_eq!(ids.len(), 5);
         assert!(dump(d).starts_with("{\n  \"format\": \"quire/1\",\n  \"meta\": {"));
+    }
+
+    #[test]
+    fn writer_xyplot_and_image_regions() {
+        let sm = r#"<worksheet xmlns="http://smath.info/schemas/worksheet/1.0"><regions>
+<region left="10" top="10" width="300"><writer lang="eng"><![CDATA[<span style="font-family: 'Arial'; font-size: 10pt; color: windowtext">
+<div style="text-align: center"><span style="font-size: 12pt"><strong>AN&#193;LISE</strong></span> de <em>tubos</em></div>
+<div>linha 1<br>linha 2</div></span>]]></writer></region>
+<region left="10" top="60" width="400" height="200"><xyplot><grid isxgrid="true" isygrid="false"/>
+<xaxes xmin="0" xmax="10"/><yaxes ymin="-1" ymax="5.5"/><title2d title="S-N"/>
+<xylabel xlabel="N" ylabel="S"/><legend islegendvisible="false"/>
+<traces><trace seriesname="a" plotmethod="Lines" linecolor="Blue" symboltype="Circle" linepattern="Dash"/></traces>
+<input><e type="operand">P</e><e type="operand">Q</e><e type="operand">2</e><e type="operand">1</e><e type="function" args="4">sys</e></input></xyplot></region>
+<region left="10" top="300" width="40" height="30"><image><imagefile filename="t.png" width="20" height="10" renderExt=".png">iVBORw0KGgo=</imagefile></image></region>
+</regions></worksheet>"#;
+        let im = import(sm.as_bytes(), Path::new("w.sm")).unwrap();
+        let r = im.document["regions"].as_array().unwrap();
+        assert_eq!(r[0]["text"], "{.center size=12}\n*ANÁLISE* de _tubos_\n\nlinha 1\\\nlinha 2");
+        assert_eq!(r[0]["width"], 300);
+        let p = &r[1];
+        assert_eq!(p["kind"], "plot2d");
+        assert_eq!(
+            p["series"],
+            json!([{ "y": "P", "label": "a", "style": { "color": "blue", "draw": "line+points", "dash": "dashed" } }, { "y": "Q" }])
+        );
+        assert_eq!(
+            p["axes"],
+            json!({ "x": { "label": "N", "min": 0, "max": 10 }, "y": { "label": "S", "min": -1, "max": 5.5 } })
+        );
+        assert_eq!(
+            (p["grid"].clone(), p["legend"].clone(), p["caption"]["text"].clone()),
+            (json!(true), json!("none"), json!("S-N"))
+        );
+        assert_eq!((r[2]["kind"].clone(), r[2]["size"].clone()), (json!("image"), json!([20, 10])));
+        assert!(im.stats.keys().all(|k| !k.starts_with("legacy")));
     }
 
     #[test]

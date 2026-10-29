@@ -1007,6 +1007,9 @@ mod tests {
             plot("d", vec![SeriesInput { y: "v".into(), ..Default::default() }], None),
             plot("bad", vec![over("M(x)", "0 m..L")], Some("MPa")),
             plot("u", vec![over("zz(x)", "0..1")], None),
+            // SMath's XY plot: an n × 2 matrix of points (x, y)
+            math("P", "P := [0, 1; 2, 5; 4, 3]"),
+            plot("xy", vec![SeriesInput { y: "P".into(), ..Default::default() }], None),
         ];
         let settings = DisplaySettings { working_units: true, ..Default::default() };
         let out = Worksheet::new(settings).run(&regions);
@@ -1020,6 +1023,8 @@ mod tests {
         assert!(out[6].error.as_deref().unwrap().ends_with("but the axis is in MPa"), "{:?}", out[6].error);
         assert!(out[7].error.is_some());
         assert_eq!(out[3].error, None);
+        let xy = &out[9].plot.as_ref().unwrap().series[0];
+        assert_eq!((xy.xs.clone(), xy.ys.clone()), (vec![0.0, 2.0, 4.0], vec![1.0, 5.0, 3.0]));
     }
 
     #[test]

@@ -120,7 +120,25 @@ pub(crate) fn sample(s: &SeriesInput, interp: &mut Interp, scope: &mut Scope) ->
             Ok(Sampled { xs, ys })
         }
         None => {
-            let ys = numbers(interp.eval(scope, &y)?, "the plotted values")?;
+            let values = interp.eval(scope, &y)?;
+            let has_x = s.x.as_deref().is_some_and(|x| !x.trim().is_empty());
+            // SMath's XY plot: an n × 2 matrix of points, x in the first column, y in the second
+            if let Value::Matrix(m) = &values
+                && m.cols == 2
+                && m.rows > 1
+                && !has_x
+            {
+                let column = |c: usize| -> Result<Vec<Quantity>> {
+                    let qs =
+                        (0..m.rows).map(|r| m.get(r, c).as_num("a point")).collect::<Result<Vec<_>>>()?;
+                    if qs.iter().any(|q| q.dim != qs[0].dim) {
+                        bail!("the points mix different units");
+                    }
+                    Ok(qs)
+                };
+                return Ok(Sampled { xs: column(0)?, ys: column(1)? });
+            }
+            let ys = numbers(values, "the plotted values")?;
             let xs = match s.x.as_deref().map(str::trim).filter(|x| !x.is_empty()) {
                 Some(x) => {
                     let xs = numbers(interp.eval(scope, &parse_part(x, "the x values")?)?, "the x values")?;
