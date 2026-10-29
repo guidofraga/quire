@@ -32,6 +32,7 @@ import {
   heights,
   layout,
   localized,
+  noteRoom,
   PAGE_WIDTH,
   type Placed,
   regionGrew,
@@ -242,7 +243,8 @@ function FixButton(props: { id: string; fix: Fix }) {
   );
 }
 
-function MathBody(props: { r: Region }) {
+/** `noteWidth`: the room for the error note (see noteRoom). */
+function MathBody(props: { r: Region; noteWidth: () => number }) {
   const view = () => state.views[props.r.id];
   const editing = () => state.editing === props.r.id;
   // a check: a comparison reads ✓ / ✗ instead of = 1 / = 0; an OK / FAIL result is coloured
@@ -281,7 +283,7 @@ function MathBody(props: { r: Region }) {
         <NameNotes id={props.r.id} />
       </Show>
       <Show when={view()?.error}>
-        <div class="err" title={view()!.error!}>
+        <div class="err" style={{ "max-width": `${props.noteWidth()}px` }}>
           <span class="err-text">{view()!.error}</span>
           <Show when={!editing() && view()?.fix}>{(fix) => <FixButton id={props.r.id} fix={fix()} />}</Show>
         </div>
@@ -705,7 +707,7 @@ export function RegionBox(props: RegionProps) {
         }
       >
         <Match when={r().kind === "math"}>
-          <MathBody r={r()} />
+          <MathBody r={r()} noteWidth={() => noteRoom(placed(), layout().list, heights, availableWidth(placed().x))} />
         </Match>
         <Match when={r().kind === "text"}>
           <TextBody p={placed()} />

@@ -35,6 +35,49 @@ test("typing starts right after choosing Blank document", async ({ page }) => {
   await expect(regions(page).nth(1)).toContainText(/=6$/);
 });
 
+test("switching views doesn't make a document Edited", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.getByRole("button", { name: "Canvas", exact: true }).click();
+  await page.getByRole("button", { name: "Pages", exact: true }).click();
+  await expect(page.locator(".toolbar .title")).toHaveText("Untitled");
+});
+
+test("closing a format-bar gallery with Esc goes back to the math being typed", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.type("a:=2");
+  await page.getByRole("button", { name: /Structures/ }).click();
+  await expect(page.locator(".fb-pop")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".fb-pop")).toHaveCount(0);
+  await page.keyboard.type("*3=");
+  await page.mouse.click(700, 600);
+  await expect(regions(page).first()).toContainText(/=6$/);
+});
+
+test("an empty page says how to start, until there is content", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  const hint = page.locator(".empty-hint");
+  await expect(hint).toHaveText(/Click anywhere and type/);
+  await page.emulateMedia({ media: "print" });
+  await expect(hint).toBeHidden();
+  await page.emulateMedia({ media: "screen" });
+  await page.keyboard.type("a");
+  await expect(hint).toHaveCount(0);
+});
+
+test("the insert tools stay put as the status changes", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  const left = () => page.locator(".toolbar .tools").evaluate((el) => el.getBoundingClientRect().left);
+  const before = await left();
+  await typeLines(page, "q:=12 kN/m", "x:=1 m + q=");
+  await expect(page.locator(".toolbar .errors")).toBeVisible();
+  await page.getByRole("button", { name: "Canvas", exact: true }).click();
+  expect(await left()).toBe(before);
+});
+
 test("explains a unit mismatch", async ({ page }) => {
   await blank(page);
   await typeLines(page, "x:=1 m + 2 kN=");

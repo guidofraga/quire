@@ -306,25 +306,15 @@ body {
   pointer-events: none;
 }
 
+/* an empty document: one quiet line beside the insertion point (on paper in either theme) */
 .empty-hint {
   position: absolute;
-  left: 50%;
-  top: 38%;
-  transform: translate(-50%, -50%);
-  text-align: center;
+  margin: -8px 0 0 14px;
   color: #6b7280;
-  font-size: 14px;
-  line-height: 1.7;
+  font: 13px -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
   pointer-events: none;
-}
-
-.empty-hint kbd {
-  font: 12.5px var(--mono);
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #f1f3f6;
-  border: 1px solid #e1e4e9;
-  color: #374151;
+  animation: caret-in 120ms ease-out;
 }
 
 /* ---------------------------------------------------------------- regions */
@@ -426,10 +416,11 @@ math {
   font: 11px -apple-system, system-ui, sans-serif;
 }
 
+/* long notes wrap within the room they have (noteRoom), never under a neighbour */
 .err-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .err-fix {
@@ -1602,7 +1593,24 @@ ms.str::after {
 }
 
 .gallery-tile.text-only {
-  color: #6b7280;
+  color: var(--muted);
+}
+
+/* the previews are drawn in the window's colours, not the page's, so the tiles follow
+   the dark theme: ink, units and constants lighten with it */
+@media (prefers-color-scheme: dark) {
+  .gallery-tile {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--chrome-ink);
+  }
+
+  .gallery-tile .u {
+    color: var(--unit-chrome);
+  }
+
+  .gallery-tile .k {
+    color: #c4a5ff;
+  }
 }
 
 .gallery-tabs {
@@ -2398,19 +2406,27 @@ ms.str::after {
   font-size: 11px;
 }
 
-/* The toolbar on a narrow window: icons without labels, then fewer extras */
+/* The insert tools stay put while the title and the status beside them change width: they
+   sit a third of the free width in, and only a status wider than its two thirds moves them.
+   On a narrow window: icons without labels, then fewer extras */
 .toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 2fr);
   min-width: 0;
 }
 
 .toolbar .title {
-  flex: 0 1 auto;
-  min-width: 60px;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
 }
 
-.tools,
+.tools {
+  margin: 0;
+}
+
 .status {
-  flex: none;
+  justify-self: end;
 }
 
 @media (max-width: 1080px) {

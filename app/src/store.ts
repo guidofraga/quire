@@ -122,7 +122,10 @@ export function mutate(fn: (d: Doc) => void, history = true) {
 }
 
 function restore(json: string) {
+  // undo and redo leave the view as it is (see togglePageView)
+  const view = state.doc.page?.view;
   setState("doc", reconcile(JSON.parse(json) as Doc, { key: "id" }));
+  if (view) setState("doc", "page", (p) => ({ ...(p ?? {}), view }));
   // a table stays open across undo (its cells are plain data); text editors don't
   const editing = state.editing ? layout().byId.get(state.editing)?.region : undefined;
   if (editing?.kind !== "table") setState({ editing: null });
@@ -364,10 +367,28 @@ export function availableWidth(x: number): number {
   return Math.max(120, (l.pageView ? l.geom.contentW : PAGE_WIDTH) - x);
 }
 
+/**
+ * How wide a region's error note may be: up to the next region to its right whose rows it
+ * shares, and within the printable width (`available`), so a long note wraps instead of
+ * running into its neighbour.
+ */
+export function noteRoom(p: Placed, list: readonly Placed[], measured: Record<string, number>, available: number): number {
+  const height = (q: Placed) => measured[q.region.id] ?? DEFAULT_HEIGHT;
+  const bottom = p.top + height(p);
+  let room = available;
+  for (const q of list) {
+    if (q === p || q.hidden || q.page !== p.page || q.left <= p.left) continue;
+    if (q.top < bottom && q.top + height(q) > p.top) room = Math.min(room, q.left - p.left - 12);
+  }
+  return Math.max(120, room);
+}
+
+/**
+ * Pages or canvas. The choice is kept in the document, but it is a way of looking at it
+ * rather than an edit: no undo step, and the document doesn't become "Edited".
+ */
 export function togglePageView() {
-  mutate((d) => {
-    d.page = { ...(d.page ?? {}), view: d.page?.view === "pages" ? "canvas" : "pages" };
-  });
+  setState("doc", "page", (p) => ({ ...(p ?? {}), view: p?.view === "pages" ? "canvas" : "pages" }));
 }
 
 // ---------------------------------------------------------------------------
