@@ -11,3 +11,7 @@ dist/
 # Playwright
 /app/test-results/
 /app/playwright-report/
+
+# The web version: the engine built by `npm run wasm`, and the site
+/app/web-public/
+/app/dist-web/

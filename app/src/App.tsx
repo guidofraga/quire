@@ -8,6 +8,7 @@ import {
   exportJob,
   guardClose,
   isTauri,
+  isWeb,
   onMenu,
   onOpenFile,
   pickOpenPath,
@@ -54,6 +55,8 @@ import { focusNotebookSearch, newNotebookDialog, NoteTitle, openNotebookDialog, 
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
+import { setShareOpen, ShareDialog } from "./ShareDialog";
+import { decodeDoc, docInHash, linkFor } from "./share";
 import { directPdf, pdfInfo, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
 import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
@@ -185,6 +188,7 @@ export async function openPath(path: string) {
 
 async function openDocument() {
   if (!(await guardUnsaved())) return;
+  if (isWeb) return openFile();
   const path = await pickOpenPath();
   if (path) await openPath(path);
 }
@@ -193,6 +197,7 @@ async function save(as = false) {
   // ⌘S in a notebook just makes sure the note is on disk now
   if (nb.current && !as) return void flushSave();
   commitEditing();
+  if (isWeb) return download();
   let path = state.path;
   if (!path || as) {
     path = await pickSavePath(fileName(state.path));
@@ -206,6 +211,93 @@ async function save(as = false) {
   } catch (e) {
     flash(`Could not save: ${(e as Error).message}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// The web version: no files, only what the visitor picks, downloads or opens from a link
+// ---------------------------------------------------------------------------
+
+/** A document the visitor picked: a .quirez, or a document.json from a .quire folder. */
+async function openFile() {
+  const file = await new Promise<File | null>((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".quirez,.json";
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.click();
+  });
+  if (!file) return;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    loadDoc(await api.openBytes(base64(bytes)), null);
+  } catch (e) {
+    flash(`Could not open ${file.name}: ${(e as Error).message}`);
+  }
+}
+
+/** A document a link points to (`?open=https://…`): a .quirez or document.json anywhere public. */
+async function openUrl(url: string) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`the server answered ${res.status}`);
+    loadDoc(await api.openBytes(base64(new Uint8Array(await res.arrayBuffer()))), null);
+  } catch (e) {
+    flash(`Could not open ${url}: ${(e as Error).message}`);
+  }
+}
+
+/** A document carried in the link itself (`#doc=…`). */
+async function openLinked(encoded: string) {
+  try {
+    loadDoc(await decodeDoc(encoded), null);
+  } catch (e) {
+    flash(`Could not open this link: ${(e as Error).message}`);
+  }
+}
+
+/** Save in a browser: download the document as one .quirez file, images included. */
+async function download() {
+  try {
+    const bytes = Uint8Array.from(atob(await api.saveBytes(unwrap(state.doc))), (c) => c.charCodeAt(0));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+    a.download = `${fileName(null).replace(/[\\/:*?"<>|]/g, "-")}.quirez`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    setState({ dirty: false });
+    flash(`Downloaded ${a.download}`);
+  } catch (e) {
+    flash(`Could not save: ${(e as Error).message}`);
+  }
+}
+
+function base64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/**
+ * In the web version the address bar always holds the document as it is now: reloading
+ * keeps your work, and copying the address shares it.
+ */
+function keepLinkCurrent() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  createRoot(() =>
+    createEffect(
+      on(
+        () => state.rev,
+        () => {
+          clearTimeout(timer);
+          timer = setTimeout(async () => {
+            const link = await linkFor(unwrap(state.doc), location.href).catch(() => null);
+            if (link) history.replaceState(history.state, "", link);
+          }, 800);
+        },
+        { defer: true },
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -449,6 +541,8 @@ function runCommand(id: string) {
       return nb.book ? focusNotebookSearch() : openNotebookDialog();
     case "open":
       return openDocument();
+    case "share_link":
+      return setShareOpen(true);
     case "save":
       return save();
     case "save_as":
@@ -648,6 +742,11 @@ export function App() {
     installAutosave();
     window.addEventListener("keydown", browserShortcuts);
     if (exportJob) return runExportJob(exportJob);
+    // another document's link pasted into the address bar
+    window.addEventListener("hashchange", () => {
+      const linked = docInHash(location.hash);
+      if (linked) void guardUnsaved().then((ok) => (ok ? openLinked(linked) : undefined));
+    });
     // a quiet look for a new version once the window has settled
     setTimeout(() => void checkForUpdates(), 4000);
     await onOpenFile(async (path) => {
@@ -658,6 +757,15 @@ export function App() {
     if (recovered?.doc && (await confirmRestore(fileName(recovered.path)))) {
       loadDoc(recovered.doc, recovered.path);
       setState({ dirty: true });
+    } else if (docInHash(location.hash)) {
+      await openLinked(docInHash(location.hash)!);
+    } else if (isWeb) {
+      const url = new URLSearchParams(location.search).get("open");
+      if (url) await openUrl(url);
+      else {
+        loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+        setWelcomeOpen(true);
+      }
     } else {
       const params = new URLSearchParams(location.search);
       const open = requested.map(documentPath)[0] ?? params.get("open");
@@ -676,6 +784,7 @@ export function App() {
       }
     }
     keepRecovery();
+    if (isWeb) keepLinkCurrent();
   });
 
   const regionCount = () => state.report?.regions.length ?? 0;
@@ -690,7 +799,7 @@ export function App() {
       <header class="toolbar" data-tauri-drag-region>
         {/* the first column of the toolbar's grid: the sidebar button (when the sidebar is hidden) and the title */}
         <div class="toolbar-lead" data-tauri-drag-region>
-        <Show when={!sidebarShown()}>
+        <Show when={!sidebarShown() && !isWeb}>
           <SidebarToggle />
         </Show>
         <h1 class="title" data-tauri-drag-region>
@@ -758,6 +867,9 @@ export function App() {
               Pages
             </button>
           </div>
+          <button class="share-btn" onClick={() => runCommand("share_link")} title="Share a link to this document">
+            Share
+          </button>
           <button
             class="icon-btn"
             classList={{ on: state.inspector }}
@@ -794,6 +906,7 @@ export function App() {
       <HelpDialog />
       <Palette runCommand={runCommand} />
       <RefPicker />
+      <ShareDialog />
       <PagePopover />
       <UpdateBanner beforeRestart={guardUnsaved} />
       <Welcome

@@ -1935,6 +1935,43 @@ ms.str::after {
   }
 }
 
+/* File ▸ Share Link… */
+.share {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.share-body {
+  padding: 4px 18px 16px;
+}
+
+.share-body p {
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+
+.share-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.share-link {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  text-overflow: ellipsis;
+}
+
+.share-note {
+  color: var(--muted);
+}
+
 /* Find bar */
 .findbar {
   position: absolute;

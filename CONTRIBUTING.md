@@ -26,7 +26,7 @@ If something here is unclear or out of date, fixing it is a welcome first contri
 
 ## Getting set up
 
-You need Rust (1.90 or newer, edition 2024) and Node 22. For the desktop app, also the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your system.
+You need Rust (1.90 or newer, edition 2024) with the WebAssembly target (`rustup target add wasm32-unknown-unknown`, for the web version), and Node 22. For the desktop app, also the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your system.
 
 ```bash
 npm --prefix app ci
@@ -38,6 +38,8 @@ Day to day:
 |---|---|
 | Run the desktop app while developing | `npm --prefix app run tauri dev` |
 | Work on the UI in a browser | `cargo run -p quire-cli -- serve` in one terminal, `npm --prefix app run dev` in another, then open http://localhost:5173 (add `?open=<path to a .quire>` or `?notebook=<folder>`) |
+| Work on the web version | `npm --prefix app run dev:web` (builds the WebAssembly engine, then serves the UI on its own) |
+| Build the web version | `npm --prefix app run build:web` (into `app/dist-web`) |
 | Test the engine | `cargo test --workspace --exclude quire-app` |
 | Test the UI's logic | `npm --prefix app test` (Vitest; `run test:watch` while you work) |
 | Try the UI end to end | `npm --prefix app run e2e` (Playwright in WebKit; once: `npx --prefix app playwright install webkit`) |

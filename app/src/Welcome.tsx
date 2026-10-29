@@ -2,7 +2,7 @@
 import { newNotebookDialog, openNotebookDialog } from "./Sidebar";
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useModal } from "./a11y";
-import { api, type TemplateInfo } from "./api";
+import { api, isWeb, type TemplateInfo } from "./api";
 import { recentList } from "./recent";
 import { prefs, setPref, type Prefs } from "./settings";
 import { flash } from "./store";
@@ -79,6 +79,7 @@ function Screen(props: Props) {
                 <small>Click anywhere on the page and type</small>
               </span>
             </button>
+            <Show when={!isWeb}>
             <button class="welcome-item" onClick={() => void run(newNotebookDialog)}>
               <span class="welcome-icon" aria-hidden="true">
                 <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2">
@@ -91,13 +92,15 @@ function Screen(props: Props) {
                 <small>A folder of notes in sections, saved as you write</small>
               </span>
             </button>
+            </Show>
             <button class="welcome-item" onClick={() => void run(props.openDialog)}>
               <span class="welcome-icon" aria-hidden="true">⌘O</span>
               <span>
                 <b>Open…</b>
-                <small>A Quire document from your computer</small>
+                <small>{isWeb ? "A .quirez file from your computer" : "A Quire document from your computer"}</small>
               </span>
             </button>
+            <Show when={!isWeb}>
             <button class="welcome-item" onClick={() => void run(openNotebookDialog)}>
               <span class="welcome-icon" aria-hidden="true">⇧⌘O</span>
               <span>
@@ -119,6 +122,7 @@ function Screen(props: Props) {
                 )}
               </For>
             </Show>
+            </Show>
           </section>
           <section>
             <h3>Templates</h3>
@@ -136,6 +140,18 @@ function Screen(props: Props) {
           </section>
         </div>
         <div class="welcome-foot">
+          <Show
+            when={!isWeb}
+            fallback={
+              <span class="welcome-hint">
+                Running in your browser.{" "}
+                <a href="https://github.com/guidofraga/quire/releases/latest" target="_blank" rel="noopener">
+                  Get the desktop app
+                </a>{" "}
+                for notebooks and PDF reports.
+              </span>
+            }
+          >
           <label>
             When Quire starts
             <select
@@ -147,6 +163,7 @@ function Screen(props: Props) {
               <option value="blank">Start a blank document</option>
             </select>
           </label>
+          </Show>
           <span class="welcome-hint">⌘K finds any command · F1 for help</span>
         </div>
       </div>

@@ -10,6 +10,8 @@ How a version of Quire reaches users. Only maintainers release.
 - Installed copies ask `https://github.com/guidofraga/quire/releases/latest/download/latest.json` for updates (`tauri.conf.json` ▸ `plugins.updater`). That URL only follows **published** releases, so a draft is invisible to users until you publish it.
 - Update packages are signed with the updater key; the app checks them against the public key in `tauri.conf.json` and refuses anything else.
 
+The web version is separate: `.github/workflows/pages.yml` publishes it to https://guidofraga.github.io/quire/ on every push to `main`, so it is usually a little ahead of the installers. Documents keep the same format, so links work in both.
+
 ## 2. Steps
 
 1. **Main is green.** CI has passed on the commit you are releasing, and you have tried the app (`npm --prefix app run tauri dev`), including anything the tests can't reach: native dialogs, menus, printing and PDF (run the PDF test, see [05-testing.md](05-testing.md)).

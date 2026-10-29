@@ -60,6 +60,10 @@ Physics 101/                  ← the notebook: any folder
   Keys are paths from the notebook's folder, `/`-separated on every system. Items the order doesn't list (added in Finder, say) come after the ones it does; listed items that no longer exist are ignored. Unknown keys are kept. Deleting the file only loses the manual order and the colours.
 - Names must work as file names everywhere: not empty, no leading `.`, none of `/ \ : * ? " < > |`, at most 120 characters.
 
+### Links
+
+A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<data>`, where `<data>` is `document.json` compressed with raw DEFLATE (RFC 1951) and encoded as base64url without padding (RFC 4648 §5). Assets are not included. The part after `#` is never sent to a server. Readers must treat a linked document like any other untrusted file.
+
 ## 3. Top-level structure
 
 ```jsonc

@@ -1,4 +1,5 @@
-# Engine tests, front-end type check, unit tests and an end-to-end smoke test on every push.
+# Engine tests, front-end type check, unit tests and end-to-end tests (the desktop UI against
+# `quire serve`, and the web version with its WebAssembly engine) on every push.
 name: CI
 
 on:
@@ -14,6 +15,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+          # the web version's engine (crates/quire-web), built for the e2e tests of the web version
+          targets: wasm32-unknown-unknown
       - uses: swatinem/rust-cache@v2
       - name: Engine tests
         run: cargo test --workspace --exclude quire-app
@@ -21,6 +24,7 @@ jobs:
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
+          cargo clippy -p quire-web --target wasm32-unknown-unknown -- -D warnings
       - uses: actions/setup-node@v4
         with:
           node-version: 22

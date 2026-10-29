@@ -120,7 +120,7 @@ Units go in the table in `quire-units/src/db.rs`, constants in `quire-eval/src/c
 
 1. A function in `quire-service` that takes and returns JSON-friendly types.
 2. A `#[tauri::command]` wrapper in `main.rs`, listed in `generate_handler!`.
-3. The same name in the `dispatch` match in `crates/quire-cli/src/serve.rs`.
+3. The same name in the `dispatch` match in `crates/quire-cli/src/serve.rs`, and in `crates/quire-web/src/lib.rs` if the browser can do it (no files: data comes and goes as JSON or base64).
 4. An entry in `api` in `app/src/api.ts`.
 
 Notebook operations skip steps 2 and 3: add an `op` to `notebook::call` and both transports pick it up.

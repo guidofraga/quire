@@ -1,10 +1,16 @@
-// Bridge to the Rust backend: Tauri commands in the app, `quire serve` over /api in a browser.
+// Bridge to the Rust backend: Tauri commands in the app, the engine compiled to WebAssembly
+// in the web version, `quire serve` over /api in a browser while developing.
+import { callEngine } from "./engine";
 import type { PdfInfo } from "./export";
 import type { Doc, Library, Report } from "./types";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** The web version (`npm run build:web`): everything runs in the page, there are no files. */
+export const isWeb = !isTauri && import.meta.env.VITE_QUIRE_WEB === "1";
+
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
+  if (isWeb) return callEngine<T>(cmd, args);
   if (isTauri) {
     const { invoke } = await import("@tauri-apps/api/core");
     try {
@@ -45,6 +51,9 @@ export const api = {
     call<null>("export_pdf", { path, paper, title, compress, info }),
   finishExport: (error: string | null) => call<null>("finish_export", { error }),
   exportCsv: (path: string, contents: string) => call<null>("export_csv", { path, contents }),
+  /** The web version's files, which travel as base64: a `.quirez` (or `document.json`) in, a `.quirez` out. */
+  openBytes: (data: string) => call<Doc>("open_bytes", { data }),
+  saveBytes: (doc: Doc) => call<string>("save_bytes", { doc }),
   /** Notebook operations (crates/quire-service/src/notebook.rs). */
   notebook: <T>(op: string, args: Record<string, unknown>) => call<T>("notebook", { op, args }),
   /** Documents the system asked to open before the UI was ready (Finder, Explorer, command line). */

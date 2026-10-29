@@ -20,6 +20,7 @@ Where things are today and how they fit together. [01-architecture.md](01-archit
                 │            └─ quire-units  dimensions and the unit table                 │
                 │  quire-cli: the `quire` command, and `quire serve` (the same calls over  │
                 │             localhost HTTP, so the UI runs in a plain browser)           │
+                │  quire-web: the same calls compiled to WebAssembly (the web version)     │
                 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -34,7 +35,7 @@ Three rules hold the layers apart:
 1. A keystroke reaches an editor component (`MathEditor.tsx`, the ProseMirror view in `richtext.ts`, `TableEditor.tsx`) or a command (`App.tsx` `runCommand`).
 2. The change goes through `mutate()` in `store.ts`, which records an undo step (bounded by size, see `History` there) and marks the document dirty.
 3. An effect in `App.tsx` (`scheduleReport`) sends the whole document to `api.report`. Requests are numbered so a slow answer never overwrites a newer one.
-4. `api.ts` calls the Tauri command `report` in the desktop app, or `POST /api/report` against `quire serve` in a browser.
+4. `api.ts` calls the Tauri command `report` in the desktop app, the WebAssembly engine in the web version (`engine.ts`), or `POST /api/report` against `quire serve` while developing in a browser.
 5. `quire_service::report` parses the JSON into a `quire_doc::Document`, turns its regions into `MathInput`s in reading order (`math_inputs`), runs `quire_eval::Worksheet` and returns a `Report`: per region the parsed AST, the result, errors, fixes, unit choices, table cells and plot samples.
 6. `showReport` in `store.ts` stores it. Errors on the line being typed wait until the line is finished ("errors wait while you type").
 7. `Region.tsx` re-renders what changed: math through `math.ts` (AST → MathML), words for screen readers through `speech.ts`, tables through `TableEditor.tsx`, plots through `Plot.tsx`.
@@ -65,6 +66,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `text.rs` | Djot → HTML for text regions; documents are untrusted, so raw HTML is dropped. |
 | | `templates.rs`, `templates/*.json` | Built-in templates and the user's own. |
 | | `notebook.rs` | Notebooks: list, create, rename, move, duplicate, trash, style, search. One entry point, `call(op, args)`. |
+| `quire-web` | `lib.rs` | The service as WebAssembly for the web version: `dispatch` (the calls a browser can make, files as base64) behind a plain `alloc`/`call` interface, no binding generator. Built with `npm --prefix app run wasm` (the `web` profile in `Cargo.toml`, optimised for size). |
 | `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`). |
 | | `serve.rs` | `quire serve`: the service over `127.0.0.1` for UI work. Development only; it checks the Host header and a custom request header. |
 | | `tests/` | Fixtures with independently known results; see [05-testing.md](05-testing.md). |
@@ -90,7 +92,8 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `main.tsx` | Mounts `App`. |
 | `App.tsx` | The window: layout, live evaluation, open/save/export, `runCommand` (every menu and palette command by id), keyboard shortcuts in a browser, startup. |
 | `store.ts` | The editor state: document, report, selection, editing, viewport, undo history, layout of regions (`computeLayout`), region operations. |
-| `api.ts` | The bridge to Rust: `call(cmd, args)` invokes a Tauri command or posts to `/api`. Also file dialogs, menus, window close. |
+| `api.ts` | The bridge to Rust: `call(cmd, args)` invokes a Tauri command, the WebAssembly engine (`isWeb`) or posts to `/api`. Also file dialogs, menus, window close. |
+| `engine.ts` | Loads `quire_web.wasm` and calls it, in the web version. |
 | `types.ts` | TypeScript mirrors of the document JSON and of `quire-service`'s report. |
 | `settings.ts`, `recent.ts` | App preferences and Open Recent, in `localStorage`. |
 | `notebook.ts` | Notebook state and logic (open, autosave, rename, move, search), path helpers. |
@@ -131,6 +134,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `latex.ts` | AST → LaTeX (Copy as LaTeX). |
 | `csv.ts` | CSV in and out of tables. |
 | `export.ts` | PDF details, image downsampling, link targets for `pdf.rs`. |
+| `share.ts`, `ShareDialog.tsx` | Documents in links (`#doc=`, deflated and base64url) and the Share dialog. |
 
 **Accessibility**
 
@@ -141,7 +145,11 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 
 **Styling.** Everything is in `styles.css`: design tokens on `:root` with dark values under `prefers-color-scheme: dark` (blocks add their own dark overrides where needed), then one block per part of the window (toolbar, canvas, regions, format bar, inspector, sidebar…), the accessibility block (high contrast) and the motion block at the end. Section headers (`/* ==== notebook sidebar */`) make it searchable.
 
-## 6. Everything else
+## 6. The web version
+
+`npm --prefix app run build:web` builds the same UI with `--mode web` (`app/.env.web` sets `VITE_QUIRE_WEB`), into `app/dist-web`, with the engine from `crates/quire-web` beside it. `isWeb` in `api.ts` switches what needs a file system: Open picks a file, Save downloads a `.quirez`, and notebooks, recent documents and your own templates are hidden. The document lives in the address bar (`keepLinkCurrent` in `App.tsx`), so a reload keeps it. In the desktop app and the browser setup, the same links open too: `#doc=` is read in every mode.
+
+## 7. Everything else
 
 | Path | What it is |
 |---|---|
@@ -152,3 +160,4 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `app/e2e/` | Playwright tests. |
 | `.github/workflows/ci.yml` | Tests on every push and pull request. |
 | `.github/workflows/release.yml` | Installers and update packages for a `v*` tag. |
+| `.github/workflows/pages.yml` | The web version on GitHub Pages, on every push to `main`. |

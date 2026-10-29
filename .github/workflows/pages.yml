@@ -1,0 +1,49 @@
+# The web version on GitHub Pages (https://guidofraga.github.io/quire/): the engine as
+# WebAssembly and the UI, rebuilt on every push to main. Everything runs in the visitor's
+# browser; documents travel in links, so the site stores nothing.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build the web version
+        run: npm ci && npm run build:web
+        working-directory: app
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist-web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

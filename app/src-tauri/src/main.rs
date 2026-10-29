@@ -252,6 +252,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "save_template", "Save as Template…", None)?,
             &sep()?,
             &item(app, "export_pdf", "Export as PDF…", Some("CmdOrCtrl+E"))?,
+            &item(app, "share_link", "Share Link…", None)?,
             &item(app, "print", "Print…", Some("CmdOrCtrl+P"))?,
             &sep()?,
             &item(app, "document_settings", "Document Settings…", Some("CmdOrCtrl+Alt+,"))?,

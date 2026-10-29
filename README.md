@@ -1,5 +1,7 @@
 # Quire — a modern successor to SMath Studio
 
+**[Try Quire in your browser](https://guidofraga.github.io/quire/)**: nothing to install. Write a calculation, then **Share** gives a link that opens it, live and editable, in anyone's browser.
+
 | | |
 |---|---|
 | [docs/01-architecture.md](docs/01-architecture.md) | Platform choice (Tauri 2 + Rust core), CAS/units/evaluation engine, rendering engine, crate layout, roadmap |
@@ -47,6 +49,12 @@
   - **Pasting into Word, Google Docs or Pages:** text keeps its formatting, math arrives as an equation with its result (MathML), and tables arrive as tables of the values shown. Plain-text apps get the math lines (`M:=q*L^2/8 =`) and the text; spreadsheets get the cells.
   - **Pasting from other apps:** each line of text becomes a region, math or text by the same rules as typing. LaTeX becomes Quire math, both on the page and inside a line you are editing (`$M = \frac{q L^2}{8}$` → `M := q*L^2/8`, `\sqrt{x}`, `x_{net}` → `x.net`, `\alpha`). A table copied from a web page, Word or Google Sheets becomes a spreadsheet table.
 - When a result grows (a fraction, a matrix, an error note), what is below it moves down instead of being covered.
+
+**In the browser**
+- **[guidofraga.github.io/quire](https://guidofraga.github.io/quire/)** is Quire in a web page: the same engine, compiled to WebAssembly, running on the visitor's own computer. There is no server and no account.
+- **Share** (in the toolbar, and File ▸ Share Link… in the desktop app) makes a link that carries the whole document. Whoever opens it can change the numbers and see every result update; nothing is uploaded, because the document travels inside the link. Images are left out of links: send the `.quirez` file for those.
+- In the browser, Save downloads a `.quirez` and Open reads one; the address bar always holds the document as it is now, so reloading loses nothing. `…/quire/?open=<url>` opens a `.quirez` or `document.json` from any public address (a GitHub repository or Gist, say).
+- Notebooks, your own templates and finished PDF reports need the desktop app.
 
 **Notebooks**
 - **A notebook keeps your notes together**, as in OneNote, Notion or Obsidian: File ▸ New Notebook… (or Open Notebook…, ⇧⌘O) shows a sidebar of sections and notes. Notes save themselves as you write; there is no Save and nothing to lose.

@@ -1,7 +1,7 @@
 // ⌘K: one box for every command, variable and symbol.
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useModal } from "./a11y";
-import { isMac } from "./api";
+import { isMac, isWeb } from "./api";
 import { insertSnippet } from "./insert";
 import { activeView } from "./richtext";
 import { layout, revealRegion, state } from "./store";
@@ -38,6 +38,7 @@ const COMMANDS: [string, string, string][] = [
   ["save_as", "Save As…", `${shift}${mod}S`],
   ["save_template", "Save as Template…", ""],
   ["export_pdf", "Export as PDF…", `${mod}E`],
+  ["share_link", "Share Link…", ""],
   ["print", "Print…", `${mod}P`],
   ["document_settings", "Document Settings…", `${alt}${mod},`],
   ["page_setup", "Page Setup…", ""],
@@ -74,6 +75,9 @@ const COMMANDS: [string, string, string][] = [
   ["check_updates", "Check for Updates…", ""],
 ];
 
+/** Commands that need files on disk: notebooks and templates of your own. */
+const WEB_HIDDEN = new Set(["new_section", "new_notebook", "open_notebook", "search_notebook", "toggle_sidebar", "save_template"]);
+
 const TEXT_COMMANDS: [string, string, string][] = [
   ["fmt_bold", "Bold", `${mod}B`],
   ["fmt_italic", "Italic", `${mod}I`],
@@ -103,7 +107,7 @@ const SNIPPETS = [...SYMBOLS, ...STRUCTURES].flatMap((c) =>
 );
 
 function items(runCommand: (id: string) => void): Item[] {
-  const cmds = [...COMMANDS, ...(activeView() ? TEXT_COMMANDS : []), ...(state.selection.length > 1 ? ARRANGE_COMMANDS : [])];
+  const cmds = [...COMMANDS.filter(([id]) => !(isWeb && WEB_HIDDEN.has(id))), ...(activeView() ? TEXT_COMMANDS : []), ...(state.selection.length > 1 ? ARRANGE_COMMANDS : [])];
   const out: Item[] = cmds.map(([id, label, hint]) => ({ label, hint, group: "Commands", run: () => runCommand(id) }));
   // every note of the notebook, with its section ("Kinematics — Mechanics")
   for (const n of nb.book ? notes() : []) {
