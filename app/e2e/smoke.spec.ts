@@ -43,6 +43,18 @@ test("switching views doesn't make a document Edited", async ({ page }) => {
   await expect(page.locator(".toolbar .title")).toHaveText("Untitled");
 });
 
+test("an empty page says how to start, until there is content", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  const hint = page.locator(".empty-hint");
+  await expect(hint).toHaveText(/Click anywhere and type/);
+  await page.emulateMedia({ media: "print" });
+  await expect(hint).toBeHidden();
+  await page.emulateMedia({ media: "screen" });
+  await page.keyboard.type("a");
+  await expect(hint).toHaveCount(0);
+});
+
 test("the insert tools stay put as the status changes", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Blank document/ }).click();

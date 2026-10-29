@@ -306,25 +306,15 @@ body {
   pointer-events: none;
 }
 
+/* an empty document: one quiet line beside the insertion point (on paper in either theme) */
 .empty-hint {
   position: absolute;
-  left: 50%;
-  top: 38%;
-  transform: translate(-50%, -50%);
-  text-align: center;
+  margin: -8px 0 0 14px;
   color: #6b7280;
-  font-size: 14px;
-  line-height: 1.7;
+  font: 13px -apple-system, system-ui, sans-serif;
+  white-space: nowrap;
   pointer-events: none;
-}
-
-.empty-hint kbd {
-  font: 12.5px var(--mono);
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #f1f3f6;
-  border: 1px solid #e1e4e9;
-  color: #374151;
+  animation: caret-in 120ms ease-out;
 }
 
 /* ---------------------------------------------------------------- regions */
