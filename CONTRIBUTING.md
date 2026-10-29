@@ -58,6 +58,17 @@ And:
 - **File-format changes** update `docs/02-file-format.md` and `schema/quire-1.schema.json` in the same change. Documents written by earlier versions must keep opening unchanged.
 - **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why. `cargo test` checks the worksheets in `crates/quire-cli/tests/fixtures` against results worked out independently; set `QUIRE_CORPUS` to more `.quire` bundles (or folders of them) with a `results.json` to check those too, e.g. SMath reports you can't share.
 
+## Accessibility
+
+Quire has to work with the keyboard alone and with a screen reader. `app/e2e/a11y.spec.ts` runs [axe](https://github.com/dequelabs/axe-core) on the main states of the app (welcome screen, an empty document, a document with math, text, a table and a plot in both views, the galleries, menus and dialogs), in light and dark, and fails on any serious or critical violation; it also walks the keyboard flows (galleries, menus, dialogs, tables). When you add UI:
+
+- **Use real controls.** A `<button>` for anything clickable; an icon-only button gets an `aria-label`, and decorative glyphs get `aria-hidden="true"`. Toggles say `aria-pressed`, things that open say `aria-expanded` and `aria-haspopup`.
+- **Dialogs** have `role="dialog"`, `aria-modal="true"` and a name, and call `useModal` (`app/src/a11y.ts`): it moves focus in, keeps Tab inside and gives focus back on close. Esc closes.
+- **Menus and galleries** move with the arrow keys (`arrowFocus`) and take focus only when opened from the keyboard, so the text being edited keeps its caret when the mouse is used.
+- **Math** is hidden from screen readers as MathML and read as words (`app/src/speech.ts`); new expression kinds need words there too, with a test.
+- **Messages** a person should hear without looking go through `flash` or `announce`.
+- **Colours** reach 4.5:1 for text in both themes; check with the axe test, and add new colours to the accessibility block at the end of `styles.css` if they need a dark or high-contrast variant.
+
 ## Writing code
 
 - Match the code around you: naming, comment density, file layout. Comments explain *why*, not what the next line does.
