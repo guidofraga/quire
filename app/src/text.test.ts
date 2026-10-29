@@ -1,7 +1,7 @@
 // Small text helpers: design-check verdicts, names under the caret, result formatting, pasted cells.
 import { describe, expect, it } from "vitest";
 import { isComparison, verdictOf } from "./checks";
-import { groupDigits, prettyValue } from "./math";
+import { groupDigits, mathml, prettyValue } from "./math";
 import { nameAt } from "./trace";
 import { parseTsv } from "./TableEditor";
 import type { Expr } from "./types";
@@ -62,6 +62,20 @@ describe("prettyValue", () => {
     expect(prettyValue("9.80665 'm/'s^2")).toBe("9.80665 m/s²");
     expect(prettyValue("54 'kN*'m")).toBe("54 kN·m");
     expect(prettyValue("1.5*10^-3 'm^(-1)")).toBe("1.5·10⁻³ m⁻¹");
+  });
+});
+
+describe("mathml", () => {
+  const num = (c: string): Expr => ({ t: "Num", c });
+  const unit = (c: string): Expr => ({ t: "Unit", c });
+  const mul = (a: Expr, b: Expr): Expr => ({ t: "Binary", c: ["Mul", a, b] });
+  const tightDot = '<mo lspace="0" rspace="0">·</mo>';
+  it("writes compound units with a dot, as unit lists and plots do", () => {
+    expect(mathml(mul(mul(num("54"), unit("kN")), unit("m")))).toContain(tightDot);
+    expect(mathml(mul(unit("kN"), unit("m")))).toContain(tightDot);
+  });
+  it("keeps a number and its unit side by side", () => {
+    expect(mathml(mul(num("5.1"), unit("m")))).not.toContain("·");
   });
 });
 
