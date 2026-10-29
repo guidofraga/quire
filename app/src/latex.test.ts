@@ -32,6 +32,8 @@ describe("latex", () => {
     expect(latex(call("sqrt", id("x")), null)).toBe("\\sqrt{x}");
     expect(latex(call("sin", id("x")), null)).toBe("\\sin\\left(x\\right)");
     expect(latex(call("lsolve", id("A"), id("b")), null)).toBe("\\operatorname{lsolve}\\left(A, b\\right)");
+    expect(latex(call("stdev.s", id("v")), null)).toBe("\\operatorname{stdev}_{\\mathrm{s}}\\left(v\\right)");
+    expect(latex(call("Stdev", id("v")), null)).toBe("\\operatorname{Stdev}\\left(v\\right)");
   });
 
   it("writes comparisons and matrices", () => {

@@ -9,6 +9,7 @@ import { prefs } from "./settings";
 import { createEffect, For, on, onCleanup, Show, untrack } from "solid-js";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
 import { prettyValue } from "./math";
+import { latexToLinear } from "./clipboard";
 import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
 import {
   commitBelow,
@@ -79,7 +80,7 @@ const KEYWORDS = new Set(["and", "or", "not", "mod"]);
  * variable (`Area`), or words ending in a real word that is not a variable, unit or
  * keyword (`A medida`); `x y` and `F kN` stay math.
  */
-function looksLikeProse(value: string, id: string): boolean {
+export function looksLikeProse(value: string, id: string): boolean {
   const names = definedNames();
   if (WORD.test(value)) return !names.has(value);
   const m = WORDS.exec(value);
@@ -291,6 +292,13 @@ export function MathEditor(props: { r: Region }) {
         traceCaret();
       }}
       onSelect={traceCaret}
+      onPaste={(e) => {
+        // LaTeX from a paper or Overleaf goes in as linear math (`\frac{a}{b}` → `a/b`)
+        const linear = latexToLinear(e.clipboardData?.getData("text/plain").trim() ?? "");
+        if (linear === null) return;
+        e.preventDefault();
+        document.execCommand("insertText", false, linear.split("\n")[0]);
+      }}
       onKeyDown={(e) => {
         onKeyDown(e);
         e.stopPropagation();

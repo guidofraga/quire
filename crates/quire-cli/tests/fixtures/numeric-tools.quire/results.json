@@ -1,0 +1,28 @@
+{
+  "format": "quire-results/1",
+  "producer": "numpy/scipy, independently of Quire",
+  "results": {
+    "kslope": "0.505 'kN/'mm",
+    "icpt": "0.03 'kN",
+    "corr": "0.9975",
+    "lin1": "0.4983 'kN/'mm",
+    "lin2": "0.00132 'kN/'mm^2",
+    "poly0": "0.28 'kN",
+    "poly2": "0.008929 'kN/'mm^2",
+    "fcm": "33 'MPa",
+    "sd": "1.698 'MPa",
+    "sdp": "1.55 'MPa",
+    "fck": "30.21 'MPa",
+    "med": "32.85 'MPa",
+    "p10": "31.35 'MPa",
+    "spl": "10.088 'mm",
+    "spln": "4.396 'mm",
+    "x05": "-8.3907 'mm",
+    "v05": "0.1088 'm/'s",
+    "xd": "-3.3685 'mm",
+    "bsol": "300 'mm",
+    "hsol": "200 'mm",
+    "spac": "225 'mm",
+    "lreq": "1.25 'm"
+  }
+}

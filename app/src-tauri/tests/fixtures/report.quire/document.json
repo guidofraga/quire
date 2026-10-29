@@ -1,0 +1,50 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Footbridge deck check",
+    "authors": ["A. Engineer", "B. Checker"],
+    "company": "Example Structures Ltd",
+    "keywords": ["steel", "footbridge"],
+    "lang": "en-GB"
+  },
+  "page": { "view": "pages", "paper": "A4", "pageNumber": { "start": 3 } },
+  "regions": [
+    { "id": "title", "kind": "text", "at": [0, 0], "text": "{.title}\n# Footbridge deck check" },
+    { "id": "toc", "kind": "toc", "at": [0, 54], "of": "headings", "title": "Contents" },
+    { "id": "lof", "kind": "toc", "at": [0, 252], "of": "figures", "title": "List of Figures" },
+    { "id": "lot", "kind": "toc", "at": [0, 342], "of": "tables", "title": "List of Tables" },
+    { "id": "h1", "kind": "text", "at": [0, 1008], "text": "# Loads" },
+    {
+      "id": "p1",
+      "kind": "text",
+      "at": [0, 1053],
+      "text": "The loads are summarised in [](#ref:loads); the moment is plotted in [](#ref:plot). Background: <https://example.com/eurocode>."
+    },
+    { "id": "q", "kind": "math", "at": [0, 1107], "expr": "q := 12 'kN/'m" },
+    { "id": "L", "kind": "math", "at": [0, 1134], "expr": "L := 6 'm" },
+    {
+      "id": "loads",
+      "kind": "table",
+      "at": [0, 1179],
+      "header": { "row": true },
+      "rows": [["Load", "Value"], ["Dead", "4.5 kN/m"], ["Live", "3 kN/m"]],
+      "caption": { "text": "Design loads", "position": "above" }
+    },
+    { "id": "h2", "kind": "text", "at": [0, 1899], "text": "# Checks" },
+    { "id": "h21", "kind": "text", "at": [0, 1944], "text": "## Bending" },
+    { "id": "p2", "kind": "text", "at": [0, 1989], "text": "See section [](#ref:h1){.num} for the loads and [](#ref:plot) for the moment." },
+    { "id": "M", "kind": "math", "at": [0, 2034], "expr": "M := q*L^2/8", "show": "value", "display": { "unit": "kN*m" } },
+    {
+      "id": "plot",
+      "kind": "plot2d",
+      "at": [0, 2079],
+      "size": [480, 220],
+      "series": [{ "y": "q*x*(L - x)/2", "x": "x", "range": "0 'm..L" }],
+      "caption": { "text": "Bending moment", "position": "below" }
+    },
+    { "id": "h22", "kind": "text", "at": [0, 2898], "text": "## Deflection" },
+    { "id": "p3", "kind": "text", "at": [0, 2943], "text": "Deflection follows from the moment in [](#ref:h21)." },
+    { "id": "chk", "kind": "math", "at": [0, 2988], "expr": "M ≤ 60 'kN*m", "show": "value" },
+    { "id": "checks", "kind": "toc", "at": [0, 3033], "of": "checks", "title": "Summary of Checks" }
+  ]
+}

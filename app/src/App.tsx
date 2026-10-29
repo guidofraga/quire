@@ -50,7 +50,7 @@ import { setWelcomeOpen, Welcome } from "./Welcome";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
-import { directPdf, shrinkImages } from "./export";
+import { directPdf, pdfInfo, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
 import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
 import { type Align, activeView, commands, run as runText } from "./richtext";
@@ -244,7 +244,7 @@ async function exportPdf(target?: string) {
   const path = target ?? (await pickPdfPath(`${docTitle()}.pdf`));
   if (!path) return;
   await withPrintLayout(async () => {
-    if (isTauri) await api.exportPdf(path, paperPoints(layout().geom), docTitle(), prefs.compressPhotos);
+    if (isTauri) await api.exportPdf(path, paperPoints(layout().geom), docTitle(), prefs.compressPhotos, pdfInfo(docTitle()));
     else window.print();
   });
   if (isTauri) flash(`Exported ${path.split("/").pop()}`);
