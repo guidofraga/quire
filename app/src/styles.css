@@ -1603,7 +1603,24 @@ ms.str::after {
 }
 
 .gallery-tile.text-only {
-  color: #6b7280;
+  color: var(--muted);
+}
+
+/* the previews are drawn in the window's colours, not the page's, so the tiles follow
+   the dark theme: ink, units and constants lighten with it */
+@media (prefers-color-scheme: dark) {
+  .gallery-tile {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--chrome-ink);
+  }
+
+  .gallery-tile .u {
+    color: var(--unit-chrome);
+  }
+
+  .gallery-tile .k {
+    color: #c4a5ff;
+  }
 }
 
 .gallery-tabs {
