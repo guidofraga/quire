@@ -43,6 +43,17 @@ test("switching views doesn't make a document Edited", async ({ page }) => {
   await expect(page.locator(".toolbar .title")).toHaveText("Untitled");
 });
 
+test("the insert tools stay put as the status changes", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  const left = () => page.locator(".toolbar .tools").evaluate((el) => el.getBoundingClientRect().left);
+  const before = await left();
+  await typeLines(page, "q:=12 kN/m", "x:=1 m + q=");
+  await expect(page.locator(".toolbar .errors")).toBeVisible();
+  await page.getByRole("button", { name: "Canvas", exact: true }).click();
+  expect(await left()).toBe(before);
+});
+
 test("explains a unit mismatch", async ({ page }) => {
   await blank(page);
   await typeLines(page, "x:=1 m + 2 kN=");

@@ -2416,19 +2416,27 @@ ms.str::after {
   font-size: 11px;
 }
 
-/* The toolbar on a narrow window: icons without labels, then fewer extras */
+/* The insert tools stay put while the title and the status beside them change width: they
+   sit a third of the free width in, and only a status wider than its two thirds moves them.
+   On a narrow window: icons without labels, then fewer extras */
 .toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 2fr);
   min-width: 0;
 }
 
 .toolbar .title {
-  flex: 0 1 auto;
-  min-width: 60px;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
 }
 
-.tools,
+.tools {
+  margin: 0;
+}
+
 .status {
-  flex: none;
+  justify-self: end;
 }
 
 @media (max-width: 1080px) {
