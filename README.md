@@ -38,6 +38,9 @@
 - Drag to move (9 px grid, **smart guides** to other regions' edges and centres; hold ⌘ for free movement), drag handles to resize text width or images.
 - Select several (Shift-click or drag a frame) and **align** left/centre/right/top/middle/bottom or **distribute** them — format bar, Arrange menu or right-click.
 - Copy, cut, paste and duplicate regions (⌘C/⌘X/⌘V/⌘D); paste or drop images straight onto the page.
+- **Copy and paste work across windows and documents**, and still work after Quire restarts. Images come along too.
+  - **Pasting into Word, Google Docs or Pages:** text keeps its formatting, math arrives as an equation with its result (MathML), and tables arrive as tables of the values shown. Plain-text apps get the math lines (`M:=q*L^2/8 =`) and the text; spreadsheets get the cells.
+  - **Pasting from other apps:** each line of text becomes a region, math or text by the same rules as typing. LaTeX becomes Quire math, both on the page and inside a line you are editing (`$M = \frac{q L^2}{8}$` → `M := q*L^2/8`, `\sqrt{x}`, `x_{net}` → `x.net`, `\alpha`). A table copied from a web page, Word or Google Sheets becomes a spreadsheet table.
 - When a result grows (a fraction, a matrix, an error note), what is below it moves down instead of being covered.
 
 **Document**
