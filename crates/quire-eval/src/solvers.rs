@@ -1,0 +1,412 @@
+//! Numeric tools that call your functions: ODE solvers (`rkfixed`, `Rkadapt`) and least
+//! squares on basis functions (`linfit`).
+
+use std::rc::Rc;
+
+use quire_ast::Expr;
+use quire_units::Dim;
+
+use crate::error::{Result, bail};
+use crate::format::describe_dim;
+use crate::interp::{Binding, Func, Interp, Scope, func_key};
+use crate::numeric;
+use crate::ops::same_dim;
+use crate::value::{Matrix, Quantity, Value};
+
+/// An initial value problem as the solvers see it: SI magnitudes plus the units of t and y.
+struct Ode {
+    f: Rc<Func>,
+    tdim: Dim,
+    dims: Vec<Dim>,
+    /// y0 was a number, so D(t, y) gets a number rather than a 1-element vector.
+    scalar: bool,
+}
+
+const MAX_ODE_POINTS: usize = 1_000_000;
+
+/// A plain 0 fits any units (`[y[2]; 0]` as a rate), as it does for integration limits.
+fn fits(q: Quantity, dim: Dim) -> bool {
+    q.dim == dim || (q.v == 0.0 && q.dim.is_dimensionless())
+}
+
+/// The numbers of a vector value (or of one number), each with its own units.
+fn quantities(v: &Value, what: &str) -> Result<Vec<Quantity>> {
+    match v {
+        Value::Num(q) => Ok(vec![*q]),
+        Value::Matrix(m) if m.is_vector() => m.data.iter().map(|x| x.as_num(what)).collect(),
+        Value::Matrix(m) => bail!("{what} must be a vector, not a {}×{} matrix", m.rows, m.cols),
+        Value::Str(_) => bail!("{what} must be a number or a vector, not a string"),
+    }
+}
+
+fn column_of(values: &[f64], dims: &[Dim]) -> Value {
+    Value::Matrix(Matrix::column(
+        values.iter().zip(dims).map(|(v, d)| Value::Num(Quantity::new(*v, *d))).collect(),
+    ))
+}
+
+impl Interp<'_> {
+    /// The function an argument names: `D`, or `D(t, y)` written out as SMath does.
+    fn function_arg(&self, s: &Scope, e: &Expr, params: &[&str], who: &str) -> Result<Rc<Func>> {
+        let sig = params.join(", ");
+        let name = match e {
+            Expr::Ident(n) => n,
+            Expr::Call(n, xs)
+                if xs.len() == params.len() && xs.iter().all(|x| matches!(x, Expr::Ident(_))) =>
+            {
+                n
+            }
+            _ => bail!(
+                "{who} needs the name of a function of ({sig}) here: define F({sig}) := … above and pass F"
+            ),
+        };
+        match s.get(&func_key(name, params.len())) {
+            Some(Binding::Func(f)) => Ok(Rc::clone(f)),
+            Some(Binding::Failed(_)) => bail!("{name}(…) has no value (its definition has an error)"),
+            _ => bail!(
+                "{name}({sig}) is not defined; {who} calls it with ({sig}), so define {name}({sig}) := … above"
+            ),
+        }
+    }
+
+    /// `rkfixed(y0, t0, t1, n, D)` / `Rkadapt(…)`: y0, the interval and the step count.
+    fn ode_problem(
+        &mut self,
+        s: &mut Scope,
+        args: &[Expr],
+        who: &str,
+    ) -> Result<(Ode, Vec<f64>, f64, f64, usize)> {
+        let y0 = self.eval(s, &args[0])?;
+        let scalar = matches!(y0, Value::Num(_));
+        let y0 = quantities(&y0, "the initial value y0")?;
+        if y0.is_empty() {
+            bail!("{who} needs at least one initial value");
+        }
+        let mut t0 = self.eval(s, &args[1])?.as_num("the start t0")?;
+        let mut t1 = self.eval(s, &args[2])?.as_num("the end t1")?;
+        // a plain 0 start takes the end's units: `rkfixed(y0, 0, 10 s, …)`
+        if t0.v == 0.0 && t0.dim.is_dimensionless() {
+            t0.dim = t1.dim;
+        } else if t1.v == 0.0 && t1.dim.is_dimensionless() {
+            t1.dim = t0.dim;
+        }
+        same_dim(t0.dim, t1.dim, "integrate between")?;
+        if t0.v == t1.v || !t0.v.is_finite() || !t1.v.is_finite() {
+            bail!("{who} needs a start t0 and a different, finite end t1");
+        }
+        let n = self.eval(s, &args[3])?.as_int("the number of steps")?;
+        if n < 1 || n as usize * (y0.len() + 1) > MAX_ODE_POINTS {
+            bail!(
+                "{who} needs from 1 to {} steps for this many equations, not {n}",
+                MAX_ODE_POINTS / (y0.len() + 1)
+            );
+        }
+        let f = self.function_arg(s, &args[4], &["t", "y"], who)?;
+        let ode = Ode { f, tdim: t0.dim, dims: y0.iter().map(|q| q.dim).collect(), scalar };
+        Ok((ode, y0.iter().map(|q| q.v).collect(), t0.v, t1.v, n as usize))
+    }
+
+    /// D(t, y), checked to be the rate of change of each y.
+    fn rate(&mut self, ode: &Ode, t: f64, y: &[f64]) -> Result<Vec<f64>> {
+        self.tick()?;
+        let yv =
+            if ode.scalar { Value::Num(Quantity::new(y[0], ode.dims[0])) } else { column_of(y, &ode.dims) };
+        let r = self.apply(&ode.f, vec![Value::Num(Quantity::new(t, ode.tdim)), yv])?;
+        let name = &ode.f.name;
+        let r = quantities(&r, &format!("the result of {name}(t, y)"))?;
+        if r.len() != y.len() {
+            bail!(
+                "{name}(t, y) returned {} values, but y has {}: it needs one rate for each",
+                r.len(),
+                y.len()
+            );
+        }
+        for (j, (q, d)) in r.iter().zip(&ode.dims).enumerate() {
+            let want = *d / ode.tdim;
+            if !fits(*q, want) {
+                let which = if y.len() == 1 { String::new() } else { format!(" (element {})", j + 1) };
+                bail!(
+                    "{name}(t, y) must return the rate of change of y{which}: {}, but it is {}",
+                    describe_dim(want),
+                    describe_dim(q.dim)
+                );
+            }
+            if !q.v.is_finite() {
+                bail!("{name}(t, y) is not finite at t = {t} (the solution may blow up there)");
+            }
+        }
+        Ok(r.iter().map(|q| q.v).collect())
+    }
+
+    /// The (n+1)×(k+1) table [t, y1, …, yk] that both ODE solvers return.
+    fn ode_table(ode: &Ode, rows: Vec<(f64, Vec<f64>)>) -> Value {
+        let cols = ode.dims.len() + 1;
+        let mut data = Vec::with_capacity(rows.len() * cols);
+        for (t, y) in &rows {
+            data.push(Value::Num(Quantity::new(*t, ode.tdim)));
+            data.extend(y.iter().zip(&ode.dims).map(|(v, d)| Value::Num(Quantity::new(*v, *d))));
+        }
+        Value::Matrix(Matrix::new(rows.len(), cols, data))
+    }
+
+    /// `rkfixed(y0, t0, t1, n, D)`: n classical Runge–Kutta steps from t0 to t1.
+    pub(crate) fn rkfixed(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let (ode, mut y, t0, t1, n) = self.ode_problem(s, args, "rkfixed")?;
+        let h = (t1 - t0) / n as f64;
+        let mut rows = Vec::with_capacity(n + 1);
+        rows.push((t0, y.clone()));
+        let step =
+            |y: &[f64], k: &[f64], f: f64| -> Vec<f64> { y.iter().zip(k).map(|(a, b)| a + f * b).collect() };
+        for i in 0..n {
+            let t = t0 + i as f64 * h;
+            let k1 = self.rate(&ode, t, &y)?;
+            let k2 = self.rate(&ode, t + h / 2.0, &step(&y, &k1, h / 2.0))?;
+            let k3 = self.rate(&ode, t + h / 2.0, &step(&y, &k2, h / 2.0))?;
+            let k4 = self.rate(&ode, t + h, &step(&y, &k3, h))?;
+            for j in 0..y.len() {
+                y[j] += h / 6.0 * (k1[j] + 2.0 * k2[j] + 2.0 * k3[j] + k4[j]);
+            }
+            rows.push((if i + 1 == n { t1 } else { t0 + (i + 1) as f64 * h }, y.clone()));
+        }
+        Ok(Self::ode_table(&ode, rows))
+    }
+
+    /// `Rkadapt(y0, t0, t1, n, D)`: the same table as `rkfixed`, but each of the n intervals
+    /// is crossed in as many Dormand–Prince 5(4) steps as an accuracy of about 1e-9 needs.
+    pub(crate) fn rkadapt(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        const C: [f64; 6] = [1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
+        const A: [&[f64]; 6] = [
+            &[1.0 / 5.0],
+            &[3.0 / 40.0, 9.0 / 40.0],
+            &[44.0 / 45.0, -56.0 / 15.0, 32.0 / 9.0],
+            &[19372.0 / 6561.0, -25360.0 / 2187.0, 64448.0 / 6561.0, -212.0 / 729.0],
+            &[9017.0 / 3168.0, -355.0 / 33.0, 46732.0 / 5247.0, 49.0 / 176.0, -5103.0 / 18656.0],
+            &[35.0 / 384.0, 0.0, 500.0 / 1113.0, 125.0 / 192.0, -2187.0 / 6784.0, 11.0 / 84.0],
+        ];
+        // fifth-order weights minus the embedded fourth-order ones
+        const E: [f64; 7] = [
+            71.0 / 57600.0,
+            0.0,
+            -71.0 / 16695.0,
+            71.0 / 1920.0,
+            -17253.0 / 339200.0,
+            22.0 / 525.0,
+            -1.0 / 40.0,
+        ];
+        const RTOL: f64 = 1e-9;
+        const MAX_STEPS: usize = 200_000;
+
+        let (ode, mut y, t0, t1, n) = self.ode_problem(s, args, "Rkadapt")?;
+        let k = y.len();
+        let mut scale: Vec<f64> = y.iter().map(|v| v.abs()).collect();
+        let mut rows = Vec::with_capacity(n + 1);
+        rows.push((t0, y.clone()));
+        let mut h = (t1 - t0) / n as f64;
+        let mut t = t0;
+        let mut k1 = self.rate(&ode, t, &y)?;
+        let mut steps = 0;
+        for i in 1..=n {
+            let target = if i == n { t1 } else { t0 + (t1 - t0) * i as f64 / n as f64 };
+            while (target - t) * h.signum() > 0.0 {
+                steps += 1;
+                if steps > MAX_STEPS {
+                    bail!("Rkadapt needed more than {MAX_STEPS} steps; the equations may be stiff");
+                }
+                let last = (target - t).abs() <= h.abs();
+                let hs = if last { target - t } else { h };
+                let mut ks = vec![k1.clone()];
+                let mut y5 = y.clone();
+                for (stage, a) in A.iter().enumerate() {
+                    let yi: Vec<f64> = (0..k)
+                        .map(|j| y[j] + hs * a.iter().zip(&ks).map(|(c, kk)| c * kk[j]).sum::<f64>())
+                        .collect();
+                    ks.push(self.rate(&ode, t + C[stage] * hs, &yi)?);
+                    if stage == 5 {
+                        y5 = yi;
+                    }
+                }
+                let mut err: f64 = 0.0;
+                for j in 0..k {
+                    let e = hs * E.iter().zip(&ks).map(|(c, kk)| c * kk[j]).sum::<f64>();
+                    let sc = RTOL * (scale[j].max(y[j].abs()).max(y5[j].abs()));
+                    let r = if e == 0.0 { 0.0 } else { e.abs() / sc.max(f64::MIN_POSITIVE) };
+                    err = err.max(r);
+                }
+                if err <= 1.0 {
+                    t = if last { target } else { t + hs };
+                    y = y5;
+                    k1 = ks.pop().expect("seven stages");
+                    for j in 0..k {
+                        scale[j] = scale[j].max(y[j].abs());
+                    }
+                }
+                let grow = if err == 0.0 { 5.0 } else { (0.9 * err.powf(-0.2)).clamp(0.2, 5.0) };
+                if !(last && err <= 1.0) {
+                    h = hs * grow;
+                }
+                if h.abs() <= 1e-14 * t.abs().max((t1 - t0).abs()) {
+                    bail!(
+                        "Rkadapt could not keep the error small near t = {t}: the solution may blow up there"
+                    );
+                }
+            }
+            rows.push((target, y.clone()));
+        }
+        Ok(Self::ode_table(&ode, rows))
+    }
+
+    /// `linfit(vx, vy, F)`: the coefficients c minimising Σ(vy − c·F(vx))², where F(x)
+    /// returns the vector of basis functions (Mathcad's linfit).
+    pub(crate) fn linfit(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
+        let xs = quantities(&self.eval(s, &args[0])?, "vx")?;
+        let ys = quantities(&self.eval(s, &args[1])?, "vy")?;
+        let f = self.function_arg(s, &args[2], &["x"], "linfit")?;
+        if xs.len() != ys.len() {
+            bail!("linfit needs vx and vy of the same length, not {} and {}", xs.len(), ys.len());
+        }
+        let ydim = ys.first().map_or(Dim::NONE, |q| q.dim);
+        for q in &ys {
+            same_dim(ydim, q.dim, "fit values that mix")?;
+        }
+        let mut basis_dims: Option<Vec<Dim>> = None;
+        let mut a = Vec::new();
+        for x in &xs {
+            self.tick()?;
+            let row =
+                quantities(&self.apply(&f, vec![Value::Num(*x)])?, &format!("the result of {}(x)", f.name))?;
+            match &basis_dims {
+                None => basis_dims = Some(row.iter().map(|q| q.dim).collect()),
+                Some(d) if d.len() != row.len() => {
+                    bail!("{}(x) returns a different number of values for different x", f.name)
+                }
+                Some(d) => {
+                    for (q, d) in row.iter().zip(d) {
+                        if !fits(*q, *d) {
+                            same_dim(*d, q.dim, &format!("fit with an {}(x) whose element mixes", f.name))?;
+                        }
+                    }
+                }
+            }
+            a.extend(row.iter().map(|q| q.v));
+        }
+        let dims = basis_dims.unwrap_or_default();
+        let m = dims.len();
+        if m == 0 || xs.len() < m {
+            bail!("linfit needs at least as many points ({}) as basis functions ({m})", xs.len());
+        }
+        let Some(c) = numeric::least_squares(a, ys.iter().map(|q| q.v).collect(), m) else {
+            bail!("linfit: the functions in {}(x) are not independent at these x values", f.name)
+        };
+        let data = c.iter().zip(&dims).map(|(c, d)| Value::Num(Quantity::new(*c, ydim / *d))).collect();
+        Ok(Value::Matrix(Matrix::column(data)))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use crate::stats::tests::shown_with;
+
+    fn shown(lines: &[&str]) -> Vec<String> {
+        shown_with(6, lines)
+    }
+
+    #[test]
+    fn exponential_decay() {
+        let r = shown(&[
+            "τ := 2 's",
+            "D(t, y) := -y/τ",
+            "Y := rkfixed(10 'mm, 0, 4 's, 40, D)",
+            "[rows(Y); cols(Y)]",
+            "Y[41, 1]",
+            "Y[41, 2]/(10 'mm*exp(-2))",
+            "Z := Rkadapt(10 'mm, 0, 4 's, 4, D(t, y))",
+            "Z[5, 2]/(10 'mm*exp(-2))",
+            "Z[3, 1]",
+        ]);
+        assert_eq!(r[3], "[41; 2]");
+        assert_eq!(r[4], "4 's");
+        assert_eq!(r[5], "1");
+        assert_eq!(r[7], "1");
+        assert_eq!(r[8], "2 's");
+    }
+
+    #[test]
+    fn harmonic_oscillator_keeps_its_energy() {
+        // ω = sqrt(k/m) = 5 rad/s; x = 0.1 m·cos(ωt), E = k·x0²/2 = 0.25 J
+        let r = shown(&[
+            "m := 2 'kg",
+            "k := 50 'N/'m",
+            "D(t, y) := [y[2]; -k/m*y[1]]",
+            "Y := rkfixed([0.1 'm; 0 'm/'s], 0 's, 2 's, 400, D)",
+            "Y[401, 2]",
+            "k*Y[401, 2]^2/2 + m*Y[401, 3]^2/2",
+            "A := Rkadapt([0.1 'm; 0 'm/'s], 0, 2 's, 10, D)",
+            "A[11, 2]",
+            "A[6, 3]",
+            "k*A[11, 2]^2/2 + m*A[11, 3]^2/2",
+        ]);
+        assert_eq!(r[4], "-0.083907 'm");
+        assert_eq!(r[5], "0.25 'J");
+        assert_eq!(r[7], "-0.083907 'm");
+        // v = −0.5 m/s·sin(5 rad/s · 1 s)
+        assert_eq!(r[8], "0.479462 'm/'s");
+        assert_eq!(r[9], "0.25 'J");
+    }
+
+    #[test]
+    fn ode_mistakes_explain_themselves() {
+        let r = shown(&[
+            "S(t, y) := y[1]",
+            "D(t, y) := y",
+            "rkfixed(1 'm, 0, 1 's, 10, D)",
+            "E(t, y) := [y[2]; 0]",
+            "rkfixed([1 'm; 0 'm/'s], 0, 1 's, 10, E)",
+            "rkfixed([1; 2], 0, 1, 10, S(t, y))",
+            "rkfixed(1, 0, 1, 10, F)",
+            "rkfixed(1, 0, 1, 0, D)",
+            "rkfixed(1, 0, 1, 10)",
+            "rkfixed(1 'm, 0 's, 1 'kg, 10, D)",
+            "G(t, y) := [y[2]; -y[1]/'s]",
+            "rkfixed([1 'm; 0 'm/'s], 0, 1 's, 10, G)",
+            "rkfixed(1, 0, 1, 10, 2)",
+        ]);
+        assert_eq!(
+            r[2],
+            "D(t, y) must return the rate of change of y: a speed (m/s), but it is a length (m)"
+        );
+        assert!(r[4].starts_with('['), "a plain 0 fits any rate: {}", r[4]);
+        assert_eq!(r[5], "S(t, y) returned 1 values, but y has 2: it needs one rate for each");
+        assert_eq!(
+            r[6],
+            "F(t, y) is not defined; rkfixed calls it with (t, y), so define F(t, y) := … above"
+        );
+        assert!(r[7].starts_with("rkfixed needs from 1 to "), "{}", r[7]);
+        assert_eq!(r[8], "rkfixed takes 5 arguments: rkfixed(y0, t0, t1, n, D)");
+        assert_eq!(r[9], "cannot integrate between a time (s) and a mass (kg): units don't match");
+        assert_eq!(
+            r[11],
+            "G(t, y) must return the rate of change of y (element 2): an acceleration (m/s^2), but it is a speed (m/s)"
+        );
+        assert!(r[12].starts_with("rkfixed needs the name of a function of (t, y)"), "{}", r[12]);
+    }
+
+    #[test]
+    fn linfit_on_basis_functions() {
+        let r = shown(&[
+            "F(x) := [1; x; x^2]",
+            "linfit([0; 1; 2; 3; 4], [2; 5.5; 10; 15.5; 22], F)",
+            "x := [0; 1; 2; 3] 'm",
+            "c := linfit(x, [1; 3; 5; 7] 'kN, F)",
+            "c[2]",
+            "G(x) := [1; 2]",
+            "linfit([0; 1; 2], [1; 2; 3], G)",
+            "linfit([0; 1], [1; 2], F)",
+            "linfit([0; 1; 2], [1; 2; 3], H)",
+        ]);
+        // y = 2 + 3x + x²/2
+        assert_eq!(r[1], "[2; 3; 0.5]");
+        assert_eq!(r[4], "2000 'N/'m");
+        assert_eq!(r[6], "linfit: the functions in G(x) are not independent at these x values");
+        assert_eq!(r[7], "linfit needs at least as many points (2) as basis functions (3)");
+        assert_eq!(r[8], "H(x) is not defined; linfit calls it with (x), so define H(x) := … above");
+    }
+}

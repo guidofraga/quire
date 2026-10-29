@@ -123,7 +123,7 @@ impl<'u> Interp<'u> {
         }
     }
 
-    fn tick(&mut self) -> Result<()> {
+    pub(crate) fn tick(&mut self) -> Result<()> {
         self.steps += 1;
         if self.steps > MAX_STEPS {
             bail!("evaluation stopped after {MAX_STEPS} steps (endless loop?)");
@@ -306,7 +306,7 @@ impl<'u> Interp<'u> {
         }
     }
 
-    fn apply(&mut self, f: &Rc<Func>, vals: Vec<Value>) -> Result<Value> {
+    pub(crate) fn apply(&mut self, f: &Rc<Func>, vals: Vec<Value>) -> Result<Value> {
         if self.depth >= MAX_DEPTH {
             bail!("{} calls itself too deeply", f.name);
         }
@@ -339,6 +339,13 @@ impl<'u> Interp<'u> {
             ("diff", 2 | 3) => self.differentiate(s, args),
             ("root" | "solve", 4) => self.solve_in(s, args),
             ("solve", 2) => self.solve_from(s, args),
+            ("rkfixed", 5) => self.rkfixed(s, args),
+            ("Rkadapt", 5) => self.rkadapt(s, args),
+            ("linfit", 3) => self.linfit(s, args),
+            ("rkfixed" | "Rkadapt", _) => {
+                Err(EvalError::new(format!("{name} takes 5 arguments: {name}(y0, t0, t1, n, D)")))
+            }
+            ("linfit", _) => Err(EvalError::new("linfit takes 3 arguments: linfit(vx, vy, F)")),
             ("lim", _) => Err(EvalError::new("limits need symbolic evaluation, which isn't available yet")),
             _ => return None,
         })
