@@ -56,7 +56,7 @@ And:
 - **UI logic comes with tests** too: a `*.test.ts` next to the module (`src/pages.test.ts`). Behaviour a user sees end to end belongs in `app/e2e/smoke.spec.ts`.
 - **UI changes are also tried by hand**, in the browser setup above or the desktop app. Say in the pull request what you tried, and add a screenshot when something looks different.
 - **File-format changes** update `docs/02-file-format.md` and `schema/quire-1.schema.json` in the same change. Documents written by earlier versions must keep opening unchanged.
-- **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why.
+- **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why. `cargo test` checks the worksheets in `crates/quire-cli/tests/fixtures` against results worked out independently; set `QUIRE_CORPUS` to more `.quire` bundles (or folders of them) with a `results.json` to check those too, e.g. SMath reports you can't share.
 
 ## Writing code
 

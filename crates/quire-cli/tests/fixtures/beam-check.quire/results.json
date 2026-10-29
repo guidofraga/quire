@@ -1,0 +1,21 @@
+{
+  "format": "quire-results/1",
+  "producer": "hand calculation",
+  "results": {
+    "M": "54 'kN*'m",
+    "V": "36 'kN",
+    "sig": "96.95 'MPa",
+    "dfl": "11.54 'mm",
+    "lim": "24 'mm",
+    "chk": "1",
+    "ok": "\"OK\"",
+    "f3": "10",
+    "sum": "385",
+    "int": "9",
+    "root": "1.4142",
+    "ls": "[0.8; 1.4]",
+    "inch": "25.4 'mm",
+    "psi": "6.895 'kPa",
+    "kgf": "9.807 'kN"
+  }
+}
