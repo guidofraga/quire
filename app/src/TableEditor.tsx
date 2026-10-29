@@ -1,5 +1,5 @@
 // Spreadsheet tables: cells hold text, values (12 kN) or formulas (=SUM(B2:B4)).
-// The engine evaluates them (crates/quire-eval/src/sheet.rs); this is the grid you edit.
+// The engine evaluates them (crates/quire-eval/src/sheet/); this is the grid you edit.
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
 import { api, isTauri } from "./api";
 import { esc, prettyValue } from "./math";

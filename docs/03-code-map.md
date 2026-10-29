@@ -1,0 +1,154 @@
+# 03 — Code Map
+
+Where things are today and how they fit together. [01-architecture.md](01-architecture.md) records why the project is built this way; this page describes what is actually there. When you move or split a file, update this page in the same change.
+
+## 1. The big picture
+
+```text
+                ┌──────────────────────── app/ (GPL-3.0-or-later) ────────────────────────┐
+                │  app/src: SolidJS UI                    app/src-tauri: desktop shell     │
+ keystroke ───▶ │  store.ts ─ mutate ─▶ App.tsx ─ report ─▶ api.ts ──invoke──▶ main.rs     │
+                │      ▲                                     │ (browser: fetch /api)  │      │
+                │      └──────── showReport ◀── Report ──────┘                        │      │
+                └─────────────────────────────────────────────────────────────────────┼──────┘
+                                                                                      ▼
+                ┌──────────────────────── crates/ (MIT OR Apache-2.0) ─────────────────────┐
+                │  quire-service: one function per editor call, JSON in and out            │
+                │      ├─ quire-doc     document model, .quire / .quirez on disk           │
+                │      └─ quire-eval    worksheet evaluation, tables, plots, symbolic math │
+                │            ├─ quire-ast    linear math syntax: lex, parse, print         │
+                │            └─ quire-units  dimensions and the unit table                 │
+                │  quire-cli: the `quire` command, and `quire serve` (the same calls over  │
+                │             localhost HTTP, so the UI runs in a plain browser)           │
+                └──────────────────────────────────────────────────────────────────────────┘
+```
+
+Three rules hold the layers apart:
+
+- **The app holds no maths.** It keeps the document as the JSON that is on disk, asks the backend for an evaluated `Report` and draws it. Anything that needs units, parsing or numbers is asked of `quire-service`.
+- **The engine holds no UI.** No crate under `crates/` knows about windows, the DOM or Tauri. `quire-service` is the only API the app sees.
+- **The engine stays permissive.** Crates under `crates/` are MIT OR Apache-2.0 and never depend on GPL code; `app/` is GPL-3.0-or-later.
+
+## 2. One edit, start to finish
+
+1. A keystroke reaches an editor component (`MathEditor.tsx`, the ProseMirror view in `richtext.ts`, `TableEditor.tsx`) or a command (`App.tsx` `runCommand`).
+2. The change goes through `mutate()` in `store.ts`, which records an undo step (bounded by size, see `History` there) and marks the document dirty.
+3. An effect in `App.tsx` (`scheduleReport`) sends the whole document to `api.report`. Requests are numbered so a slow answer never overwrites a newer one.
+4. `api.ts` calls the Tauri command `report` in the desktop app, or `POST /api/report` against `quire serve` in a browser.
+5. `quire_service::report` parses the JSON into a `quire_doc::Document`, turns its regions into `MathInput`s in reading order (`math_inputs`), runs `quire_eval::Worksheet` and returns a `Report`: per region the parsed AST, the result, errors, fixes, unit choices, table cells and plot samples.
+6. `showReport` in `store.ts` stores it. Errors on the line being typed wait until the line is finished ("errors wait while you type").
+7. `Region.tsx` re-renders what changed: math through `math.ts` (AST → MathML), words for screen readers through `speech.ts`, tables through `TableEditor.tsx`, plots through `Plot.tsx`.
+
+A whole document re-evaluates in well under a millisecond, so there is no incremental evaluation and no cache to keep in sync.
+
+Saving is the same path in reverse: `api.save` → `quire_service::save`, which writes canonical JSON (`canonical.rs`) and moves staged images into the bundle (`assets.rs`). In a notebook, `notebook.ts` saves by itself (`flushSave`, `installAutosave`).
+
+## 3. Engine crates
+
+| Crate | Files | What lives there |
+|---|---|---|
+| `quire-ast` | `lexer.rs`, `parser.rs`, `printer.rs`, `ast.rs` | The linear syntax ([02-file-format.md §4.3](02-file-format.md)). `print(parse(s))` is canonical; parentheses the user typed survive as `Expr::Paren`. Precedence is listed at the top of `parser.rs`. |
+| `quire-units` | `db.rs`, `dim.rs`, `rational.rs` | `Dim` (seven SI exponents, rational) and the built-in unit table with factors from NIST SP 811. |
+| `quire-eval` | `value.rs`, `ops.rs` | Values (SI magnitude + dimension, matrices, strings) and arithmetic with dimension checks. |
+| | `interp.rs` | Evaluating one expression in a scope; the lazy constructs (`if`, `for`, `sum`, `int`, `diff`, …) and user functions. |
+| | `builtins.rs`, `stats.rs`, `solvers.rs`, `numeric.rs` | Built-in functions whose arguments are evaluated first; statistics and fitting; ODE solvers, `linfit` and nonlinear `solve`; plain linear algebra. |
+| | `constants.rs` | Built-in constants and the name-resolution order (your variable, then constant, then unit). |
+| | `worksheet.rs` | Worksheet semantics: definitions in reading order, global `≡`, "defined further down", working units. |
+| | `format.rs` | Result display: rounding, notation, which unit a result is shown in. |
+| | `sheet/` | Spreadsheet tables: `formula.rs` (A1 syntax), `functions.rs` (SUM, IF, VLOOKUP…), `mod.rs` (evaluating a table, named tables as matrices). |
+| | `plot.rs` | Sampling plot series where the plot sits in reading order. |
+| | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `tests.rs`. |
+| `quire-doc` | `lib.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `.quirez` (one ZIP file) in `single.rs`. |
+| `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries). |
+| | `canonical.rs` | Canonical `document.json` output; must match `dump()` in `tools/sm2quire.py`. |
+| | `assets.rs` | Images, content-addressed (`assets/<sha256:16>.<ext>`), staged in memory until the first save. |
+| | `text.rs` | Djot → HTML for text regions; documents are untrusted, so raw HTML is dropped. |
+| | `templates.rs`, `templates/*.json` | Built-in templates and the user's own. |
+| | `notebook.rs` | Notebooks: list, create, rename, move, duplicate, trash, style, search. One entry point, `call(op, args)`. |
+| `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`). |
+| | `serve.rs` | `quire serve`: the service over `127.0.0.1` for UI work. Development only; it checks the Host header and a custom request header. |
+| | `tests/` | Fixtures with independently known results; see [05-testing.md](05-testing.md). |
+
+## 4. The desktop shell (`app/src-tauri`)
+
+| File | What lives there |
+|---|---|
+| `main.rs` | Tauri commands (thin wrappers over `quire-service`), the native menu with its accelerators, Open Recent, crash recovery, files the system asks to open, the window setup. |
+| `print.rs` | Printing and PDF export through WebKit's print engine, at the exact paper size. |
+| `pdf.rs` | Finishing the exported PDF with `lopdf`: details, bookmarks, links, page labels. |
+| `tauri.conf.json`, `capabilities/` | Window, bundle, updater and permission configuration. |
+| `tests/` | The headless PDF export test (macOS, run by hand). |
+
+## 5. The UI (`app/src`)
+
+SolidJS with fine-grained signals and stores, plain CSS, no component library. Files group by what they do:
+
+**State and plumbing**
+
+| File | What lives there |
+|---|---|
+| `main.tsx` | Mounts `App`. |
+| `App.tsx` | The window: layout, live evaluation, open/save/export, `runCommand` (every menu and palette command by id), keyboard shortcuts in a browser, startup. |
+| `store.ts` | The editor state: document, report, selection, editing, viewport, undo history, layout of regions (`computeLayout`), region operations. |
+| `api.ts` | The bridge to Rust: `call(cmd, args)` invokes a Tauri command or posts to `/api`. Also file dialogs, menus, window close. |
+| `types.ts` | TypeScript mirrors of the document JSON and of `quire-service`'s report. |
+| `settings.ts`, `recent.ts` | App preferences and Open Recent, in `localStorage`. |
+| `notebook.ts` | Notebook state and logic (open, autosave, rename, move, search), path helpers. |
+
+**The page**
+
+| File | What lives there |
+|---|---|
+| `Canvas.tsx` | Scrolling, zoom, selection frames, dragging, the hidden input that receives typing. |
+| `Sheet.tsx`, `pages.ts` | Paper sheets in the page view; page geometry, headers and footers. |
+| `Region.tsx` | One region on the page; dispatches on `kind` (`math`, `text`, `image`, `area`, `table`, `toc`, `plot2d`). |
+| `MathEditor.tsx` | Typing math: linear editing, Greek, LaTeX shortcuts, prose detection, ambiguity notes. |
+| `richtext.ts` | Text regions: ProseMirror in the editor, Djot in the document (`toDjot`). |
+| `TableEditor.tsx` | The spreadsheet grid. Evaluation is in `quire-eval/src/sheet`. |
+| `Plot.tsx` | 2D plots as SVG; the engine samples, this file lays out. |
+| `math.ts` | AST → MathML. |
+| `trace.ts`, `xref.ts`, `checks.ts`, `labels.ts` | Where a variable comes from; cross-references; pass/fail checks; caption words per language. |
+| `nav.ts`, `find.ts` | Keyboard movement between regions; find and replace. |
+
+**Chrome around the page**
+
+| File | What lives there |
+|---|---|
+| `FormatBar.tsx` | The ribbon: Text, Paragraph, Equation, Arrange. |
+| `Inspector.tsx` | Region, document and page properties. |
+| `Sidebar.tsx` | The notebook sidebar: switcher, tree, search, the note title in the toolbar. |
+| `Palette.tsx` | ⌘K: commands, variables, symbols and notes. |
+| `Welcome.tsx`, `TemplatesDialog.tsx`, `SettingsDialog.tsx`, `HelpDialog.tsx`, `RefPicker.tsx`, `Updates.tsx` | Dialogs and banners. |
+| `ContextMenu.tsx`, `menu.ts`, `Popover.tsx`, `Tooltip.tsx`, `Completion.tsx`, `FindBar.tsx` | Small floating UI. |
+| `symbols.ts`, `insert.ts` | The symbol and structure catalogue behind the galleries and `\name` shortcuts. |
+
+**Leaving and entering the app**
+
+| File | What lives there |
+|---|---|
+| `actions.ts` | Clipboard actions, images, duplicate, context menus. |
+| `clipboard.ts` | Clipboard formats: Quire regions as JSON, HTML/MathML and plain text for other apps, and turning pasted content into regions. |
+| `latex.ts` | AST → LaTeX (Copy as LaTeX). |
+| `csv.ts` | CSV in and out of tables. |
+| `export.ts` | PDF details, image downsampling, link targets for `pdf.rs`. |
+
+**Accessibility**
+
+| File | What lives there |
+|---|---|
+| `a11y.ts` | `useModal` (focus traps), `arrowFocus`, F6 between panes, `announce` for the live region. |
+| `speech.ts`, `describe.ts` | Math in words; a region in a sentence. |
+
+**Styling.** Everything is in `styles.css`: design tokens on `:root` with dark values under `prefers-color-scheme: dark` (blocks add their own dark overrides where needed), then one block per part of the window (toolbar, canvas, regions, format bar, inspector, sidebar…), the accessibility block (high contrast) and the motion block at the end. Section headers (`/* ==== notebook sidebar */`) make it searchable.
+
+## 6. Everything else
+
+| Path | What it is |
+|---|---|
+| `docs/` | This documentation; see [README.md](README.md). |
+| `schema/quire-1.schema.json` | JSON Schema for `document.json`. |
+| `tools/sm2quire.py` | SMath `.sm` → `.quire` importer (stdlib Python, the reference mapping). |
+| `tools/build-math-font.py` | Builds `app/src/fonts/QuireMath.woff` from STIX Two Math. |
+| `app/e2e/` | Playwright tests. |
+| `.github/workflows/ci.yml` | Tests on every push and pull request. |
+| `.github/workflows/release.yml` | Installers and update packages for a `v*` tag. |

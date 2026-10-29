@@ -4,6 +4,10 @@
 |---|---|
 | [docs/01-architecture.md](docs/01-architecture.md) | Platform choice (Tauri 2 + Rust core), CAS/units/evaluation engine, rendering engine, crate layout, roadmap |
 | [docs/02-file-format.md](docs/02-file-format.md) | The `.quire` document format: bundle layout, schema, linear math syntax, canonical serialization |
+| [docs/03-code-map.md](docs/03-code-map.md) | Where the code is and how an edit becomes a result on the page |
+| [docs/04-guidelines.md](docs/04-guidelines.md) | How code, styles and the app's words are written; accessibility; recipes for common changes |
+| [docs/05-testing.md](docs/05-testing.md) | Test layers, fixtures, end-to-end tests |
+| [docs/06-releasing.md](docs/06-releasing.md) | How a version is built, published and offered by the updater |
 | [schema/quire-1.schema.json](schema/quire-1.schema.json) | JSON Schema (draft 2020-12) for `document.json` |
 | [tools/sm2quire.py](tools/sm2quire.py) | SMath `.sm` → `.quire` importer (stdlib Python; the reference mapping) |
 
@@ -117,7 +121,7 @@ python3 -I tools/sm2quire.py "path/to/file.sm" out.quire
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md): setup, the checks to run, commit and pull-request conventions, and how releases are made.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks to run and commit and pull-request conventions, and [docs/](docs/README.md) for the code map, guidelines, testing and releasing.
 
 ## Licensing
 

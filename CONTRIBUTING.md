@@ -1,6 +1,13 @@
 # Contributing to Quire
 
-Thanks for helping. This page covers how the project is laid out, how to build and test it, and what a good change looks like. If something here is unclear or out of date, fixing this page is a welcome first contribution.
+Thanks for helping. This page gets you set up and says what a good change looks like. The details live in [docs/](docs/README.md):
+
+- [Code map](docs/03-code-map.md): where everything is, and how an edit becomes a result on the page.
+- [Guidelines](docs/04-guidelines.md): how code, styles and the words in the app are written; accessibility; recipes for common changes.
+- [Testing](docs/05-testing.md): what is tested where, and how to write a test that lasts.
+- [Releasing](docs/06-releasing.md): how a version reaches users (maintainers).
+
+If something here is unclear or out of date, fixing it is a welcome first contribution.
 
 ## Where things are
 
@@ -9,11 +16,11 @@ Thanks for helping. This page covers how the project is laid out, how to build a
 | `crates/quire-ast` | Linear math syntax: lexer, parser, canonical printer |
 | `crates/quire-units` | Dimensions and the unit table |
 | `crates/quire-eval` | The engine: evaluation, worksheets, spreadsheet tables, plots, symbolic math |
-| `crates/quire-doc` | Loading `.quire` bundles |
-| `crates/quire-service` | What the app asks the engine for; built-in templates |
+| `crates/quire-doc` | Loading `.quire` and `.quirez` documents |
+| `crates/quire-service` | What the app asks the engine for; templates; notebooks |
 | `crates/quire-cli` | The `quire` command, and `quire serve` for UI work in a browser |
-| `app/` | The desktop app: SolidJS front end in `app/src`, Tauri shell in `app/src-tauri` |
-| `docs/` | Architecture and the file format |
+| `app/` | The desktop app: SolidJS front end in `app/src`, Tauri shell in `app/src-tauri`, Playwright tests in `app/e2e` |
+| `docs/` | Architecture, file format, code map, guidelines, testing, releasing |
 | `schema/` | JSON Schema for `document.json` |
 | `tools/` | The SMath importer and the math-font build script |
 
@@ -29,12 +36,12 @@ Day to day:
 
 | To | Run |
 |---|---|
+| Run the desktop app while developing | `npm --prefix app run tauri dev` |
+| Work on the UI in a browser | `cargo run -p quire-cli -- serve` in one terminal, `npm --prefix app run dev` in another, then open http://localhost:5173 (add `?open=<path to a .quire>` or `?notebook=<folder>`) |
 | Test the engine | `cargo test --workspace --exclude quire-app` |
 | Test the UI's logic | `npm --prefix app test` (Vitest; `run test:watch` while you work) |
-| Try the UI end to end | `npm --prefix app run e2e` (Playwright in WebKit; starts `quire serve` and the dev server, or reuses running ones; once: `npx --prefix app playwright install webkit`) |
-| Check PDF export end to end (macOS) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored`: exports `app/src-tauri/tests/fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links. Not run in CI, which has no macOS desktop; run it when you change printing or `pdf.rs` |
-| Work on the UI in a browser | `cargo run -p quire-cli -- serve` in one terminal, `npm --prefix app run dev` in another, then open http://localhost:5173 |
-| Run the desktop app while developing | `npm --prefix app run tauri dev` |
+| Try the UI end to end | `npm --prefix app run e2e` (Playwright in WebKit; once: `npx --prefix app playwright install webkit`) |
+| Check PDF export (macOS) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored` |
 | Build `Quire.app` / the installers | `npm --prefix app run tauri build` (add `-- --bundles app` for just the macOS app) |
 | Try one expression | `cargo run -q -p quire-cli -- calc "2 m + 30 cm" --in mm` |
 
@@ -53,30 +60,12 @@ cd app && npx tsc --noEmit && npm test && npm run e2e
 
 And:
 
-- **Engine changes come with tests**, next to the code they test (`#[cfg(test)] mod tests`). A test that shows what a user typed and what they should see is the most useful kind.
-- **UI logic comes with tests** too: a `*.test.ts` next to the module (`src/pages.test.ts`). Behaviour a user sees end to end belongs in `app/e2e/smoke.spec.ts`.
-- **UI changes are also tried by hand**, in the browser setup above or the desktop app. Say in the pull request what you tried, and add a screenshot when something looks different.
+- **Changes come with tests.** Engine tests next to the code, UI logic in a `*.test.ts` next to the module, what a user sees end to end in `app/e2e`. See [Testing](docs/05-testing.md).
+- **UI changes are also tried by hand**, in the browser setup or the desktop app, in light and dark. Say in the pull request what you tried, and add a screenshot when something looks different.
+- **New UI works from the keyboard and with a screen reader**, and passes the axe tests. See [Guidelines §4](docs/04-guidelines.md#4-accessibility).
 - **File-format changes** update `docs/02-file-format.md` and `schema/quire-1.schema.json` in the same change. Documents written by earlier versions must keep opening unchanged.
-- **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why. `cargo test` checks the worksheets in `crates/quire-cli/tests/fixtures` against results worked out independently; set `QUIRE_CORPUS` to more `.quire` bundles (or folders of them) with a `results.json` to check those too, e.g. SMath reports you can't share.
-
-## Accessibility
-
-Quire has to work with the keyboard alone and with a screen reader. `app/e2e/a11y.spec.ts` runs [axe](https://github.com/dequelabs/axe-core) on the main states of the app (welcome screen, an empty document, a document with math, text, a table and a plot in both views, the galleries, menus and dialogs), in light and dark, and fails on any serious or critical violation; it also walks the keyboard flows (galleries, menus, dialogs, tables). When you add UI:
-
-- **Use real controls.** A `<button>` for anything clickable; an icon-only button gets an `aria-label`, and decorative glyphs get `aria-hidden="true"`. Toggles say `aria-pressed`, things that open say `aria-expanded` and `aria-haspopup`.
-- **Dialogs** have `role="dialog"`, `aria-modal="true"` and a name, and call `useModal` (`app/src/a11y.ts`): it moves focus in, keeps Tab inside and gives focus back on close. Esc closes.
-- **Menus and galleries** move with the arrow keys (`arrowFocus`) and take focus only when opened from the keyboard, so the text being edited keeps its caret when the mouse is used.
-- **Math** is hidden from screen readers as MathML and read as words (`app/src/speech.ts`); new expression kinds need words there too, with a test.
-- **Messages** a person should hear without looking go through `flash` or `announce`.
-- **Colours** reach 4.5:1 for text in both themes; check with the axe test, and add new colours to the accessibility block at the end of `styles.css` if they need a dark or high-contrast variant.
-
-## Writing code
-
-- Match the code around you: naming, comment density, file layout. Comments explain *why*, not what the next line does.
-- Rust is formatted by `rustfmt` (`rustfmt.toml`); TypeScript uses two-space indentation and the existing style. There is no Prettier step; don't reformat files you aren't otherwise changing.
-- Keep the engine free of UI concerns, and the app free of maths: the app asks `quire-service`, which asks the engine.
-- Add a dependency only when it earns its place. **Engine crates may only depend on code compatible with MIT/Apache-2.0**: never on GPL code. The app may use GPL-compatible code.
-- Words the user sees are plain and specific: "cannot add a length (m) and a force (N)", not "dimension mismatch".
+- **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why.
+- **Docs stay true.** If you move code or change a convention, update the page in `docs/` that describes it.
 
 ## Commits
 
@@ -108,15 +97,6 @@ Open an issue with:
 - The desktop app (`app/`) is **GPL-3.0-or-later**.
 
 By contributing, you agree that your contribution is licensed under the terms of the part of the project it changes, and confirm that you have the right to contribute it. Don't copy code, unit tables or documents from other programs (SMath Studio included) unless their license allows it.
-
-## Releases (maintainers)
-
-1. Bump the version in `Cargo.toml`, `app/package.json` and `app/src-tauri/tauri.conf.json`, then refresh the lockfiles (`npm --prefix app install --package-lock-only` and `cargo check`).
-2. Commit as `Version X.Y.Z`, tag `vX.Y.Z` and push the branch and the tag.
-3. The **Release** workflow builds the installers and signed update packages into a draft release.
-4. Write the notes (What's new, Improvements, Fixes, Downloads, first-launch steps) and publish the draft. Publishing is what makes the in-app updater offer the new version.
-
-The updater's private key lives with the maintainer (`~/.tauri/quire.key`, password in the Keychain) and in the repository's secrets. Never commit it. Back it up: without it, installed copies can't receive updates.
 
 ## Be kind
 

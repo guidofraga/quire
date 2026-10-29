@@ -1,7 +1,7 @@
 # 01 — Architecture & Engine Selection
 
-> Working name: **Quire** (a *quire* is a gathering of paper sheets — a notebook). Placeholder; rename freely.
-> Status: Phase 1 decision record. Audience: the engineers who will build it.
+> **Quire**: a *quire* is a gathering of paper sheets, a notebook.
+> Status: the Phase 1 decision record, kept as the reasoning behind the design; the roadmap (§5) is kept current. For where the code is today, see [03-code-map.md](03-code-map.md).
 
 ## 0. What we learned from the real SMath file
 
@@ -168,4 +168,5 @@ The **`quire-cli`** is a first-class deliverable: it lets CI pipelines re-run en
 | **P4 Visualization & data** (in progress) | 2D/3D plots, CSV/JSON/clipboard import/export, data regions | 2D plots done (0.1.7): functions and data, units on the axes, editing on the page, vector PDF. CSV import/export for tables. Still to do: 3D plots, JSON and other file formats, data regions |
 | **P4.5 Numeric tools** ✅ | ODEs, nonlinear systems, regression, splines, statistics | `rkfixed`/`Rkadapt`, `solve` with a vector of unknowns, `slope`/`intercept`/`line`/`corr`/`polyfit`/`linfit`, `cspline`/`pspline`/`lspline` + `interp`, `median`/`var`/`stdev`/`percentile`, `Ceil`/`Floor`/`Round`/`Trunc` to a multiple, all unit-aware; checked against `numeric-tools.quire`, worked out with numpy/scipy |
 | **P5 Symbolic** (started) | `→`, diff/int/solve/series via SymEngine and the CAS plugin | `→` with simplify, expand, diff, int and solve (degree ≤ 2) built in (0.1.7); then textbook simplification, `factor`, solve up to degree 4 with fractions, transcendental isolation and linear systems, integration by substitution/parts/partial fractions, `series`, `lim` and `subs`. Still to do: nonlinear systems, ODEs, SymEngine/CAS backends |
+| **P5.5 Notebooks** ✅ | Notebooks for students and teachers: a folder of sections and notes in a sidebar, autosave, search | Done in 0.1.11: sections and notes in a sidebar, notes that save themselves, drag to reorder and move, search across notes ignoring accents, keyboard and VoiceOver access; the layout is in `crates/quire-service/src/notebook.rs` and [02-file-format.md §2](02-file-format.md) |
 | **P6 Ecosystem** | Plugin API (WASM-sandboxed functions/units), web viewer (core → WASM) | — |
