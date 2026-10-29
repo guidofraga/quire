@@ -597,7 +597,7 @@ mod tests {
         );
         assert!(r[7].starts_with("rkfixed needs from 1 to "), "{}", r[7]);
         assert_eq!(r[8], "rkfixed takes 5 arguments: rkfixed(y0, t0, t1, n, D)");
-        assert_eq!(r[9], "cannot integrate between a time (s) and a mass (kg): units don't match");
+        assert_eq!(r[9], "cannot integrate between a time (s) and a mass (kg)");
         assert_eq!(
             r[11],
             "G(t, y) must return the rate of change of y (element 2): an acceleration (m/s^2), but it is a speed (m/s)"
@@ -653,7 +653,7 @@ mod tests {
         assert_eq!(r[9], "solve needs as many equations as unknowns, not 1 equations for 2 unknowns");
         assert!(r[10].starts_with("give p a starting value first"), "{}", r[10]);
         assert!(r[11].starts_with("no solution found near the starting values"), "{}", r[11]);
-        assert_eq!(r[12], "cannot subtract a length (m) and a plain number: units don't match");
+        assert_eq!(r[12], "cannot subtract a length (m) and a plain number");
         assert_eq!(r[13], "x appears twice among the unknowns");
     }
 }

@@ -758,11 +758,11 @@ mod tests {
     fn units_and_definitions() {
         assert_eq!(
             shown(&["L := 2 'm", "W := 30 'cm", "A := L*W", "A + 1"]),
-            ["2 'm", "0.3 'm", "0.6 'm^2", "cannot add an area (m^2) and a plain number: units don't match"]
+            ["2 'm", "0.3 'm", "0.6 'm^2", "cannot add an area (m^2) and a plain number"]
         );
         assert_eq!(
             shown(&["L := 6 'm", "q := 12 'kN/'m", "L + q"])[2],
-            "cannot add a length (m) and a force per length (N/m): units don't match"
+            "cannot add a length (m) and a force per length (N/m)"
         );
     }
 

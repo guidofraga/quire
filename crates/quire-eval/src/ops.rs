@@ -9,7 +9,7 @@ use crate::value::{Matrix, Quantity, Value};
 
 pub fn same_dim(a: Dim, b: Dim, verb: &str) -> Result<()> {
     if a != b {
-        bail!("cannot {verb} {} and {}: units don't match", describe_dim(a), describe_dim(b));
+        bail!("cannot {verb} {} and {}", describe_dim(a), describe_dim(b));
     }
     Ok(())
 }

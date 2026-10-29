@@ -19,19 +19,19 @@ const BUILTIN: &[Builtin] = &[
     Builtin {
         id: "builtin:report",
         name: "Calculation report",
-        description: "Title block, numbered sections, headers and footers with your name and company.",
+        description: "Title block, sections, headers and footers",
         json: include_str!("../templates/report.json"),
     },
     Builtin {
         id: "builtin:beam",
         name: "Simply supported beam",
-        description: "Loads table, bending and deflection of a steel beam, and a summary of checks.",
+        description: "Bending, deflection and checks for a steel beam",
         json: include_str!("../templates/beam.json"),
     },
     Builtin {
         id: "builtin:combinations",
         name: "Load combinations",
-        description: "Actions and factors in tables; the governing combination is found with formulas.",
+        description: "Factored actions and the governing combination",
         json: include_str!("../templates/combinations.json"),
     },
 ];

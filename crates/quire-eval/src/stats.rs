@@ -111,7 +111,7 @@ fn data(name: &str, what: &str, v: &Value) -> Result<(Vec<f64>, Dim)> {
         match dim {
             None => dim = Some(q.dim),
             Some(d) if d != q.dim => {
-                bail!("{what} mixes {} and {}: units don't match", describe_dim(d), describe_dim(q.dim))
+                bail!("{what} mixes {} and {}", describe_dim(d), describe_dim(q.dim))
             }
             _ => {}
         }
@@ -389,10 +389,7 @@ pub(crate) mod tests {
         assert_eq!(r[10], "0.816497 'm");
         assert_eq!(r[11], "0.666667 'm^2");
         assert_eq!(r[12], "2000 'N");
-        assert_eq!(
-            r[13],
-            "cannot take median of values that mix a length (m) and a time (s): units don't match"
-        );
+        assert_eq!(r[13], "cannot take median of values that mix a length (m) and a time (s)");
         assert_eq!(r[14], "Var (of a sample) needs at least 2 values");
         assert!(r[15].starts_with("percentile needs p from 0 to 1"), "{}", r[15]);
     }
@@ -430,7 +427,7 @@ pub(crate) mod tests {
         assert_eq!(r[11], "slope needs vx and vy of the same length, not 2 and 3");
         assert_eq!(r[12], "a line needs at least two different x values");
         assert_eq!(r[13], "polyfit needs at least 3 points");
-        assert_eq!(r[14], "vx mixes a length (m) and a time (s): units don't match");
+        assert_eq!(r[14], "vx mixes a length (m) and a time (s)");
         assert_eq!(r[15], "slope takes 2 arguments: (vx, vy), but got 1");
     }
 
@@ -466,7 +463,7 @@ pub(crate) mod tests {
         // three points with cubic ends: the parabola y = 2x² mm (x in m)
         assert_eq!(r[11], "[0.004/'m; 0.004/'m; 0.004/'m]");
         assert_eq!(r[12], "0.0045 'm");
-        assert_eq!(r[13], "cannot interpolate between a length (m) and a time (s): units don't match");
+        assert_eq!(r[13], "cannot interpolate between a length (m) and a time (s)");
         assert_eq!(r[14], "cspline needs the x values in increasing order, without repeats");
         assert!(r[15].starts_with("interp's first argument must come from cspline"), "{}", r[15]);
     }
@@ -487,7 +484,7 @@ pub(crate) mod tests {
         assert_eq!(r[2], "1.25 'm");
         assert_eq!(r[3], "-1");
         assert_eq!(r[4], "0.3");
-        assert_eq!(r[5], "cannot take Ceil of a force (N) and a length (m): units don't match");
+        assert_eq!(r[5], "cannot take Ceil of a force (N) and a length (m)");
         assert_eq!(r[6], "Ceil needs a multiple other than zero");
     }
 }
