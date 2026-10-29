@@ -36,6 +36,16 @@ describe("latex", () => {
     expect(latex(call("Stdev", id("v")), null)).toBe("\\operatorname{Stdev}\\left(v\\right)");
   });
 
+  it("writes symbolic series, substitutions and limits", () => {
+    expect(latex(call("series", call("exp", id("x")), id("x"), num("0"), num("4")), null)).toBe(
+      "\\operatorname{series}\\left(\\exp\\left(x\\right);\\; x = 0,\\; 4\\right)",
+    );
+    expect(latex(call("subs", bin("Pow", id("x"), num("2")), id("x"), id("a")), null)).toBe("\\left.{x}^{2}\\right|_{x = a}");
+    expect(latex(call("lim", call("exp", id("x")), id("x"), { t: "Unary", c: ["Neg", id("∞")] }), id("∞"))).toBe(
+      "\\lim_{x\\to -\\infty} \\exp\\left(x\\right) = \\infty",
+    );
+  });
+
   it("writes comparisons and matrices", () => {
     expect(latex({ t: "Compare", c: [id("σ"), [["Le", id("f.y")]]] }, null)).toBe("\\sigma \\le f_{y}");
     expect(latex({ t: "Matrix", c: [[num("1"), num("2")], [num("3"), num("4")]] }, null)).toBe(

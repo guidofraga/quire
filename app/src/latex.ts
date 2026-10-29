@@ -17,6 +17,7 @@ const word = (s: string, upright = false) => {
 
 function ident(name: string): string {
   if (units.has(name)) return `\\mathrm{${greek(name)}}`;
+  if (name === "∞") return "\\infty";
   const dot = name.indexOf(".");
   if (dot <= 0 || dot === name.length - 1) return word(name);
   const sub = name.slice(dot + 1);
@@ -53,7 +54,14 @@ function call(name: string, args: Expr[]): string {
     case "diff/3":
       return `\\frac{${d}^{${z}}}{${d}${y}^{${z}}} ${x}`;
     case "lim/3":
+    case "limit/3":
       return `\\lim_{${y}\\to ${z}} ${x}`;
+    case "series/4":
+    case "taylor/4":
+      return `\\operatorname{${name}}\\left(${x};\\; ${y} = ${z},\\; ${w}\\right)`;
+    case "subs/3":
+    case "substitute/3":
+      return `\\left.${x}\\right|_{${y} = ${z}}`;
   }
   // the sample/population spellings read as stdev_s, var_p
   const variant = /^(stdev|var)\.([sp])$/.exec(name);
