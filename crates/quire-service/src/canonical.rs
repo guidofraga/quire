@@ -1,5 +1,5 @@
 //! Canonical `document.json` serialization (docs/02-file-format.md §5).
-//! Must stay byte-compatible with `dump()` in tools/sm2quire.py.
+//! The SMath importer (`quire import`) writes bundles with it too.
 
 use serde_json::Value as Json;
 
@@ -56,7 +56,8 @@ fn rank(k: &str) -> usize {
 }
 
 fn quote(s: &str) -> String {
-    serde_json::to_string(s).expect("strings serialize")
+    // a JSON string value always serializes; this is the same text as `serde_json::to_string`
+    Json::String(s.to_string()).to_string()
 }
 
 /// Compact form used only to measure: `{"a": 1, "b": [1, 2]}`.
@@ -131,7 +132,7 @@ fn dump(out: &mut String, v: &Json, indent: usize, key: Option<&str>) {
             out.push_str(&pad);
             out.push('}');
         }
-        _ => unreachable!(),
+        other => out.push_str(&inline(other)),
     }
 }
 
@@ -158,14 +159,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn small_values_stay_inline_and_regions_expand() {
+    fn small_values_stay_inline_and_regions_expand() -> Result<(), Box<dyn std::error::Error>> {
         let v: Json = serde_json::from_str(
             r#"{"regions": [{"kind": "math", "expr": "x := 1", "id": "abcdef", "at": [9, 18]}], "format": "quire/1"}"#,
-        )
-        .unwrap();
+        )?;
         assert_eq!(
             to_string(&v),
             "{\n  \"format\": \"quire/1\",\n  \"regions\": [\n    {\n      \"id\": \"abcdef\",\n      \"kind\": \"math\",\n      \"at\": [9, 18],\n      \"expr\": \"x := 1\"\n    }\n  ]\n}\n"
         );
+        Ok(())
     }
 }

@@ -268,27 +268,33 @@ mod tests {
         (a - b).abs() <= 1e-12 * a.abs().max(b.abs())
     }
 
-    #[test]
-    fn prefixes_and_exact_names() {
-        let r = UnitRegistry::new();
-        assert!(close(r.lookup("mm").unwrap().factor, 1e-3));
-        assert!(close(r.lookup("kg").unwrap().factor, 1.0));
-        assert!(close(r.lookup("kgf").unwrap().factor, 9.80665));
-        assert!(close(r.lookup("tonnef").unwrap().factor, 9806.65));
-        assert!(close(r.lookup("MPa").unwrap().factor, 1e6));
-        assert!(close(r.lookup("min").unwrap().factor, 60.0)); // not milli-inch
-        assert!(close(r.lookup("dam").unwrap().factor, 10.0));
-        assert!(close(r.lookup("μm").unwrap().factor, 1e-6));
-        assert_eq!(r.lookup("cd").unwrap().dim, Dim::from_ints(LUMINOUS));
-        assert!(r.lookup("kft").is_none(), "ft is not prefixable");
-        assert!(r.lookup("nope").is_none());
+    fn unit(r: &UnitRegistry, name: &str) -> Result<Unit, String> {
+        r.lookup(name).ok_or_else(|| format!("unknown unit {name}"))
     }
 
     #[test]
-    fn imperial() {
+    fn prefixes_and_exact_names() -> Result<(), String> {
         let r = UnitRegistry::new();
-        assert!(close(r.lookup("lbf").unwrap().factor, 4.4482216152605));
-        assert!(close(r.lookup("psi").unwrap().factor, 6894.757293168361));
-        assert!(close(r.lookup("°F").unwrap().offset, 255.37222222222223));
+        assert!(close(unit(&r, "mm")?.factor, 1e-3));
+        assert!(close(unit(&r, "kg")?.factor, 1.0));
+        assert!(close(unit(&r, "kgf")?.factor, 9.80665));
+        assert!(close(unit(&r, "tonnef")?.factor, 9806.65));
+        assert!(close(unit(&r, "MPa")?.factor, 1e6));
+        assert!(close(unit(&r, "min")?.factor, 60.0)); // not milli-inch
+        assert!(close(unit(&r, "dam")?.factor, 10.0));
+        assert!(close(unit(&r, "μm")?.factor, 1e-6));
+        assert_eq!(unit(&r, "cd")?.dim, Dim::from_ints(LUMINOUS));
+        assert!(r.lookup("kft").is_none(), "ft is not prefixable");
+        assert!(r.lookup("nope").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn imperial() -> Result<(), String> {
+        let r = UnitRegistry::new();
+        assert!(close(unit(&r, "lbf")?.factor, 4.4482216152605));
+        assert!(close(unit(&r, "psi")?.factor, 6894.757293168361));
+        assert!(close(unit(&r, "°F")?.offset, 255.37222222222223));
+        Ok(())
     }
 }

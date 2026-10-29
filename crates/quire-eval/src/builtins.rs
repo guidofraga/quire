@@ -4,7 +4,7 @@
 use quire_ast::BinaryOp;
 use quire_units::{Dim, Rational};
 
-use crate::error::{Result, bail};
+use crate::error::{Result, bail, internal};
 use crate::format::{DisplaySettings, format_number};
 use crate::ops::{self, arith, same_dim, uniform};
 use crate::value::{Matrix, Quantity, Value};
@@ -16,9 +16,24 @@ pub(crate) fn arity(name: &str, args: &[Value], ok: impl Fn(usize) -> bool, expe
     Ok(())
 }
 
+/// The `i`-th argument. Callers check the argument count first.
+pub(crate) fn arg(args: &[Value], i: usize) -> Result<&Value> {
+    args.get(i).ok_or_else(|| internal("a builtin argument"))
+}
+
+/// The `i`-th number of a list. Callers check the list's length first.
+pub(crate) fn nth_value(v: &[f64], i: usize) -> Result<f64> {
+    v.get(i).copied().ok_or_else(|| internal("a list value"))
+}
+
+/// The `i`-th number of a list, for writing. Callers build the list to a known length.
+pub(crate) fn slot(v: &mut [f64], i: usize) -> Result<&mut f64> {
+    v.get_mut(i).ok_or_else(|| internal("a list value"))
+}
+
 fn real(name: &str, f: fn(f64) -> f64, args: &[Value]) -> Result<Value> {
     arity(name, args, |n| n == 1, "1 argument")?;
-    let x = args[0].as_scalar(&format!("the argument of {name}"))?;
+    let x = arg(args, 0)?.as_scalar(&format!("the argument of {name}"))?;
     let v = f(x);
     if v.is_nan() && !x.is_nan() {
         bail!("{name}({x}) has no real result");
@@ -49,7 +64,7 @@ fn extremum(name: &str, args: &[Value], pick_max: bool) -> Result<Value> {
     let items = flatten(args);
     let Some(first) = items.first() else { bail!("{name} needs at least one value") };
     let mut best = first.as_num(&format!("an argument of {name}"))?;
-    for v in &items[1..] {
+    for v in items.iter().skip(1) {
         let q = v.as_num(&format!("an argument of {name}"))?;
         same_dim(best.dim, q.dim, &format!("take {name} of"))?;
         if (pick_max && q.v > best.v) || (!pick_max && q.v < best.v) {
@@ -70,7 +85,7 @@ fn element(m: &Matrix, idx: &[i64]) -> Result<Value> {
     if r < 1 || c < 1 || r as usize > m.rows || c as usize > m.cols {
         bail!("index ({r}, {c}) is outside the {}×{} matrix (indices start at 1)", m.rows, m.cols);
     }
-    Ok(m.get(r as usize - 1, c as usize - 1).clone())
+    Ok(m.at(r as usize - 1, c as usize - 1)?.clone())
 }
 
 pub fn index(base: &Value, idx: &[Value]) -> Result<Value> {
@@ -104,7 +119,7 @@ fn concat_blocks(name: &str, args: &[Value], vertical: bool) -> Result<Value> {
     let mut data = Vec::with_capacity(first.rows * cols);
     for r in 0..first.rows {
         for b in &blocks {
-            data.extend((0..b.cols).map(|c| b.get(r, c).clone()));
+            data.extend((0..b.cols).map(|c| b.at(r, c).cloned()).collect::<Result<Vec<_>>>()?);
         }
     }
     Ok(Value::Matrix(Matrix::new(first.rows, cols, data)))
@@ -117,10 +132,11 @@ pub fn range(a: Quantity, b: Quantity, step: Option<Quantity>) -> Result<Value> 
     if step.v == 0.0 || (b.v - a.v) * step.v < 0.0 {
         bail!("the range step never reaches the end value");
     }
-    let n = ((b.v - a.v) / step.v + 1e-9).floor() as usize + 1;
-    if n > 10_000_000 {
-        bail!("the range has too many elements ({n})");
+    let count = ((b.v - a.v) / step.v + 1e-9).floor() + 1.0;
+    if !count.is_finite() || count > 10_000_000.0 {
+        bail!("the range has too many elements ({count:.3e})");
     }
+    let n = count as usize;
     let data = (0..n).map(|k| Value::Num(Quantity::new(a.v + k as f64 * step.v, a.dim))).collect();
     Ok(Value::Matrix(Matrix::column(data)))
 }
@@ -183,15 +199,16 @@ pub fn call(name: &str, args: &[Value]) -> Option<Result<Value>> {
         "range" => range_fn(args),
         "num2str" => num2str(args),
         "concat" => concat(args),
-        "eval" => arity(name, args, |n| n == 1, "1 argument").map(|_| args[0].clone()),
-        _ => return crate::stats::call(name, args),
+        "eval" => arity(name, args, |n| n == 1, "1 argument").and_then(|_| Ok(arg(args, 0)?.clone())),
+        "sys" => crate::plot::sys(args),
+        _ => return crate::linalg::call(name, args).or_else(|| crate::stats::call(name, args)),
     };
     Some(r)
 }
 
 fn sqrt(args: &[Value]) -> Result<Value> {
     arity("sqrt", args, |n| n == 1, "1 argument")?;
-    let x = args[0].as_num("the argument of sqrt")?;
+    let x = arg(args, 0)?.as_num("the argument of sqrt")?;
     if x.v < 0.0 {
         bail!("sqrt of a negative number (complex numbers are not supported yet)");
     }
@@ -200,8 +217,8 @@ fn sqrt(args: &[Value]) -> Result<Value> {
 
 fn root(args: &[Value]) -> Result<Value> {
     arity("root", args, |n| n == 2, "2 arguments: root(x, n)")?;
-    let x = args[0].as_num("the radicand")?;
-    let n = args[1].as_int("the root degree")?;
+    let x = arg(args, 0)?.as_num("the radicand")?;
+    let n = arg(args, 1)?.as_int("the root degree")?;
     if n == 0 {
         bail!("the root degree cannot be zero");
     }
@@ -214,7 +231,7 @@ fn root(args: &[Value]) -> Result<Value> {
 
 fn abs(args: &[Value]) -> Result<Value> {
     arity("abs", args, |n| n == 1, "1 argument")?;
-    match &args[0] {
+    match arg(args, 0)? {
         Value::Num(q) => Ok(Value::Num(Quantity::new(q.v.abs(), q.dim))),
         Value::Matrix(m) if m.is_vector() => {
             let (vals, dim) = uniform(m, "a vector element")?;
@@ -222,12 +239,13 @@ fn abs(args: &[Value]) -> Result<Value> {
         }
         Value::Matrix(m) => ops::det(m),
         Value::Str(_) => bail!("abs needs a number"),
+        Value::Sym(_) => bail!("abs needs a number, not a formula"),
     }
 }
 
 fn log(args: &[Value]) -> Result<Value> {
     arity("log", args, |n| n == 1 || n == 2, "1 or 2 arguments: log(x) or log(x, base)")?;
-    let x = args[0].as_scalar("the argument of log")?;
+    let x = arg(args, 0)?.as_scalar("the argument of log")?;
     let base = match args.get(1) {
         Some(b) => b.as_scalar("the base of log")?,
         None => 10.0,
@@ -240,15 +258,15 @@ fn log(args: &[Value]) -> Result<Value> {
 
 fn atan2(args: &[Value]) -> Result<Value> {
     arity("atan2", args, |n| n == 2, "2 arguments: atan2(y, x)")?;
-    let y = args[0].as_num("y")?;
-    let x = args[1].as_num("x")?;
+    let y = arg(args, 0)?.as_num("y")?;
+    let x = arg(args, 1)?.as_num("x")?;
     same_dim(y.dim, x.dim, "take atan2 of")?;
     Ok(Value::num(y.v.atan2(x.v)))
 }
 
 fn round(args: &[Value]) -> Result<Value> {
     arity("round", args, |n| n == 1 || n == 2, "1 or 2 arguments")?;
-    let q = args[0].as_num("the argument of round")?;
+    let q = arg(args, 0)?.as_num("the argument of round")?;
     let digits = match args.get(1) {
         Some(d) => d.as_int("the number of decimals")? as i32,
         None => 0,
@@ -259,7 +277,7 @@ fn round(args: &[Value]) -> Result<Value> {
 
 fn sign(args: &[Value]) -> Result<Value> {
     arity("sign", args, |n| n == 1, "1 argument")?;
-    let q = args[0].as_num("the argument of sign")?;
+    let q = arg(args, 0)?.as_num("the argument of sign")?;
     Ok(Value::num(if q.v > 0.0 {
         1.0
     } else if q.v < 0.0 {
@@ -271,7 +289,7 @@ fn sign(args: &[Value]) -> Result<Value> {
 
 fn mod_(args: &[Value]) -> Result<Value> {
     arity("mod", args, |n| n == 2, "2 arguments")?;
-    arith(BinaryOp::Mod, &args[0], &args[1])
+    arith(BinaryOp::Mod, arg(args, 0)?, arg(args, 1)?)
 }
 
 fn sum_all(args: &[Value]) -> Result<Value> {
@@ -320,21 +338,21 @@ pub(crate) fn column(values: Vec<f64>, dim: Dim) -> Value {
 
 fn sort(args: &[Value]) -> Result<Value> {
     arity("sort", args, |n| n == 1, "1 argument")?;
-    let (mut v, dim) = vector("sort", &args[0])?;
+    let (mut v, dim) = vector("sort", arg(args, 0)?)?;
     v.sort_by(f64::total_cmp);
     Ok(column(v, dim))
 }
 
 fn norm(args: &[Value]) -> Result<Value> {
     arity("norm", args, |n| n == 1, "1 argument")?;
-    let (v, dim) = vector("norm", &args[0])?;
+    let (v, dim) = vector("norm", arg(args, 0)?)?;
     Ok(Value::Num(Quantity::new(v.iter().map(|x| x * x).sum::<f64>().sqrt(), dim)))
 }
 
 fn two_vectors(name: &str, args: &[Value]) -> Result<(Vector, Vector)> {
     arity(name, args, |n| n == 2, "2 arguments")?;
-    let a = vector(name, &args[0])?;
-    let b = vector(name, &args[1])?;
+    let a = vector(name, arg(args, 0)?)?;
+    let b = vector(name, arg(args, 1)?)?;
     if a.0.len() != b.0.len() {
         bail!("{name} needs two vectors of the same length, not {} and {}", a.0.len(), b.0.len());
     }
@@ -348,21 +366,21 @@ fn dot(args: &[Value]) -> Result<Value> {
 
 fn cross(args: &[Value]) -> Result<Value> {
     let ((a, da), (b, db)) = two_vectors("cross", args)?;
-    if a.len() != 3 {
-        bail!("cross needs two vectors of 3 elements");
-    }
-    let c = vec![a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let c = match (a.as_slice(), b.as_slice()) {
+        ([a0, a1, a2], [b0, b1, b2]) => vec![a1 * b2 - a2 * b1, a2 * b0 - a0 * b2, a0 * b1 - a1 * b0],
+        _ => bail!("cross needs two vectors of 3 elements"),
+    };
     Ok(column(c, da * db))
 }
 
 /// `lsolve(A, b)`: the x that makes A·x = b.
 fn lsolve(args: &[Value]) -> Result<Value> {
     arity("lsolve", args, |n| n == 2, "2 arguments")?;
-    let a = matrix_arg("lsolve", &args[0])?;
+    let a = matrix_arg("lsolve", arg(args, 0)?)?;
     if a.rows != a.cols {
         bail!("lsolve needs a square matrix, not {}×{}", a.rows, a.cols);
     }
-    let rows = match &args[1] {
+    let rows = match arg(args, 1)? {
         Value::Matrix(m) => m.rows,
         _ => 1,
     };
@@ -370,35 +388,37 @@ fn lsolve(args: &[Value]) -> Result<Value> {
         bail!("lsolve: b needs {} rows to match the matrix, not {rows}", a.rows);
     }
     let inv = ops::inverse(a).map_err(|_| crate::error::EvalError::new("lsolve: the matrix is singular"))?;
-    arith(BinaryOp::Mul, &inv, &args[1])
+    arith(BinaryOp::Mul, &inv, arg(args, 1)?)
 }
 
 /// `linterp(xs, ys, x)`: straight lines between table points, extended past the ends.
 fn linterp(args: &[Value]) -> Result<Value> {
     arity("linterp", args, |n| n == 3, "3 arguments")?;
-    let (xs, xd) = vector("linterp", &args[0])?;
-    let (ys, yd) = vector("linterp", &args[1])?;
+    let (xs, xd) = vector("linterp", arg(args, 0)?)?;
+    let (ys, yd) = vector("linterp", arg(args, 1)?)?;
     if xs.len() != ys.len() || xs.len() < 2 {
         bail!("linterp needs two vectors of the same length, with at least 2 points");
     }
-    if xs.windows(2).any(|w| w[1] <= w[0]) {
+    if xs.iter().zip(xs.iter().skip(1)).any(|(a, b)| b <= a) {
         bail!("linterp needs the x values in increasing order");
     }
-    let x = args[2].as_num("the point to interpolate at")?;
+    let x = arg(args, 2)?.as_num("the point to interpolate at")?;
     same_dim(xd, x.dim, "interpolate between")?;
-    let i = xs.partition_point(|&v| v <= x.v).clamp(1, xs.len() - 1);
-    let t = (x.v - xs[i - 1]) / (xs[i] - xs[i - 1]);
-    Ok(Value::Num(Quantity::new(ys[i - 1] + t * (ys[i] - ys[i - 1]), yd)))
+    let i = xs.partition_point(|&v| v <= x.v).clamp(1, xs.len().saturating_sub(1).max(1));
+    let (x0, x1) = (nth_value(&xs, i - 1)?, nth_value(&xs, i)?);
+    let (y0, y1) = (nth_value(&ys, i - 1)?, nth_value(&ys, i)?);
+    let t = (x.v - x0) / (x1 - x0);
+    Ok(Value::Num(Quantity::new(y0 + t * (y1 - y0), yd)))
 }
 
 fn one_matrix<'a>(name: &str, args: &'a [Value]) -> Result<&'a Matrix> {
     arity(name, args, |n| n == 1, "1 argument")?;
-    matrix_arg(name, &args[0])
+    matrix_arg(name, arg(args, 0)?)
 }
 
 fn size(name: &str, args: &[Value]) -> Result<Value> {
     arity(name, args, |n| n == 1, "1 argument")?;
-    let (r, c) = match &args[0] {
+    let (r, c) = match arg(args, 0)? {
         Value::Matrix(m) => (m.rows, m.cols),
         _ => (1, 1),
     };
@@ -411,18 +431,21 @@ fn size(name: &str, args: &[Value]) -> Result<Value> {
 
 fn el(args: &[Value]) -> Result<Value> {
     arity("el", args, |n| n == 2 || n == 3, "2 or 3 arguments")?;
-    index(&args[0], &args[1..])
+    let [base, idx @ ..] = args else { bail!("el takes 2 or 3 arguments") };
+    index(base, idx)
 }
 
 fn transpose(args: &[Value]) -> Result<Value> {
     let m = one_matrix("transpose", args)?;
-    let data = (0..m.cols).flat_map(|c| (0..m.rows).map(move |r| m.get(r, c).clone())).collect();
+    let data = (0..m.cols)
+        .flat_map(|c| (0..m.rows).map(move |r| m.at(r, c).cloned()))
+        .collect::<Result<Vec<_>>>()?;
     Ok(Value::Matrix(Matrix::new(m.cols, m.rows, data)))
 }
 
 fn identity(args: &[Value]) -> Result<Value> {
     arity("identity", args, |n| n == 1, "1 argument")?;
-    let n = args[0].as_int("the size")?;
+    let n = arg(args, 0)?.as_int("the size")?;
     if !(1..=10_000).contains(&n) {
         bail!("identity size must be between 1 and 10000");
     }
@@ -435,25 +458,31 @@ fn mat(args: &[Value]) -> Result<Value> {
         bail!("mat takes the elements followed by rows and cols");
     }
     let (cells, dims) = args.split_at(args.len() - 2);
-    let r = dims[0].as_int("rows")? as usize;
-    let c = dims[1].as_int("cols")? as usize;
-    if r * c != cells.len() {
-        bail!("mat: {r}×{c} needs {} elements, got {}", r * c, cells.len());
+    let [rows_v, cols_v] = dims else { bail!("mat takes the elements followed by rows and cols") };
+    let (Ok(r), Ok(c)) = (usize::try_from(rows_v.as_int("rows")?), usize::try_from(cols_v.as_int("cols")?))
+    else {
+        bail!("mat: rows and cols must be positive");
+    };
+    if r == 0 || c == 0 {
+        bail!("mat: rows and cols must be positive");
+    }
+    if r.checked_mul(c) != Some(cells.len()) {
+        bail!("mat: {r}×{c} needs {} elements, got {}", r.saturating_mul(c), cells.len());
     }
     Ok(Value::Matrix(Matrix::new(r, c, cells.to_vec())))
 }
 
 fn range_fn(args: &[Value]) -> Result<Value> {
     arity("range", args, |n| n == 2 || n == 3, "2 or 3 arguments: range(start, end[, step])")?;
-    let a = args[0].as_num("the start")?;
-    let b = args[1].as_num("the end")?;
+    let a = arg(args, 0)?.as_num("the start")?;
+    let b = arg(args, 1)?.as_num("the end")?;
     let step = args.get(2).map(|s| s.as_num("the step")).transpose()?;
     range(a, b, step)
 }
 
 fn num2str(args: &[Value]) -> Result<Value> {
     arity("num2str", args, |n| n == 1, "1 argument")?;
-    let x = args[0].as_scalar("the argument of num2str")?;
+    let x = arg(args, 0)?.as_scalar("the argument of num2str")?;
     Ok(Value::Str(format_number(x, 4, &DisplaySettings::default())))
 }
 

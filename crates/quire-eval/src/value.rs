@@ -24,6 +24,9 @@ pub enum Value {
     Num(Quantity),
     Str(String),
     Matrix(Matrix),
+    /// A formula: an expression in names that have no value (SMath's symbols), written in
+    /// quire_ast syntax. Indexed names are `Index` nodes, as in `x[2]`.
+    Sym(quire_ast::Expr),
 }
 
 /// Row-major; elements may mix numbers and strings (e.g. a report table).
@@ -44,9 +47,14 @@ impl Matrix {
         Matrix { rows: data.len(), cols: 1, data }
     }
 
-    /// 0-based.
-    pub fn get(&self, r: usize, c: usize) -> &Value {
-        &self.data[r * self.cols + c]
+    /// 0-based; `None` outside the matrix.
+    pub fn get(&self, r: usize, c: usize) -> Option<&Value> {
+        self.data.get(r * self.cols + c)
+    }
+
+    /// 0-based; an error (an internal one) outside the matrix.
+    pub fn at(&self, r: usize, c: usize) -> crate::error::Result<&Value> {
+        self.get(r, c).ok_or_else(|| crate::error::internal("a matrix element"))
     }
 
     pub fn is_vector(&self) -> bool {
@@ -68,6 +76,7 @@ impl Value {
             Value::Num(_) => "a number",
             Value::Str(_) => "a string",
             Value::Matrix(_) => "a matrix",
+            Value::Sym(_) => "a formula",
         }
     }
 

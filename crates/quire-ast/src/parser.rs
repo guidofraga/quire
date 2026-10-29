@@ -58,6 +58,10 @@ fn bin(op: BinaryOp, a: Expr, b: Expr) -> Expr {
     Expr::Binary(op, Box::new(a), Box::new(b))
 }
 
+/// Returned when the token list is exhausted. `tokenize` always ends with `Eof`,
+/// so this is only a fallback that keeps the accessors total.
+static EOF_TOK: Tok = Tok::Eof;
+
 struct Parser {
     tokens: Vec<Token>,
     i: usize,
@@ -65,15 +69,20 @@ struct Parser {
 
 impl Parser {
     fn peek(&self) -> &Tok {
-        &self.tokens[self.i].tok
+        self.tokens.get(self.i).map_or(&EOF_TOK, |t| &t.tok)
     }
 
     fn peek2(&self) -> &Tok {
-        &self.tokens[(self.i + 1).min(self.tokens.len() - 1)].tok
+        self.tokens.get(self.i + 1).or_else(|| self.tokens.last()).map_or(&EOF_TOK, |t| &t.tok)
+    }
+
+    /// Character offset of the current token.
+    fn pos(&self) -> usize {
+        self.tokens.get(self.i).map_or(0, |t| t.pos)
     }
 
     fn bump(&mut self) -> Tok {
-        let t = self.tokens[self.i].tok.clone();
+        let t = self.peek().clone();
         if self.i + 1 < self.tokens.len() {
             self.i += 1;
         }
@@ -98,7 +107,7 @@ impl Parser {
     }
 
     fn error(&self, message: String) -> ParseError {
-        ParseError::new(message, self.tokens[self.i].pos)
+        ParseError::new(message, self.pos())
     }
 
     fn define(&mut self) -> Result<Expr> {
@@ -223,7 +232,7 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Result<Expr> {
-        let pos = self.tokens[self.i].pos;
+        let pos = self.pos();
         match self.bump() {
             Tok::Num(n) => {
                 let num = Expr::Num(n);
@@ -265,13 +274,14 @@ impl Parser {
     }
 
     fn unit_term(&mut self) -> Result<Expr> {
+        let pos = self.pos();
         let unit = match self.peek() {
             // `2 sin(x)`, `3 v[i]`
             Tok::Ident(_) if matches!(self.peek2(), Tok::Sym("(" | "[")) => self.postfix()?,
             _ => match self.bump() {
                 Tok::Unit(u) => Expr::Unit(u),
                 Tok::Ident(n) => Expr::Ident(n),
-                _ => unreachable!("caller checked for a unit or name"),
+                t => return Err(ParseError::new(format!("expected a unit but found {}", describe(&t)), pos)),
             },
         };
         if self.eat("^") {
@@ -298,20 +308,23 @@ impl Parser {
         if self.eat("]") {
             return Err(ParseError::new("empty matrix", pos));
         }
-        let mut rows = vec![Vec::new()];
+        let mut rows: Vec<Vec<Expr>> = Vec::new();
+        let mut row = Vec::new();
         loop {
-            rows.last_mut().unwrap().push(self.define()?);
+            row.push(self.define()?);
             if self.eat(",") {
                 continue;
             }
             if self.eat(";") {
-                rows.push(Vec::new());
+                rows.push(std::mem::take(&mut row));
                 continue;
             }
             self.expect("]")?;
             break;
         }
-        if rows.iter().any(|r| r.len() != rows[0].len()) {
+        rows.push(row);
+        let width = rows.first().map_or(0, Vec::len);
+        if rows.iter().any(|r| r.len() != width) {
             return Err(ParseError::new("matrix rows have different lengths", pos));
         }
         Ok(Expr::Matrix(rows))

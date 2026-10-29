@@ -22,6 +22,9 @@ pub struct DisplaySettings {
     pub notation: Notation,
     /// Round to this many significant figures instead of a number of decimals.
     pub sig_figs: Option<u32>,
+    /// SMath documents: units are always written quoted (`'m`), so a bare name is never a
+    /// unit or a constant, only a variable. `"units": {"marked": true}` in a document.
+    pub marked_units: bool,
 }
 
 /// `"notation"` in a document's display settings.
@@ -45,6 +48,7 @@ impl Default for DisplaySettings {
             working_units: false,
             notation: Notation::Auto,
             sig_figs: None,
+            marked_units: false,
         }
     }
 }
@@ -85,11 +89,15 @@ pub fn working_unit(dim: Dim, vocab: &[WorkingUnit]) -> Option<(f64, String)> {
     }
     let (_, mut best) = found.into_iter().min_by_key(|(score, _)| *score)?;
     // `kN*m`, `kN/m`, `MPa*m`: lengths go after forces, stresses and the rest
-    let is_length = |i: usize| vocab[i].unit.dim == Dim::from_ints([1, 0, 0, 0, 0, 0, 0]);
+    let is_length =
+        |i: usize| vocab.get(i).is_some_and(|u| u.unit.dim == Dim::from_ints([1, 0, 0, 0, 0, 0, 0]));
     best.sort_by_key(|&(i, _)| is_length(i));
-    let factor = best.iter().map(|&(i, k)| vocab[i].unit.factor.powi(k)).product();
-    let parts: Vec<(&str, Rational)> =
-        best.iter().map(|&(i, k)| (vocab[i].name.as_str(), Rational::int(k))).collect();
+    let factor: f64 =
+        best.iter().map(|&(i, k)| Some(vocab.get(i)?.unit.factor.powi(k))).product::<Option<f64>>()?;
+    let parts: Vec<(&str, Rational)> = best
+        .iter()
+        .map(|&(i, k)| Some((vocab.get(i)?.name.as_str(), Rational::int(k))))
+        .collect::<Option<_>>()?;
     Some((factor, format_product(&parts, true)))
 }
 
@@ -285,11 +293,12 @@ pub fn format_value_in(
     match v {
         Value::Num(q) => format_quantity(*q, spec, settings, units, vocab),
         Value::Str(s) => Ok(quote_str(s)),
+        Value::Sym(e) => Ok(quire_ast::print(e)),
         Value::Matrix(m) => {
             let mut rows = Vec::with_capacity(m.rows);
             for r in 0..m.rows {
                 let cells = (0..m.cols)
-                    .map(|c| format_value_in(m.get(r, c), spec, settings, units, vocab))
+                    .map(|c| format_value_in(m.at(r, c)?, spec, settings, units, vocab))
                     .collect::<Result<Vec<_>>>()?;
                 rows.push(cells.join(", "));
             }
@@ -411,6 +420,8 @@ fn reprefix(value: f64, text: &str, units: &UnitRegistry) -> Option<(f64, String
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
     fn numbers() {
         let s = DisplaySettings::default();
@@ -435,48 +446,50 @@ mod tests {
     }
 
     #[test]
-    fn si_prefixes() {
+    fn si_prefixes() -> TestResult {
         let r = UnitRegistry::new();
         let s = DisplaySettings { notation: Notation::Prefix, ..DisplaySettings::default() };
         let q = |v: f64, d: [i8; 7]| Value::Num(Quantity::new(v, Dim::from_ints(d)));
-        let shown = |v: Value| format_value(&v, &DisplaySpec::default(), &s, &r).unwrap();
-        assert_eq!(shown(q(12500.0, [1, 1, -2, 0, 0, 0, 0])), "12.5 'kN");
-        assert_eq!(shown(q(0.004, [1, 0, 0, 0, 0, 0, 0])), "4 'mm");
-        assert_eq!(shown(q(0.3, [1, 0, 0, 0, 0, 0, 0])), "30 'cm");
-        assert_eq!(shown(q(1.469e8, [-1, 1, -2, 0, 0, 0, 0])), "146.9 'MPa");
-        assert_eq!(shown(q(2500.0, [0, 1, 0, 0, 0, 0, 0])), "2500 'kg");
+        let shown = |v: Value| format_value(&v, &DisplaySpec::default(), &s, &r);
+        assert_eq!(shown(q(12500.0, [1, 1, -2, 0, 0, 0, 0]))?, "12.5 'kN");
+        assert_eq!(shown(q(0.004, [1, 0, 0, 0, 0, 0, 0]))?, "4 'mm");
+        assert_eq!(shown(q(0.3, [1, 0, 0, 0, 0, 0, 0]))?, "30 'cm");
+        assert_eq!(shown(q(1.469e8, [-1, 1, -2, 0, 0, 0, 0]))?, "146.9 'MPa");
+        assert_eq!(shown(q(2500.0, [0, 1, 0, 0, 0, 0, 0]))?, "2500 'kg");
         // compound units and plain numbers: engineering notation instead
-        assert_eq!(shown(q(5000.0, [0, 1, -2, 0, 0, 0, 0])), "5*10^3*'N/'m");
-        assert_eq!(shown(q(12500.0, [0; 7])), "12.5*10^3");
+        assert_eq!(shown(q(5000.0, [0, 1, -2, 0, 0, 0, 0]))?, "5*10^3*'N/'m");
+        assert_eq!(shown(q(12500.0, [0; 7]))?, "12.5*10^3");
         // a unit the author asked for stays as asked
         let kn = DisplaySpec { unit: Some("kN".into()), decimals: None };
-        assert_eq!(format_value(&q(500.0, [1, 1, -2, 0, 0, 0, 0]), &kn, &s, &r).unwrap(), "0.5 'kN");
+        assert_eq!(format_value(&q(500.0, [1, 1, -2, 0, 0, 0, 0]), &kn, &s, &r)?, "0.5 'kN");
+        Ok(())
     }
 
     #[test]
-    fn units() {
+    fn units() -> TestResult {
         let r = UnitRegistry::new();
         let spec = |u: &str| DisplaySpec { unit: Some(u.into()), decimals: Some(2) };
         let force = Value::Num(Quantity::new(9.80665 * 1800.0, Dim::from_ints([1, 1, -2, 0, 0, 0, 0])));
         let s = DisplaySettings::default();
-        assert_eq!(format_value(&force, &spec("kgf"), &s, &r).unwrap(), "1800 'kgf");
-        assert_eq!(format_value(&force, &DisplaySpec::default(), &s, &r).unwrap(), "17651.97 'N");
+        assert_eq!(format_value(&force, &spec("kgf"), &s, &r)?, "1800 'kgf");
+        assert_eq!(format_value(&force, &DisplaySpec::default(), &s, &r)?, "17651.97 'N");
         let moment = Value::Num(Quantity::new(10.0, Dim::from_ints([2, 1, -2, 0, 0, 0, 0])));
-        assert_eq!(format_value(&moment, &spec("kgf*m"), &s, &r).unwrap(), "1.02 'kgf*'m");
+        assert_eq!(format_value(&moment, &spec("kgf*m"), &s, &r)?, "1.02 'kgf*'m");
         let line = Value::Num(Quantity::new(5.0, Dim::from_ints([0, 1, -2, 0, 0, 0, 0])));
-        assert_eq!(format_value(&line, &DisplaySpec::default(), &s, &r).unwrap(), "5 'N/'m");
+        assert_eq!(format_value(&line, &DisplaySpec::default(), &s, &r)?, "5 'N/'m");
         let hz = Value::Num(Quantity::new(5.0, Dim::from_ints([0, 0, -1, 0, 0, 0, 0])));
-        assert_eq!(format_value(&hz, &DisplaySpec::default(), &s, &r).unwrap(), "5/'s");
+        assert_eq!(format_value(&hz, &DisplaySpec::default(), &s, &r)?, "5/'s");
         let temp = Value::Num(Quantity::new(293.15, Dim::from_ints([0, 0, 0, 0, 1, 0, 0])));
-        assert_eq!(format_value(&temp, &spec("°C"), &s, &r).unwrap(), "20 '°C");
+        assert_eq!(format_value(&temp, &spec("°C"), &s, &r)?, "20 '°C");
         assert!(format_value(&temp, &spec("m"), &s, &r).is_err());
         // shown in a unit of another kind, the rest stays in SI (SMath)
-        assert_eq!(format_shown(&force, &spec("kg"), &s, &r).unwrap(), "17651.97 'kg*'m/'s^2");
-        assert_eq!(format_shown(&moment, &spec("kN"), &s, &r).unwrap(), "0.01 'kN*'m");
-        assert_eq!(format_shown(&line, &spec("kN"), &s, &r).unwrap(), "0.01 'kN/'m");
+        assert_eq!(format_shown(&force, &spec("kg"), &s, &r)?, "17651.97 'kg*'m/'s^2");
+        assert_eq!(format_shown(&moment, &spec("kN"), &s, &r)?, "0.01 'kN*'m");
+        assert_eq!(format_shown(&line, &spec("kN"), &s, &r)?, "0.01 'kN/'m");
         assert!(
             format_shown(&force, &spec("°C"), &s, &r).is_err(),
             "a scale with an offset can't carry other units"
         );
+        Ok(())
     }
 }

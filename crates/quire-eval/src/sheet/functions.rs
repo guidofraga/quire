@@ -6,14 +6,19 @@ fn count_error(name: &str, want: &str) -> EvalError {
     EvalError::new(format!("{name} takes {want}"))
 }
 
+/// The `k`-th argument of a function. Each function checks its argument count first.
+fn arg(args: &[F], k: usize) -> Result<&F> {
+    args.get(k).ok_or_else(|| EvalError::new(format!("missing argument {}", k + 1)))
+}
+
 impl Sheet<'_, '_, '_> {
     /// An argument as rows of values (a single value is a 1×1 range; matrices spread out).
     fn rows(&mut self, f: &F) -> Result<Vec<Vec<CV>>> {
         Ok(match self.eval_any(f)? {
             Got::Many(rows) => rows,
-            Got::One(CV::V(Value::Matrix(m))) => {
-                (0..m.rows).map(|r| (0..m.cols).map(|c| CV::V(m.get(r, c).clone())).collect()).collect()
-            }
+            Got::One(CV::V(Value::Matrix(m))) => (0..m.rows)
+                .map(|r| (0..m.cols).map(|c| m.at(r, c).cloned().map(CV::V)).collect::<Result<Vec<_>>>())
+                .collect::<Result<Vec<_>>>()?,
             Got::One(v) => vec![vec![v]],
         })
     }
@@ -53,11 +58,11 @@ impl Sheet<'_, '_, '_> {
     }
 
     fn one(&mut self, name: &str, args: &[F], k: usize) -> Result<Quantity> {
-        self.eval(&args[k])?.value().as_num(&format!("the argument of {name}"))
+        self.eval(arg(args, k)?)?.value().as_num(&format!("the argument of {name}"))
     }
 
     fn scalar(&mut self, name: &str, args: &[F], k: usize) -> Result<f64> {
-        self.eval(&args[k])?.value().as_scalar(&format!("the argument of {name}"))
+        self.eval(arg(args, k)?)?.value().as_scalar(&format!("the argument of {name}"))
     }
 
     pub(super) fn call(&mut self, name: &str, args: &[F]) -> Result<CV> {
@@ -72,10 +77,10 @@ impl Sheet<'_, '_, '_> {
             // logic
             "IF" => {
                 arity(2, 3, "a condition and one or two values")?;
-                return if self.eval(&args[0])?.truthy()? {
-                    self.eval(&args[1])
+                return if self.eval(arg(args, 0)?)?.truthy()? {
+                    self.eval(arg(args, 1)?)
                 } else if n == 3 {
-                    self.eval(&args[2])
+                    self.eval(arg(args, 2)?)
                 } else {
                     Ok(CV::Bool(false))
                 };
@@ -85,15 +90,16 @@ impl Sheet<'_, '_, '_> {
                     return Err(count_error(&up, "pairs of a condition and a value"));
                 }
                 for pair in args.chunks(2) {
-                    if self.eval(&pair[0])?.truthy()? {
-                        return self.eval(&pair[1]);
+                    let [cond, val] = pair else { continue };
+                    if self.eval(cond)?.truthy()? {
+                        return self.eval(val);
                     }
                 }
                 bail!("IFS: no condition holds");
             }
             "IFERROR" => {
                 arity(2, 2, "a value and what to show on an error")?;
-                return self.eval(&args[0]).or_else(|_| self.eval(&args[1]));
+                return self.eval(arg(args, 0)?).or_else(|_| self.eval(arg(args, 1)?));
             }
             "AND" | "OR" | "XOR" => {
                 let mut vals = Vec::new();
@@ -111,18 +117,18 @@ impl Sheet<'_, '_, '_> {
             }
             "NOT" => {
                 arity(1, 1, "one value")?;
-                return Ok(CV::Bool(!self.eval(&args[0])?.truthy()?));
+                return Ok(CV::Bool(!self.eval(arg(args, 0)?)?.truthy()?));
             }
             "TRUE" | "FALSE" if n == 0 => return Ok(CV::Bool(up == "TRUE")),
             "CHOOSE" => {
                 if n < 2 {
                     return Err(count_error(&up, "an index and the values to choose from"));
                 }
-                let i = self.eval(&args[0])?.value().as_int("the index of CHOOSE")?;
+                let i = self.eval(arg(args, 0)?)?.value().as_int("the index of CHOOSE")?;
                 if i < 1 || i as usize >= n {
                     bail!("CHOOSE: the index {i} is not between 1 and {}", n - 1);
                 }
-                return self.eval(&args[i as usize]);
+                return self.eval(arg(args, i as usize)?);
             }
             // aggregates
             "SUM" | "PRODUCT" | "AVERAGE" | "MIN" | "MAX" | "MEDIAN" => {
@@ -142,16 +148,18 @@ impl Sheet<'_, '_, '_> {
                 }
                 let ranges = args.iter().map(|a| self.rows(a)).collect::<Result<Vec<_>>>()?;
                 let shape = |r: &Vec<Vec<CV>>| (r.len(), r.first().map_or(0, Vec::len));
-                if ranges.iter().any(|r| shape(r) != shape(&ranges[0])) {
+                let (h, w) = ranges.first().map_or((0, 0), shape);
+                if ranges.iter().any(|r| shape(r) != (h, w)) {
                     bail!("SUMPRODUCT: the ranges must have the same size");
                 }
                 let mut total: Option<Value> = None;
-                let (h, w) = shape(&ranges[0]);
                 for r in 0..h {
                     for c in 0..w {
                         let mut p = Value::num(1.0);
                         for range in &ranges {
-                            p = arith(BinaryOp::Mul, &p, &range[r][c].value())?;
+                            let cell = range.get(r).and_then(|row| row.get(c));
+                            let cell = cell.ok_or_else(|| crate::error::internal("the SUMPRODUCT ranges"))?;
+                            p = arith(BinaryOp::Mul, &p, &cell.value())?;
                         }
                         total = Some(match total {
                             None => p,
@@ -164,10 +172,13 @@ impl Sheet<'_, '_, '_> {
             "SUMIF" | "COUNTIF" | "AVERAGEIF" => {
                 let (lo, hi) = if up == "COUNTIF" { (2, 2) } else { (2, 3) };
                 arity(lo, hi, "a range, a criterion and optionally the range to add up")?;
-                let test: Vec<CV> = self.rows(&args[0])?.into_iter().flatten().collect();
-                let crit = self.eval(&args[1])?;
-                let values: Vec<CV> =
-                    if n == 3 { self.rows(&args[2])?.into_iter().flatten().collect() } else { test.clone() };
+                let test: Vec<CV> = self.rows(arg(args, 0)?)?.into_iter().flatten().collect();
+                let crit = self.eval(arg(args, 1)?)?;
+                let values: Vec<CV> = if n == 3 {
+                    self.rows(arg(args, 2)?)?.into_iter().flatten().collect()
+                } else {
+                    test.clone()
+                };
                 let mut picked = Vec::new();
                 for (i, v) in test.iter().enumerate() {
                     if criterion(&crit, v, self.interp, self.scope)? {
@@ -240,8 +251,8 @@ impl Sheet<'_, '_, '_> {
             }
             "POWER" => {
                 arity(2, 2, "a number and an exponent")?;
-                let a = self.eval(&args[0])?.value();
-                let b = self.eval(&args[1])?.value();
+                let a = self.eval(arg(args, 0)?)?.value();
+                let b = self.eval(arg(args, 1)?)?.value();
                 return arith(BinaryOp::Pow, &a, &b).map(CV::V);
             }
             "PI" if n == 0 => return num(std::f64::consts::PI),
@@ -274,7 +285,7 @@ impl Sheet<'_, '_, '_> {
             }
             "LEN" | "UPPER" | "LOWER" | "TRIM" => {
                 arity(1, 1, "one text")?;
-                let t = self.eval(&args[0])?.text(self.settings, self.interp.units);
+                let t = self.eval(arg(args, 0)?)?.text(self.settings, self.interp.units);
                 return match up.as_str() {
                     "LEN" => num(t.chars().count() as f64),
                     "UPPER" => Ok(CV::V(Value::Str(t.to_uppercase()))),
@@ -285,10 +296,10 @@ impl Sheet<'_, '_, '_> {
             "LEFT" | "RIGHT" => {
                 arity(1, 2, "a text and how many characters")?;
                 let t: Vec<char> =
-                    self.eval(&args[0])?.text(self.settings, self.interp.units).chars().collect();
+                    self.eval(arg(args, 0)?)?.text(self.settings, self.interp.units).chars().collect();
                 let k = if n == 2 { self.scalar(&up, args, 1)?.max(0.0) as usize } else { 1 }.min(t.len());
-                let part = if up == "LEFT" { &t[..k] } else { &t[t.len() - k..] };
-                return Ok(CV::V(Value::Str(part.iter().collect())));
+                let part = if up == "LEFT" { t.get(..k) } else { t.get(t.len().saturating_sub(k)..) };
+                return Ok(CV::V(Value::Str(part.unwrap_or_default().iter().collect())));
             }
             // lookup
             "VLOOKUP" | "HLOOKUP" => {
@@ -297,30 +308,31 @@ impl Sheet<'_, '_, '_> {
                     4,
                     "a value, a range, a column (row) number and optionally FALSE for an exact match",
                 )?;
-                let key = self.eval(&args[0])?;
-                let mut table = self.rows(&args[1])?;
+                let key = self.eval(arg(args, 0)?)?;
+                let mut table = self.rows(arg(args, 1)?)?;
                 if up == "HLOOKUP" {
                     table = transpose(table);
                 }
-                let k = self.eval(&args[2])?.value().as_int("the column number")?;
-                let exact = n == 4 && !self.eval(&args[3])?.truthy()?;
+                let k = self.eval(arg(args, 2)?)?.value().as_int("the column number")?;
+                let exact = n == 4 && !self.eval(arg(args, 3)?)?.truthy()?;
                 let width = table.first().map_or(0, Vec::len);
                 if k < 1 || k as usize > width {
                     bail!("{up}: {k} is outside the range, which has {width}");
                 }
-                let keys: Vec<CV> = table.iter().map(|r| r[0].clone()).collect();
+                let keys: Vec<CV> = table.iter().map(|r| r.first().cloned().unwrap_or(CV::Blank)).collect();
                 let at = lookup(&keys, &key, if exact { 0 } else { 1 })?.ok_or_else(|| {
                     EvalError::new(format!(
                         "{up}: {} is not in the table",
                         key.text(self.settings, self.interp.units)
                     ))
                 })?;
-                return Ok(table[at][k as usize - 1].clone());
+                let cell = table.get(at).and_then(|row| row.get(k as usize - 1));
+                return cell.cloned().ok_or_else(|| crate::error::internal("the lookup table"));
             }
             "MATCH" => {
                 arity(2, 3, "a value, a row or column and optionally the match type")?;
-                let key = self.eval(&args[0])?;
-                let list: Vec<CV> = self.rows(&args[1])?.into_iter().flatten().collect();
+                let key = self.eval(arg(args, 0)?)?;
+                let list: Vec<CV> = self.rows(arg(args, 1)?)?.into_iter().flatten().collect();
                 let kind = if n == 3 { self.scalar(&up, args, 2)? as i32 } else { 1 };
                 let at = lookup(&list, &key, kind)?.ok_or_else(|| {
                     EvalError::new(format!(
@@ -332,9 +344,10 @@ impl Sheet<'_, '_, '_> {
             }
             "INDEX" => {
                 arity(2, 3, "a range, a row and optionally a column")?;
-                let table = self.rows(&args[0])?;
-                let i = self.eval(&args[1])?.value().as_int("the row")?;
-                let j = if n == 3 { Some(self.eval(&args[2])?.value().as_int("the column")?) } else { None };
+                let table = self.rows(arg(args, 0)?)?;
+                let i = self.eval(arg(args, 1)?)?.value().as_int("the row")?;
+                let j =
+                    if n == 3 { Some(self.eval(arg(args, 2)?)?.value().as_int("the column")?) } else { None };
                 let (h, w) = (table.len(), table.first().map_or(0, Vec::len));
                 // INDEX(row or column, k) picks along it
                 let (r, c) = match j {
@@ -345,7 +358,8 @@ impl Sheet<'_, '_, '_> {
                 if r < 1 || c < 1 || r as usize > h || c as usize > w {
                     bail!("INDEX: ({r}, {c}) is outside the range ({h} × {w})");
                 }
-                return Ok(table[r as usize - 1][c as usize - 1].clone());
+                let cell = table.get(r as usize - 1).and_then(|row| row.get(c as usize - 1));
+                return cell.cloned().ok_or_else(|| crate::error::internal("the INDEX table"));
             }
             _ => {}
         }
@@ -393,7 +407,7 @@ impl Sheet<'_, '_, '_> {
 
 fn transpose(rows: Vec<Vec<CV>>) -> Vec<Vec<CV>> {
     let w = rows.first().map_or(0, Vec::len);
-    (0..w).map(|c| rows.iter().map(|r| r[c].clone()).collect()).collect()
+    (0..w).map(|c| rows.iter().map(|r| r.get(c).cloned().unwrap_or(CV::Blank)).collect()).collect()
 }
 
 fn aggregate(name: &str, vals: Vec<Value>) -> Result<Value> {
@@ -417,8 +431,8 @@ fn aggregate(name: &str, vals: Vec<Value>) -> Result<Value> {
         "PRODUCT" => fold(BinaryOp::Mul),
         "AVERAGE" => arith(BinaryOp::Div, &fold(BinaryOp::Add)?, &Value::num(vals.len() as f64)),
         "MIN" | "MAX" => {
-            let mut best = vals[0].clone();
-            for v in &vals[1..] {
+            let mut best = vals.first().cloned().unwrap_or(Value::num(0.0));
+            for v in vals.iter().skip(1) {
                 let better = compare(if name == "MIN" { CmpOp::Lt } else { CmpOp::Gt }, v, &best)?;
                 if better {
                     best = v.clone();
@@ -429,22 +443,21 @@ fn aggregate(name: &str, vals: Vec<Value>) -> Result<Value> {
         _ => {
             // MEDIAN
             let mut sorted = vals.clone();
-            for v in &sorted[1..] {
-                compare(CmpOp::Lt, v, &sorted[0])?;
+            if let Some(first) = sorted.first() {
+                for v in sorted.iter().skip(1) {
+                    compare(CmpOp::Lt, v, first)?;
+                }
             }
             sorted.sort_by(|a, b| {
                 let (Value::Num(x), Value::Num(y)) = (a, b) else { return std::cmp::Ordering::Equal };
                 x.v.total_cmp(&y.v)
             });
             let k = sorted.len();
+            let at = |i: usize| sorted.get(i).ok_or_else(|| crate::error::internal("the sorted values"));
             if k % 2 == 1 {
-                Ok(sorted[k / 2].clone())
+                Ok(at(k / 2)?.clone())
             } else {
-                arith(
-                    BinaryOp::Div,
-                    &arith(BinaryOp::Add, &sorted[k / 2 - 1], &sorted[k / 2])?,
-                    &Value::num(2.0),
-                )
+                arith(BinaryOp::Div, &arith(BinaryOp::Add, at(k / 2 - 1)?, at(k / 2)?)?, &Value::num(2.0))
             }
         }
     }

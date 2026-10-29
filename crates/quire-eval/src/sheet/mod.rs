@@ -153,11 +153,11 @@ fn literal(text: &str, units: &UnitRegistry) -> Option<Expr> {
     // decimal comma (12,5 kN), as typed where it is the norm
     let t = match t.find(',') {
         Some(i)
-            if t[..i].chars().last().is_some_and(|c| c.is_ascii_digit())
-                && t[i + 1..].starts_with(|c: char| c.is_ascii_digit())
+            if t.get(..i).and_then(|head| head.chars().last()).is_some_and(|c| c.is_ascii_digit())
+                && t.get(i + 1..).is_some_and(|tail| tail.starts_with(|c: char| c.is_ascii_digit()))
                 && t.matches(',').count() == 1 =>
         {
-            format!("{}.{}", &t[..i], &t[i + 1..])
+            format!("{}.{}", t.get(..i).unwrap_or_default(), t.get(i + 1..).unwrap_or_default())
         }
         _ => t.to_string(),
     };
@@ -238,7 +238,7 @@ pub(crate) fn evaluate(
         .map(|r| {
             (0..ncols)
                 .map(|c| {
-                    let raw = t.rows[r].get(c).map(String::as_str).unwrap_or("");
+                    let raw = t.rows.get(r).and_then(|row| row.get(c)).map(String::as_str).unwrap_or("");
                     let trimmed = raw.trim();
                     if let Some(f) = trimmed.strip_prefix('=') {
                         let parsed = parse_formula(f, (nrows, ncols), interp.units).map_err(|e| e.message);
@@ -276,7 +276,7 @@ pub(crate) fn evaluate(
     for r in 0..nrows {
         let mut row = Vec::with_capacity(ncols);
         for c in 0..ncols {
-            let formula = matches!(sheet.cells[r][c], Cell::Formula(_));
+            let formula = matches!(sheet.cells.get(r).and_then(|row| row.get(c)), Some(Cell::Formula(_)));
             let spec = cell_spec(t, c);
             let mut out = CellOutcome { formula, ..Default::default() };
             match sheet.cell(r, c) {
@@ -286,7 +286,10 @@ pub(crate) fn evaluate(
                         CV::Bool(b) => data.push(Value::bool(*b)),
                         CV::V(v) => data.push(v.clone()),
                     }
-                    let text_cell = matches!(sheet.cells[r][c], Cell::Text(_) | Cell::Blank);
+                    let text_cell = matches!(
+                        sheet.cells.get(r).and_then(|row| row.get(c)),
+                        Some(Cell::Text(_) | Cell::Blank)
+                    );
                     if !text_cell {
                         out.shown = match &v {
                             CV::Blank => None,
@@ -413,27 +416,36 @@ impl Sheet<'_, '_, '_> {
         if r >= self.cells.len() || c >= self.cells.first().map_or(0, Vec::len) {
             return Ok(CV::Blank);
         }
-        match &self.state[r][c] {
-            State::Done(v) => return v.clone(),
-            State::Busy => return Err(format!("circular reference through {}", cell_label(r, c))),
-            State::Todo => {}
+        match self.state.get(r).and_then(|row| row.get(c)) {
+            Some(State::Done(v)) => return v.clone(),
+            Some(State::Busy) => return Err(format!("circular reference through {}", cell_label(r, c))),
+            Some(State::Todo) => {}
+            None => return Err("internal error: a cell outside the sheet".into()),
         }
-        self.state[r][c] = State::Busy;
-        let v = match &self.cells[r][c] {
-            Cell::Blank => Ok(CV::Blank),
-            Cell::Text(t) => Ok(CV::V(Value::Str(t.clone()))),
-            Cell::Value(e) => {
+        *self.state_mut(r, c)? = State::Busy;
+        let v = match self.cells.get(r).and_then(|row| row.get(c)) {
+            None | Some(Cell::Blank) => Ok(CV::Blank),
+            Some(Cell::Text(t)) => Ok(CV::V(Value::Str(t.clone()))),
+            Some(Cell::Value(e)) => {
                 let e = e.clone();
                 self.interp.eval(self.scope, &e).map(CV::V).map_err(|e| e.message)
             }
-            Cell::Formula(Err(e)) => Err(e.clone()),
-            Cell::Formula(Ok(f)) => {
+            Some(Cell::Formula(Err(e))) => Err(e.clone()),
+            Some(Cell::Formula(Ok(f))) => {
                 let f = f.clone();
                 self.eval(&f).map_err(|e| e.message)
             }
         };
-        self.state[r][c] = State::Done(v.clone());
+        *self.state_mut(r, c)? = State::Done(v.clone());
         v
+    }
+
+    /// The state of cell (r, c), for writing. The sheet's grids have the same shape.
+    fn state_mut(&mut self, r: usize, c: usize) -> std::result::Result<&mut State, String> {
+        self.state
+            .get_mut(r)
+            .and_then(|row| row.get_mut(c))
+            .ok_or_else(|| "internal error: a cell outside the sheet".to_string())
     }
 
     /// A referenced cell: its error becomes the reader's, named.
@@ -464,7 +476,8 @@ impl Sheet<'_, '_, '_> {
             if r >= m.rows || c >= m.cols {
                 return CV::Blank;
             }
-            match m.get(r, c) {
+            let Some(v) = m.get(r, c) else { return CV::Blank };
+            match v {
                 Value::Str(s) if s.is_empty() => CV::Blank,
                 Value::Str(s) if s == "#ERROR" => CV::V(Value::Str(s.clone())),
                 v => CV::V(v.clone()),
@@ -481,8 +494,10 @@ impl Sheet<'_, '_, '_> {
         match self.eval_any(f)? {
             Got::One(v) => Ok(v),
             Got::Many(rows) => {
-                if rows.len() == 1 && rows[0].len() == 1 {
-                    return Ok(rows[0][0].clone());
+                if let [row] = rows.as_slice()
+                    && let [v] = row.as_slice()
+                {
+                    return Ok(v.clone());
                 }
                 bail!("a cell holds one value; use SUM, MAX, … to combine a range")
             }

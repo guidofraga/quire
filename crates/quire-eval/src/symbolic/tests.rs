@@ -2,12 +2,16 @@ use super::*;
 
 fn sym_eval(src: &str) -> String {
     let none = |_: &str, _: usize| None;
-    evaluate(&quire_ast::parse(src).unwrap(), &none).unwrap_or_else(|e| format!("error: {e}"))
+    match quire_ast::parse(src) {
+        Ok(e) => evaluate(&e, &none).unwrap_or_else(|e| format!("error: {e}")),
+        Err(e) => format!("error: {e}"),
+    }
 }
 
-fn parsed(src: &str) -> S {
+fn parsed(src: &str) -> Res<S> {
     let none = |_: &str, _: usize| None;
-    from_expr(&quire_ast::parse(src).unwrap(), &mut Ctx::new(&none)).unwrap()
+    let e = quire_ast::parse(src).map_err(|e| e.to_string())?;
+    from_expr(&e, &mut Ctx::new(&none))
 }
 
 /// Values for names when results are checked by numbers.
@@ -26,9 +30,9 @@ fn at(e: &S, x: &str, v: f64) -> f64 {
 }
 
 /// The derivative of what `int(f, x)` gives is `f` again, at a few points.
-fn check_antiderivative(f: &str) {
-    let f = parsed(f);
-    let big_f = integrate(&f, "x").unwrap();
+fn check_antiderivative(f: &str) -> Res<()> {
+    let f = parsed(f)?;
+    let big_f = integrate(&f, "x")?;
     let df = diff(&big_f, "x");
     for v in [0.3, 0.7, 1.9, 2.6] {
         let (want, got) = (at(&f, "x", v), at(&df, "x", v));
@@ -41,6 +45,7 @@ fn check_antiderivative(f: &str) {
             show(&big_f)
         );
     }
+    Ok(())
 }
 
 #[test]
@@ -139,7 +144,7 @@ fn integrates() {
 }
 
 #[test]
-fn integrates_harder_functions() {
+fn integrates_harder_functions() -> Res<()> {
     let cases = [
         // f(a*x + b)
         ("exp(2*x + 1)", "exp(2*x + 1)/2"),
@@ -172,8 +177,9 @@ fn integrates_harder_functions() {
     ];
     for (f, want) in cases {
         assert_eq!(sym_eval(&format!("int({f}, x)")), want, "int({f}, x)");
-        check_antiderivative(f);
+        check_antiderivative(f)?;
     }
+    Ok(())
 }
 
 #[test]
@@ -238,7 +244,7 @@ fn solves_higher_degrees_fractions_and_functions() {
 }
 
 #[test]
-fn roots_satisfy_their_equations() {
+fn roots_satisfy_their_equations() -> Res<()> {
     for (eq, x) in [
         ("x^3 - 6*x^2 + 11*x - 6", "x"),
         ("x^3 - x^2 - 2*x + 2", "x"),
@@ -247,16 +253,17 @@ fn roots_satisfy_their_equations() {
         ("exp(k*x) - 2", "x"),
         ("x^4 - 5*x^2 + 4", "x"),
     ] {
-        let e = parsed(eq);
-        let roots = match solve::solve(&e, x).unwrap() {
+        let e = parsed(eq)?;
+        let roots = match solve::solve(&e, x)? {
             S::Vec(rs) => rs,
             r => vec![r],
         };
         for r in roots {
-            let v = approx(&r, &values).unwrap();
+            let v = approx(&r, &values).ok_or("no numeric value")?;
             assert!(at(&e, x, v).abs() < 1e-9, "{eq} at {x} = {}", show(&r));
         }
     }
+    Ok(())
 }
 
 #[test]

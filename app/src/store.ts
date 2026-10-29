@@ -199,7 +199,10 @@ export interface Placed {
 export function localized(v: Localized | undefined, lang?: string): string {
   if (v === undefined) return "";
   if (typeof v === "string") return v;
-  const key = Object.keys(v).find((k) => lang?.startsWith(k)) ?? Object.keys(v)[0];
+  // the document's language, else English, else the first one written (SMath worksheets carry
+  // several translations and no document language, often with Russian first); as in Rust
+  const keys = Object.keys(v);
+  const key = keys.find((k) => lang?.startsWith(k)) ?? keys.find((k) => k === "en") ?? keys[0];
   return key ? v[key] : "";
 }
 

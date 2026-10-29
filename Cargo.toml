@@ -20,6 +20,15 @@ quire-smath = { path = "crates/quire-smath" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
+# no panics in the code: every failure is an error value the caller handles
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+
 [profile.release]
 lto = "thin"
 

@@ -1,6 +1,4 @@
-//! SMath XHTML-ish paragraphs -> Djot (port of `esc`, `css`, `wrap_inline`, `ws`,
-//! `esc_text`, `inline_djot`, `paragraphs`, `para_block`, `plain`, `HEADING_RE`,
-//! `CAPTION_RE` in tools/sm2quire.py). OWNER: text agent.
+//! SMath XHTML-ish paragraphs -> Djot.
 //!
 //! Python's ElementTree model is reproduced by walking roxmltree children: `el.text` is
 //! the run of text nodes before the first child element, `c.tail` the run after `c` up

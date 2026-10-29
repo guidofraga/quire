@@ -81,8 +81,13 @@ fn rules(e: S) -> S {
         S::Mul(fs) if fs.iter().filter(|f| matches!(f, S::Fn(n, _) if n == "exp")).count() > 1 => {
             let (exps, mut rest): (Vec<S>, Vec<S>) =
                 fs.into_iter().partition(|f| matches!(f, S::Fn(n, _) if n == "exp"));
-            let sum =
-                add(exps.into_iter().map(|f| if let S::Fn(_, a) = f { a[0].clone() } else { f }).collect());
+            let sum = add(exps
+                .into_iter()
+                .map(|f| match f {
+                    S::Fn(_, a) => a.into_iter().next().unwrap_or(ZERO),
+                    other => other,
+                })
+                .collect());
             rest.push(func("exp", vec![sum]));
             mul(rest)
         }
@@ -99,12 +104,13 @@ fn pythagoras(mut ts: Vec<S>) -> S {
     };
     let mut i = 0;
     while i < ts.len() {
-        let factors = match &ts[i] {
-            S::Mul(fs) => fs.clone(),
-            t => vec![t.clone()],
+        let factors = match ts.get(i) {
+            Some(S::Mul(fs)) => fs.clone(),
+            Some(t) => vec![t.clone()],
+            None => break,
         };
         let found = factors.iter().position(|f| square_of(f, "sin")).and_then(|k| {
-            let S::Pow(b, _) = &factors[k] else { return None };
+            let S::Pow(b, _) = factors.get(k)? else { return None };
             let S::Fn(_, u) = &**b else { return None };
             let mut rest = factors.clone();
             rest.remove(k);
@@ -114,7 +120,9 @@ fn pythagoras(mut ts: Vec<S>) -> S {
             Some((j, rest))
         });
         if let Some((j, rest)) = found {
-            ts[i] = rest;
+            if let Some(slot) = ts.get_mut(i) {
+                *slot = rest;
+            }
             ts.remove(j);
             return add(ts);
         }
@@ -168,7 +176,11 @@ pub(super) fn together(e: &S) -> (S, S) {
                     }
                 }
             }
-            let den = mul(order.iter().map(|k| highest[k].clone()).map(|(b, k)| pow(b, S::N(k))).collect());
+            let den = mul(order
+                .iter()
+                .filter_map(|k| highest.get(k).cloned())
+                .map(|(b, k)| pow(b, S::N(k)))
+                .collect());
             let num = add(parts
                 .into_iter()
                 .map(|(n, d)| mul(vec![n, den.clone(), pow(d, super::n(-1))]))
@@ -225,9 +237,9 @@ pub(crate) fn tidy(e: &S) -> S {
             // polynomials only (x^3*(2*L - x)), elsewhere the same power (x*(sin(x) + 1))
             let polynomial = ts.iter().all(|t| monomial(t).is_some());
             let mut common: Vec<S> = Vec::new();
-            for (b, k0) in powers(&ts[0]) {
+            for (b, k0) in ts.first().map(powers).unwrap_or_default() {
                 let mut k = k0;
-                let in_all = ts[1..].iter().all(|t| {
+                let in_all = ts.iter().skip(1).all(|t| {
                     powers(t).iter().any(|(b2, k2)| {
                         let same = *b2 == b && k2.f() * k0.f() > 0.0 && (polynomial || k2 == &k0);
                         if same && k2.f().abs() < k.f().abs() {

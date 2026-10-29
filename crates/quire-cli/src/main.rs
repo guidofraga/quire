@@ -25,14 +25,15 @@ usage:
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = match args.first().map(String::as_str) {
-        Some("eval") if args.len() == 2 => cmd_eval(&args[1]),
-        Some("check") if args.len() == 2 => cmd_check(&args[1]),
-        Some("fmt") if args.len() >= 3 && args[1] == "--check" => cmd_fmt_check(&args[2..]),
-        Some("calc") if args.len() >= 2 => cmd_calc(&args[1..]),
-        Some("import") if (2..=3).contains(&args.len()) => cmd_import(args.get(1..).unwrap_or_default()),
-        Some("serve") => cmd_serve(&args[1..]),
-        Some("--version" | "-V") => {
+    let rest = args.get(1..).unwrap_or_default();
+    let result = match (args.first().map(String::as_str), rest) {
+        (Some("eval"), [file]) => cmd_eval(file),
+        (Some("check"), [file]) => cmd_check(file),
+        (Some("fmt"), [flag, paths @ ..]) if flag == "--check" && !paths.is_empty() => cmd_fmt_check(paths),
+        (Some("calc"), [_, ..]) => cmd_calc(rest),
+        (Some("import"), [_] | [_, _]) => cmd_import(rest),
+        (Some("serve"), _) => cmd_serve(rest),
+        (Some("--version" | "-V"), _) => {
             println!("quire {}", env!("CARGO_PKG_VERSION"));
             Ok(true)
         }
@@ -243,7 +244,8 @@ fn cmd_calc(args: &[String]) -> CmdResult {
     }
 }
 
-/// `quire import <file.sm> [out.quire]`: the same bundle, and the same summary, as tools/sm2quire.py.
+/// `quire import <file.sm> [out.quire]`: convert an SMath worksheet into a bundle, with the
+/// results SMath cached in `results.json` for `quire check`.
 fn cmd_import(args: &[String]) -> CmdResult {
     let src = PathBuf::from(args.first().ok_or("usage: quire import <file.sm> [out.quire]")?);
     let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or("the file has no name")?;

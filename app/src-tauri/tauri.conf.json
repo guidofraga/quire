@@ -59,6 +59,13 @@
         "rank": "Owner",
         "mimeType": "application/vnd.quire+zip",
         "exportedType": { "identifier": "org.quire.document.single", "conformsTo": ["public.zip-archive", "public.data"] }
+      },
+      {
+        "ext": ["sm"],
+        "name": "SMath Studio worksheet",
+        "description": "SMath Studio worksheet, opened as a new Quire document",
+        "role": "Viewer",
+        "rank": "Alternate"
       }
     ]
   }

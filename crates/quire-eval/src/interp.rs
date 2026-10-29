@@ -6,7 +6,7 @@ use quire_units::{Dim, Unit, UnitRegistry};
 
 use crate::builtins::{self, dim_pow};
 use crate::constants::constant;
-use crate::error::{EvalError, Result, bail};
+use crate::error::{EvalError, Result, bail, internal};
 use crate::ops::{self, arith, compare, same_dim};
 use crate::value::{Matrix, Quantity, Value};
 
@@ -32,6 +32,12 @@ pub type Env = HashMap<String, Binding>;
 /// Functions are keyed by name and arity, so `f(x)` and `f(x, y)` can coexist.
 pub fn func_key(name: &str, arity: usize) -> String {
     format!("{name}#{arity}")
+}
+
+/// The `i`-th argument of a call. The lazy forms are chosen by argument count first, so this
+/// only fails if a caller asks for an argument it never checked.
+pub(crate) fn arg(args: &[Expr], i: usize) -> Result<&Expr> {
+    args.get(i).ok_or_else(|| EvalError::new(format!("missing argument {}", i + 1)))
 }
 
 /// Lookup chain: local frames (innermost last), then a shared base environment.
@@ -98,6 +104,9 @@ pub struct Interp<'u> {
     pub shadowing: BTreeSet<String>,
     /// Your variables read as a unit because they follow a number (`10 m` with `m := 25 kg`).
     pub units_over_variables: BTreeSet<String>,
+    /// SMath documents (`settings.units.marked`): a bare name is never a unit or a constant,
+    /// so only the predefined constants (π, e, ∞) resolve without a definition.
+    pub marked_units: bool,
 }
 
 /// `2 m`, `9.81 m/s`, `64 kgf*m`: an expression that reads as a number with units.
@@ -130,7 +139,19 @@ impl<'u> Interp<'u> {
             constant_idents: BTreeSet::new(),
             shadowing: BTreeSet::new(),
             units_over_variables: BTreeSet::new(),
+            marked_units: false,
         }
+    }
+
+    /// Turn on marked-units mode (see [`Interp::marked_units`]).
+    pub fn with_marked_units(mut self, on: bool) -> Self {
+        self.marked_units = on;
+        self
+    }
+
+    /// The unit a bare name stands for, if any. Marked documents never read a bare name as a unit.
+    fn unit_named(&self, name: &str) -> Option<Unit> {
+        if self.marked_units { None } else { self.units.lookup(name) }
     }
 
     pub(crate) fn tick(&mut self) -> Result<()> {
@@ -189,10 +210,14 @@ impl<'u> Interp<'u> {
             Expr::Index(base, idx) => {
                 let b = self.eval(s, base)?;
                 let ix = idx.iter().map(|i| self.eval(s, i)).collect::<Result<Vec<_>>>()?;
+                // a formula with an index is a formula: x[2] for x with no value
+                if matches!(b, Value::Sym(_)) {
+                    return crate::symbolic::bridge::element(base, &ix);
+                }
                 builtins::index(&b, &ix)
             }
             Expr::Matrix(rows) => {
-                let cols = rows[0].len();
+                let cols = rows.first().map_or(0, |r| r.len());
                 let mut data = Vec::with_capacity(rows.len() * cols);
                 for cell in rows.iter().flatten() {
                     data.push(self.eval(s, cell)?);
@@ -248,7 +273,7 @@ impl<'u> Interp<'u> {
             let unit = match b {
                 Expr::Unit(name) => Some(self.unit(name)?),
                 Expr::Ident(name) if !s.is_local(name) && (op == BinaryOp::Juxt || s.get(name).is_none()) => {
-                    self.units.lookup(name)
+                    self.unit_named(name)
                 }
                 _ => None,
             };
@@ -273,7 +298,7 @@ impl<'u> Interp<'u> {
     fn eval_unit_position(&mut self, s: &mut Scope, e: &Expr) -> Result<Value> {
         match e {
             // a function's own parameter stays itself: `v(t) := 9.81 t`
-            Expr::Ident(name) if !s.is_local(name) => match self.units.lookup(name) {
+            Expr::Ident(name) if !s.is_local(name) => match self.unit_named(name) {
                 Some(u) => {
                     self.unit_idents.insert(name.clone());
                     if matches!(s.get(name), Some(Binding::Val(_))) {
@@ -299,6 +324,11 @@ impl<'u> Interp<'u> {
             Some(Binding::Func(f)) => {
                 let f = Rc::clone(f);
                 let vals = args.iter().map(|a| self.eval(s, a)).collect::<Result<Vec<_>>>()?;
+                // SMath mode: the body sees the worksheet as it is now, not as it was when the
+                // function was defined (a constant defined further down is still its value)
+                if self.marked_units {
+                    return self.apply_in(&f, vals, s.base);
+                }
                 return self.apply(&f, vals);
             }
             Some(Binding::Failed(_)) => {
@@ -310,6 +340,9 @@ impl<'u> Interp<'u> {
             return r;
         }
         let vals = args.iter().map(|a| self.eval(s, a)).collect::<Result<Vec<_>>>()?;
+        if let Some(r) = crate::symbolic::bridge::call(name, &vals) {
+            return r;
+        }
         match builtins::call(name, &vals) {
             Some(r) => r,
             None => bail!("{name} is not a known function"),
@@ -317,6 +350,12 @@ impl<'u> Interp<'u> {
     }
 
     pub(crate) fn apply(&mut self, f: &Rc<Func>, vals: Vec<Value>) -> Result<Value> {
+        let env = Rc::clone(&f.env);
+        self.apply_in(f, vals, &env)
+    }
+
+    /// Calls `f` with the names of `base` visible besides its parameters.
+    fn apply_in(&mut self, f: &Rc<Func>, vals: Vec<Value>, base: &Env) -> Result<Value> {
         if self.depth >= MAX_DEPTH {
             bail!("{} calls itself too deeply", f.name);
         }
@@ -325,7 +364,8 @@ impl<'u> Interp<'u> {
         for (p, v) in f.params.iter().zip(vals) {
             frame.insert(p.clone(), Binding::Val(v));
         }
-        let mut scope = Scope { base: &f.env, frames: vec![frame] };
+        let base = if self.marked_units { base } else { &*f.env };
+        let mut scope = Scope { base, frames: vec![frame] };
         self.depth += 1;
         let r = self.eval(&mut scope, &f.body);
         self.depth -= 1;
@@ -363,8 +403,8 @@ impl<'u> Interp<'u> {
     }
 
     fn if_(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let c = self.eval(s, &args[0])?.truthy()?;
-        self.eval(s, &args[if c { 1 } else { 2 }])
+        let c = self.eval(s, arg(args, 0)?)?.truthy()?;
+        self.eval(s, arg(args, if c { 1 } else { 2 })?)
     }
 
     fn block(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
@@ -376,8 +416,8 @@ impl<'u> Interp<'u> {
     }
 
     fn for_in(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let var = ident(&args[0], "the loop variable")?;
-        let items = match self.eval(s, &args[1])? {
+        let var = ident(arg(args, 0)?, "the loop variable")?;
+        let items = match self.eval(s, arg(args, 1)?)? {
             Value::Matrix(m) => m.data,
             v => vec![v],
         };
@@ -385,36 +425,36 @@ impl<'u> Interp<'u> {
         for item in items {
             self.tick()?;
             s.set(var, Binding::Val(item));
-            last = self.eval(s, &args[2])?;
+            last = self.eval(s, arg(args, 2)?)?;
         }
         Ok(last)
     }
 
     fn for_c(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        self.eval(s, &args[0])?;
+        self.eval(s, arg(args, 0)?)?;
         let mut last = Value::num(0.0);
-        while self.eval(s, &args[1])?.truthy()? {
+        while self.eval(s, arg(args, 1)?)?.truthy()? {
             self.tick()?;
-            last = self.eval(s, &args[3])?;
-            self.eval(s, &args[2])?;
+            last = self.eval(s, arg(args, 3)?)?;
+            self.eval(s, arg(args, 2)?)?;
         }
         Ok(last)
     }
 
     fn while_(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
         let mut last = Value::num(0.0);
-        while self.eval(s, &args[0])?.truthy()? {
+        while self.eval(s, arg(args, 0)?)?.truthy()? {
             self.tick()?;
-            last = self.eval(s, &args[1])?;
+            last = self.eval(s, arg(args, 1)?)?;
         }
         Ok(last)
     }
 
     /// `sum(expr, i, a, b)` / `prod(expr, i, a, b)` over whole numbers a..b.
     fn fold(&mut self, s: &mut Scope, args: &[Expr], op: BinaryOp) -> Result<Value> {
-        let var = ident(&args[1], "the summation variable")?;
-        let a = self.eval(s, &args[2])?.as_int("the lower limit")?;
-        let b = self.eval(s, &args[3])?.as_int("the upper limit")?;
+        let var = ident(arg(args, 1)?, "the summation variable")?;
+        let a = self.eval(s, arg(args, 2)?)?.as_int("the lower limit")?;
+        let b = self.eval(s, arg(args, 3)?)?.as_int("the upper limit")?;
         let mut acc: Option<Value> = None;
         let prev = s.get(var).cloned();
         let mut result = Ok(());
@@ -424,7 +464,7 @@ impl<'u> Interp<'u> {
                 break;
             }
             s.bind(var, Value::num(k as f64));
-            match self.eval(s, &args[0]).and_then(|v| match &acc {
+            match self.eval(s, arg(args, 0)?).and_then(|v| match &acc {
                 None => Ok(v),
                 Some(x) => arith(op, x, &v),
             }) {
@@ -459,9 +499,9 @@ impl<'u> Interp<'u> {
 
     /// Adaptive Simpson quadrature of `int(f, x, a, b)`.
     fn integrate(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let var = ident(&args[1], "the integration variable")?;
-        let mut a = self.eval(s, &args[2])?.as_num("the lower limit")?;
-        let mut b = self.eval(s, &args[3])?.as_num("the upper limit")?;
+        let var = ident(arg(args, 1)?, "the integration variable")?;
+        let mut a = self.eval(s, arg(args, 2)?)?.as_num("the lower limit")?;
+        let mut b = self.eval(s, arg(args, 3)?)?.as_num("the upper limit")?;
         // a plain 0 limit takes the other limit's units: `int(q(x), x, 0, L)`
         if a.v == 0.0 {
             a.dim = b.dim;
@@ -477,12 +517,12 @@ impl<'u> Interp<'u> {
         let r: Result<f64> = (|| {
             let at = |t: f64| Quantity::new(t, a.dim);
             let m = 0.5 * (a.v + b.v);
-            let fa = self.sample(s, &args[0], var, at(a.v), &mut fdim)?;
-            let fm = self.sample(s, &args[0], var, at(m), &mut fdim)?;
-            let fb = self.sample(s, &args[0], var, at(b.v), &mut fdim)?;
+            let fa = self.sample(s, arg(args, 0)?, var, at(a.v), &mut fdim)?;
+            let fm = self.sample(s, arg(args, 0)?, var, at(m), &mut fdim)?;
+            let fb = self.sample(s, arg(args, 0)?, var, at(b.v), &mut fdim)?;
             let whole = (b.v - a.v) / 6.0 * (fa + 4.0 * fm + fb);
             let eps = 1e-10 * whole.abs().max(1e-300);
-            self.simpson(s, &args[0], var, a.dim, (a.v, b.v), (fa, fm, fb), whole, eps, 48, &mut fdim)
+            self.simpson(s, arg(args, 0)?, var, a.dim, (a.v, b.v), (fa, fm, fb), whole, eps, 48, &mut fdim)
         })();
         s.restore(var, prev);
         let v = r?;
@@ -521,9 +561,10 @@ impl<'u> Interp<'u> {
     /// `f(x)` as written, or `lhs - rhs` for an equation `lhs == rhs`.
     pub(crate) fn residual(e: &Expr) -> Expr {
         match e {
-            Expr::Compare(l, rest) if rest.len() == 1 && rest[0].0 == quire_ast::CmpOp::Eq => {
-                Expr::Binary(BinaryOp::Sub, l.clone(), Box::new(rest[0].1.clone()))
-            }
+            Expr::Compare(l, rest) => match rest.as_slice() {
+                [(quire_ast::CmpOp::Eq, r)] => Expr::Binary(BinaryOp::Sub, l.clone(), Box::new(r.clone())),
+                _ => e.clone(),
+            },
             other => other.clone(),
         }
     }
@@ -531,12 +572,12 @@ impl<'u> Interp<'u> {
     /// `root(f(x), x, a, b)` / `solve(x^2 == 2, x, a, b)`: a root between a and b.
     /// Without a sign change at the ends, the range is scanned for one.
     fn solve_in(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let var = ident(&args[1], "the unknown")?;
-        let a = self.eval(s, &args[2])?.as_num("the lower limit")?;
-        let b = self.eval(s, &args[3])?.as_num("the upper limit")?;
+        let var = ident(arg(args, 1)?, "the unknown")?;
+        let a = self.eval(s, arg(args, 2)?)?.as_num("the lower limit")?;
+        let b = self.eval(s, arg(args, 3)?)?.as_num("the upper limit")?;
         let dim = if a.v == 0.0 { b.dim } else { a.dim };
         same_dim(dim, if b.v == 0.0 { dim } else { b.dim }, "search between")?;
-        let f = Self::residual(&args[0]);
+        let f = Self::residual(arg(args, 0)?);
         let prev = s.get(var).cloned();
         let mut fdim = None;
         let r: Result<f64> = (|| {
@@ -598,13 +639,13 @@ impl<'u> Interp<'u> {
     /// `solve(f(x), x)`: a root near the current value of x (secant steps), or near a
     /// starting value given as `solve(f(x), x, x0)`.
     fn solve_from(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let var = ident(&args[1], "the unknown")?;
+        let var = ident(arg(args, 1)?, "the unknown")?;
         let x0 = match (args.get(2), s.get(var)) {
             (Some(g), _) => self.eval(s, g)?.as_num("the starting value")?,
             (None, Some(Binding::Val(Value::Num(q)))) => *q,
             _ => bail!("give {var} a starting value first (or search a range: solve(…, {var}, a, b))"),
         };
-        let f = Self::residual(&args[0]);
+        let f = Self::residual(arg(args, 0)?);
         let prev = s.get(var).cloned();
         let mut fdim = None;
         let r: Result<f64> = (|| {
@@ -635,22 +676,48 @@ impl<'u> Interp<'u> {
         Ok(Value::Num(Quantity::new(r?, x0.dim)))
     }
 
-    /// Numeric derivative `diff(f, x[, n])` at the current value of x.
+    /// `diff(f, x[, n])`: a numeric derivative at the current value of x, or in SMath mode,
+    /// with x unbound, the derivative as a formula.
     fn differentiate(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
-        let var = ident(&args[1], "the differentiation variable")?;
         let order = match args.get(2) {
             Some(n) => self.eval(s, n)?.as_int("the derivative order")?,
             None => 1,
         };
-        let x0 = match s.get(var) {
-            Some(Binding::Val(Value::Num(q))) => *q,
-            _ => bail!(
-                "{var} has no value here; give it one for a numeric derivative, or end the line with → for the derivative as a formula"
-            ),
-        };
-        if !(1..=2).contains(&order) {
-            bail!("only first and second numeric derivatives are supported");
+        if order < 0 {
+            bail!("a derivative order cannot be negative, but this one is {order}");
         }
+        // the 0th derivative is the expression itself
+        if order == 0 {
+            return self.eval(s, arg(args, 0)?);
+        }
+        if let Expr::Ident(var) = arg(args, 1)?
+            && let Some(Binding::Val(Value::Num(x0))) = s.get(var)
+        {
+            let (var, x0) = (var.clone(), *x0);
+            if (1..=2).contains(&order) {
+                return self.numeric_derivative(s, args, &var, order, x0);
+            }
+            return self.derivative_at(s, args, order, x0);
+        }
+        if !self.marked_units {
+            let var = ident(arg(args, 1)?, "the differentiation variable")?;
+            bail!(
+                "{var} has no value here; give it one for a numeric derivative, or end the line with → for the derivative as a formula"
+            );
+        }
+        let (_, d) = self.symbolic_derivative(s, args, order)?;
+        Ok(d)
+    }
+
+    /// First or second numeric derivative of `args[0]` at `x0`, by central differences.
+    fn numeric_derivative(
+        &mut self,
+        s: &mut Scope,
+        args: &[Expr],
+        var: &str,
+        order: i64,
+        x0: Quantity,
+    ) -> Result<Value> {
         let prev = s.get(var).cloned();
         let mut fdim = None;
         let scale = x0.v.abs().max(1.0);
@@ -658,20 +725,67 @@ impl<'u> Interp<'u> {
             let at = |t: f64| Quantity::new(t, x0.dim);
             if order == 1 {
                 let h = 6e-6 * scale;
-                let fp = self.sample(s, &args[0], var, at(x0.v + h), &mut fdim)?;
-                let fm = self.sample(s, &args[0], var, at(x0.v - h), &mut fdim)?;
+                let fp = self.sample(s, arg(args, 0)?, var, at(x0.v + h), &mut fdim)?;
+                let fm = self.sample(s, arg(args, 0)?, var, at(x0.v - h), &mut fdim)?;
                 Ok((fp - fm) / (2.0 * h))
             } else {
                 let h = 1e-4 * scale;
-                let fp = self.sample(s, &args[0], var, at(x0.v + h), &mut fdim)?;
-                let f0 = self.sample(s, &args[0], var, at(x0.v), &mut fdim)?;
-                let fm = self.sample(s, &args[0], var, at(x0.v - h), &mut fdim)?;
+                let fp = self.sample(s, arg(args, 0)?, var, at(x0.v + h), &mut fdim)?;
+                let f0 = self.sample(s, arg(args, 0)?, var, at(x0.v), &mut fdim)?;
+                let fm = self.sample(s, arg(args, 0)?, var, at(x0.v - h), &mut fdim)?;
                 Ok((fp - 2.0 * f0 + fm) / (h * h))
             }
         })();
         s.restore(var, prev);
         let v = r?;
         Ok(Value::Num(Quantity::new(v, fdim.unwrap_or(Dim::NONE) / dim_pow(x0.dim, order as i32))))
+    }
+
+    /// A derivative of order above two at a point: worked out as a formula, then evaluated
+    /// there. Values with units are not supported this way yet.
+    fn derivative_at(&mut self, s: &mut Scope, args: &[Expr], order: i64, x0: Quantity) -> Result<Value> {
+        if order < 1 {
+            bail!("only first and second numeric derivatives are supported");
+        }
+        if !x0.dim.is_dimensionless() {
+            bail!("a derivative above the second order is not supported yet for a value with units");
+        }
+        let (var, d) = self.symbolic_derivative(s, args, order)?;
+        crate::symbolic::bridge::at_point(&d, &var, x0.v)
+    }
+
+    /// `diff` worked out as a formula. The variable is a symbol while the expression is
+    /// evaluated; a numbered element `x[k]` is a symbol of its own name. Returns the symbol
+    /// and the derivative.
+    fn symbolic_derivative(&mut self, s: &mut Scope, args: &[Expr], order: i64) -> Result<(String, Value)> {
+        const MAX_ORDER: i64 = 12;
+        if !(1..=MAX_ORDER).contains(&order) {
+            bail!("a derivative of order {order} is not supported; the order must be from 1 to {MAX_ORDER}");
+        }
+        let (var, bound) = match arg(args, 1)? {
+            Expr::Ident(name) => (name.clone(), true),
+            Expr::Index(base, idx) => {
+                let Expr::Ident(name) = base.as_ref() else {
+                    bail!("the differentiation variable must be a name, like x")
+                };
+                let ix = idx
+                    .iter()
+                    .map(|i| self.eval(s, i).and_then(|v| crate::symbolic::bridge::index_expr(&v)))
+                    .collect::<Result<Vec<_>>>()?;
+                (crate::symbolic::bridge::element_name(name, &ix), false)
+            }
+            _ => bail!("the differentiation variable must be a name, like x"),
+        };
+        let prev = if bound { Some(s.get(&var).cloned()) } else { None };
+        if bound {
+            s.bind(&var, Value::Sym(Expr::Ident(var.clone())));
+        }
+        let v = self.eval(s, arg(args, 0)?);
+        if let Some(prev) = prev {
+            s.restore(&var, prev);
+        }
+        let d = crate::symbolic::bridge::diff_value(&v?, &var, order as u32)?;
+        Ok((var, d))
     }
 }
 
@@ -688,15 +802,20 @@ impl Interp<'_> {
                 Ok(v.clone())
             }
             Some(Binding::Failed(_)) => bail!("{name} has no value (its definition has an error)"),
-            Some(Binding::Func(_)) => unreachable!("functions are stored under name#arity"),
+            Some(Binding::Func(_)) => bail!("{name} is a function; give it its arguments"),
             None => {
+                let predefined = matches!(name, "π" | "pi" | "e" | "∞");
+                // SMath: a name with no value is a symbol, worked out with later
+                if self.marked_units && !predefined {
+                    return Ok(Value::Sym(Expr::Ident(name.to_string())));
+                }
                 if let Some(c) = constant(name) {
-                    if !matches!(name, "π" | "pi" | "e" | "∞") {
+                    if !predefined {
                         self.constant_idents.insert(name.to_string());
                     }
                     return Ok(Value::Num(Quantity::new(c.value, c.dim())));
                 }
-                match self.units.lookup(name) {
+                match self.unit_named(name) {
                     Some(u) => {
                         self.unit_idents.insert(name.to_string());
                         Ok(Value::Num(Quantity::new(u.factor, u.dim)))
@@ -707,6 +826,9 @@ impl Interp<'_> {
         }
     }
 }
+
+/// Largest matrix an element assignment may grow (`M[1000, 1000] := x` is fine).
+const MAX_ELEMENTS: usize = 1_000_000;
 
 /// `v[i] := x` / `M[i, j] := x`, growing the matrix (filled with 0) as needed.
 pub fn set_element(current: Option<Value>, idx: &[i64], v: Value) -> Result<Value> {
@@ -726,15 +848,26 @@ pub fn set_element(current: Option<Value>, idx: &[i64], v: Value) -> Result<Valu
     };
     if r > m.rows || c > m.cols {
         let (rows, cols) = (r.max(m.rows), c.max(m.cols));
-        let mut data = vec![Value::num(0.0); rows * cols];
-        for i in 0..m.rows {
-            for j in 0..m.cols {
-                data[i * cols + j] = m.get(i, j).clone();
-            }
+        if rows.checked_mul(cols).is_none_or(|n| n > MAX_ELEMENTS) {
+            bail!("a {rows}×{cols} matrix is too large (at most {MAX_ELEMENTS} elements)");
         }
-        m = Matrix::new(rows, cols, data);
+        if cols == m.cols || m.rows == 0 {
+            // new rows only: append (amortized, so filling a column in a loop stays linear)
+            let mut data = std::mem::take(&mut m.data);
+            data.resize(rows * cols, Value::num(0.0));
+            m = Matrix::new(rows, cols, data);
+        } else {
+            let mut data = vec![Value::num(0.0); rows * cols];
+            for i in 0..m.rows {
+                for j in 0..m.cols {
+                    *data.get_mut(i * cols + j).ok_or_else(|| internal("a matrix element"))? =
+                        m.at(i, j)?.clone();
+                }
+            }
+            m = Matrix::new(rows, cols, data);
+        }
     }
     let cols = m.cols;
-    m.data[(r - 1) * cols + (c - 1)] = v;
+    *m.data.get_mut((r - 1) * cols + (c - 1)).ok_or_else(|| internal("a matrix element"))? = v;
     Ok(Value::Matrix(m))
 }

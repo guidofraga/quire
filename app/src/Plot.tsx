@@ -1,12 +1,13 @@
 // 2D plots (docs/02-file-format.md §4.7): drawn as SVG so they print as vectors.
 // The engine samples each series where the plot sits in reading order and returns the
 // values in the axis units; this file only lays them out.
-import { createMemo, createSignal, For, Index, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { prettyValue } from "./math";
+import { advance, equalSpans, markerDiameter, markerPath } from "./plotGeometry";
 import { Check, Field, Num, Select, Text } from "./Inspector";
 import { closePopover, openPopover } from "./Popover";
 import { contentBottom, flash, heights, insertRegion, layout, LINE, setState, snap, state, updateRegion } from "./store";
-import type { PlotView, Region } from "./types";
+import type { PlotMarkView, PlotView, Region } from "./types";
 import type { Placed } from "./store";
 
 type Style = NonNullable<Series["style"]>;
@@ -31,7 +32,19 @@ interface AxisSpec {
 /** Fixed categorical order; series keep their colour when others are added or removed. */
 export const SERIES_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
 
+/** SMath's default series colours, in order (read off its screenshots: Hermite, PlanetaryGear). */
+export const SMATH_COLORS = ["#0000ff", "#ff0000", "#008000", "#f4a460", "#ee82ee", "#a52a2a"];
+
+/** Height of the animation bar under a plot (it is not drawn when printing). */
+const ANIM_BAR = 34;
+
 export const DEFAULT_SIZE: [number, number] = [440, 260];
+
+/** Frames a second when the document does not say. */
+const DEFAULT_FPS = 20;
+
+/** Reduce motion (the system setting): an animation starts paused, on its last frame. */
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export const seriesOf = (r: Region) => (Array.isArray(r.series) ? (r.series as Series[]) : []);
 export const axesOf = (r: Region) => (r.axes ?? {}) as { x?: AxisSpec; y?: AxisSpec };
@@ -117,14 +130,51 @@ export function PlotBody(props: { r: Region }) {
   const size = () => r().size ?? DEFAULT_SIZE;
   const series = () => seriesOf(r());
   const axes = () => axesOf(r());
-  const drawn = () => (view()?.series ?? []).map((s, i) => ({ ...s, i, spec: series()[i] })).filter((s) => !s.error && s.xs.length);
+  // an animation: the frame on screen (the last one when printing, so a PDF shows the plot as saved)
+  const frames = () => view()?.frames ?? [];
+  const [frame, setFrame] = createSignal(reducedMotion() ? Infinity : 0);
+  const [playing, setPlaying] = createSignal(!reducedMotion());
+  const shownFrame = () => Math.max(0, Math.min(state.printing ? frames().length - 1 : frame(), frames().length - 1));
+  const current = () => frames()[shownFrame()] ?? view()?.series ?? [];
+  const drawn = () => {
+    const d = current().map((s, i) => ({ ...s, i, spec: series()[i] })).filter((s) => !s.error && s.xs.length);
+    // SMath paints its first series on top (the beam over the supports, the bar over the wheel)
+    return r().palette === "smath" ? d.reverse() : d;
+  };
+  /** Every frame's series, so the axes of an animation fit all of its frames and do not jump. */
+  const everyFrame = () => (frames().length ? frames().flat() : (view()?.series ?? [])).filter((s) => !s.error && s.xs.length);
+  const showAxes = () => view()?.axes !== false;
+  // the animation bar takes the bottom of the box; printing has none, so the drawing gets all of it
+  const animated = () => frames().length > 1 && !state.printing;
+  const drawH = () => size()[1] - (animated() ? ANIM_BAR : 0);
+  const showGrid = () => view()?.grid ?? r().grid !== false;
 
   // a temporary zoomed or panned view (⌥ + scroll, ⌥ + drag, the + − buttons); not saved
   const [zoomed, setZoomed] = createSignal<{ x: [number, number]; y: [number, number] } | null>(null);
 
+  // playback: advance the frame at the document's rate while playing (a loop that ends with the effect)
+  createEffect(() => {
+    const n = frames().length;
+    if (!playing() || n < 2) return;
+    const fps = view()?.fps ?? DEFAULT_FPS;
+    let raf = 0;
+    let last = performance.now();
+    let carry = 0;
+    const tick = (now: number) => {
+      const step = advance(now - last, fps, carry);
+      last = now;
+      carry = step.carry;
+      if (step.steps) setFrame((f) => (f + step.steps) % n);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    onCleanup(() => cancelAnimationFrame(raf));
+  });
+
   const layout = createMemo((): Layout => {
-    const [w, h] = size();
-    const all = drawn();
+    const w = size()[0];
+    const h = drawH();
+    const all = everyFrame();
     const logX = !!axes().x?.log;
     const logY = !!axes().y?.log;
     const usable = (vs: (number | null)[], log: boolean) => (vs as number[]).filter((v) => Number.isFinite(v) && (!log || v > 0));
@@ -148,13 +198,22 @@ export function PlotBody(props: { r: Region }) {
       if (axes().y?.max === undefined && yTicks.at(-1)! < y[1]) y = [y[0], yTicks.at(-1)! + (yTicks[1] - yTicks[0])];
     }
     if (logX && !z) x = [axes().x?.min ?? 10 ** Math.floor(Math.log10(x[0])), axes().x?.max ?? 10 ** Math.ceil(Math.log10(x[1]))];
-    const X = scale(x[0], x[1], logX, Math.max(2, Math.round(w / 90)));
-    const Y = scale(y[0], y[1], logY, Math.max(2, Math.round(h / 50)));
+    let X = scale(x[0], x[1], logX, Math.max(2, Math.round(w / 90)));
+    let Y = scale(y[0], y[1], logY, Math.max(2, Math.round(h / 50)));
     const longest = Math.max(...Y.ticks.map((t) => Y.label(t).length));
-    const left = 18 + longest * 6.6 + 8;
-    const top = 10;
-    const right = 14;
-    const bottom = 40;
+    // without axes, the plot keeps only a small margin
+    const left = showAxes() ? 18 + longest * 6.6 + 8 : 6;
+    const top = showAxes() ? 10 : 6;
+    const right = showAxes() ? 14 : 6;
+    const bottom = showAxes() ? 40 : 6;
+    // equal scales (SMath's scale_x = scale_y): one unit of x is as long on the page as one of y
+    if (view()?.equal && !logX && !logY) {
+      const e = equalSpans(x, y, w - left - right, h - top - bottom);
+      x = e.x;
+      y = e.y;
+      X = scale(x[0], x[1], false, Math.max(2, Math.round(w / 90)));
+      Y = scale(y[0], y[1], false, Math.max(2, Math.round(h / 50)));
+    }
     const [tx0, tx1, ty0, ty1] = [X.t(x[0]), X.t(x[1]), Y.t(y[0]), Y.t(y[1])];
     const sx = (v: number) => left + ((X.t(v) - tx0) / (tx1 - tx0)) * (w - left - right);
     const sy = (v: number) => h - bottom - ((Y.t(v) - ty0) / (ty1 - ty0)) * (h - top - bottom);
@@ -223,7 +282,8 @@ export function PlotBody(props: { r: Region }) {
     return x !== null && y !== null && Number.isFinite(L.sx(x)) && Number.isFinite(L.sy(y)) && within(x, L.x) && within(y, L.y);
   };
   /** How a series is drawn: a line (solid, dashed, dotted), points, or both. */
-  const drawAs = (i: number) => series()[i]?.style?.draw ?? (isData(i) ? "line+points" : "line");
+  // a line, unless the document asks for points: SMath's data lines carry no dots at their vertices
+  const drawAs = (i: number) => series()[i]?.style?.draw ?? "line";
   const DASHES: Record<string, string> = { dashed: "7 5", dotted: "1.5 4" };
   const dash = (i: number) => DASHES[series()[i]?.style?.dash ?? ""];
   /**
@@ -236,7 +296,17 @@ export function PlotBody(props: { r: Region }) {
     const step = Math.max(1, Math.round(all.length / 20));
     return all.filter((_, n) => n % step === 0 || n === all.length - 1);
   };
-  const color = (i: number) => series()[i]?.style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length];
+  const palette = () => (r().palette === "smath" ? SMATH_COLORS : SERIES_COLORS);
+  const color = (i: number) => series()[i]?.style?.color ?? palette()[i % palette().length];
+  /** The styled points of a series (SMath's marker columns), inside the plot's box. */
+  const markNodes = (s: { i: number; xs: (number | null)[]; ys: (number | null)[]; marks?: (PlotMarkView | null)[] }) =>
+    (s.marks ?? []).flatMap((m, k) => {
+      const x = s.xs[k];
+      const y = s.ys[k];
+      return m && x !== null && y !== null && Number.isFinite(x) && Number.isFinite(y)
+        ? [{ m, c: m.color ?? color(s.i), cx: layout().sx(x), cy: layout().sy(y) }]
+        : [];
+    });
   const name = (i: number) => series()[i]?.label || series()[i]?.y || `Series ${i + 1}`;
   const isData = (i: number) => !series()[i]?.range;
 
@@ -300,8 +370,8 @@ export function PlotBody(props: { r: Region }) {
         role="img"
         aria-label={`Plot of ${series().map((s) => s.label || s.y).join(", ") || "nothing yet"}${series()[0]?.x ? ` against ${series()[0].x}` : ""}`}
         width={size()[0]}
-        height={size()[1]}
-        viewBox={`0 0 ${size()[0]} ${size()[1]}`}
+        height={drawH()}
+        viewBox={`0 0 ${size()[0]} ${drawH()}`}
         onPointerMove={(e) => {
           const box = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
           const L = layout();
@@ -356,7 +426,7 @@ export function PlotBody(props: { r: Region }) {
       >
         {/* grid and axes */}
         <g class="plot-grid">
-          <Show when={r().grid !== false}>
+          <Show when={showGrid()}>
             <For each={layout().yTicks}>
               {(t) => <line x1={layout().left} x2={layout().w - layout().right} y1={layout().sy(t)} y2={layout().sy(t)} />}
             </For>
@@ -365,6 +435,7 @@ export function PlotBody(props: { r: Region }) {
             </For>
           </Show>
         </g>
+        <Show when={showAxes()}>
         <g class="plot-axis">
           <line x1={layout().left} x2={layout().w - layout().right} y1={layout().h - layout().bottom} y2={layout().h - layout().bottom} />
           <line x1={layout().left} x2={layout().left} y1={layout().top} y2={layout().h - layout().bottom} />
@@ -422,6 +493,7 @@ export function PlotBody(props: { r: Region }) {
             {yTitle()}
           </text>
         </g>
+        </Show>
         {/* the series, clipped to the plot area */}
         <clipPath id={`clip-${r().id}`}>
           <rect x={layout().left} y={layout().top} width={layout().w - layout().left - layout().right} height={layout().h - layout().top - layout().bottom} />
@@ -430,7 +502,7 @@ export function PlotBody(props: { r: Region }) {
           <For each={drawn()}>
             {(s) => (
               <>
-                <Show when={drawAs(s.i) !== "points"}>
+                <Show when={s.connect !== false && drawAs(s.i) !== "points"}>
                   <path
                     class="plot-line"
                     d={path(s.xs, s.ys)}
@@ -440,13 +512,13 @@ export function PlotBody(props: { r: Region }) {
                   />
                 </Show>
                 {/* a wide invisible stroke: double-click the curve to edit its series */}
-                <path class="plot-hit" d={path(s.xs, s.ys)} onDblClick={(e) => editSeries(e, r().id, s.i)} />
+                <path class="plot-hit" d={s.connect === false ? "" : path(s.xs, s.ys)} onDblClick={(e) => editSeries(e, r().id, s.i)} />
               </>
             )}
           </For>
         </g>
         {/* points, whole even on the edge of the plot */}
-        <For each={drawn().filter((s) => drawAs(s.i) !== "line")}>
+        <For each={drawn().filter((s) => drawAs(s.i) !== "line" && !s.marks?.length)}>
           {(s) => (
             <For each={markers(s)}>
               {(k) => (
@@ -459,6 +531,38 @@ export function PlotBody(props: { r: Region }) {
                   fill={color(s.i)}
                 />
               )}
+            </For>
+          )}
+        </For>
+        {/* SMath's styled points: each in its own marker, size and colour (a dot, a ring, or a cross) */}
+        <For each={drawn().filter((s) => s.marks?.length)}>
+          {(s) => (
+            <For each={markNodes(s)}>
+              {(node) => {
+                // a label is set below its point, in the row's colour and size
+                if (node.m.shape === "text") {
+                  return (
+                    <text class="plot-mark-text" x={node.cx} y={node.cy + node.m.size + 2} text-anchor="middle" fill={node.c} font-size={`${node.m.size}px`}>
+                      {node.m.text}
+                    </text>
+                  );
+                }
+                const r0 = markerDiameter(node.m.shape, node.m.size) / 2;
+                if (node.m.shape === "." || node.m.shape === "o") {
+                  const ring = node.m.shape === "o";
+                  return (
+                    <circle
+                      class={ring ? "plot-mark-ring" : "plot-mark"}
+                      cx={node.cx}
+                      cy={node.cy}
+                      r={r0}
+                      stroke={ring ? node.c : undefined}
+                      fill={ring ? "none" : node.c}
+                    />
+                  );
+                }
+                return <path class="plot-mark-line" d={markerPath(node.m.shape, node.cx, node.cy, r0)} stroke={node.c} fill="none" />;
+              }}
             </For>
           )}
         </For>
@@ -489,7 +593,7 @@ export function PlotBody(props: { r: Region }) {
           </For>
         </Show>
         {/* legend: inside the drawing, so copied images and PDFs keep it */}
-        <Show when={drawn().length > 1 && r().legend !== "none"}>
+        <Show when={drawn().length > 1 && r().legend !== false && r().legend !== "none"}>
           {(() => {
             const rows = () => drawn();
             const boxW = () => 30 + Math.max(...rows().map((s) => name(s.i).length)) * 6.3;
@@ -530,6 +634,37 @@ export function PlotBody(props: { r: Region }) {
           )}
         </Show>
       </svg>
+      {/* animation: play or pause, and a slider over the frames (keyboard: Tab, then arrows) */}
+      <Show when={frames().length > 1}>
+        <div class="plot-anim" onPointerDown={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            aria-label="Play animation"
+            aria-pressed={playing()}
+            title={playing() ? "Pause" : "Play"}
+            onClick={() => {
+              // starting from the end (a paused plot on its last frame) begins again at the first
+              if (!playing() && shownFrame() === frames().length - 1) setFrame(0);
+              setPlaying(!playing());
+            }}
+          >
+            <span aria-hidden="true">{playing() ? "❚❚" : "▶"}</span>
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={frames().length - 1}
+            step={1}
+            value={shownFrame()}
+            aria-label="Animation frame"
+            aria-valuetext={`Frame ${shownFrame() + 1} of ${frames().length}`}
+            onInput={(e) => {
+              setPlaying(false);
+              setFrame(Number(e.currentTarget.value));
+            }}
+          />
+        </div>
+      </Show>
       {/* zoom: shown on hover, never printed */}
       <div class="plot-tools" onPointerDown={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()}>
         <button title="Zoom in (⌥ scroll)" aria-label="Zoom in" onClick={() => zoomBy(0.5)}>

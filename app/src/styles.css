@@ -3393,8 +3393,53 @@ a.xref-missing {
   color: var(--accent);
 }
 
-.app.printing .plot-tools {
+.app.printing .plot-tools,
+.app.printing .plot-anim {
   display: none;
+}
+
+/* animation: a bar under the drawing, play or pause and a slider over the frames */
+.plot-anim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid #e6e5e1;
+  background: #fff;
+}
+
+.plot-anim button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #dddcd7;
+  border-radius: 5px;
+  background: #fff;
+  color: #3d3d3a;
+  font: 10px -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.plot-anim button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.plot-anim input[type="range"] {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.plot-mark-line,
+.plot-mark-ring {
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 /* ---------------------------------------------------------------- accessibility */

@@ -27,3 +27,6 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView", "objc2-app-kit"] }
 lopdf = { version = "0.46", default-features = false }
 jpeg-encoder = "0.7"
 flate2 = "1"
+
+[lints]
+workspace = true

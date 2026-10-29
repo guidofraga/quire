@@ -124,35 +124,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn evaluates_a_document_as_the_app_asks() {
-        let mut doc = dispatch("new_document", &json!({})).unwrap();
+    fn evaluates_a_document_as_the_app_asks() -> Result<(), Box<dyn std::error::Error>> {
+        let mut doc = dispatch("new_document", &json!({}))?;
         doc["regions"] = json!([
             { "id": "a", "kind": "math", "at": [0, 0], "expr": "q:=12 kN/m" },
             { "id": "b", "kind": "math", "at": [0, 30], "expr": "L:=6 m" },
             { "id": "c", "kind": "math", "at": [0, 60], "expr": "M:=q*L^2/8", "show": "value" },
         ]);
-        let report = dispatch("report", &json!({ "doc": doc })).unwrap();
+        let report = dispatch("report", &json!({ "doc": doc }))?;
         let shown = report.to_string();
         assert!(shown.contains("54") && shown.contains("kN"), "{shown}");
+        Ok(())
     }
 
     #[test]
-    fn a_document_survives_the_trip_through_bytes() {
-        let doc = dispatch("open_template", &json!({ "id": "builtin:beam" })).unwrap()["doc"].clone();
-        let data = dispatch("save_bytes", &json!({ "doc": doc })).unwrap();
-        let back = dispatch("open_bytes", &json!({ "data": data })).unwrap();
-        assert_eq!(back["regions"].as_array().unwrap().len(), doc["regions"].as_array().unwrap().len());
+    fn a_document_survives_the_trip_through_bytes() -> Result<(), Box<dyn std::error::Error>> {
+        let doc = dispatch("open_template", &json!({ "id": "builtin:beam" }))?["doc"].clone();
+        let data = dispatch("save_bytes", &json!({ "doc": doc }))?;
+        let back = dispatch("open_bytes", &json!({ "data": data }))?;
+        assert!(back["regions"].is_array());
+        assert_eq!(back["regions"].as_array().map(Vec::len), doc["regions"].as_array().map(Vec::len));
+        Ok(())
     }
 
     #[test]
-    fn says_what_the_browser_cannot_do() {
-        assert_eq!(dispatch("notebook", &json!({})).unwrap_err(), "notebook is not available in the browser");
-        let templates = dispatch("list_templates", &json!({})).unwrap();
-        assert!(templates.as_array().unwrap().iter().all(|t| t["builtin"] == true));
+    fn says_what_the_browser_cannot_do() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            dispatch("notebook", &json!({})).err().as_deref(),
+            Some("notebook is not available in the browser")
+        );
+        let templates = dispatch("list_templates", &json!({}))?;
+        assert!(templates.as_array().is_some_and(|all| all.iter().all(|t| t["builtin"] == true)));
+        Ok(())
     }
 
     #[test]
-    fn calls_through_memory_as_javascript_does() {
+    fn calls_through_memory_as_javascript_does() -> Result<(), Box<dyn std::error::Error>> {
         let put = |s: &str| {
             let p = alloc(s.len());
             unsafe { std::ptr::copy_nonoverlapping(s.as_ptr(), p, s.len()) };
@@ -163,10 +170,11 @@ mod tests {
         let len = unsafe { call(c, cl, b, bl) };
         let answer = unsafe { std::slice::from_raw_parts(result_ptr(), len) };
         assert_eq!(result_ok(), 1);
-        assert!(std::str::from_utf8(answer).unwrap().contains("<strong>bold</strong>"));
+        assert!(std::str::from_utf8(answer).is_ok_and(|s| s.contains("<strong>bold</strong>")));
         let (c, cl) = put("nope");
         let (b, bl) = put("{}");
         unsafe { call(c, cl, b, bl) };
         assert_eq!(result_ok(), 0);
+        Ok(())
     }
 }

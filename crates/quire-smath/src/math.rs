@@ -1,6 +1,4 @@
-//! SMath RPN token stream -> AST -> Quire linear syntax
-//! (port of `rpn_to_ast`, `prec`, `is_unit_expr`, `is_quantity`, `fmt_id`, `fmt_str`,
-//! `to_linear`, `math_expr` in tools/sm2quire.py). OWNER: math agent.
+//! SMath RPN token stream -> AST -> Quire linear syntax.
 
 use crate::{ImportError, Result};
 
@@ -171,7 +169,8 @@ pub(crate) fn rpn_to_ast(tokens: &[Token]) -> Result<Node> {
 fn binary_op(value: &str) -> (&str, u8) {
     match value {
         ":" => (":=", 0),
-        "≡" => ("≡", 0),
+        // SMath's ≡ is an equality test (`if(path ≡ 0, …)`); Quire's ≡ defines globally
+        "≡" => ("==", 3),
         "|" => ("or", 1),
         "&" => ("and", 2),
         "=" => ("==", 3),
@@ -209,7 +208,6 @@ fn rename(name: &str) -> &str {
         "cosec" => "csc",
         "lg" => "log10",
         "nthroot" => "root",
-        "line" => "block",
         _ => name,
     }
 }
@@ -293,6 +291,19 @@ fn matrix_dim(s: &str) -> Result<usize> {
 }
 
 /// Print AST as Quire linear syntax. `units_bare`: print `kgf` instead of `'kgf`.
+/// A whole statement. At the top, SMath's `≡` is a global definition (`A ≡ [..]`), as in Quire;
+/// inside an expression it is an equality test (`if(path ≡ 0, …)`, see `binary_op`).
+pub(crate) fn statement_to_linear(n: &Node, units_bare: bool) -> Result<String> {
+    if n.kind == Kind::Binary && n.value == "≡" {
+        return Ok(format!(
+            "{} ≡ {}",
+            to_linear(arg(n, 0)?, units_bare)?,
+            to_linear(arg(n, 1)?, units_bare)?
+        ));
+    }
+    to_linear(n, units_bare)
+}
+
 pub(crate) fn to_linear(n: &Node, units_bare: bool) -> Result<String> {
     Ok(match n.kind {
         Kind::Num => n.value.clone(),
@@ -376,6 +387,22 @@ fn call_to_linear(n: &Node, units_bare: bool) -> Result<String> {
         return Ok(format!("[\n{}\n]", rows.join(";\n")));
     }
 
+    // line(statements…, rows, cols): SMath's block of statements. Its last two arguments give
+    // the block's layout, not a value, so the block is worth its last statement.
+    if let ("line", [stmts @ .., rows_node, cols_node]) = (name, args)
+        && rows_node.kind == Kind::Num
+        && cols_node.kind == Kind::Num
+        && !stmts.is_empty()
+    {
+        let parts = stmts.iter().map(|a| to_linear(a, units_bare)).collect::<Result<Vec<_>>>()?;
+        return Ok(format!("block({})", parts.join(", ")));
+    }
+
+    // range(a, b, s): SMath's third argument is the second element, Quire's is the step
+    if let ("range", [a, b, s]) = (name, args) {
+        return range_call(a, b, s, units_bare);
+    }
+
     // el(base, indices...)
     if name == "el" && args.len() >= 2 {
         let base_node = arg(n, 0)?;
@@ -389,6 +416,45 @@ fn call_to_linear(n: &Node, units_bare: bool) -> Result<String> {
 
     let parts = args.iter().map(|a| to_linear(a, units_bare)).collect::<Result<Vec<_>>>()?;
     Ok(format!("{}({})", rename(name), parts.join(", ")))
+}
+
+/// SMath `range(a, b, s)` runs from `a` through `b` with `s` as the second element, so the
+/// step is `s - a` (`range(1, 10, 3)` is 1, 3, 5, 7, 9). Two whole numbers fold to a literal;
+/// otherwise the subtraction is printed, parenthesised only where precedence needs it.
+fn range_call(a: &Node, b: &Node, s: &Node, units_bare: bool) -> Result<String> {
+    let folded = match (a.kind, s.kind) {
+        (Kind::Num, Kind::Num) => match (a.value.parse::<i64>(), s.value.parse::<i64>()) {
+            (Ok(av), Ok(sv)) => sv.checked_sub(av),
+            _ => None,
+        },
+        _ => None,
+    };
+    let step = match folded {
+        Some(d) => Node { kind: Kind::Num, value: d.to_string(), args: Vec::new() },
+        None => Node { kind: Kind::Binary, value: "-".to_string(), args: vec![s.clone(), a.clone()] },
+    };
+    Ok(format!(
+        "range({}, {}, {})",
+        to_linear(a, units_bare)?,
+        to_linear(b, units_bare)?,
+        to_linear(&step, units_bare)?
+    ))
+}
+
+/// Whether an SMath result holds only numbers in a `mat`. SMath labels `→` results
+/// symbolic even when all it shows is a numeric matrix; Quire's symbolic engine cannot
+/// work with matrices, so such a result is shown as its value.
+pub(crate) fn is_numeric_matrix(container: roxmltree::Node) -> bool {
+    let mut has_mat = false;
+    for t in tokens(container) {
+        match t.typ.as_str() {
+            "operand" if t.style.is_none() && is_number(&t.text) => {}
+            "operator" => {}
+            "function" if t.text == "mat" => has_mat = true,
+            _ => return false,
+        }
+    }
+    has_mat
 }
 
 /// `None` when the container is absent or has no `<e>` tokens.
@@ -593,6 +659,54 @@ mod tests {
         // one more level is rejected
         let over = on_stack(512, || rpn_to_ast(&unary_chain(200)).is_err())?;
         assert!(over);
+        Ok(())
+    }
+
+    /// `range(a, b, s)` as SMath writes it, with `a`, `b`, `s` given as token lists.
+    fn range_of(a: &[Token], b: &[Token], s: &[Token]) -> Result<String> {
+        let mut toks = Vec::new();
+        for part in [a, b, s] {
+            toks.extend_from_slice(part);
+        }
+        toks.push(func("range", 3));
+        render(&toks)
+    }
+
+    #[test]
+    fn range_third_argument_is_the_second_element() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        // range(1, 10, 3): step 2, since the sequence is 1, 3, 5, 7, 9
+        assert_eq!(range_of(&[operand("1")], &[operand("10")], &[operand("3")])?, "range(1, 10, 2)");
+        // counting down: range(n-1, 1, n-2) steps by -1
+        let (n_1, n_2) = ([operand("n"), operand("1"), op("-", 2)], [operand("n"), operand("2"), op("-", 2)]);
+        assert_eq!(range_of(&n_1, &[operand("1")], &n_2)?, "range(n - 1, 1, n - 2 - (n - 1))");
+        // a symbolic second element is subtracted, with no parentheses needed
+        assert_eq!(range_of(&[operand("2")], &[operand("n")], &[operand("k")])?, "range(2, n, k - 2)");
+        // a sum as the second element keeps the sum's precedence
+        let s_sum = [operand("k"), operand("1"), op("+", 2)];
+        assert_eq!(range_of(&[operand("2")], &[operand("n")], &s_sum)?, "range(2, n, k + 1 - 2)");
+        Ok(())
+    }
+
+    /// Whether `is_numeric_matrix` accepts the `<result>` built from `body`.
+    fn numeric_matrix(body: &str) -> std::result::Result<bool, Box<dyn std::error::Error>> {
+        let xml = format!("<result>{body}</result>");
+        let doc = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+        Ok(is_numeric_matrix(doc.root_element()))
+    }
+
+    #[test]
+    fn numeric_matrix_result_is_a_value() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        // [4/5; 1/5] written as fractions of numbers, as SMath shows it
+        let fractions = r#"<e type="operand">4</e><e type="operand">5</e><e type="operator" args="2">/</e><e type="operand">1</e><e type="operand">5</e><e type="operator" args="2">/</e><e type="operand">2</e><e type="function" args="2">mat</e>"#;
+        assert!(numeric_matrix(fractions)?);
+        // a symbolic result keeps its symbols
+        assert!(!numeric_matrix(r#"<e type="operand">x</e><e type="function" args="1">mat</e>"#)?);
+        // a unit is not a plain number
+        assert!(!numeric_matrix(
+            r#"<e type="operand" style="unit">m</e><e type="function" args="1">mat</e>"#
+        )?);
+        // no matrix, no change
+        assert!(!numeric_matrix(r#"<e type="operand">4</e>"#)?);
         Ok(())
     }
 }

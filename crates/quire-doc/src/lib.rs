@@ -182,7 +182,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn areas_flatten_into_reading_order() {
+    fn areas_flatten_into_reading_order() -> Result<(), Box<dyn std::error::Error>> {
         let doc: Document = serde_json::from_str(
             r#"{ "format": "quire/1", "custom": 1, "regions": [
                 { "id": "aaaaaa", "kind": "math", "at": [0, 10], "expr": "a := 1" },
@@ -190,14 +190,14 @@ mod tests {
                     { "id": "cccccc", "kind": "math", "at": [5, 0], "expr": "b := a" } ] },
                 { "id": "dddddd", "kind": "math", "at": [0, 15], "expr": "c := 2", "future": true }
             ] }"#,
-        )
-        .unwrap();
+        )?;
         let ids: Vec<_> = doc.flatten().iter().map(|p| (p.region.id.as_str(), p.x, p.y)).collect();
         assert_eq!(
             ids,
             [("aaaaaa", 0.0, 10.0), ("dddddd", 0.0, 15.0), ("bbbbbb", 0.0, 20.0), ("cccccc", 5.0, 20.0)]
         );
         assert!(doc.extra.contains_key("custom"));
-        assert!(doc.regions[2].extra.contains_key("future"));
+        assert!(doc.regions.get(2).is_some_and(|r| r.extra.contains_key("future")));
+        Ok(())
     }
 }

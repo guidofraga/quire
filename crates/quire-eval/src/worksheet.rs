@@ -54,8 +54,8 @@ pub struct Outcome {
     pub fix: Option<Fix>,
     /// A plot's series, in its axis units.
     pub plot: Option<PlotOutcome>,
-    /// A plot's samples in SI, kept until its axis units are chosen.
-    samples: Vec<std::result::Result<Sampled, String>>,
+    /// A plot's samples in SI, one frame per step of an animation, kept until its axis units are chosen.
+    samples: Vec<crate::plot::Frame>,
 }
 
 /// A one-click repair for an error.
@@ -108,17 +108,24 @@ fn nearest<'a>(name: &str, defined: impl Iterator<Item = &'a str>) -> Option<&'a
 
 fn edit_distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
+    // one row of the table at a time: `row[j]` is the distance from the first i characters
+    // of `a` to the first j of `b`
     let mut row: Vec<usize> = (0..=b.len()).collect();
     for (i, ca) in a.chars().enumerate() {
-        let mut prev = row[0];
-        row[0] = i + 1;
-        for (j, &cb) in b.iter().enumerate() {
-            let next = (row[j + 1] + 1).min(row[j] + 1).min(prev + usize::from(ca != cb));
-            prev = row[j + 1];
-            row[j + 1] = next;
+        let mut diag = i; // the previous row's cell to the left
+        let mut left = i + 1; // this row's cell to the left
+        if let Some(first) = row.first_mut() {
+            *first = i + 1;
+        }
+        for (cell, &cb) in row.iter_mut().skip(1).zip(&b) {
+            let up = *cell;
+            let next = (up + 1).min(left + 1).min(diag + usize::from(ca != cb));
+            diag = up;
+            left = next;
+            *cell = next;
         }
     }
-    row[b.len()]
+    row.last().copied().unwrap_or(0)
 }
 
 /// `KN` → `kN`, `mpa` → `MPa`: the unit spelled with the fewest case changes.
@@ -180,11 +187,9 @@ fn substitute(e: &Expr, params: &[String], args: &[Expr]) -> Expr {
     let sub = |x: &Expr| substitute(x, params, args);
     let boxed = |x: &Expr| Box::new(sub(x));
     match e {
-        Expr::Ident(n) => match params.iter().position(|p| p == n) {
-            Some(i) => match &args[i] {
-                a @ (Expr::Ident(_) | Expr::Num(_) | Expr::Paren(_) | Expr::Call(..)) => a.clone(),
-                a => Expr::Paren(Box::new(a.clone())),
-            },
+        Expr::Ident(n) => match params.iter().position(|p| p == n).and_then(|i| args.get(i)) {
+            Some(a @ (Expr::Ident(_) | Expr::Num(_) | Expr::Paren(_) | Expr::Call(..))) => a.clone(),
+            Some(a) => Expr::Paren(Box::new(a.clone())),
             None => e.clone(),
         },
         Expr::Paren(x) => Expr::Paren(boxed(x)),
@@ -261,7 +266,10 @@ impl Worksheet {
     pub fn define_unit(&mut self, name: &str, definition: &str) -> Result<()> {
         let expr = parse(definition)?;
         let env = Env::new();
-        let q = Interp::new(&self.units).eval(&mut Scope::new(&env), &expr)?.as_num("a unit definition")?;
+        let q = Interp::new(&self.units)
+            .with_marked_units(self.settings.marked_units)
+            .eval(&mut Scope::new(&env), &expr)?
+            .as_num("a unit definition")?;
         self.units.define(name, Unit { factor: q.v, dim: q.dim, offset: 0.0 });
         Ok(())
     }
@@ -337,7 +345,9 @@ impl Worksheet {
                 )
             } else if let Some(near) = nearest(name, defined.iter().filter(|d| d.1 < i || d.2).map(|d| d.0)) {
                 (format!("{name} is not defined; did you mean {near}?"), rename(near))
-            } else if let Some(unit) = unit_in_other_case(name, &self.units) {
+            } else if let Some(unit) =
+                unit_in_other_case(name, &self.units).filter(|_| !self.settings.marked_units)
+            {
                 (format!("{name} is not defined; did you mean the unit {unit}?"), rename(&unit))
             } else {
                 continue;
@@ -395,6 +405,7 @@ impl Worksheet {
         }
         counts.sort_by_key(|c| std::cmp::Reverse(c.1));
         let mut defined: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let no_names: Vec<String> = Vec::new();
         for (i, (r, o)) in regions.iter().zip(out.iter_mut()).enumerate() {
             if let Some(name) = &o.defines {
                 // `f(x)` defines f; `v[i]` defines v
@@ -410,10 +421,10 @@ impl Worksheet {
             }
             // breadth-first through the definitions this result reads; a unit a definition
             // is shown in (`σ` in MPa) comes before the units it is written with
-            let mut order: Vec<&str> = own[i].iter().map(String::as_str).collect();
+            let mut order: Vec<&str> = own.get(i).unwrap_or(&no_names).iter().map(String::as_str).collect();
             let mut seen = vec![i];
             let mut frontier: Vec<usize> = Vec::new();
-            for n in &reads[i] {
+            for n in reads.get(i).into_iter().flatten() {
                 if let Some(&d) = defined.get(n.as_str())
                     && !seen.contains(&d)
                 {
@@ -424,9 +435,9 @@ impl Worksheet {
             while !frontier.is_empty() {
                 let mut next = Vec::new();
                 for d in frontier {
-                    order.extend(regions[d].display.unit.as_deref());
-                    order.extend(own[d].iter().map(String::as_str));
-                    for n in &reads[d] {
+                    order.extend(regions.get(d).and_then(|r| r.display.unit.as_deref()));
+                    order.extend(own.get(d).into_iter().flatten().map(String::as_str));
+                    for n in reads.get(d).into_iter().flatten() {
                         if let Some(&e) = defined.get(n.as_str())
                             && !seen.contains(&e)
                             && e < d
@@ -454,7 +465,7 @@ impl Worksheet {
                 };
                 let x = p.x_unit.clone().or_else(|| o.plot.as_ref().and_then(|q| pick(q.x.dim)));
                 let y = p.y_unit.clone().or_else(|| o.plot.as_ref().and_then(|q| pick(q.y.dim)));
-                self.finish_plot(o, x, y);
+                self.finish_plot(o, p, x, y);
             } else if let Some(t) = table {
                 crate::sheet::reformat(t, &mut o.cells, &self.settings, &self.units, &vocab);
             } else if let Some(v) = &o.value
@@ -468,7 +479,7 @@ impl Worksheet {
     /// Evaluate a top-level expression. Assignments it makes (in `while`, `for`, `if`,
     /// `block`) persist into the worksheet's globals, as in SMath, but only when it succeeds.
     fn eval(&mut self, e: &Expr) -> Result<Value> {
-        let mut interp = Interp::new(&self.units);
+        let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
         let (r, writes) = {
             let mut scope = Scope::new(&self.globals);
             let r = interp.eval(&mut scope, e);
@@ -495,7 +506,7 @@ impl Worksheet {
     fn step_table(&mut self, r: &MathInput, t: &TableInput) -> Outcome {
         let mut out = Outcome::new(&r.id);
         let globals = Rc::clone(&self.globals);
-        let mut interp = Interp::new(&self.units);
+        let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
         let mut scope = Scope::new(&globals);
         let (cells, value, written) = crate::sheet::evaluate(t, &mut interp, &mut scope, &self.settings);
         // in the order they are written: the first units in a table are its working units
@@ -540,23 +551,35 @@ impl Worksheet {
     fn step_plot(&mut self, r: &MathInput, p: &PlotInput) -> Outcome {
         let mut out = Outcome::new(&r.id);
         let globals = Rc::clone(&self.globals);
-        let mut interp = Interp::new(&self.units);
-        let mut scope = Scope::new(&globals);
-        out.samples = p
-            .series
-            .iter()
-            .map(|s| crate::plot::sample(s, &mut interp, &mut scope).map_err(|e| e.message))
-            .collect();
+        let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        out.samples = match &p.animate {
+            Some(a) => match crate::plot::animate(p, a, &mut interp, &globals) {
+                Ok(frames) => frames,
+                Err(e) => vec![vec![Err(e.message)]],
+            },
+            None => {
+                let mut scope = Scope::new(&globals);
+                let frame = p
+                    .series
+                    .iter()
+                    .flat_map(|s| match crate::plot::sample(s, &mut interp, &mut scope) {
+                        Ok(lines) => lines.into_iter().map(Ok).collect::<Vec<_>>(),
+                        Err(e) => vec![Err(e.message)],
+                    })
+                    .collect();
+                vec![frame]
+            }
+        };
         out.units = std::mem::take(&mut interp.unit_idents).into_iter().collect();
         out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
-        drop(scope);
-        self.finish_plot(&mut out, p.x_unit.clone(), p.y_unit.clone());
+        self.finish_plot(&mut out, p, p.x_unit.clone(), p.y_unit.clone());
         out
     }
 
-    /// Put a plot's samples in its axis units: the ones given, or SI.
-    fn finish_plot(&self, out: &mut Outcome, x_unit: Option<String>, y_unit: Option<String>) {
-        let ok = || out.samples.iter().filter_map(|s| s.as_ref().ok());
+    /// Put a plot's samples in its axis units: the ones given, or SI. Every frame of an
+    /// animation shares the axes, so the view does not jump from one frame to the next.
+    fn finish_plot(&self, out: &mut Outcome, p: &PlotInput, x_unit: Option<String>, y_unit: Option<String>) {
+        let ok = || out.samples.iter().flatten().filter_map(|s| s.as_ref().ok());
         let x_dim = ok().find_map(|s| s.xs.first()).map(|q| q.dim).unwrap_or_default();
         let y_dim = ok().find_map(|s| s.ys.first()).map(|q| q.dim).unwrap_or_default();
         let axis = |unit: Option<String>, dim: quire_units::Dim| Axis {
@@ -567,30 +590,46 @@ impl Worksheet {
             dim,
         };
         let (x, y) = (axis(x_unit, x_dim), axis(y_unit, y_dim));
-        let series: Vec<SeriesOutcome> = out
-            .samples
-            .iter()
-            .map(|s| {
-                let converted = s.as_ref().map_err(Clone::clone).and_then(|s| {
-                    let xs = crate::plot::in_unit(&s.xs, &x.unit, &self.units)
-                        .map_err(|e| format!("x axis: {}", e.message))?;
-                    let ys = crate::plot::in_unit(&s.ys, &y.unit, &self.units).map_err(|e| e.message)?;
-                    Ok((xs, ys))
-                });
-                match converted {
-                    Ok((xs, ys)) => SeriesOutcome { xs, ys, error: None },
-                    Err(e) => SeriesOutcome { error: Some(e), ..Default::default() },
-                }
-            })
-            .collect();
+        let convert = |s: &std::result::Result<Sampled, String>| -> SeriesOutcome {
+            let s = match s {
+                Ok(s) => s,
+                Err(e) => return SeriesOutcome { error: Some(e.clone()), ..Default::default() },
+            };
+            let xs = crate::plot::in_unit(&s.xs, &x.unit, &self.units)
+                .map_err(|e| format!("x axis: {}", e.message));
+            let ys = crate::plot::in_unit(&s.ys, &y.unit, &self.units).map_err(|e| e.message);
+            match (xs, ys) {
+                (Ok(xs), Ok(ys)) => SeriesOutcome {
+                    xs,
+                    ys,
+                    error: None,
+                    connect: s.marks.is_empty() || s.marks.iter().any(Option::is_none),
+                    marks: s.marks.clone(),
+                },
+                (Err(e), _) | (_, Err(e)) => SeriesOutcome { error: Some(e), ..Default::default() },
+            }
+        };
+        let frames: Vec<Vec<SeriesOutcome>> =
+            out.samples.iter().map(|f| f.iter().map(&convert).collect()).collect();
+        // the drawn series are the last frame; an error in any frame is still reported
+        let shown: Vec<SeriesOutcome> = frames.last().cloned().unwrap_or_default();
         let errors: Vec<(usize, &String)> =
-            series.iter().enumerate().filter_map(|(i, s)| s.error.as_ref().map(|e| (i, e))).collect();
+            shown.iter().enumerate().filter_map(|(i, s)| s.error.as_ref().map(|e| (i, e))).collect();
         out.error = match errors.as_slice() {
-            [] => None,
-            [(_, e)] if series.len() == 1 => Some((*e).clone()),
+            [] => frames.iter().flatten().find_map(|s| s.error.clone()),
+            [(_, e)] if shown.len() == 1 => Some((*e).clone()),
             [(i, e), ..] => Some(format!("series {}: {e}", i + 1)),
         };
-        out.plot = Some(PlotOutcome { x, y, series });
+        out.plot = Some(PlotOutcome {
+            x,
+            y,
+            series: shown,
+            frames: if p.animate.is_some() { frames } else { Vec::new() },
+            fps: p.animate.as_ref().map(|a| a.fps),
+            axes: p.axes,
+            grid: p.grid,
+            equal: p.equal,
+        });
     }
 
     fn bind(&mut self, key: String, b: Binding) {
@@ -662,6 +701,20 @@ impl Worksheet {
             }
             other => other,
         };
+        // SMath mode: a formula with values for nothing is worked out as a value (a matrix
+        // of formulas, a function of symbols), which the expansion below does not reach
+        if self.settings.marked_units
+            && !matches!(e, Expr::Define { .. })
+            && let Ok(v) = self.eval(shown_of)
+            && crate::symbolic::bridge::has_sym(&v)
+        {
+            match crate::format::format_value(&v, &r.display, &self.settings, &self.units) {
+                Ok(text) => out.shown = Some(text),
+                Err(err) => out.error = Some(err.message),
+            }
+            out.value = Some(v);
+            return out;
+        }
         let globals = Rc::clone(&self.globals);
         let functions = |name: &str, arity: usize| match globals.get(&func_key(name, arity)) {
             Some(Binding::Func(f)) => Some((f.params.clone(), f.body.clone())),
@@ -688,6 +741,27 @@ impl Worksheet {
         true
     }
 
+    /// SMath mode: a function body that names a global formula (or a matrix holding formulas)
+    /// gets the formula written into it, so every call works it out with its own arguments.
+    fn inline_formulas(&self, body: &Expr, params: &[String]) -> Expr {
+        if !self.settings.marked_units {
+            return body.clone();
+        }
+        let globals = &self.globals;
+        let lookup = |name: &str| -> Option<Expr> {
+            if params.iter().any(|p| p == name) {
+                return None;
+            }
+            match globals.get(name) {
+                Some(Binding::Val(v)) if crate::symbolic::bridge::has_sym(v) => {
+                    crate::symbolic::bridge::expr_of(v).ok()
+                }
+                _ => None,
+            }
+        };
+        crate::symbolic::bridge::inline(body, &lookup)
+    }
+
     /// `Ok(None)` for function definitions, which have no value of their own.
     fn define(&mut self, out: &mut Outcome, lhs: &Expr, rhs: &Expr) -> Result<Option<Value>> {
         match lhs {
@@ -711,7 +785,8 @@ impl Worksheet {
                 let mut body_names = Vec::new();
                 names(rhs, &mut body_names);
                 for n in body_names {
-                    if params.contains(&n) || self.globals.contains_key(&n) {
+                    // marked documents read no bare name as a unit or a constant (π, e aside)
+                    if params.contains(&n) || self.globals.contains_key(&n) || self.settings.marked_units {
                         continue;
                     }
                     if crate::constants::constant(&n).is_some() {
@@ -722,7 +797,8 @@ impl Worksheet {
                         self.used_units.insert(n);
                     }
                 }
-                let f = Func { name: name.clone(), params, body: rhs.clone(), env: Rc::clone(&self.globals) };
+                let body = self.inline_formulas(rhs, &params);
+                let f = Func { name: name.clone(), params, body, env: Rc::clone(&self.globals) };
                 self.bind(key, Binding::Func(Rc::new(f)));
                 Ok(None)
             }
@@ -731,7 +807,11 @@ impl Worksheet {
                     bail!("only a named matrix can be assigned by index")
                 };
                 out.defines = Some(name.clone());
-                let ix = idx.iter().map(|i| self.eval(i)?.as_int("an index")).collect::<Result<Vec<_>>>()?;
+                let values = idx.iter().map(|i| self.eval(i)).collect::<Result<Vec<_>>>()?;
+                if values.iter().any(|v| matches!(v, Value::Matrix(_))) {
+                    return self.define_elementwise(name, idx, &values, rhs);
+                }
+                let ix = values.iter().map(|v| v.as_int("an index")).collect::<Result<Vec<_>>>()?;
                 let v = self.eval(rhs)?;
                 let current = match self.globals.get(name) {
                     Some(Binding::Val(m)) => Some(m.clone()),
@@ -744,6 +824,98 @@ impl Worksheet {
             _ => bail!("the left side of := must be a name, a function f(x) or an element v[i]"),
         }
     }
+
+    /// `v[k, 2] := rhs` where an index is a vector (SMath): the assignment is made for each
+    /// element of the vector, with the index's name bound to that element while `rhs` is worked
+    /// out. The number of elements is capped; the index names are restored afterwards.
+    fn define_elementwise(
+        &mut self,
+        name: &str,
+        idx: &[Expr],
+        values: &[Value],
+        rhs: &Expr,
+    ) -> Result<Option<Value>> {
+        const MAX_ELEMENTS: usize = 10_000;
+        if values.len() > 2 {
+            bail!("an assignment takes one or two indices");
+        }
+        let mut lists: Vec<Vec<Value>> = Vec::with_capacity(values.len());
+        let mut vector_names: Vec<(usize, String)> = Vec::new();
+        for (i, (e, v)) in idx.iter().zip(values).enumerate() {
+            match (e, v) {
+                (Expr::Ident(n), Value::Matrix(m)) => {
+                    lists.push(m.data.clone());
+                    vector_names.push((i, n.clone()));
+                }
+                (_, Value::Matrix(_)) => bail!("a vector index must be a name, like k"),
+                (_, other) => lists.push(vec![other.clone()]),
+            }
+        }
+        let total: usize = lists.iter().map(Vec::len).product();
+        if total > MAX_ELEMENTS {
+            bail!("this assignment sets {total} elements, and at most {MAX_ELEMENTS} can be set at once");
+        }
+        let saved: Vec<(String, Option<Binding>)> =
+            vector_names.iter().map(|(_, n)| (n.clone(), self.globals.get(n).cloned())).collect();
+        let outcome = self.assign_each(name, rhs, &lists, &vector_names, total);
+        for (n, prev) in saved {
+            match prev {
+                Some(b) => self.bind(n, b),
+                None => {
+                    Rc::make_mut(&mut self.globals).remove(&n);
+                }
+            }
+        }
+        outcome
+    }
+
+    /// The element-wise loop of [`Worksheet::define_elementwise`]: one assignment per
+    /// combination of index elements, the last index changing fastest.
+    fn assign_each(
+        &mut self,
+        name: &str,
+        rhs: &Expr,
+        lists: &[Vec<Value>],
+        vector_names: &[(usize, String)],
+        total: usize,
+    ) -> Result<Option<Value>> {
+        let mut last = None;
+        let mut pick = vec![0usize; lists.len()];
+        for _ in 0..total {
+            let elems: Vec<Value> = lists.iter().zip(&pick).filter_map(|(l, &p)| l.get(p).cloned()).collect();
+            if elems.len() != lists.len() {
+                bail!("the index is out of range");
+            }
+            for (i, n) in vector_names {
+                if let Some(e) = elems.get(*i) {
+                    self.bind(n.clone(), Binding::Val(e.clone()));
+                }
+            }
+            let v = self.eval(rhs)?;
+            let ix = elems.iter().map(|e| e.as_int("an index")).collect::<Result<Vec<_>>>()?;
+            let current = match self.globals.get(name) {
+                Some(Binding::Val(m)) => Some(m.clone()),
+                _ => None,
+            };
+            let updated = set_element(current, &ix, v.clone())?;
+            self.bind(name.to_string(), Binding::Val(updated));
+            last = Some(v);
+            // advance the counters, the last index fastest
+            let mut carry = true;
+            for (p, list) in pick.iter_mut().zip(lists).rev() {
+                if !carry {
+                    break;
+                }
+                *p += 1;
+                if *p >= list.len() {
+                    *p = 0;
+                } else {
+                    carry = false;
+                }
+            }
+        }
+        Ok(last)
+    }
 }
 
 #[cfg(test)]
@@ -751,6 +923,15 @@ mod tests {
     use super::*;
 
     fn run(lines: &[&str]) -> Vec<Outcome> {
+        run_with(lines, DisplaySettings::default())
+    }
+
+    /// The same worksheet in SMath's marked-units mode (`settings.units.marked`).
+    fn run_marked(lines: &[&str]) -> Vec<Outcome> {
+        run_with(lines, DisplaySettings { marked_units: true, ..Default::default() })
+    }
+
+    fn run_with(lines: &[&str], settings: DisplaySettings) -> Vec<Outcome> {
         let regions: Vec<MathInput> = lines
             .iter()
             .enumerate()
@@ -764,7 +945,193 @@ mod tests {
                 symbolic: false,
             })
             .collect();
-        Worksheet::new(DisplaySettings::default()).run(&regions)
+        Worksheet::new(settings).run(&regions)
+    }
+
+    /// The error of each line, or `ok` when it evaluates.
+    /// The text shown for region `i`, if there is one.
+    fn shown_at(outs: &[Outcome], i: usize) -> Option<&str> {
+        outs.get(i).and_then(|o| o.shown.as_deref())
+    }
+
+    fn errors(outs: &[Outcome]) -> Vec<&str> {
+        outs.iter().map(|o| o.error.as_deref().unwrap_or("ok")).collect()
+    }
+
+    #[test]
+    fn marked_units_a_bare_name_is_a_variable_only() {
+        let outs = run_marked(&["c", "t", "KN", "10 m", "10 'm", "pi", "e", "x := 3", "x*c", "x*2", "x*'m"]);
+        // a name with no value is a formula (SMath's symbol), never a unit or a constant
+        assert_eq!(errors(&outs), ["ok"; 11]);
+        assert_eq!(shown_at(&outs, 0), Some("c"));
+        assert_eq!(shown_at(&outs, 3), Some("10*m"));
+        assert_eq!(shown_at(&outs, 8), Some("3*c"));
+        // a quoted unit is still a length
+        assert_eq!(shown_at(&outs, 4), Some("10 'm"));
+    }
+
+    #[test]
+    fn marked_units_reach_definition_bodies_and_tables() {
+        let outs = run_marked(&["f(x) := x*c", "f(2)", "g(x) := x*'m", "g(2)"]);
+        assert_eq!(errors(&outs), ["ok"; 4]);
+        assert_eq!(shown_at(&outs, 1), Some("2*c"));
+        assert_eq!(shown_at(&outs, 3), Some("2 'm"));
+    }
+
+    /// The Hessian worksheet from SMath's examples, in miniature: a formula in x[1], x[2]
+    /// differentiated element by element, then used as a function of x and of a vector.
+    #[test]
+    fn smath_hessian_is_worked_out_as_formulas() {
+        let outs = run_marked(&[
+            "f := x[1]^2*x[2]^3 - 5*x[1] + x[2]",
+            "n := 2",
+            "for(j := 1, j ≤ n, j := j + 1, for(k := 1, k ≤ n, k := k + 1, m[j, k] := diff(diff(f, x[k]), x[j])))",
+            "Hesse(x) := m",
+            "Hessian(x) := det(Hesse(x))",
+            "Hesse(x)",
+            "a := [1; 2]",
+            "Hesse(a)",
+            "Hessian(x)",
+            "Hessian(a)",
+        ]);
+        assert_eq!(errors(&outs), ["ok"; 10]);
+        assert_eq!(shown_at(&outs, 5), Some("[2*x[2]^3, 6*x[1]*x[2]^2; 6*x[1]*x[2]^2, 6*x[1]^2*x[2]]"));
+        assert_eq!(shown_at(&outs, 7), Some("[16, 24; 24, 12]"));
+        assert_eq!(shown_at(&outs, 8), Some("-(24*x[1]^2*x[2]^4)"));
+        assert_eq!(shown_at(&outs, 9), Some("-384"));
+    }
+
+    /// Newton's method's Jacobian: a vector of formulas, its rows counted, then differentiated
+    /// by element and evaluated at a point.
+    #[test]
+    fn smath_jacobian_of_a_vector_function() {
+        let outs = run_marked(&[
+            "f(x) := [x[1]^2 - 4; 2*x[1] + 4*x[2]]",
+            "n := rows(f(x))",
+            "for(j := 1, j ≤ n, j := j + 1, for(k := 1, k ≤ n, k := k + 1, m[j, k] := diff(f(x)[j], x[k])))",
+            "Jacob(x) := m",
+            "a := [1; 1]",
+            "Jacob(a)",
+            "n",
+        ]);
+        assert_eq!(errors(&outs), ["ok"; 7]);
+        assert_eq!(shown_at(&outs, 5), Some("[2, 0; 2, 4]"));
+        assert_eq!(shown_at(&outs, 6), Some("2"));
+    }
+
+    /// Hermite polynomials: the variable is a parameter that is a formula inside the
+    /// function, the derivative is taken n times, and the coefficients are read at 0 and 2.
+    #[test]
+    fn smath_hermite_coefficients_from_a_derivative_of_a_function() {
+        let outs = run_marked(&[
+            "n := 2",
+            "H(z, n) := (-1)^n*e^(z^2/2)*diff(e^(-(z^2/2)), z, n)",
+            "T[1] := H(z, n)",
+            "for(k := 1, k ≤ n, k := k + 1, T[k + 1] := diff((T[k]), z)/k)",
+            "D(z) := T",
+            "D(0)",
+            "D(2)",
+        ]);
+        assert_eq!(errors(&outs), ["ok"; 7]);
+        assert_eq!(shown_at(&outs, 5), Some("[-1; 0; 1]"));
+        assert_eq!(shown_at(&outs, 6), Some("[3; 4; 1]"));
+    }
+
+    /// A derivative above the second order of a number is worked out as a formula and read
+    /// at the point: the fifth Hermite polynomial He5(2) = 2^5 - 10*2^3 + 15*2 = -18.
+    #[test]
+    fn numeric_derivatives_of_high_order_are_worked_out_as_formulas() {
+        let outs = run_marked(&["H(z, n) := (-1)^n*e^(z^2/2)*diff(e^(-(z^2/2)), z, n)", "H(2, 5)"]);
+        assert_eq!(errors(&outs), ["ok"; 2]);
+        assert_eq!(shown_at(&outs, 1), Some("-18"));
+    }
+
+    /// The 0th derivative is the expression itself, in both kinds of document; a negative
+    /// order is an error that says so.
+    #[test]
+    fn derivative_of_order_zero_is_the_expression() {
+        let outs = run(&["x := 2", "diff(x^3, x, 0)", "diff(x^3, x, -1)"]);
+        assert_eq!(errors(&outs), ["ok", "ok", "a derivative order cannot be negative, but this one is -1"]);
+        assert_eq!(shown_at(&outs, 1), Some("8"));
+        let outs = run_marked(&["diff(y^2, y, 0)", "H(z) := diff(z^2, z, 0)", "H(3)"]);
+        assert_eq!(errors(&outs), ["ok", "ok", "ok"]);
+        assert_eq!(shown_at(&outs, 0), Some("y^2"));
+        assert_eq!(shown_at(&outs, 2), Some("9"));
+    }
+
+    /// A numeric derivative above the second order works in any document: the function is
+    /// differentiated as a formula and read at the point (d^5/dx^5 of x^5 is 120, at x = 1).
+    #[test]
+    fn numeric_derivatives_of_high_order_work_in_any_document() {
+        let outs = run(&["x := 1", "diff(x^5, x, 5)", "f(t) := t^4", "diff(f(x), x, 3)"]);
+        assert_eq!(errors(&outs), ["ok"; 4]);
+        assert_eq!(shown_at(&outs, 1), Some("120"));
+        assert_eq!(shown_at(&outs, 3), Some("24"));
+    }
+
+    /// SMath's element-wise assignment: an index that is a vector sets each of its elements,
+    /// with the index bound to that element while the right-hand side is worked out.
+    #[test]
+    fn vector_index_assignment_is_element_wise() {
+        let outs = run(&[
+            "data := [1, 10; 2, 20; 3, 30]",
+            "k := range(1, rows(data))",
+            "r := col(data, 1)",
+            "r[k, 2] := data[k, 1]*data[k, 2]",
+            "r",
+            "k",
+        ]);
+        assert_eq!(errors(&outs), ["ok"; 6]);
+        assert_eq!(shown_at(&outs, 4), Some("[1, 10; 2, 40; 3, 90]"));
+        // the index keeps its own value after the assignment
+        assert_eq!(shown_at(&outs, 5), Some("[1; 2; 3]"));
+    }
+
+    /// `→` on a value that is a formula shows the formula the value engine built.
+    #[test]
+    fn symbolic_arrow_shows_a_matrix_of_formulas() {
+        let regions: Vec<MathInput> = ["m := [x; 2*x]", "m"]
+            .iter()
+            .enumerate()
+            .map(|(i, l)| MathInput {
+                id: i.to_string(),
+                expr: l.to_string(),
+                show: true,
+                display: DisplaySpec::default(),
+                table: None,
+                plot: None,
+                symbolic: i == 1,
+            })
+            .collect();
+        let outs = Worksheet::new(DisplaySettings { marked_units: true, ..Default::default() }).run(&regions);
+        assert_eq!(errors(&outs), ["ok"; 2]);
+        assert_eq!(shown_at(&outs, 1), Some("[x; 2*x]"));
+    }
+
+    /// Without the SMath flag a name with no value is still an error, and so is a derivative
+    /// with respect to one.
+    #[test]
+    fn unmarked_documents_keep_their_errors_for_unknown_names() {
+        let outs = run(&["q*2", "diff(x^2, x, 3)", "x[1]", "f := x^2 + q", "diff(x^2, x)"]);
+        assert_eq!(
+            errors(&outs),
+            [
+                "q is not defined",
+                "x has no value here; give it one for a numeric derivative, or end the line with → for the derivative as a formula",
+                "x is not defined",
+                "x is not defined",
+                "x has no value here; give it one for a numeric derivative, or end the line with → for the derivative as a formula",
+            ]
+        );
+    }
+
+    #[test]
+    fn unmarked_names_still_resolve_to_constants_and_units() {
+        let outs = run(&["c", "t", "10 m", "x := 3", "x*c", "KN"]);
+        assert_eq!(
+            errors(&outs),
+            ["ok", "ok", "ok", "ok", "ok", "KN is not defined; did you mean the unit kN?"]
+        );
     }
 
     fn shown(lines: &[&str]) -> Vec<String> {
@@ -797,7 +1164,7 @@ mod tests {
         assert_eq!(out[1].units, ["m", "s"]);
         assert!(out[5].units.is_empty());
         assert_eq!(run(&["T := 20 degC"])[0].shown.as_deref(), Some("293.15 'K"));
-        assert!(run(&["x + 1"])[0].error.as_deref().unwrap().contains("x is not defined"));
+        assert!(run(&["x + 1"])[0].error.as_deref().is_some_and(|e| e.contains("x is not defined")));
     }
 
     #[test]
@@ -874,8 +1241,8 @@ mod tests {
         assert_eq!(out[1].defines.as_deref(), Some("loads"));
         assert_eq!(out[2].shown.as_deref(), Some("28.8 'kN"));
         assert_eq!(cell(&out[3], 0, 1), "\"OK\"");
-        assert!(out[4].error.as_deref().unwrap().starts_with("A1: "), "{:?}", out[4].error);
-        assert!(out[4].error.as_deref().unwrap().ends_with("(and 1 more cell)"));
+        assert!(out[4].error.as_deref().is_some_and(|e| e.starts_with("A1: ")), "{:?}", out[4].error);
+        assert!(out[4].error.as_deref().is_some_and(|e| e.ends_with("(and 1 more cell)")));
         // a cell reading σ shows it the way σ is shown
         assert_eq!(cell(&out[6], 0, 0), "2 'MPa");
         assert_eq!(cell(&out[6], 0, 1), "4 'MPa");
@@ -895,7 +1262,8 @@ mod tests {
     }
 
     #[test]
-    fn plots_sample_functions_and_data_in_working_units() {
+    fn plots_sample_functions_and_data_in_working_units()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         use crate::plot::{PlotInput, SAMPLES, SeriesInput};
         let math = |id: &str, e: &str| MathInput {
             id: id.into(),
@@ -912,7 +1280,7 @@ mod tests {
             show: false,
             display: DisplaySpec::default(),
             table: None,
-            plot: Some(PlotInput { series, x_unit: None, y_unit: y_unit.map(Into::into) }),
+            plot: Some(PlotInput { series, y_unit: y_unit.map(Into::into), ..Default::default() }),
             symbolic: false,
         };
         let over = |y: &str, range: &str| SeriesInput { y: y.into(), x: None, range: Some(range.into()) };
@@ -928,16 +1296,21 @@ mod tests {
         ];
         let settings = DisplaySettings { working_units: true, ..Default::default() };
         let out = Worksheet::new(settings).run(&regions);
-        let p = out[3].plot.as_ref().unwrap();
+        let p = out[3].plot.as_ref().ok_or("no plot")?;
         assert_eq!((p.x.unit.as_str(), p.y.unit.as_str()), ("m", "kN*m"));
         let s = &p.series[0];
         assert_eq!(s.xs.len(), SAMPLES + 1);
         assert!((s.xs[SAMPLES / 2] - 3.0).abs() < 1e-9 && (s.ys[SAMPLES / 2] - 45.0).abs() < 1e-9);
-        let d = &out[5].plot.as_ref().unwrap().series[0];
+        let d = &out[5].plot.as_ref().ok_or("no plot")?.series[0];
         assert_eq!((d.xs.clone(), d.ys.clone()), (vec![1.0, 2.0, 3.0], vec![1.0, 4.0, 9.0]));
-        assert!(out[6].error.as_deref().unwrap().ends_with("but the axis is in MPa"), "{:?}", out[6].error);
+        assert!(
+            out[6].error.as_deref().is_some_and(|e| e.ends_with("but the axis is in MPa")),
+            "{:?}",
+            out[6].error
+        );
         assert!(out[7].error.is_some());
         assert_eq!(out[3].error, None);
+        Ok(())
     }
 
     #[test]
@@ -1175,9 +1548,9 @@ mod tests {
     }
 
     #[test]
-    fn temperature_and_custom_units() {
+    fn temperature_and_custom_units() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let mut ws = Worksheet::new(DisplaySettings::default());
-        ws.define_unit("tf", "1000 'kgf").unwrap();
+        ws.define_unit("tf", "1000 'kgf")?;
         let regions = [
             MathInput {
                 id: "a".into(),
@@ -1201,6 +1574,7 @@ mod tests {
         let out = ws.run(&regions);
         assert_eq!(out[0].shown.as_deref(), Some("293.15 'K"));
         assert_eq!(out[1].shown.as_deref(), Some("19.613 'kN"));
+        Ok(())
     }
 
     #[test]
@@ -1272,6 +1646,24 @@ mod tests {
         assert_eq!(
             shown(&["f(x) := block(z := x, z)", "f(2)", "z"]),
             ["", "2", "z is not defined; did you mean f?"]
+        );
+    }
+
+    #[test]
+    fn huge_sizes_are_errors_not_crashes() {
+        let out =
+            shown(&["M[100000, 100000] := 1", "range(0, 1e20)", "range(0, 1e300, 1e-300)", "mat(1, -1, -1)"]);
+        assert!(out.first().is_some_and(|m| m.contains("too large")), "{out:?}");
+        assert!(out.get(1).is_some_and(|m| m.contains("too many elements")), "{out:?}");
+        assert!(out.get(2).is_some_and(|m| m.contains("too many elements")), "{out:?}");
+        assert!(out.get(3).is_some_and(|m| m.contains("must be positive")), "{out:?}");
+    }
+
+    #[test]
+    fn filling_a_column_element_by_element_keeps_earlier_rows() {
+        assert_eq!(
+            shown(&["for(i, range(1, 3), v[i] := 10*i)", "v", "v[2, 2] := 5", "v"]),
+            ["30", "[10; 20; 30]", "5", "[10, 0; 20, 5; 30, 0]"]
         );
     }
 }

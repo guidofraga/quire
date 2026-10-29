@@ -77,7 +77,7 @@ Quire has to work with the keyboard alone and with a screen reader. `app/e2e/a11
 - The format is specified in [02-file-format.md](02-file-format.md) and `schema/quire-1.schema.json`. A change to what is written updates both in the same commit.
 - **Old documents keep opening unchanged.** Add fields; don't rename or reinterpret existing ones. When an old spelling must change, read both (see the unquoted Djot colours in `text.rs`).
 - **Unknown keys survive.** `quire-doc` keeps them in `extra` maps and the app holds the document as JSON, so a newer file edited by an older Quire loses nothing.
-- **Canonical output.** `canonical.rs` fixes the key order and line breaks so diffs stay small; it must stay byte-compatible with `tools/sm2quire.py`.
+- **Canonical output.** `canonical.rs` fixes the key order and line breaks so diffs stay small; the SMath importer writes through it too.
 - No timestamps, counters or machine-specific paths in a document.
 - Documents are untrusted: text HTML is sanitised, only `http(s)`, `mailto` and in-document links survive, and nothing in a document runs code.
 
@@ -135,4 +135,4 @@ Notebook operations skip steps 2 and 3: add an `op` to `notebook::call` and both
 
 ### Change the file format
 
-Update [02-file-format.md](02-file-format.md), the schema, `quire-doc`, `canonical.rs` (key order) and `tools/sm2quire.py` together, add a fixture that an older version wrote, and test that it still opens and evaluates the same.
+Update [02-file-format.md](02-file-format.md), the schema, `quire-doc`, `canonical.rs` (key order) and the SMath importer (`crates/quire-smath`) together, add a fixture that an older version wrote, and test that it still opens and evaluates the same.

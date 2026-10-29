@@ -10,6 +10,8 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 | Worksheet fixtures | `crates/quire-cli/tests/fixtures/*.quire` with `results.json`, checked by `tests/check.rs` | the same `cargo test` | Whole documents against results worked out independently |
 | UI logic | `app/src/*.test.ts` (Vitest, jsdom) | `npm --prefix app test` (`run test:watch` while you work) | Store and undo, clipboard, CSV, LaTeX, speech, pages, notebook paths |
 | End to end | `app/e2e/*.spec.ts` (Playwright, WebKit) | `npm --prefix app run e2e` | The UI against `quire serve`, typed as a user would; `web.spec.ts` runs the web version with its WebAssembly engine (project `web`) |
+| SMath examples | `crates/quire-cli/tests/smath_examples.rs` | `cargo test -p quire-cli --test smath_examples -- --nocapture` | Every worksheet in the SMath corpus imports, evaluates, and reproduces at least its floor of SMath's cached results |
+| SMath robustness | `crates/quire-cli/tests/smath_robustness.rs` | the same `cargo test` | The importer never panics on hostile input, corpus prefixes or mutations |
 | Accessibility | `app/e2e/a11y.spec.ts`, plus axe in `notebook.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
 | PDF export | `app/src-tauri/tests/` (macOS, by hand) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
 
@@ -54,7 +56,15 @@ Documents you can't share (client reports, SMath files) can be checked locally:
 QUIRE_CORPUS="../private/reports:../private/one.quire" cargo test -p quire-cli --test check
 ```
 
-`QUIRE_CORPUS` takes `.quire` bundles or folders of them, separated by `:`, each with a `results.json`. `quire check <doc>` compares a single document and prints the differences. An SMath file converted with `tools/sm2quire.py` carries SMath's own cached results, so it can be checked the same way (`QUIRE_SMATH_REFERENCE`, see `tests/reference_results.rs`).
+`QUIRE_CORPUS` takes `.quire` bundles or folders of them, separated by `:`, each with a `results.json`. `quire check <doc>` compares a single document and prints the differences. An SMath file imported with `quire import` carries SMath's own cached results, so it can be checked the same way (`QUIRE_SMATH_REFERENCE`, see `tests/reference_results.rs`).
+
+### The SMath corpus
+
+`crates/quire-cli/tests/smath_examples.rs` imports every `.sm` file in the corpus and checks its results against the ones SMath cached, the way `quire check` does. The corpus is not in the repository: set `QUIRE_SMATH_EXAMPLES` to a folder of `.sm` files, or put them in `examples/` (without a corpus the test prints a note and passes).
+
+The test is a ratchet. `FLOOR` in the file holds, for each worksheet, the number of results that must match. A change may raise a count but must not lower it; when a fix lands, raise its floor in the same change. Run it with `--nocapture` to see the table of matched and total results per file. Every file needs a floor, and importing or evaluating any of them must not fail or panic.
+
+`smath_robustness.rs` feeds the importer broken input: hostile fixtures, every corpus file cut at many positions, and random mutations. Set `QUIRE_SMATH_PANIC_DIR` to save each input that panics, for reproduction.
 
 ## 5. Before you push
 

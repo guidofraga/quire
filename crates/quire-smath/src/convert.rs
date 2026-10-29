@@ -32,6 +32,16 @@ const MAX_XML_DEPTH: usize = 128;
 const ID_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
 const KNOWN_ASSEMBLIES: [&str; 5] = ["SMath Core", "MathRegion", "TextRegion", "PictureRegion", "AreaRegion"];
 
+/// The note of a math region: SMath keeps one `<description>` per language. A note is a
+/// single text in Quire, so take the one a reader most likely wants: Portuguese, else
+/// English (what multilingual text falls back to), else the first active one.
+fn note_variant<'a, 'i>(m: Node<'a, 'i>) -> Option<Node<'a, 'i>> {
+    let active: Vec<Node> =
+        children(m, "description").into_iter().filter(|d| d.attribute("active") == Some("true")).collect();
+    let by = |lang: &str| active.iter().copied().find(|d| d.attribute("lang") == Some(lang));
+    by("por").or_else(|| by("eng")).or_else(|| active.first().copied())
+}
+
 /// Python `LANG` for the languages that have a short code; anything else is `None`.
 fn lang_code(lang: &str) -> Option<&'static str> {
     match lang {
@@ -142,6 +152,50 @@ fn int_attr(el: Node, name: &str, default: i64) -> Res<i64> {
 fn req_int(el: Node, name: &str) -> Res<i64> {
     let s = el.attribute(name).ok_or_else(|| format!("missing attribute {name:?}"))?;
     pint(s)
+}
+
+/// Pixels per unit of a 2D plot at zoom 1. Read off the screenshots: at zoom `z` the horizontal
+/// axis shows `6·z` px per unit (HermitePolynomials, Legendre).
+const SMATH_PX_PER_UNIT: f64 = 6.0;
+
+/// The x values visible across a 2D SMath plot `width` px wide, from its view attributes.
+/// SMath keeps the horizontal zoom in `scale_y` (and the vertical one in `scale_x`), and
+/// `transpose_x` moves the drawing right by that many px: x = 0 sits at `width/2 + transpose_x`.
+/// Beam's view does not fit this model, but its curves are explicit data, so nothing relies on it.
+fn visible_x(p: Node, width: i64) -> Option<(f64, f64)> {
+    let zoom = p.attribute("scale_y").unwrap_or("1").trim().parse::<f64>().ok()?;
+    let px_per_unit = SMATH_PX_PER_UNIT * zoom;
+    if !(px_per_unit.is_finite() && px_per_unit > 0.0) {
+        return None;
+    }
+    let shift = p.attribute("transpose_x").unwrap_or("0").trim().parse::<f64>().ok()?;
+    let half = width as f64 / 2.0;
+    Some(((-half - shift) / px_per_unit, (half - shift) / px_per_unit))
+}
+
+/// The y values visible across a 2D SMath plot `height` px tall, from its view attributes. The
+/// vertical zoom is in `scale_x` (6 px per unit at zoom 1, as for x), and `transpose_y` moves the
+/// drawing down by that many px, so the window moves up. Read off the Hermite screenshot: a
+/// 351 px plot at zoom 2.78 shows about ±10.5 units, the ±10 of its axis labels.
+fn visible_y(p: Node, height: i64) -> Option<(f64, f64)> {
+    let zoom = p.attribute("scale_x")?.trim().parse::<f64>().ok()?;
+    let px_per_unit = SMATH_PX_PER_UNIT * zoom;
+    if !(px_per_unit.is_finite() && px_per_unit > 0.0) {
+        return None;
+    }
+    let shift = p.attribute("transpose_y").unwrap_or("0").trim().parse::<f64>().ok()?;
+    let half = height as f64 / 2.0;
+    Some(((shift - half) / px_per_unit, (shift + half) / px_per_unit))
+}
+
+/// Whether an expression reads the variable `x`.
+fn mentions_x(ast: &Ast) -> bool {
+    (ast.kind == Kind::Id && ast.value == "x") || ast.args.iter().any(mentions_x)
+}
+
+/// A range end written with at most three decimals.
+fn bound(v: f64) -> String {
+    format!("{}", (v * 1000.0).round() / 1000.0)
 }
 
 /// Python `re.sub(r"^\{[^}\n]*\}\n", "", s)`: drops a leading `{attrs}` line.
@@ -312,7 +366,7 @@ fn math_of(container: Option<Node>) -> Res<Option<Ast>> {
 
 /// Python `to_linear(ast, units_bare)`.
 fn lin(ast: &Ast, units_bare: bool) -> Res<String> {
-    math::to_linear(ast, units_bare).map_err(|e| e.to_string())
+    math::statement_to_linear(ast, units_bare).map_err(|e| e.to_string())
 }
 
 /// Python `xml.etree` `tostring` of a region: the element with its tail, with SMath's
@@ -650,6 +704,8 @@ impl Converter {
 
     fn calc_settings(&mut self, settings: Option<Node>) -> Json {
         let mut out = Obj::new();
+        // SMath writes every unit quoted ('m), so a bare name is a variable, never a unit or constant
+        out.insert("units".into(), json!({ "marked": true }));
         let Some(calc) = settings.and_then(|s| child(s, "calculation")) else {
             return Json::Object(out);
         };
@@ -919,7 +975,8 @@ impl Converter {
             fmt.insert("decimals".into(), json!(pint(dp)?));
         }
         if let Some(res) = result {
-            let show = if res.attribute("action") == Some("symbolic") { "symbolic" } else { "value" };
+            let symbolic = res.attribute("action") == Some("symbolic") && !math::is_numeric_matrix(res);
+            let show = if symbolic { "symbolic" } else { "value" };
             reg.insert("show".into(), json!(show));
             if let Some(val) = math_of(Some(res))? {
                 let mut shown = lin(&val, false)?;
@@ -945,9 +1002,7 @@ impl Converter {
         if r.attribute("showInputData").unwrap_or("").to_lowercase() == "false" && reg.contains_key("show") {
             reg.insert("hideInput".into(), json!(true));
         }
-        if let Some(desc) = child(m, "description")
-            && desc.attribute("active") == Some("true")
-        {
+        if let Some(desc) = note_variant(m) {
             let note = self.paragraph_join(desc);
             if !note.is_empty() {
                 reg.insert("note".into(), json!(note));
@@ -1178,9 +1233,13 @@ impl Converter {
     fn plot(&mut self, r: Node, p: Node, origin: (i64, i64)) -> Res<Json> {
         let kind = if p.attribute("type") == Some("3d") { "plot3d" } else { "plot2d" };
         let mut reg = self.base(r, origin, kind)?;
-        let size = [req_int(r, "width")?, req_int(r, "height")?];
+        let width = req_int(r, "width")?;
+        let size = [width, req_int(r, "height")?];
         reg.insert("size".into(), json!(size));
         let mut series: Vec<Json> = Vec::new();
+        // SMath sweeps a free x over the visible range without saying so: give it explicitly
+        let view = if kind == "plot2d" { visible_x(p, width) } else { None };
+        let view_y = if kind == "plot2d" { visible_y(p, size[1]) } else { None };
         if let Some(ast) = math_of(child(p, "input"))? {
             let is_sys = ast.kind == Kind::Call && ast.value == "sys";
             let mut items: Vec<&Ast> = if is_sys { ast.args.iter().collect() } else { vec![&ast] };
@@ -1188,12 +1247,53 @@ impl Converter {
                 items.truncate(items.len().saturating_sub(2)); // sys(..., rows, cols)
             }
             for item in items {
-                series.push(json!({"y": lin(item, false)?}));
+                let y = lin(item, false)?;
+                series.push(match view {
+                    Some((lo, hi)) if mentions_x(item) => {
+                        json!({"y": y, "x": "x", "range": format!("{}..{}", bound(lo), bound(hi))})
+                    }
+                    _ => json!({"y": y}),
+                });
             }
         }
         reg.insert("series".into(), Json::Array(series));
         reg.insert("grid".into(), json!(p.attribute("grid") == Some("true")));
-        reg.insert("axes".into(), json!(p.attribute("axes") == Some("true")));
+        // SMath shows the axes unless the plot says otherwise
+        // with the axes shown, the y range is SMath's window (the curves beyond it are clipped)
+        let axes_shown = p.attribute("axes") != Some("false");
+        match view_y.filter(|_| axes_shown && kind == "plot2d") {
+            Some((lo, hi)) => {
+                let round = |v: f64| (v * 1000.0).round() / 1000.0;
+                reg.insert("axes".into(), json!({"y": {"min": round(lo), "max": round(hi)}}));
+            }
+            None => {
+                reg.insert("axes".into(), json!(axes_shown));
+            }
+        }
+        // SMath's plots have no legend, and they use SMath's own series colours in order
+        reg.insert("legend".into(), json!(false));
+        reg.insert("palette".into(), json!("smath"));
+        // SMath's equal scales (scale_x = scale_y) keep a circle round
+        if kind == "plot2d"
+            && p.attribute("scale_x").is_some()
+            && p.attribute("scale_x") == p.attribute("scale_y")
+        {
+            reg.insert("aspect".into(), json!("equal"));
+        }
+        // `animate` names the list of values that drives the frames (SMath's `step`). The variable
+        // it binds is the last plain name the plotted call reads (`f(path, t)` binds `t`).
+        if let Some(ast) = math_of(child(p, "input"))?
+            && let Some(list) = nonempty(p.attribute("animate"))
+            && ast.kind == Kind::Call
+            && let Some(var) = ast.args.iter().rev().find(|a| a.kind == Kind::Id).map(|a| a.value.clone())
+        {
+            let fps = p
+                .attribute("frameRate")
+                .and_then(|f| f.trim().parse::<f64>().ok())
+                .filter(|f| f.is_finite() && *f > 0.0)
+                .unwrap_or(20.0);
+            reg.insert("animate".into(), json!({"var": var, "over": list, "fps": fps}));
+        }
         if let Some(render) = nonempty(p.attribute("render"))
             && render != "lines"
         {
@@ -1411,6 +1511,82 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn an_animated_plot_names_its_list_and_its_variable() -> TestResult {
+        // f(path, t) animated over `step` at 20 frames a second, with equal scales
+        let xml = r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="p" left="9" top="9" width="227" height="219">
+<plot type="2d" render="lines" grid="false" axes="false" scale_x="2.5" scale_y="2.5" animate="step" frameRate="20">
+<input><e type="operand">path</e><e type="operand">t</e><e type="function" args="2">f</e></input>
+</plot>
+</region>
+</regions>"#;
+        let out = crate::convert(xml)?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let plot = regions.first().ok_or("no plot")?;
+        assert_eq!(plot.get("animate"), Some(&json!({"var": "t", "over": "step", "fps": 20.0})));
+        assert_eq!(plot.get("aspect"), Some(&json!("equal")));
+        assert_eq!(plot.get("axes"), Some(&json!(false)));
+        Ok(())
+    }
+
+    #[test]
+    fn smath_line_blocks_keep_their_last_statement_and_equality_is_a_test() -> TestResult {
+        // line(a, b, rows, cols): the last two numbers are the block's layout, not its value
+        let xml = r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="m" left="9" top="9" width="100" height="20">
+<math><input><e type="operand">a</e><e type="operand">1</e><e type="operator" args="2">≡</e><e type="operand">a</e><e type="operand">2</e><e type="operand">1</e><e type="function" args="4">line</e></input></math>
+</region>
+</regions>"#;
+        let out = crate::convert(xml)?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let expr = regions.first().and_then(|r| r.get("expr")).and_then(Json::as_str).ok_or("no expr")?;
+        assert_eq!(expr, "block(a == 1, a)");
+        Ok(())
+    }
+
+    #[test]
+    fn a_plot_sweeps_the_free_x_over_the_visible_range() -> TestResult {
+        // zoom 2 on the horizontal axis (scale_y) shows 12 px per unit; 350 px wide, so x runs
+        // from -175/12 to 175/12; a transpose of 60 px moves the window right by 5 units
+        let xml_for = |tx: &str| {
+            format!(
+                r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="p" left="9" top="9" width="350" height="200">
+<plot type="2d" render="lines" scale_x="1" scale_y="2" transpose_x="{tx}" transpose_y="0">
+<input><e type="operand">x</e><e type="operand">0</e><e type="function" args="2">H</e>
+<e type="operand">y</e><e type="operand">1</e><e type="operator" args="2">+</e><e type="operand">2</e><e type="operand">1</e><e type="function" args="4">sys</e></input>
+</plot>
+</region>
+</regions>"#
+            )
+        };
+        let out = crate::convert(&xml_for("0"))?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let plot = regions.first().ok_or("no plot")?;
+        let series = plot.get("series").and_then(Json::as_array).ok_or("no series")?;
+        // the first item reads x: it gets the range; the second has no x and gets none
+        let first = series.first().ok_or("no first series")?;
+        assert_eq!(first.get("x").and_then(Json::as_str), Some("x"));
+        assert_eq!(first.get("range").and_then(Json::as_str), Some("-14.583..14.583"));
+        assert!(series.get(1).is_some_and(|s| s.get("range").is_none()));
+        // SMath shows axes unless the plot turns them off; with them shown, the y window is 351 px / (6 × 2.5)
+        assert_ne!(plot.get("axes"), Some(&json!(false)), "SMath shows axes unless the plot turns them off");
+        assert_eq!(plot.pointer("/axes/y/min").and_then(Json::as_f64), Some(-16.667));
+        // the window moves with transpose_x: x = 0 is at width/2 + 60 px, so x runs from
+        // -235/12 to 115/12
+        let moved = crate::convert(&xml_for("60"))?;
+        let regions = moved.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let series =
+            regions.first().and_then(|p| p.get("series")).and_then(Json::as_array).ok_or("no series")?;
+        let range = series.first().and_then(|s| s.get("range")).and_then(Json::as_str);
+        assert_eq!(range, Some("-19.583..9.583"));
+        Ok(())
+    }
+
     /// `n` regions, each an area holding the next one, closed at the end.
     fn nested_areas_xml(n: usize) -> String {
         let mut s = String::from(r#"<?xml version="1.0"?><regions><region left="0" top="0"><area/>"#);
@@ -1572,5 +1748,23 @@ mod tests {
     #[test]
     fn expand_fields_replaces_known_fields() {
         assert_eq!(expand_fields("x &[PAGENUM] &[NOPE] y"), "x {page} &[NOPE] y");
+    }
+
+    #[test]
+    fn a_math_note_prefers_portuguese_then_english() -> TestResult {
+        let note = |descs: &str| -> std::result::Result<Option<String>, Box<dyn std::error::Error>> {
+            let xml = format!("<math>{descs}</math>");
+            let doc = roxmltree::Document::parse(&xml)?;
+            Ok(note_variant(doc.root_element()).and_then(|d| d.attribute("lang")).map(str::to_string))
+        };
+        let ru = r#"<description active="true" lang="rus"><p>Радиус</p></description>"#;
+        let en = r#"<description active="true" lang="eng"><p>Radius</p></description>"#;
+        let pt = r#"<description active="true" lang="por"><p>Raio</p></description>"#;
+        let off = r#"<description active="false" lang="eng"><p>Radius</p></description>"#;
+        assert_eq!(note(&format!("{ru}{en}"))?.as_deref(), Some("eng"));
+        assert_eq!(note(&format!("{ru}{en}{pt}"))?.as_deref(), Some("por"));
+        assert_eq!(note(&format!("{ru}{off}"))?.as_deref(), Some("rus"));
+        assert_eq!(note(off)?, None);
+        Ok(())
     }
 }

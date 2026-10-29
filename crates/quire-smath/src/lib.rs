@@ -1,9 +1,9 @@
-//! SMath Studio worksheet (`.sm`, XML) importer: the Rust port of `tools/sm2quire.py`.
+//! SMath Studio worksheet (`.sm`, XML) importer.
 //!
 //! [`convert`] turns the XML text of a `.sm` file into a Quire document
 //! (`document.json`), the results SMath cached in it (`results.json`, the regression
-//! oracle) and the binaries it embeds. Output matches the Python reference importer
-//! byte for byte once serialized with `quire_service::canonical::to_string`.
+//! oracle) and the binaries it embeds. Imported documents set `settings.units.marked`:
+//! as in SMath, a bare name is always a variable, never a unit or a constant.
 //!
 //! Never panics: malformed input is an [`ImportError`] or, for a single region, a
 //! warning plus a `legacy` region.

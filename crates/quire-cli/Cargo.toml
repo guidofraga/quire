@@ -18,3 +18,6 @@ quire-doc.workspace = true
 quire-smath.workspace = true
 quire-service.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

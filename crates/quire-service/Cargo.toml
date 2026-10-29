@@ -21,3 +21,6 @@ sha2 = "0.10"
 # the system Trash; the browser build (quire-web) has no file system
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 trash = "5"
+
+[lints]
+workspace = true
