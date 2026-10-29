@@ -43,6 +43,7 @@ export const api = {
   exportPdf: (path: string, paper: Paper, title: string, compress: boolean) =>
     call<null>("export_pdf", { path, paper, title, compress }),
   finishExport: (error: string | null) => call<null>("finish_export", { error }),
+  exportCsv: (path: string, contents: string) => call<null>("export_csv", { path, contents }),
   /** Documents the system asked to open before the UI was ready (Finder, Explorer, command line). */
   saveRecovery: (doc: Doc, path: string | null) =>
     isTauri ? call<null>("save_recovery", { doc, path }) : Promise.resolve(null),

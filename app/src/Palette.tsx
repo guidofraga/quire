@@ -44,6 +44,7 @@ const COMMANDS: [string, string, string][] = [
   ["insert_text", "Insert Text Region", `${mod}${shift}T`],
   ["insert_image", "Insert Image…", `${mod}${shift}I`],
   ["insert_table", "Insert Table", `${mod}${alt}T`],
+  ["import_csv", "Insert Table from CSV…", ""],
   ["insert_plot", "Insert Plot", `${mod}${alt}P`],
   ["insert_area", "Insert Area", ""],
   ["insert_ref", "Insert Cross-Reference…", `${mod}${shift}R`],

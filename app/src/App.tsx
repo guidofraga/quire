@@ -31,7 +31,7 @@ import { Canvas, clientToDoc, reveal, zoomCenter, zoomToFit } from "./Canvas";
 import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
-import { insertTable, isSheet, tableCommand } from "./TableEditor";
+import { importCsv, insertTable, isSheet, tableCommand } from "./TableEditor";
 import { insertPlot } from "./Plot";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
@@ -394,6 +394,8 @@ function runCommand(id: string) {
       return insertImage().catch((e) => flash(`Could not insert the image: ${e.message ?? e}`));
     case "insert_table":
       return insertTable();
+    case "import_csv":
+      return void importCsv();
     case "insert_plot":
       return insertPlot();
     case "welcome":

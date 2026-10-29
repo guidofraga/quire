@@ -4,7 +4,7 @@ import { setCaptionToEdit } from "./Region";
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
 import { latex } from "./latex";
-import { insertTable, isSheet, parseTsv, tableMenuItems } from "./TableEditor";
+import { exportCsv, insertTable, isSheet, parseTsv, tableMenuItems } from "./TableEditor";
 import { prettyValue } from "./math";
 import { closeMenu, type MenuItems, setRegionMenuBuilder } from "./menu";
 import type { Background } from "./pages";
@@ -288,6 +288,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Text", run: go("insert_text") },
         { label: "Insert Image…", run: go("insert_image") },
         { label: "Insert Table", run: go("insert_table") },
+        { label: "Insert Table from CSV…", run: go("import_csv") },
         { label: "Insert Plot", run: go("insert_plot") },
         { label: "Insert Area", run: go("insert_area") },
         null,
@@ -313,6 +314,7 @@ export function installContextMenus(run: (command: string) => void) {
     else if (!many && r?.kind === "plot2d") items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({ label: isSheet(r) ? "Edit Table" : "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
+    if (!many && r && isSheet(r)) items.push({ label: "Export as CSV…", run: () => (closeMenu(), void exportCsv(id)) }, null);
     items.push(
       { label: "Cut", shortcut: "⌘X", run: () => (closeMenu(), copyToInternal(), document.execCommand("cut") || deleteRegions(state.selection)) },
       { label: "Copy", shortcut: "⌘C", run: () => (closeMenu(), copyToInternal(), document.execCommand("copy")) },

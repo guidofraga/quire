@@ -62,3 +62,31 @@ test("a change upstream updates results below", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(regions(page).nth(1)).toContainText(/=15\s*m$/);
 });
+
+test("imports a CSV file as a table and exports its values", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.press("Escape");
+  await page.mouse.click(700, 250, { button: "right" });
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByText("Insert Table from CSV…").click();
+  await (await chooser).setFiles({
+    name: "wind loads.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from('Load,q,twice\nDead,4.5 kN/m,=B2*2\n"Live, roof",1.5 kN/m,=B3*2\n'),
+  });
+  const table = regions(page).first();
+  await expect(table).toContainText("Live, roof");
+  await expect(page.locator(".flash, .message, body")).toContainText("as the table wind_loads");
+
+  await page.keyboard.press("Escape");
+  await table.click({ button: "right" });
+  const download = page.waitForEvent("download");
+  await page.getByText("Export as CSV…").click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("wind_loads.csv");
+  const csv = await (await file.createReadStream()).toArray().then((c) => Buffer.concat(c).toString("utf8"));
+  const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
+  expect(lines[0]).toBe("Load,q,twice");
+  expect(lines[1]).toMatch(/^Dead,4\.5 kN\/m,9\b/);
+  expect(lines[2]).toMatch(/^"Live, roof",1\.5 kN\/m,3\b/);
+});

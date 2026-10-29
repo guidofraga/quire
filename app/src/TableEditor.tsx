@@ -1,8 +1,10 @@
 // Spreadsheet tables: cells hold text, values (12 kN) or formulas (=SUM(B2:B4)).
 // The engine evaluates them (crates/quire-eval/src/sheet.rs); this is the grid you edit.
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
+import { api, isTauri } from "./api";
 import { esc, prettyValue } from "./math";
 import { verdictOf } from "./checks";
+import { decimalComma, parseCsv, tableNameFrom, toCsv, withDecimalComma } from "./csv";
 import { commitEditing, contentBottom, flash, insertRegion, layout, type Placed, LINE, redo, setState, snap, startEditing, state, undo, updateRegion } from "./store";
 import type { Region } from "./types";
 
@@ -395,7 +397,7 @@ export function tableMenuItems(run: (fn: () => void) => () => void) {
 }
 
 /** Insert ▸ Table: a small table with a header row, ready to type into. */
-export function insertTable(rows?: string[][]) {
+export function insertTable(rows?: string[][], name?: string) {
   commitEditing();
   // without an insertion point, below everything
   const at = state.caret ?? [36, snap(contentBottom() + LINE)];
@@ -405,12 +407,81 @@ export function insertTable(rows?: string[][]) {
     ["", "", ""],
     ["", "", ""],
   ];
-  const id = insertRegion({ kind: "table", at, rows: data, header: { row: true } });
+  const id = insertRegion({ kind: "table", at, rows: data, header: { row: true }, ...(name ? { name } : {}) });
   setState({ caret: null });
   startEditing(id);
   setSel({ r: 0, c: 0, r2: 0, c2: 0 });
   focusGrid();
   return id;
+}
+
+// ---------------------------------------------------------------------------
+// CSV files
+// ---------------------------------------------------------------------------
+
+/** A cell as it reads on the page: the value of a formula, `#ERROR`, or what was typed. */
+export function cellText(raw: string, v: { result: { t: string; c?: unknown } | null; text: string | null; error: string | null } | undefined): string {
+  if (v?.error) return "#ERROR";
+  if (v?.result?.t === "Str") return String(v.result.c);
+  if (v?.text) return prettyValue(v.text);
+  return raw.startsWith("=") ? "" : raw;
+}
+
+function pickCsv(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.tsv,.txt,text/csv,text/tab-separated-values";
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.click();
+  });
+}
+
+/** Insert ▸ Table from CSV…: a table of the file's cells, named after the file. */
+export async function importCsv() {
+  const file = await pickCsv();
+  if (!file) return;
+  const rows = parseCsv(await file.text());
+  if (!rows.length) return flash(`${file.name} has no cells to import`);
+  const taken = new Set(layout().list.map((p) => p.region.name));
+  const base = tableNameFrom(file.name);
+  let name = base;
+  for (let n = 2; name && taken.has(name); n++) name = `${base}_${n}`;
+  insertTable(rows, name);
+  flash(`Imported ${rows.length} rows from ${file.name}${name ? ` as the table ${name}` : ""}`);
+}
+
+/** Export as CSV…: the values as shown, in the document language's number format. */
+export async function exportCsv(id: string) {
+  const t = layout().byId.get(id)?.region;
+  if (!t || !isSheet(t)) return;
+  const comma = decimalComma(state.doc.meta?.lang);
+  const cells = state.views[id]?.cells ?? [];
+  const rows = rowsOf(t).map((row, i) =>
+    row.map((raw, j) => {
+      const text = cellText(raw, cells[i]?.[j]);
+      return comma && cells[i]?.[j]?.result && cells[i][j]!.result!.t !== "Str" ? withDecimalComma(text) : text;
+    }),
+  );
+  const csv = toCsv(rows, comma ? ";" : ",");
+  const suggested = `${(t.name as string | undefined) ?? "table"}.csv`;
+  if (!isTauri) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = suggested;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return;
+  }
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ defaultPath: suggested, filters: [{ name: "CSV", extensions: ["csv"] }] });
+  if (!path) return;
+  try {
+    await api.exportCsv(path.toLowerCase().endsWith(".csv") ? path : `${path}.csv`, csv);
+    flash(`Exported ${rows.length} rows`);
+  } catch (e) {
+    flash(`Could not export the table: ${(e as Error).message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

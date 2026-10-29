@@ -101,6 +101,15 @@ fn library() -> quire_service::Library {
     quire_service::library()
 }
 
+/// A table's Export as CSV…: only ever writes a `.csv` file the user picked.
+#[tauri::command]
+fn export_csv(path: PathBuf, contents: String) -> CmdResult<()> {
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("csv")) {
+        return Err("a table can only be exported to a .csv file".into());
+    }
+    std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 #[tauri::command]
 fn djot_html(src: String) -> String {
     quire_service::render_djot_editable(&src)
@@ -273,6 +282,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "insert_text", "Text Region", Some("CmdOrCtrl+Shift+T"))?,
             &item(app, "insert_image", "Image…", Some("CmdOrCtrl+Shift+I"))?,
             &item(app, "insert_table", "Table", Some("CmdOrCtrl+Alt+T"))?,
+            &item(app, "import_csv", "Table from CSV…", None)?,
             &item(app, "insert_plot", "Plot", Some("CmdOrCtrl+Alt+P"))?,
             &item(app, "insert_area", "Area", None)?,
             &sep()?,
@@ -465,6 +475,7 @@ fn main() {
             print_document,
             export_pdf,
             finish_export,
+            export_csv,
             take_open_requests,
             set_recent,
             save_recovery,
