@@ -21,6 +21,8 @@ pub struct PlotInput {
     /// Axis units (`m`, `kN*m`); otherwise the units the document works in.
     pub x_unit: Option<String>,
     pub y_unit: Option<String>,
+    /// A 3D plot (`plot3d`) instead: surfaces, curves and data in x, y and z.
+    pub three: Option<crate::plot3d::Plot3Input>,
 }
 
 #[derive(Debug, Clone, Default)]

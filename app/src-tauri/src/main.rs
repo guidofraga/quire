@@ -285,6 +285,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "insert_table", "Table", Some("CmdOrCtrl+Alt+T"))?,
             &item(app, "import_csv", "Table from CSV…", None)?,
             &item(app, "insert_plot", "Plot", Some("CmdOrCtrl+Alt+P"))?,
+            &item(app, "insert_plot3d", "3D Plot", None)?,
             &item(app, "insert_area", "Area", None)?,
             &sep()?,
             &item(app, "insert_toc", "Table of Contents", None)?,

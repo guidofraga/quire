@@ -9,6 +9,7 @@ import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { PolarPlotBody } from "./PolarPlot";
+import { DEFAULT_SIZE_3D, editPlot3d, Plot3DBody } from "./Plot3D";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
 import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
@@ -349,12 +350,12 @@ function PlotFigure(props: { p: Placed }) {
   const r = () => props.p.region;
   const error = () => state.views[r().id]?.error;
   return (
-    <figure class="figure plot-figure" style={{ width: `${(r().size ?? DEFAULT_SIZE)[0]}px` }}>
+    <figure class="figure plot-figure" style={{ width: `${(r().size ?? (r().kind === "plot3d" ? DEFAULT_SIZE_3D : DEFAULT_SIZE))[0]}px` }}>
       <Show when={r().caption?.position === "above"}>
         <Caption p={props.p} />
       </Show>
-      <Show when={r().polar} fallback={<PlotBody r={r()} />}>
-        <PolarPlotBody r={r()} />
+      <Show when={r().kind === "plot3d"} fallback={<Show when={r().polar} fallback={<PlotBody r={r()} />}><PolarPlotBody r={r()} /></Show>}>
+        <Plot3DBody r={r()} />
       </Show>
       <Show when={error()}>
         <div class="err" title={error()!}>
@@ -559,7 +560,7 @@ function ResizeHandle(props: { p: Placed }) {
     const id = r().id;
     const startX = e.clientX;
     const startY = e.clientY;
-    const sized = r().kind === "image" || r().kind === "plot2d";
+    const sized = r().kind === "image" || r().kind === "plot2d" || r().kind === "plot3d";
     const w0 = sized ? (r().size?.[0] ?? 200) : (r().width ?? widths[id] ?? 200);
     const h0 = r().size?.[1] ?? 150;
     const ratio = h0 / w0;
@@ -573,7 +574,7 @@ function ResizeHandle(props: { p: Placed }) {
           const reg = findDraft(d, id);
           if (!reg) return;
           if (reg.kind === "image") reg.size = [w, ev.shiftKey ? free : Math.round(w * ratio)];
-          else if (reg.kind === "plot2d") reg.size = [Math.max(160, w), Math.max(120, free)];
+          else if (reg.kind === "plot2d" || reg.kind === "plot3d") reg.size = [Math.max(160, w), Math.max(120, free)];
           else reg.width = w;
         }),
       );
@@ -587,7 +588,7 @@ function ResizeHandle(props: { p: Placed }) {
     window.addEventListener("pointerup", up);
   };
   return (
-    <div class="resize-handle" classList={{ corner: r().kind === "image" || r().kind === "plot2d" }} onPointerDown={onDown} title="Drag to resize" />
+    <div class="resize-handle" classList={{ corner: r().kind === "image" || r().kind === "plot2d" || r().kind === "plot3d" }} onPointerDown={onDown} title="Drag to resize" />
   );
 }
 
@@ -617,7 +618,6 @@ function openUnitMenu(e: MouseEvent, r: Region) {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  plot3d: "3D plot (not supported in this version yet)",
   data: "Data import (not supported in this version yet)",
   legacy: "Unconverted SMath region",
   pagebreak: "Page break",
@@ -693,6 +693,8 @@ export function RegionBox(props: RegionProps) {
           ? editTableAt(r().id, [e.clientX, e.clientY])
           : r().kind === "plot2d"
             ? editPlot(r().id)
+            : r().kind === "plot3d"
+            ? editPlot3d(r().id)
             : startEditing(r().id, [e.clientX, e.clientY])
       }
       onContextMenu={(e) => {
@@ -730,13 +732,13 @@ export function RegionBox(props: RegionProps) {
         <Match when={r().kind === "toc"}>
           <ContentsBody p={placed()} />
         </Match>
-        <Match when={r().kind === "plot2d"}>
+        <Match when={r().kind === "plot2d" || r().kind === "plot3d"}>
           <PlotFigure p={placed()} />
         </Match>
       </Switch>
       <Show
         when={
-          selected() && state.selection.length === 1 && !editing() && !state.printing && ["text", "image", "plot2d"].includes(r().kind)
+          selected() && state.selection.length === 1 && !editing() && !state.printing && ["text", "image", "plot2d", "plot3d"].includes(r().kind)
         }
       >
         <ResizeHandle p={placed()} />

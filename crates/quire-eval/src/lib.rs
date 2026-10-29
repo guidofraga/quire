@@ -17,6 +17,7 @@ mod interp;
 mod numeric;
 mod ops;
 mod plot;
+mod plot3d;
 mod sheet;
 mod solvers;
 mod stats;
@@ -33,6 +34,7 @@ pub use format::{
 };
 pub use interp::{Binding, Env, Interp, Scope};
 pub use plot::{Axis, PlotInput, PlotOutcome, SAMPLES, SeriesInput, SeriesOutcome};
+pub use plot3d::{Plot3Input, Plot3Outcome, Series3Input, Series3Outcome, Shape};
 pub use sheet::{CellOutcome, TableInput, cell_label, column_name, parse_ref};
 pub use value::{Matrix, Quantity, Value};
 pub use worksheet::{Fix, MathInput, Outcome, Worksheet};

@@ -890,7 +890,8 @@ class Converter:
             items = ast.args if ast.kind == "call" and ast.value == "sys" else [ast]
             if ast.kind == "call" and ast.value == "sys" and len(items) > 2:
                 items = items[:-2]  # sys(..., rows, cols)
-            series = [{"y": to_linear(i)} for i in items]
+            # a 3D plot's input is a height: z(x, y) or a matrix (Plot3D.tsx)
+            series = [{"z" if kind == "plot3d" else "y": to_linear(i)} for i in items]
         reg["series"] = series
         reg["grid"] = p.get("grid") == "true"
         reg["axes"] = p.get("axes") == "true"

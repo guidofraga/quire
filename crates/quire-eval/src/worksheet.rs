@@ -57,6 +57,8 @@ pub struct Outcome {
     pub plot: Option<PlotOutcome>,
     /// A plot's samples in SI, kept until its axis units are chosen.
     samples: Vec<std::result::Result<Sampled, String>>,
+    /// A 3D plot's series, in its axis units.
+    pub plot3: Option<crate::plot3d::Plot3Outcome>,
 }
 
 /// A one-click repair for an error.
@@ -84,6 +86,7 @@ impl Outcome {
             fix: None,
             plot: None,
             samples: Vec::new(),
+            plot3: None,
         }
     }
 }
@@ -571,6 +574,21 @@ impl Worksheet {
         let globals = Rc::clone(&self.globals);
         let mut interp = Interp::new(&self.units);
         let mut scope = Scope::new(&globals);
+        if let Some(three) = &p.three {
+            let o = crate::plot3d::plot(three, &mut interp, &mut scope, si_text);
+            let errors: Vec<(usize, &String)> =
+                o.series.iter().enumerate().filter_map(|(i, s)| s.error.as_ref().map(|e| (i, e))).collect();
+            out.error = match errors.as_slice() {
+                [] => None,
+                [(_, e)] if o.series.len() == 1 => Some((*e).clone()),
+                [(i, e), ..] => Some(format!("series {}: {e}", i + 1)),
+            };
+            out.units = std::mem::take(&mut interp.unit_idents).into_iter().collect();
+            out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
+            out.plot = Some(PlotOutcome::default());
+            out.plot3 = Some(o);
+            return out;
+        }
         out.samples = p
             .series
             .iter()
@@ -969,7 +987,7 @@ mod tests {
             show: false,
             display: DisplaySpec::default(),
             table: None,
-            plot: Some(PlotInput { series, x_unit: None, y_unit: y_unit.map(Into::into) }),
+            plot: Some(PlotInput { series, x_unit: None, y_unit: y_unit.map(Into::into), three: None }),
             symbolic: false,
         };
         let over = |y: &str, range: &str| SeriesInput { y: y.into(), x: None, range: Some(range.into()) };

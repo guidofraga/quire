@@ -3566,3 +3566,24 @@ input[type="radio"]:focus-visible,
   font-size: 11px;
   color: #52514e;
 }
+
+/* 3D plots (Plot3D.tsx) */
+.plot3d canvas {
+  display: block;
+  touch-action: none;
+}
+
+.plot3d-reset {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  border: none;
+  background: transparent;
+  color: #9b9a95;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.plot3d-reset:hover {
+  color: #3d3d3a;
+}

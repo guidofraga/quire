@@ -47,6 +47,7 @@ const COMMANDS: [string, string, string][] = [
   ["insert_table", "Insert Table", `${alt}${mod}T`],
   ["import_csv", "Insert Table from CSV…", ""],
   ["insert_plot", "Insert Plot", `${alt}${mod}P`],
+  ["insert_plot3d", "Insert 3D Plot", ""],
   ["insert_area", "Insert Area", ""],
   ["insert_ref", "Insert Cross-Reference…", `${shift}${mod}R`],
   ["insert_toc", "Insert Table of Contents", ""],

@@ -154,7 +154,33 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
         })
         .unwrap_or_default();
     let axis = |a: &str| text(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
-    PlotInput { series, x_unit: axis("x"), y_unit: axis("y") }
+    let three = (r.kind == "plot3d").then(|| quire_eval::Plot3Input {
+        series: r
+            .extra
+            .get("series")
+            .and_then(Json::as_array)
+            .map(|list| {
+                list.iter()
+                    .map(|s| quire_eval::Series3Input {
+                        z: text(s.get("z")).unwrap_or_default(),
+                        x: text(s.get("x")),
+                        y: text(s.get("y")),
+                        xrange: text(s.get("xrange")),
+                        yrange: text(s.get("yrange")),
+                        t: text(s.get("t")),
+                        range: text(s.get("range")),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        units: [axis("x"), axis("y"), axis("z")],
+    });
+    PlotInput {
+        series: if three.is_some() { Vec::new() } else { series },
+        x_unit: axis("x"),
+        y_unit: axis("y"),
+        three,
+    }
 }
 
 /// Trailing `→` (or `->`) inside text asks for the expression worked out symbolically.
@@ -232,7 +258,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     symbolic: false,
                 });
             }
-            "plot2d" => {
+            "plot2d" | "plot3d" => {
                 out.push(MathInput {
                     id: r.id.clone(),
                     expr: String::new(),
@@ -349,6 +375,28 @@ pub struct PlotView {
     pub x_unit: String,
     pub y_unit: String,
     pub series: Vec<SeriesView>,
+    /// A 3D plot: axis units and series (surfaces and curves).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub three: Option<Plot3View>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Plot3View {
+    pub units: [String; 3],
+    pub series: Vec<Series3View>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Series3View {
+    /// `"surface"`: xs × ys grid with zs row by row (y outer); `"curve"`: points in order.
+    pub shape: &'static str,
+    /// `null` where a point could not be computed.
+    pub xs: Vec<f64>,
+    pub ys: Vec<f64>,
+    pub zs: Vec<f64>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -584,6 +632,23 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                         .iter()
                         .map(|s| SeriesView { xs: s.xs.clone(), ys: s.ys.clone(), error: s.error.clone() })
                         .collect(),
+                    three: o.plot3.as_ref().map(|t| Plot3View {
+                        units: t.units.clone(),
+                        series: t
+                            .series
+                            .iter()
+                            .map(|s| Series3View {
+                                shape: match s.shape {
+                                    quire_eval::Shape::Surface => "surface",
+                                    quire_eval::Shape::Curve => "curve",
+                                },
+                                xs: s.xs.clone(),
+                                ys: s.ys.clone(),
+                                zs: s.zs.clone(),
+                                error: s.error.clone(),
+                            })
+                            .collect(),
+                    }),
                 }),
                 symbolic: false,
             });
