@@ -193,7 +193,7 @@ function wrapMarks(text: string, node: PMNode): string {
         spanAttrs.push(".underline");
         break;
       case "color":
-        spanAttrs.push(`color=${mark.attrs.color}`);
+        spanAttrs.push(`color="${mark.attrs.color}"`);
         break;
       case "size":
         spanAttrs.push(`size=${mark.attrs.size}`);

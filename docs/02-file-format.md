@@ -169,7 +169,7 @@ Canonical function names are English (`tan`, `sinh`, `atan`, `log10`). The impor
 ```
 
 The text is **[Djot](https://djot.net)**: a strict, unambiguous light markup by the author of CommonMark/Pandoc, with a Rust parser (`jotdown`, MIT). Unlike Markdown it has attributes, which is what rich formatting needs:
-- `*bold*`, `_italic_`, `[x]{.underline}`, `[x]{color=#c00}`, `{.center}` on a paragraph, a trailing `\` for a hard line break.
+- `*bold*`, `_italic_`, `[x]{.underline}`, `[x]{color="#c00"}`, `{.center}` on a paragraph, a trailing `\` for a hard line break.
 - `# Assumptions` is an **auto-numbered heading** (rendered "1. Assumptions" per `styles.numbering.headings`).
 - Inline live math: `` The net area is $`A.net =` `` renders the *current* value inside the sentence.
 - Cross-references: `[](#ref:<region id>)` is an empty link to a heading's text region or to a captioned figure, table or plot, and reads "Figure 2", "Table 1" or "Section 2.1" with the current numbering. `{.num}` gives just the number (2.1), `{.page}` the page ("page 4") and `{.title}` the caption or heading text. A reference whose target was deleted reads "missing reference".
