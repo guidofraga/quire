@@ -11,3 +11,6 @@ dist/
 # Playwright
 /app/test-results/
 /app/playwright-report/
+
+# Python bytecode (tools/sm2quire.py)
+__pycache__/
