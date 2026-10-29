@@ -67,7 +67,8 @@ for (const scheme of ["light", "dark"] as const) {
         ["ControlOrMeta+,", "Settings"],
         ["ControlOrMeta+Shift+n", "New from template"],
         ["ControlOrMeta+Shift+?", "Quire Help"],
-        ["ControlOrMeta+k", "Command palette"],
+        // the test browser says it is a Mac, so ⌘K, wherever the tests run (CI is Linux)
+        ["Meta+k", "Command palette"],
       ] as const) {
         await page.keyboard.press(keys);
         await expect(page.getByRole("dialog", { name })).toBeVisible();
