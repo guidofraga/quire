@@ -1,5 +1,7 @@
 # Engine tests, front-end type check, unit tests and end-to-end tests (the desktop UI against
-# `quire serve`, and the web version with its WebAssembly engine) on every push.
+# `quire serve`, and the web version with its WebAssembly engine) on every push; and the
+# desktop app itself built and linted on Linux, with a real PDF export, so platform code that
+# the other job never compiles is checked before a release.
 name: CI
 
 on:
@@ -47,3 +49,30 @@ jobs:
           name: playwright-traces
           path: app/test-results/
           if-no-files-found: ignore
+
+  app-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # the app embeds the built front end, so it is built first
+      - name: Front end
+        run: npm ci && npm run build
+        working-directory: app
+      - name: Lint the desktop app
+        run: cargo clippy -p quire-app --all-targets -- -D warnings
+      # WebKitGTK lays out and prints the page view, in a virtual display
+      - name: Export a PDF (Linux)
+        run: xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol -- --ignored
