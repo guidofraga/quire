@@ -863,6 +863,15 @@ let pauseTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Show an engine report, holding back the errors the edit in progress would cause. */
 export function showReport(report: Report) {
+  // the first report of a document just opened: say once what this version couldn't read
+  if (!state.report && report.warnings?.length) {
+    const n = report.warnings.length;
+    flash(
+      n === 1
+        ? report.warnings[0]
+        : `${n} parts of this document aren't understood by this version of Quire; they are kept as they are`,
+    );
+  }
   latest = report;
   const editing = state.editing;
   let hidden = 0;

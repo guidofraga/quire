@@ -60,7 +60,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `sheet/` | Spreadsheet tables: `formula.rs` (A1 syntax), `functions.rs` (SUM, IF, VLOOKUP…), `mod.rs` (evaluating a table, named tables as matrices). |
 | | `plot.rs` | Sampling plot series where the plot sits in reading order; SMath systems (`sys`), marker rows and animation frames. |
 | | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `tests.rs`. `bridge.rs`: formulas as values (`Value::Sym`) in SMath documents, where a name with no value is a symbol. |
-| `quire-doc` | `lib.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `.quirez` (one ZIP file) in `single.rs`. |
+| `quire-doc` | `lib.rs`, `lenient.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `lenient.rs` reads what it can of values it doesn't expect, keeps them as written, and turns regions it can't read into placeholders (held for the editor on open, put back on save). `.quirez` (one ZIP file) in `single.rs`. |
 | `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries). |
 | | `canonical.rs` | Canonical `document.json` output: key order and line breaks are fixed, so diffs stay small. |
 | | `assets.rs` | Images, content-addressed (`assets/<sha256:16>.<ext>`), staged in memory until the first save. |

@@ -361,6 +361,12 @@ The importer already obeys these rules. Converting the same `.sm` twice gives by
 ## 7. Versioning & compatibility
 
 - `format: "quire/<major>"`. **Minor additions don't bump the major**: readers must **ignore and preserve** unknown keys (round-trip safety), and writers never drop them.
+- **Readers are lenient.** One unexpected value never stops a document from opening or saving:
+  - a value is read when it can be, even in another spelling (`"decimals": 2.0` as 2, `"at": [0, 0, 5]` by its first two numbers);
+  - a known key whose value can't be read is ignored, with a warning;
+  - a region without a string `id` and `kind`, an `at` of two numbers, or `regions` as a list is shown as a placeholder and evaluated as nothing, with a warning.
+
+  In every case the value or region is written back exactly as it was found.
 - A breaking change bumps the major and ships a migration in `quire-doc::migrate`, which always runs on load. Old files are never rewritten silently: the app asks before upgrading.
 - `requires` lists optional capabilities (`plot3d`, `cas.giac`, plugin ids). A reader missing one still opens the file and shows those regions as placeholders.
 

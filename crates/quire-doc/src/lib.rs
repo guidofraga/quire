@@ -1,17 +1,21 @@
 //! The `.quire` document model (docs/02-file-format.md).
 //!
-//! Read-only in P1. Unknown keys are kept in `extra` maps so a future writer can
-//! preserve them (format rule: readers ignore and preserve unknown keys).
+//! Read-only, and read leniently (§7) so that a file from a newer Quire still opens; see
+//! `lenient.rs`. Unknown keys are kept in `extra` maps, and so are known keys whose value
+//! isn't exactly what this version expects, verbatim. A region that can't be read at all
+//! becomes a placeholder that keeps it whole. Nothing a reader doesn't understand is lost.
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value as Json};
 
+mod lenient;
 mod single;
 
+pub use lenient::{UNREADABLE, hold_unreadable, restore_unreadable};
 pub use single::{SINGLE_FILE_EXT, is_single_file, pack, read_bytes, read_entry, unpack, write_bytes};
 
 pub const FORMAT_MAJOR: &str = "quire/1";
@@ -27,32 +31,30 @@ impl fmt::Display for DocError {
 
 impl std::error::Error for DocError {}
 
-#[derive(Debug, Deserialize)]
+/// A document as far as this version understands it. The `extra` maps hold every key it
+/// doesn't know, and every known key whose value it read only in part (`2.0` read as 2) or
+/// not at all, as written: putting `extra` back over the typed fields loses nothing.
+#[derive(Debug)]
 pub struct Document {
     pub format: String,
-    #[serde(default)]
     pub meta: Json,
-    #[serde(default)]
     pub settings: Settings,
     /// Custom units: name → linear-syntax definition.
-    #[serde(default)]
     pub units: BTreeMap<String, String>,
-    #[serde(default)]
     pub regions: Vec<Region>,
-    #[serde(flatten)]
     pub extra: Map<String, Json>,
+    /// What this version could not read, in words: values it ignored and regions it
+    /// shows as placeholders.
+    pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 pub struct Settings {
-    #[serde(default)]
     pub display: DisplaySettings,
-    #[serde(flatten)]
     pub extra: Map<String, Json>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Default)]
 pub struct DisplaySettings {
     pub decimals: Option<u32>,
     pub exponential_threshold: Option<i32>,
@@ -64,33 +66,38 @@ pub struct DisplaySettings {
     pub notation: Option<String>,
     /// Round results to this many significant figures instead of `decimals`.
     pub sig_figs: Option<u32>,
-    #[serde(flatten)]
     pub extra: Map<String, Json>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct Region {
     pub id: String,
+    /// [`UNREADABLE`] for a placeholder.
     pub kind: String,
     pub at: [f64; 2],
     pub expr: Option<String>,
     pub show: Option<String>,
     pub display: Option<Display>,
-    #[serde(default)]
     pub disabled: bool,
     /// Children of an `area`, positioned relative to it.
-    #[serde(default)]
     pub regions: Vec<Region>,
-    #[serde(flatten)]
     pub extra: Map<String, Json>,
+    /// A region this version can't read, as written. Its `Region` is a placeholder: shown
+    /// as such, evaluated as nothing, and written back unchanged.
+    pub unreadable: Option<Json>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 pub struct Display {
     pub unit: Option<String>,
     pub decimals: Option<u32>,
-    #[serde(flatten)]
     pub extra: Map<String, Json>,
+}
+
+impl<'de> Deserialize<'de> for Document {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Document::from_json(Json::deserialize(d)?).map_err(serde::de::Error::custom)
+    }
 }
 
 /// `results.json`: displayed results keyed by region id, in linear syntax.
@@ -110,6 +117,12 @@ pub struct Placed<'a> {
 }
 
 impl Document {
+    /// Read a document leniently. Only a value that isn't a JSON object, or has no
+    /// `"format"` string, fails; anything else opens, with `warnings` for what didn't read.
+    pub fn from_json(v: Json) -> Result<Self, DocError> {
+        lenient::document(v)
+    }
+
     /// All regions with areas expanded, in reading order `(y, x)` — the evaluation order.
     pub fn flatten(&self) -> Vec<Placed<'_>> {
         fn walk<'a>(regions: &'a [Region], ox: f64, oy: f64, out: &mut Vec<Placed<'a>>) {
@@ -198,6 +211,7 @@ mod tests {
         );
         assert!(doc.extra.contains_key("custom"));
         assert!(doc.regions.get(2).is_some_and(|r| r.extra.contains_key("future")));
+        assert!(doc.warnings.is_empty());
         Ok(())
     }
 }

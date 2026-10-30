@@ -50,6 +50,8 @@ export function describeRegion(id: string): string {
       return `Area${plain(html[`${id}:title`]) ? ` ${plain(html[`${id}:title`])}` : ""}, ${r.collapsed ? "collapsed" : "expanded"}`;
     case "toc":
       return String(r.title ?? (r.of === "checks" ? "Summary of checks" : "Contents"));
+    case "unreadable":
+      return "A region this version of Quire can't read";
     default:
       return r.kind;
   }

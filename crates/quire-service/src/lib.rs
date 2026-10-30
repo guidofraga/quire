@@ -514,6 +514,8 @@ pub struct Report {
     pub elapsed_ms: f64,
     pub error_count: usize,
     pub document_errors: Vec<String>,
+    /// What this version of Quire could not read in the document (kept as it is).
+    pub warnings: Vec<String>,
     /// What each unit/constant used in the document means, keyed `unit:<name>` / `constant:<name>`.
     pub glossary: BTreeMap<String, Gloss>,
 }
@@ -757,7 +759,15 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             }
         }
     }
-    Ok(Report { regions, html, elapsed_ms: ev.elapsed_ms, error_count, document_errors, glossary })
+    Ok(Report {
+        regions,
+        html,
+        elapsed_ms: ev.elapsed_ms,
+        error_count,
+        document_errors,
+        warnings: doc.warnings.clone(),
+        glossary,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -774,20 +784,23 @@ pub fn bundle_dir(path: &Path) -> PathBuf {
 }
 
 /// Load a bundle's document as JSON (validated against the model first). An SMath
-/// Studio worksheet (`.sm`) is converted; see [`open_smath`].
+/// Studio worksheet (`.sm`) is converted; see [`open_smath`]. Regions this version can't
+/// read are held as placeholders (`quire_doc::hold_unreadable`); saving puts them back.
 pub fn open(path: &Path) -> Result<Json> {
     if is_smath_file(path) {
         return open_smath(&std::fs::read(path)?, path.file_name().and_then(|n| n.to_str()));
     }
-    if quire_doc::is_single_file(path) {
+    let mut doc: Json = if quire_doc::is_single_file(path) {
         quire_doc::load(path)?;
         let bytes = quire_doc::read_entry(path, "document.json")?.unwrap_or_default();
-        return Ok(serde_json::from_slice(&bytes)?);
-    }
-    let dir = bundle_dir(path);
-    quire_doc::load(&dir)?;
-    let text = std::fs::read_to_string(dir.join("document.json"))?;
-    Ok(serde_json::from_str(&text)?)
+        serde_json::from_slice(&bytes)?
+    } else {
+        let dir = bundle_dir(path);
+        quire_doc::load(&dir)?;
+        serde_json::from_str(&std::fs::read_to_string(dir.join("document.json"))?)?
+    };
+    quire_doc::hold_unreadable(&mut doc);
+    Ok(doc)
 }
 
 /// A scratch folder that removes itself.
@@ -848,12 +861,19 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
     let dir = dir.to_path_buf();
     std::fs::create_dir_all(&dir)?;
     assets::write_into(&dir, doc, from.map(bundle_dir).as_deref())?;
-    let mut doc = doc.clone();
-    canonical::sort_regions(&mut doc);
     let tmp = dir.join(".document.json.tmp");
-    std::fs::write(&tmp, canonical::to_string(&doc))?;
+    std::fs::write(&tmp, canonical_text(doc))?;
     std::fs::rename(&tmp, dir.join("document.json"))?;
     Ok(())
+}
+
+/// The canonical `document.json` text: regions in reading order, then the regions held as
+/// placeholders put back as they were written. Sorting first keeps each where it was shown.
+fn canonical_text(doc: &Json) -> String {
+    let mut doc = doc.clone();
+    canonical::sort_regions(&mut doc);
+    quire_doc::restore_unreadable(&mut doc);
+    canonical::to_string(&doc)
 }
 
 /// A document held in memory, for the browser build: a `.quirez` (its images are staged, so
@@ -862,7 +882,7 @@ pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
     if is_smath(bytes) {
         return open_smath(bytes, None);
     }
-    let doc: Json = if bytes.first() == Some(&b'{') {
+    let mut doc: Json = if bytes.first() == Some(&b'{') {
         serde_json::from_slice(bytes)?
     } else {
         let mut doc = None;
@@ -877,6 +897,7 @@ pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
         doc.ok_or_else(|| ServiceError("not a Quire document: there is no document.json in it".into()))?
     };
     let _: Document = serde_json::from_value(doc.clone())?;
+    quire_doc::hold_unreadable(&mut doc);
     Ok(doc)
 }
 
@@ -925,10 +946,8 @@ fn open_smath(bytes: &[u8], file_name: Option<&str>) -> Result<Json> {
 /// A document as `.quirez` bytes, with the images it uses (they must have been staged).
 pub fn save_bytes(doc: &Json) -> Result<Vec<u8>> {
     let _: Document = serde_json::from_value(doc.clone())?;
-    let mut doc = doc.clone();
-    canonical::sort_regions(&mut doc);
-    let mut entries = vec![("document.json".to_string(), canonical::to_string(&doc).into_bytes())];
-    for src in assets::referenced(&doc) {
+    let mut entries = vec![("document.json".to_string(), canonical_text(doc).into_bytes())];
+    for src in assets::referenced(doc) {
         if let Some(bytes) = assets::staged(&src) {
             entries.push((src, bytes));
         }
@@ -1236,6 +1255,66 @@ mod tests {
         std::fs::remove_dir_all(&dir)?;
         std::fs::remove_dir_all(&first)?;
         assert_eq!(written, original);
+        Ok(())
+    }
+
+    /// Open a document with values this version reads only in part or not at all (fixtures
+    /// shared with `quire-cli/tests/check.rs`, which checks their results), evaluate it, and
+    /// save it to a folder and as bytes. Returns the opened JSON, its report, and whether
+    /// both saves wrote the original `document.json` byte for byte.
+    fn open_odd(name: &str) -> std::result::Result<(Json, Report), Box<dyn std::error::Error>> {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../quire-cli/tests/fixtures").join(name);
+        let original = std::fs::read_to_string(src.join("document.json"))?;
+        let doc = open(&src)?;
+        let rep = report(&doc)?;
+        let out = std::env::temp_dir().join(format!("quire-{name}-{}", std::process::id()));
+        save(&out, &doc, Some(&src))?;
+        let written = std::fs::read_to_string(out.join("document.json"));
+        std::fs::remove_dir_all(&out)?;
+        assert_eq!(written?, original, "{name}: saved to a folder");
+        let in_memory = quire_doc::read_bytes(&save_bytes(&doc)?)?;
+        let first = in_memory.first().map(|(_, b)| String::from_utf8_lossy(b).into_owned());
+        assert_eq!(first.as_deref(), Some(original.as_str()), "{name}: saved as bytes");
+        Ok((doc, rep))
+    }
+
+    fn shown<'a>(rep: &'a Report, id: &str) -> Option<&'a str> {
+        rep.regions.iter().find(|v| v.id == id).and_then(|v| v.result_text.as_deref())
+    }
+
+    #[test]
+    fn counts_written_with_a_point_open_and_save_as_written()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let (_, rep) = open_odd("lenient-decimals.quire")?;
+        assert_eq!((shown(&rep, "a"), shown(&rep, "c")), (Some("0.67"), Some("0.333")));
+        assert_eq!((rep.error_count, rep.warnings.len()), (0, 0));
+        Ok(())
+    }
+
+    #[test]
+    fn a_position_with_a_third_number_opens_and_saves_as_written()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let (_, rep) = open_odd("lenient-at.quire")?;
+        assert_eq!(shown(&rep, "b"), Some("8 'm"));
+        assert_eq!((rep.error_count, rep.warnings.len()), (0, 0));
+        Ok(())
+    }
+
+    #[test]
+    fn regions_of_an_unknown_shape_are_placeholders_kept_as_written()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let (doc, rep) = open_odd("lenient-unreadable.quire")?;
+        let kinds: Vec<_> = doc["regions"]
+            .as_array()
+            .map(|a| a.iter().map(|r| r["kind"].as_str().unwrap_or("")).collect())
+            .unwrap_or_default();
+        assert_eq!(kinds, ["math", quire_doc::UNREADABLE, quire_doc::UNREADABLE, "math"]);
+        assert_eq!(doc["regions"][1]["id"], "odd");
+        // the placeholder's `a := 100` is not evaluated
+        assert_eq!(shown(&rep, "b"), Some("6"));
+        assert!(rep.regions.iter().all(|v| v.id != "odd"));
+        assert_eq!(rep.error_count, 0);
+        assert_eq!(rep.warnings.len(), 2, "{:?}", rep.warnings);
         Ok(())
     }
 
