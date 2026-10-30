@@ -1691,6 +1691,22 @@ mod tests {
     }
 
     #[test]
+    fn approximately_equal_is_an_equality_test() -> TestResult {
+        // if(F ≈ G, θ := 1, θ := 2), as SMath writes the choice of a branch
+        let xml = r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="m" left="9" top="9" width="100" height="20">
+<math><input><e type="operand">F</e><e type="operand">G</e><e type="operator" args="2">≈</e><e type="operand">θ</e><e type="operand">1</e><e type="operator" args="2">:</e><e type="operand">θ</e><e type="operand">2</e><e type="operator" args="2">:</e><e type="function" args="3">if</e></input></math>
+</region>
+</regions>"#;
+        let out = crate::convert(xml)?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let expr = regions.first().and_then(|r| r.get("expr")).and_then(Json::as_str).ok_or("no expr")?;
+        assert_eq!(expr, "if(F == G, θ := 1, θ := 2)");
+        Ok(())
+    }
+
+    #[test]
     fn a_plot_sweeps_the_free_x_over_the_visible_range() -> TestResult {
         // zoom 2 on the horizontal axis (scale_y) shows 12 px per unit; 350 px wide, so x runs
         // from -175/12 to 175/12; a transpose of 60 px moves the window right by 5 units

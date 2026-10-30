@@ -381,5 +381,6 @@ SMath conventions the importer handles:
 - **Math embedded in text** (`\[REGION[id]]\` markers) becomes inline math `` $`expr` ``. It is evaluated in reading order with id `<text region id>:m<n>`.
 - **Page margins** are stored in hundredths of an inch, but SMath applies them at 72 dpi against 96-px coordinates. The importer therefore uses ¾ of the nominal value. Only that reading makes real reports' text width and cover forms line up.
 - **Option lists** (`radiobuttonlist`) become a math region defining their variable: `Categoria := 2`, the number of the chosen option (from 1), or with `output="Element"` the chosen row of the list's table, `valor := Tabela[3, 2]`. The options are listed in the region's note, the chosen one in bold.
+- **Comparisons:** SMath's `≈` (approximately equal, usually in the condition of an `if`) and `≡` inside an expression are equality tests and become `==`, which already allows for rounding.
 
 Known gaps for P1: plot axis ranges and styles, table cell styling, and SMath `description` positions other than right are only partly carried over. The text→heading and text→caption heuristics are tuned for Portuguese/English report conventions.

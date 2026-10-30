@@ -174,6 +174,8 @@ fn binary_op(value: &str) -> (&str, u8) {
         "|" => ("or", 1),
         "&" => ("and", 2),
         "=" => ("==", 3),
+        // SMath's approximately-equal test; Quire's == already allows for rounding
+        "≈" => ("==", 3),
         "≠" => ("≠", 3),
         "<" => ("<", 3),
         ">" => (">", 3),
