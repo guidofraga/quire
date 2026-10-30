@@ -376,8 +376,9 @@ The importer (first written in Python, then ported to Rust in `crates/quire-smat
 | plot | 8 | 0 |
 | table | 1 (bound to a summary matrix) | 0 |
 
-Two SMath conventions the importer handles:
+SMath conventions the importer handles:
 - **Math embedded in text** (`\[REGION[id]]\` markers) becomes inline math `` $`expr` ``. It is evaluated in reading order with id `<text region id>:m<n>`.
 - **Page margins** are stored in hundredths of an inch, but SMath applies them at 72 dpi against 96-px coordinates. The importer therefore uses ¾ of the nominal value. Only that reading makes real reports' text width and cover forms line up.
+- **Comparisons:** SMath's `≈` (approximately equal, usually in the condition of an `if`) and `≡` inside an expression are equality tests and become `==`, which already allows for rounding.
 
 Known gaps for P1: plot axis ranges and styles, table cell styling, and SMath `description` positions other than right are only partly carried over. The text→heading and text→caption heuristics are tuned for Portuguese/English report conventions.
