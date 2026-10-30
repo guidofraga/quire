@@ -106,10 +106,14 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
     "backgrounds": [{ "pages": "1", "src": "assets/0a1b2c3d4e5f6071.png", "fit": "margins" }],
     "pageNumber": { "start": 1, "style": "arabic" }
   },
+  "data": { "shackleTables.xlsx": { "Bow": [["WLL", "A"], [4.75, 13]] } },  // spreadsheets importData reads (below)
+  "dataLinks": { "shackleTables.xlsx": { "path": "C:/Calc/shackleTables.xlsx" } },
   "requires": ["plot3d"],              // capabilities beyond core; readers warn if missing
   "regions": [ /* §4, sorted by (y, x) */ ]
 }
 ```
+
+`data` carries the spreadsheets an SMath worksheet reads with `importData("file.xlsx", "Sheet", "A1:D20")`: file name → sheet name → rows from A1, each cell a number, a string or `null`. The importer reads them when it converts the worksheet (from its folder, or up to two folders above), so the document computes the same results on another computer. `importData*` reads only from `data`, never from disk. `dataLinks` records where each file was found; nothing reads it again.
 
 Header/footer fields: `{page} {pages} {date} {time} {file} {title} {author} {company} {section}`.
 Lengths: bare numbers are **layout px (1/96 in)**, which is identical to SMath's coordinates so imports are exact. Strings may carry `mm`, `cm`, `in` or `pt`.

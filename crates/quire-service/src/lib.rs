@@ -299,9 +299,31 @@ fn now_ms() -> f64 {
     0.0
 }
 
+/// The document's spreadsheets (`data`) for `importData`.
+fn data_files(doc: &Document) -> quire_eval::DataFiles {
+    use quire_eval::Cell;
+    let mut files = quire_eval::DataFiles::default();
+    for (file, sheets) in &doc.data {
+        for (sheet, rows) in sheets {
+            let cells = |row: &Vec<Json>| {
+                row.iter()
+                    .map(|c| match c {
+                        Json::Number(n) => n.as_f64().map_or(Cell::Empty, Cell::Num),
+                        Json::String(s) => Cell::Text(s.clone()),
+                        Json::Bool(b) => Cell::Num(f64::from(u8::from(*b))),
+                        _ => Cell::Empty,
+                    })
+                    .collect()
+            };
+            files.insert(file, sheet, rows.iter().map(cells).collect());
+        }
+    }
+    files
+}
+
 fn run(doc: &Document, tables: bool) -> Evaluated {
     let start = now_ms();
-    let mut worksheet = Worksheet::new(settings_of(doc));
+    let mut worksheet = Worksheet::new(settings_of(doc)).with_data(data_files(doc));
     let unit_errors = doc
         .units
         .iter()
@@ -777,7 +799,7 @@ pub fn bundle_dir(path: &Path) -> PathBuf {
 /// Studio worksheet (`.sm`) is converted; see [`open_smath`].
 pub fn open(path: &Path) -> Result<Json> {
     if is_smath_file(path) {
-        return open_smath(&std::fs::read(path)?, path.file_name().and_then(|n| n.to_str()));
+        return open_smath(&std::fs::read(path)?, path.file_name().and_then(|n| n.to_str()), path.parent());
     }
     if quire_doc::is_single_file(path) {
         quire_doc::load(path)?;
@@ -860,7 +882,7 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
 /// `read_asset` finds them) or a bare `document.json`.
 pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
     if is_smath(bytes) {
-        return open_smath(bytes, None);
+        return open_smath(bytes, None, None);
     }
     let doc: Json = if bytes.first() == Some(&b'{') {
         serde_json::from_slice(bytes)?
@@ -913,8 +935,16 @@ pub fn import_smath(bytes: &[u8], file_name: Option<&str>) -> Result<quire_smath
 /// An SMath worksheet as an unsaved document. Its images are staged like the ones a `.quirez`
 /// brings, so they show without a bundle on disk. The caller starts it without a path, so
 /// Save asks for a new file and the `.sm` is never written.
-fn open_smath(bytes: &[u8], file_name: Option<&str>) -> Result<Json> {
-    let imported = import_smath(bytes, file_name)?;
+/// `dir`: the worksheet's folder, where the spreadsheets its importData names are found.
+fn open_smath(bytes: &[u8], file_name: Option<&str>, dir: Option<&Path>) -> Result<Json> {
+    #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+    let mut imported = import_smath(bytes, file_name)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(dir) = dir {
+        quire_smath::attach_data(&mut imported, dir);
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = dir;
     let _: Document = serde_json::from_value(imported.document.clone())?;
     for asset in imported.assets {
         assets::stage_named(&asset.path, asset.data)?;

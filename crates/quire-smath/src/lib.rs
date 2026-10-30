@@ -27,6 +27,8 @@ use serde_json::Value as Json;
 
 mod convert;
 mod math;
+#[cfg(not(target_arch = "wasm32"))]
+mod sheets;
 mod text;
 
 /// A binary embedded in the worksheet, stored content-addressed in the bundle.
@@ -89,6 +91,92 @@ pub fn convert(xml: &str) -> Result<Imported> {
         return Err(ImportError::Xml(format!("elements nested more than {MAX_XML_DEPTH} levels deep")));
     }
     convert::run(xml)
+}
+
+/// The spreadsheets named in `importData("tables.xlsx", …)`, read into the document so they
+/// travel with it: `data` (file → sheet → rows from A1) and `dataLinks` (file → where it
+/// was read from; nothing reads it again). Each file is looked for in `dir` (the worksheet's folder), then up to two
+/// folders above it, where a shared table usually sits. A file not found or not readable
+/// becomes a warning; its tables stay empty.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn attach_data(imported: &mut Imported, dir: &std::path::Path) {
+    use std::path::PathBuf;
+    fn walk(regions: &[Json], wanted: &mut Vec<String>) {
+        for r in regions {
+            let expr = r.get("expr").and_then(Json::as_str).unwrap_or("");
+            let mut rest = expr;
+            while let Some(i) = rest.find("importData") {
+                rest = &rest[i + "importData".len()..];
+                let after = rest.trim_start_matches(|c: char| c == '.' || c.is_ascii_alphanumeric());
+                if let Some(arg) = after.strip_prefix("(\"").and_then(|a| a.split('"').next())
+                    && !arg.is_empty()
+                    && !wanted.iter().any(|w| w == arg)
+                {
+                    wanted.push(arg.to_string());
+                }
+            }
+            if let Some(inner) = r.get("regions").and_then(Json::as_array) {
+                walk(inner, wanted);
+            }
+        }
+    }
+    let mut wanted = Vec::new();
+    if let Some(regions) = imported.document.get("regions").and_then(Json::as_array) {
+        walk(regions, &mut wanted);
+    }
+    if wanted.is_empty() {
+        return;
+    }
+    let start =
+        std::fs::canonicalize(if dir.as_os_str().is_empty() { std::path::Path::new(".") } else { dir }).ok();
+    let folders: Vec<BTreeMap<String, PathBuf>> = start
+        .iter()
+        .flat_map(|d| d.ancestors().take(3))
+        .map(|d| {
+            std::fs::read_dir(d)
+                .map(|rd| {
+                    rd.flatten().map(|e| (e.file_name().to_string_lossy().to_lowercase(), e.path())).collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+    let mut data = serde_json::Map::new();
+    let mut links = serde_json::Map::new();
+    for name in wanted {
+        let base = name.rsplit(['\\', '/']).next().unwrap_or(&name).to_string();
+        let found = folders
+            .iter()
+            .enumerate()
+            .find_map(|(up, f)| f.get(&base.to_lowercase()).map(|p| (up, p.clone())));
+        let Some((up, path)) = found else {
+            imported
+                .warnings
+                .push(format!("importData: {base} is not next to the worksheet; its tables stay empty"));
+            continue;
+        };
+        // canonicalize gives Windows' \\?\ form; keep the ordinary path
+        let shown = path.display().to_string().trim_start_matches(r"\\?\").to_string();
+        if up > 0 {
+            imported.warnings.push(format!("importData: {base} read from {shown}"));
+        }
+        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let read =
+            if ext == "csv" || ext == "txt" { sheets::read_csv(&path) } else { sheets::read_xlsx(&path) };
+        match read {
+            Ok(v) => {
+                data.insert(base.clone(), v);
+                links.insert(base, serde_json::json!({ "path": shown }));
+            }
+            // a damaged or old .xls file: say so, keep going
+            Err(e) => imported.warnings.push(format!("importData: cannot read {base}: {e}")),
+        }
+    }
+    if let Some(doc) = imported.document.as_object_mut()
+        && !data.is_empty()
+    {
+        doc.insert("data".into(), Json::Object(data));
+        doc.insert("dataLinks".into(), Json::Object(links));
+    }
 }
 
 /// [`convert`] a worksheet read from a file: its name (`Beam.sm`) is recorded in
