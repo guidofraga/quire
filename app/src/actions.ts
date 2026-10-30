@@ -43,6 +43,7 @@ import {
   layout,
   localized,
   mutate,
+  regroup,
   newId,
   type Placed,
   setState,
@@ -214,6 +215,7 @@ export function pasteRegions(regions: Region[]) {
   mutate((d) => {
     d.regions.push(...pasted);
   });
+  regroup(pasted.map((r) => r.id));
   setState({ selection: pasted.map((r) => r.id), caret: null });
 }
 
@@ -273,6 +275,7 @@ function pasteLines(text: string) {
   mutate((d) => {
     d.regions.push(...made);
   });
+  regroup(made.map((r) => r.id));
   setState({ selection: made.map((r) => r.id), caret: null });
   if (made.length > 1) stackPasted(made.map((r) => r.id));
 }
@@ -409,6 +412,7 @@ async function placeImage(src: string, at?: [number, number]) {
   mutate((d) => {
     d.regions.push({ id, kind: "image", at: [snap(x), snap(y)], size: [w, Math.round((w * nh) / nw)], src });
   });
+  regroup([id]);
   setState({ selection: [id], caret: null });
 }
 

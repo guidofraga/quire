@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, deleteRegions, loadDoc, localized, moveTo, mutate, noteRoom, nudge, originsOf, redo, regroup, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, commitEditing, computeLayout, deleteRegions, insertAtCaret, insertRegion, loadDoc, localized, moveTo, mutate, noteRoom, nudge, originsOf, redo, regroup, setState, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -212,6 +212,25 @@ describe("regroup: a moved region belongs where it lands", () => {
     expect(parentOf("in")).toBe("ar");
     nudge(["in"], 0, 80); // to 218 on the page, inside the inner area's band 200…260
     expect(state.doc.regions[0].regions!.find((r) => r.id === "inner")!.regions!.map((r) => r.id)).toEqual(["in"]);
+  });
+
+  it("puts a region typed or inserted in an area's band into the area, as one undo step", () => {
+    loadDoc(doc([area(), math("out", 400, "y")]), null);
+    setState({ caret: [36, 180] });
+    insertAtCaret("math", "z");
+    const typed = state.editing!;
+    commitEditing();
+    expect(parentOf(typed)).toBe("ar");
+    expect(state.doc.regions[0].regions!.find((r) => r.id === typed)!.at).toEqual([36, 80]);
+    setState({ caret: [36, 500] });
+    insertAtCaret("math", "w");
+    const below = state.editing!;
+    commitEditing();
+    expect(parentOf(below)).toBe(null);
+    const plot = insertRegion({ kind: "plot2d", at: [36, 260] });
+    expect(parentOf(plot)).toBe("ar");
+    undo();
+    expect(JSON.stringify(state.doc).includes(`"${plot}"`)).toBe(false);
   });
 
   it("never drops a region into a collapsed area, and undoes as one step with the move", () => {

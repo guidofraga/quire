@@ -711,7 +711,7 @@ export function nudge(ids: string[], dx: number, dy: number) {
 }
 
 /**
- * After a move, each moved region belongs where it now sits, as in SMath: inside the open area
+ * After a move or an insertion, each region belongs where it now sits, as in SMath: inside the open area
  * whose band holds its top (the innermost one), otherwise at the top level. Without this a
  * region dragged out of an area still belonged to it, and collapsing or deleting the area took
  * it along. Collapsed areas take nothing in: their content is out of sight.
@@ -1032,6 +1032,7 @@ export function insertAtCaret(kind: "math" | "text", initial = "") {
     region = { id, kind: "text", at: [x, y], text: initial };
   }
   addRegion(region);
+  regroup([id]);
   setState({ editing: id, selection: [id], caret: null, editingFresh: true });
 }
 
@@ -1157,9 +1158,11 @@ export function insertContents(of: ContentsKind) {
   commitEditing();
   const [x, y] = state.caret ?? [0, snap(contentBottom() + GRID)];
   const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables", checks: "Summary of Checks" }[of];
+  const id = newId();
   mutate((d) => {
-    d.regions.push({ id: newId(), kind: "toc", at: [x, y], of, title });
+    d.regions.push({ id, kind: "toc", at: [x, y], of, title });
   });
+  regroup([id]);
 }
 
 export function insertRegion(region: Omit<Region, "id">) {
@@ -1168,6 +1171,7 @@ export function insertRegion(region: Omit<Region, "id">) {
   mutate((d) => {
     d.regions.push({ ...region, id } as Region);
   });
+  regroup([id]);
   setState({ selection: [id], caret: null });
   return id;
 }
@@ -1192,9 +1196,11 @@ export function updateDoc(fn: (d: Doc) => void) {
 export function insertArea() {
   commitEditing();
   const y = state.caret?.[1] ?? snap(contentBottom() + GRID);
+  const id = newId();
   mutate((d) => {
-    d.regions.push({ id: newId(), kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
+    d.regions.push({ id, kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
   });
+  regroup([id]);
 }
 
 export function selectAll() {
