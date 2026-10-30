@@ -665,7 +665,7 @@ impl Worksheet {
                         None
                     };
                 if let Some(name) = undefined {
-                    out.error = Some(if self.units.lookup(&name).is_some() {
+                    out.error = Some(if self.units.lookup_bare(&name).is_some() {
                         format!("{name} is not defined; for the unit, write '{name}")
                     } else {
                         format!("{name} is not defined")
@@ -811,7 +811,7 @@ impl Worksheet {
                         if !matches!(n.as_str(), "π" | "pi" | "e" | "∞") {
                             self.used_constants.insert(n);
                         }
-                    } else if self.units.lookup(&n).is_some() {
+                    } else if self.units.lookup_bare(&n).is_some() {
                         self.used_units.insert(n);
                     }
                 }

@@ -65,8 +65,11 @@ fn is_ident_continue(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || matches!(c, '′' | '″' | '‴')
 }
 
+/// A quoted unit name is a run of these, with dots between them (`'kN`, `'Δ°C`, `'%`,
+/// SMath's `'g.e` and `'lb.m`). A run such as `'%m` is one name, so an unknown one is an
+/// "unknown unit" error rather than two tokens.
 fn is_unit_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '°' || c == '_'
+    c.is_alphanumeric() || matches!(c, '_' | '°' | '%' | '‰' | '¤')
 }
 
 pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
@@ -135,7 +138,9 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
 
         if c == '\'' {
             i += 1;
-            while at(i).is_some_and(is_unit_char) {
+            while at(i).is_some_and(is_unit_char)
+                || (at(i) == Some('.') && i > start + 1 && at(i + 1).is_some_and(is_unit_char))
+            {
                 i += 1;
             }
             if i == start + 1 {

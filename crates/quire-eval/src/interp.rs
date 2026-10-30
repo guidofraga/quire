@@ -175,7 +175,7 @@ impl<'u> Interp<'u> {
 
     /// The unit a bare name stands for, if any. Marked documents never read a bare name as a unit.
     fn unit_named(&self, name: &str) -> Option<Unit> {
-        if self.marked_units { None } else { self.units.lookup(name) }
+        if self.marked_units { None } else { self.units.lookup_bare(name) }
     }
 
     pub(crate) fn tick(&mut self) -> Result<()> {

@@ -50,7 +50,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | Crate | Files | What lives there |
 |---|---|---|
 | `quire-ast` | `lexer.rs`, `parser.rs`, `printer.rs`, `ast.rs` | The linear syntax ([02-file-format.md §4.3](02-file-format.md)). `print(parse(s))` is canonical; parentheses the user typed survive as `Expr::Paren`. Precedence is listed at the top of `parser.rs`. |
-| `quire-units` | `db.rs`, `dim.rs`, `rational.rs` | `Dim` (seven SI exponents, rational) and the built-in unit table with factors from NIST SP 811. |
+| `quire-units` | `db.rs`, `dim.rs`, `rational.rs` | `Dim` (seven SI exponents, rational) and the built-in unit table with factors from NIST SP 811, plus SMath Studio's units and constants (quoted only; `lookup_bare` leaves them out for bare names). `quire-eval/tests/smath_units.rs` checks every SMath unit name. |
 | `quire-eval` | `value.rs`, `ops.rs` | Values (SI magnitude + dimension, matrices, strings) and arithmetic with dimension checks. |
 | | `interp.rs` | Evaluating one expression in a scope; the lazy constructs (`if`, `for`, `sum`, `int`, `diff`, …) and user functions. |
 | | `builtins.rs`, `stats.rs`, `solvers.rs`, `numeric.rs`, `linalg.rs` | Built-in functions whose arguments are evaluated first; statistics and fitting; ODE solvers, `linfit` and nonlinear `solve`; plain linear algebra; SMath's matrix functions (`col`, `csort`, `tr`, `polyroots`…). |

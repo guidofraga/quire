@@ -96,11 +96,32 @@ fn operand(e: &Token) -> Node {
     let text = e.text.as_str();
     match e.style.as_deref() {
         Some("unit") if text.is_empty() => empty_unit(),
-        Some("unit") => node(Kind::Unit, text, Vec::new()),
+        Some("unit") => smath_unit(text),
         Some("string") => node(Kind::Str, text, Vec::new()),
         _ if is_number(text) => node(Kind::Num, text, Vec::new()),
         _ if text == "." => node(Kind::Id, "\u{2026}", Vec::new()), // SMath filler dot in illustrative matrices
         _ => node(Kind::Id, text, Vec::new()),
+    }
+}
+
+/// An SMath unit name as the Quire unit with the same meaning. Most are spelled the same
+/// (quire-units has every SMath unit it can represent); these mean something else in Quire.
+fn smath_unit(name: &str) -> Node {
+    let unit = |n: &str| node(Kind::Unit, n, Vec::new());
+    match name {
+        // the Planck constant; 'h is the hour
+        "h" => unit("ℎ"),
+        // the International Table calorie; 'cal is the thermochemical one
+        "cal" => unit("cal.IT"),
+        "kcal" => unit("kcal.IT"),
+        // the Gregorian year, 365.2425 days; 'yr is the Julian one, 365.25
+        "yr" => unit("yr.Gregorian"),
+        // revolutions (2π rad) per minute; Quire's 'rpm counts cycles (1/60 Hz)
+        "rpm" => node(Kind::Binary, "/", vec![unit("rev"), unit("min")]),
+        // minutes and seconds of arc, written as SMath's ' and " (escaped in its files)
+        "'" | r"\0027\" => unit("arcmin"),
+        "\"" | r"\0022\" => unit("arcsec"),
+        _ => unit(name),
     }
 }
 
@@ -512,6 +533,23 @@ mod tests {
         // σ' := τ'.xy + f''(x)
         let toks = [operand("σ'"), operand("τ'.xy"), operand("x"), func("f''", 1), op("+", 2), op(":", 2)];
         assert_eq!(render(&toks)?, "σ′ := τ′.xy + f′′(x)");
+        Ok(())
+    }
+
+    #[test]
+    fn smath_units_that_mean_something_else_here() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let with = |u: &str| render(&[operand("2"), unit(u), op("*", 2)]);
+        assert_eq!(with("h")?, "2 'ℎ", "SMath's 'h is the Planck constant");
+        assert_eq!(with("cal")?, "2 'cal.IT");
+        assert_eq!(with("yr")?, "2 'yr.Gregorian");
+        assert_eq!(with("rpm")?, "2 'rev/'min");
+        assert_eq!(
+            render(&[operand("w"), unit("rpm"), operand("2"), op("^", 2), op(":", 2)])?,
+            "w := ('rev/'min)^2"
+        );
+        assert_eq!(with(r"\0027\")?, "2 'arcmin");
+        assert_eq!(with("\"")?, "2 'arcsec");
+        assert_eq!(with("lb.m")?, "2 'lb.m", "the rest keep their names");
         Ok(())
     }
 
