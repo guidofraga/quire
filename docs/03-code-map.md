@@ -59,6 +59,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `format.rs` | Result display: rounding, notation, which unit a result is shown in. |
 | | `sheet/` | Spreadsheet tables: `formula.rs` (A1 syntax), `functions.rs` (SUM, IF, VLOOKUP…), `mod.rs` (evaluating a table, named tables as matrices). |
 | | `plot.rs` | Sampling plot series where the plot sits in reading order; SMath systems (`sys`), marker rows and animation frames. |
+| | `plot3d.rs` | 3D plots: surfaces `z(x, y)` on a grid, parametric curves and surfaces, matrices of heights and point data, in the axis units. |
 | | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `tests.rs`. `bridge.rs`: formulas as values (`Value::Sym`) in SMath documents, where a name with no value is a symbol. |
 | `quire-doc` | `lib.rs`, `lenient.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `lenient.rs` reads what it can of values it doesn't expect, keeps them as written, and turns regions it can't read into placeholders (held for the editor on open, put back on save). `.quirez` (one ZIP file) in `single.rs`. |
 | `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries). |
@@ -113,12 +114,14 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 |---|---|
 | `Canvas.tsx` | Scrolling, zoom, selection frames, dragging, the hidden input that receives typing. |
 | `Sheet.tsx`, `pages.ts` | Paper sheets in the page view; page geometry, headers and footers. |
-| `Region.tsx` | One region on the page; dispatches on `kind` (`math`, `text`, `image`, `area`, `table`, `toc`, `plot2d`). |
+| `Region.tsx` | One region on the page; dispatches on `kind` (`math`, `text`, `image`, `area`, `table`, `toc`, `plot2d`, `plot3d`). |
 | `MathEditor.tsx` | Typing math: linear editing, Greek, LaTeX shortcuts, prose detection, ambiguity notes. |
 | `richtext.ts` | Text regions: ProseMirror in the editor, Djot in the document (`toDjot`). Unchanged blocks are written back as their source; what the editor can't represent is kept as uneditable blocks. `richtext.cases.json` holds round-trip cases shared with the Rust tests in `text.rs`. |
 | `TableEditor.tsx` | The spreadsheet grid. Evaluation is in `quire-eval/src/sheet`. |
 | `Plot.tsx` | 2D plots as SVG; the engine samples, this file lays out, plays animation frames. |
 | `plotGeometry.ts` | Plot geometry without the DOM: SMath marker sizes and shapes, equal scales, frame timing. |
+| `Plot3D.tsx` | 3D plots on a canvas: faces painted farthest first, curves, the box with its numbers; turning and zooming the saved camera; Inspector ▸ 3D Plot. |
+| `geom3d.ts` | 3D plot geometry without the DOM: the data's box, the orthographic camera, faces of a grid, height colours, round ticks. |
 | `math.ts` | AST → MathML. |
 | `trace.ts`, `xref.ts`, `checks.ts`, `labels.ts` | Where a variable comes from; cross-references; pass/fail checks; caption words per language. |
 | `nav.ts`, `find.ts` | Keyboard movement between regions; find and replace. |

@@ -37,6 +37,7 @@ import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
 import { importCsv, insertTable, isSheet, tableCommand } from "./TableEditor";
 import { insertPlot } from "./Plot";
+import { insertPlot3d } from "./Plot3D";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
@@ -426,6 +427,7 @@ function openInsertMenu(e: MouseEvent) {
       item("Table", "insert_table", "⌥⌘T"),
       item("Table from CSV…", "import_csv"),
       item("Plot", "insert_plot", "⌥⌘P"),
+      item("3D Plot", "insert_plot3d"),
       item("Area", "insert_area"),
       null,
       item("Contents", "insert_toc"),
@@ -570,6 +572,8 @@ function runCommand(id: string) {
       return void importCsv();
     case "insert_plot":
       return insertPlot();
+    case "insert_plot3d":
+      return insertPlot3d();
     case "welcome":
       return setWelcomeOpen(true);
     case "check_updates":

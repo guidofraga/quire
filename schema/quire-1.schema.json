@@ -278,18 +278,36 @@
                     "x": { "type": "string" },
                     "range": { "type": "string" },
                     "label": { "type": "string" },
-                    "style": { "type": "object" }
+                    "style": { "type": "object" },
+                    "surface": { "type": "string", "description": "plot3d: a height z(x, y) over xrange × yrange, or a matrix of heights" },
+                    "parametric": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "description": "plot3d: [x, y, z] of t over range (a curve), of u and v over urange × vrange (a surface), or three vectors of points"
+                    },
+                    "xrange": { "type": "string" },
+                    "yrange": { "type": "string" },
+                    "urange": { "type": "string" },
+                    "vrange": { "type": "string" }
                   }
                 }
               },
-              "surface": { "type": "string" },
+              "surface": { "type": "string", "description": "plot3d of one series, given on the region" },
               "parametric": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+              "xrange": { "type": "string" },
+              "yrange": { "type": "string" },
+              "range": { "type": "string" },
+              "urange": { "type": "string" },
+              "vrange": { "type": "string" },
               "axes": {
                 "type": ["boolean", "object"],
                 "properties": {
                   "visible": { "type": "boolean" },
                   "x": { "$ref": "#/$defs/plotAxis" },
-                  "y": { "$ref": "#/$defs/plotAxis" }
+                  "y": { "$ref": "#/$defs/plotAxis" },
+                  "z": { "$ref": "#/$defs/plotAxis" }
                 }
               },
               "grid": { "type": "boolean" },
@@ -315,9 +333,9 @@
               "camera": {
                 "type": "object",
                 "properties": {
-                  "azimuth": { "type": "number" },
-                  "elevation": { "type": "number" },
-                  "distance": { "type": "number" }
+                  "azimuth": { "type": "number", "description": "degrees around the vertical z axis" },
+                  "elevation": { "type": "number", "description": "degrees above the horizontal, -89 to 89" },
+                  "distance": { "type": "number", "description": "3 fits the box to the plot; less is closer" }
                 }
               }
             }

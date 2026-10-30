@@ -5,6 +5,7 @@ import { arrowFocus } from "./a11y";
 import { type Background, PX_PER_MM, toPx } from "./pages";
 import { commitEditing, layout, localized, state, updateDoc, updateRegion, withLocalized } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
+import { DEFAULT_SIZE_3D, Plot3DFields } from "./Plot3D";
 import { defaultLabel } from "./labels";
 import type { Doc, Region } from "./types";
 
@@ -213,6 +214,7 @@ function RegionTab() {
                 area: "Area",
                 toc: "Contents",
                 plot2d: "Plot",
+                plot3d: "3D Plot",
               }[r().kind] ?? r().kind
             }
           >
@@ -395,6 +397,23 @@ function RegionTab() {
                   </Field>
                 </div>
                 <PlotFields r={r()} />
+              </Match>
+              <Match when={r().kind === "plot3d"}>
+                <div class="insp-row">
+                  <Field label="Width">
+                    <Num
+                      value={(r().size ?? DEFAULT_SIZE_3D)[0]}
+                      onCommit={(v) => v && updateRegion(r().id, { size: [v, (r().size ?? DEFAULT_SIZE_3D)[1]] })}
+                    />
+                  </Field>
+                  <Field label="Height">
+                    <Num
+                      value={(r().size ?? DEFAULT_SIZE_3D)[1]}
+                      onCommit={(v) => v && updateRegion(r().id, { size: [(r().size ?? DEFAULT_SIZE_3D)[0], v] })}
+                    />
+                  </Field>
+                </div>
+                <Plot3DFields r={r()} />
               </Match>
               <Match when={r().kind === "toc"}>
                 <Field label="Lists">

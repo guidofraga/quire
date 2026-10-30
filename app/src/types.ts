@@ -43,7 +43,7 @@ export interface RegionView {
   unitChoices?: UnitChoice[];
   /** A one-click repair for `error`. */
   fix?: Fix;
-  /** A 2D plot's series, in its axis units. */
+  /** A plot's series, in its axis units. */
   plot?: PlotView;
   /** The result is symbolic (`→`). */
   symbolic?: boolean;
@@ -66,6 +66,26 @@ export interface PlotView {
   frames?: PlotSeriesView[][];
   /** Frames per second, for an animated plot. */
   fps?: number;
+  /** A 3D plot: its axis units and series (the fields above are then unused). */
+  three?: Plot3View;
+}
+
+/** quire_service::Plot3View */
+export interface Plot3View {
+  /** The x, y and z axis units; empty for plain numbers. */
+  units: [string, string, string];
+  series: Plot3SeriesView[];
+}
+
+/** quire_service::Series3View. `null` marks a point that could not be computed. */
+export interface Plot3SeriesView {
+  /** `surface`: a grid of points row by row, `cols` to a row; `curve`: points in order. */
+  shape: "surface" | "curve";
+  cols: number;
+  xs: (number | null)[];
+  ys: (number | null)[];
+  zs: (number | null)[];
+  error: string | null;
 }
 
 /** quire_service::SeriesView. `null` marks a gap (a point that could not be computed). */
