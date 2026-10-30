@@ -1,6 +1,6 @@
 # 02 — The `.quire` Document Format (v1)
 
-> Replaces SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
+> An open JSON alternative to SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
 > Importer: [`crates/quire-smath`](../crates/quire-smath) (`quire import`, or File ▸ Open in the app).
 
 ## 1. Design goals, measured against a real SMath file

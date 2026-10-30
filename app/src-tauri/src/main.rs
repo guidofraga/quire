@@ -222,7 +222,7 @@ fn set_recent(app: AppHandle, paths: Vec<String>) -> CmdResult<()> {
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let sep = || PredefinedMenuItem::separator(app);
     let about = AboutMetadata {
-        comments: Some("Free-form engineering math notebook".into()),
+        comments: Some("Free-form math notebook".into()),
         license: Some("GPL-3.0-or-later (engine: MIT OR Apache-2.0)".into()),
         ..Default::default()
     };

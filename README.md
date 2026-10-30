@@ -15,6 +15,12 @@
 </p>
 
 <p align="center">
+  Quire is an independent, open-source alternative to SMath Studio. It is not affiliated with,
+  endorsed by, or sponsored by SMath Studio or its developers. SMath Studio is a trademark of its
+  respective owner.
+</p>
+
+<p align="center">
   <a href="https://github.com/guidofraga/quire/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/guidofraga/quire/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="https://github.com/guidofraga/quire/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/guidofraga/quire?style=flat-square&label=release&color=3a5f9f"></a>
   <a href="#license"><img alt="License: engine MIT or Apache-2.0, app GPL-3.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0%20%C2%B7%20GPL--3.0-3a5f9f?style=flat-square"></a>
