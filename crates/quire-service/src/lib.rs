@@ -158,9 +158,7 @@ fn series3_input(s: &serde_json::Map<String, Json>) -> Series3Input {
     let legacy = parametric.is_none() && s.get("surface").is_none();
     Series3Input {
         surface: given(s.get(if legacy { "y" } else { "surface" })),
-        y: if legacy { None } else { given(s.get("y")) },
         parametric,
-        x: given(s.get("x")),
         xrange: given(s.get("xrange")),
         yrange: given(s.get("yrange")),
         range: given(s.get("range")),

@@ -23,9 +23,6 @@ pub struct Series3Input {
     /// `[x, y, z]`: of `t` over `range` (a curve), of `u` and `v` over `urange` × `vrange`
     /// (a surface), or three vectors of points.
     pub parametric: Option<[String; 3]>,
-    /// A surface's variables (default `x`, `y`).
-    pub x: Option<String>,
-    pub y: Option<String>,
     /// `a..b` for a surface's x and y.
     pub xrange: Option<String>,
     pub yrange: Option<String>,
@@ -172,10 +169,6 @@ fn numbers(v: Value, what: &str) -> Result<(Vec<Quantity>, usize, usize)> {
     }
 }
 
-fn is_name(v: &str) -> bool {
-    v.chars().next().is_some_and(char::is_alphabetic)
-}
-
 /// The grid of a surface: every (a, b) with `a` along a row, `b` down the rows.
 fn grid<'n>(an: &'n str, a: &[Quantity], bn: &'n str, b: &[Quantity]) -> Vec<Vec<(&'n str, Quantity)>> {
     b.iter().flat_map(|bv| a.iter().map(move |av| vec![(an, *av), (bn, *bv)])).collect()
@@ -189,6 +182,9 @@ pub(crate) fn sample(s: &Series3Input, interp: &mut Interp, scope: &mut Scope) -
                 let us = range(interp, scope, ur, "the u range", GRID)?;
                 let vs = range(interp, scope, vr, "the v range", GRID)?;
                 Some((Shape::Surface, us.len(), grid("u", &us, "v", &vs)))
+            }
+            (_, Some(_), None) | (_, None, Some(_)) => {
+                bail!("a parametric surface needs both a u range and a v range")
             }
             (Some(tr), ..) => {
                 let ts = range(interp, scope, tr, "the t range", CURVE)?;
@@ -222,10 +218,7 @@ pub(crate) fn sample(s: &Series3Input, interp: &mut Interp, scope: &mut Scope) -
     };
     let z = part(surface, "the plotted expression")?;
     if let (Some(xr), Some(yr)) = (given(&s.xrange), given(&s.yrange)) {
-        let (xv, yv) = (given(&s.x).unwrap_or("x"), given(&s.y).unwrap_or("y"));
-        if !(is_name(xv) && is_name(yv)) {
-            bail!("the variables should be names, like x and y");
-        }
+        let (xv, yv) = ("x", "y");
         let xs = range(interp, scope, xr, "the x range", GRID)?;
         let ys = range(interp, scope, yr, "the y range", GRID)?;
         let points = grid(xv, &xs, yv, &ys);
@@ -397,6 +390,17 @@ mod tests {
         );
         assert!(p.series[1].error.as_deref().is_some_and(|e| e.contains("matrix of heights")));
         assert!(p.series[2].error.as_deref().is_some_and(|e| e.contains("y is empty")));
+        let half = Series3Input {
+            parametric: Some(["u".into(), "v".into(), "u*v".into()]),
+            urange: Some("0..1".into()),
+            ..Default::default()
+        };
+        let half_out = run(&[plot3("h", vec![half], Default::default())]);
+        let half_plot = outcome(&half_out[0])?;
+        assert_eq!(
+            half_plot.series[0].error.as_deref(),
+            Some("a parametric surface needs both a u range and a v range")
+        );
         assert_eq!(
             out[0].error.as_deref(),
             Some(

@@ -29,7 +29,7 @@ export interface Series3 {
   surface?: string;
   /** x, y and z of `t` over `range`, of `u` and `v` over `urange` × `vrange`, or three vectors. */
   parametric?: [string, string, string];
-  x?: string;
+  /** Quire 0.2.0's importer wrote the height here; it is read as `surface` (series3Of). */
   y?: string;
   xrange?: string;
   yrange?: string;
@@ -209,8 +209,8 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     const elevation = Math.max(-89, Math.min(89, from.c.elevation + (e.clientY - from.y) * 0.5));
     setLive({ ...from.c, azimuth: ((from.c.azimuth - (e.clientX - from.x) * 0.5 + 540) % 360) - 180, elevation });
   };
-  const onUp = () => {
-    from = null;
+  // the live view goes into the document once, so a turn or a zoom is one step to undo
+  const save = () => {
     const c = live();
     if (c)
       updateRegion(r().id, {
@@ -218,14 +218,31 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
       });
     setLive(null);
   };
+  const onUp = () => {
+    from = null;
+    save();
+  };
+  // ⌥ + scroll zooms live; the zoom is saved once the scrolling stops
+  let zooming: ReturnType<typeof setTimeout> | undefined;
   const onWheel = (e: WheelEvent) => {
     if (!e.altKey) return;
     e.preventDefault();
     const c = cam();
     const distance = Math.max(0.75, Math.min(10, Number((c.distance * (e.deltaY > 0 ? 1.1 : 0.9)).toFixed(3))));
-    updateRegion(r().id, { camera: { ...c, distance } });
+    setLive({ ...c, distance });
+    clearTimeout(zooming);
+    zooming = setTimeout(() => {
+      zooming = undefined;
+      if (!from) save();
+    }, 300);
   };
-  onCleanup(() => (from = null));
+  onCleanup(() => {
+    from = null;
+    if (zooming !== undefined) {
+      clearTimeout(zooming);
+      save();
+    }
+  });
 
   const what = () =>
     series3Of(r())
@@ -456,7 +473,6 @@ export function Plot3DFields(props: { r: Region }) {
 const blank: Series3 = {
   surface: undefined,
   parametric: undefined,
-  x: undefined,
   y: undefined,
   xrange: undefined,
   yrange: undefined,

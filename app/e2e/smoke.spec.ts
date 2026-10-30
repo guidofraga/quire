@@ -271,4 +271,15 @@ test("Insert ▸ 3D Plot draws a surface the engine sampled, and the Inspector e
   await z.press("Enter");
   await expect(plot.getByRole("img", { name: "3D plot of x^2 - y^2" })).toBeVisible();
   await expect(plot.locator(".err")).toHaveCount(0);
+  // ⌥ + scroll zooms; the zoom is saved once, so one undo takes it back
+  const reset = plot.getByRole("button", { name: "Back to the standard view" });
+  await expect(reset).toHaveCount(0);
+  await plot.locator("canvas").click();
+  await page.keyboard.down("Alt");
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await expect(reset).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(reset).toHaveCount(0);
+  await expect(plot).toHaveClass(/selected/);
 });

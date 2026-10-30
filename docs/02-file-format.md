@@ -317,7 +317,7 @@ A 3D plot (SMath's 3D graph) holds series of its own, sampled where it sits in r
 
 | Field | Notes |
 |---|---|
-| `series[].surface` | A height in two variables, `z(x, y)`, sampled on a 41 × 41 grid over `xrange` × `yrange` (`start..end`). `x` and `y` rename the variables (default `x`, `y`). Without ranges it is data: a matrix of heights, drawn over its column (x) and row (y) numbers, as SMath draws it. |
+| `series[].surface` | A height in two variables, `z(x, y)`, sampled on a 41 × 41 grid over `xrange` × `yrange` (`start..end`). The variables are always `x` and `y`, as in SMath. Without ranges it is data: a matrix of heights, drawn over its column (x) and row (y) numbers, as SMath draws it. |
 | `series[].parametric` | Three expressions `[x, y, z]`. With `range`, they are a curve of `t` (241 points). With `urange` and `vrange`, a surface of `u` and `v` (41 × 41), such as a sphere or a tube. Without ranges, three vectors of the same length: a line through those points. |
 | `series[].label` | Shown in the plot's description for screen readers. |
 | `axes.x` / `axes.y` / `axes.z` | `unit` each axis is drawn in; otherwise the units the document works in, as for results (SI when Results are in SI). |
