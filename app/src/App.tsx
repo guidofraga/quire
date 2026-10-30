@@ -384,13 +384,20 @@ async function printDocument() {
 }
 
 async function runExportJob(job: { open: string; pdf: string }) {
+  // a headless run must end: if a step never finishes, say which one instead of hanging
+  let step = "opening the document";
+  const watchdog = setTimeout(() => void api.finishExport(`gave up after 100 s while ${step}`), 100_000);
   try {
     const doc = await api.open(job.open);
     loadDoc(doc, job.open);
+    step = "waiting for results and pagination";
     await settle();
+    step = "printing the PDF";
     await exportPdf(job.pdf);
+    clearTimeout(watchdog);
     await api.finishExport(null);
   } catch (e) {
+    clearTimeout(watchdog);
     await api.finishExport(String((e as Error).message ?? e));
   }
 }

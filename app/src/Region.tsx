@@ -89,6 +89,9 @@ function Html(props: { html: string | undefined; class?: string }) {
     el.innerHTML = props.html ?? "";
     applyDjotAttributes(el);
     fillInlineMath(el);
+    // this effect also reruns when results arrive, and rewriting the HTML empties the
+    // references: fill them again here, without making the text depend on the numbering
+    untrack(() => fillRefs(el));
   });
   // references follow the numbering without re-rendering the text
   createEffect(() => {
