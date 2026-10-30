@@ -131,6 +131,49 @@ test("the tree works from the keyboard", async ({ page }) => {
   await expect.poll(() => existsSync(join(dir, "Alpha.quire"))).toBe(true);
 });
 
+test("keys on a focused note stay in the tree and leave the page alone", async ({ page }) => {
+  await openBook(page);
+  await name(page, "A");
+  await page.mouse.click(900, 300);
+  await page.keyboard.type("x:=1");
+  await page.keyboard.press("Escape");
+  const region = page.locator(".region.math");
+  await expect(region).toHaveCount(1);
+  if (!(await region.evaluate((el) => el.classList.contains("selected")))) await region.click();
+  await expect(region).toHaveClass(/selected/);
+  // where the region sits on screen, to the pixel (results arriving shift it by fractions)
+  const at = async () => {
+    const box = (await region.boundingBox())!;
+    return [Math.round(box.x), Math.round(box.y)];
+  };
+  const before = await at();
+
+  await row(page, "A").focus();
+  // keys the tree has no use for on a top-level note (⌘⌫ and Delete trash it)
+  for (const key of ["ArrowRight", "ArrowLeft", "Backspace"]) {
+    await page.keyboard.press(key);
+    await expect(row(page, "A")).toBeFocused();
+    await expect(region).toHaveCount(1);
+    await expect(region).toHaveClass(/selected/);
+    expect(await at(), key).toEqual(before);
+  }
+
+  // Tab leaves the tree instead of stepping through the page's regions
+  await page.keyboard.press("Tab");
+  await expect(row(page, "A")).not.toBeFocused();
+  expect(await page.evaluate(() => !!document.activeElement?.closest("[role=tree]"))).toBe(false);
+  await expect(region).toHaveClass(/selected/);
+
+  // back on the page, the same keys act on the selection as before
+  await page.mouse.click(900, 500);
+  await page.keyboard.press("Tab");
+  await expect(region).toHaveClass(/selected/);
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await at())[0]).toBeGreaterThan(before[0]);
+  await page.keyboard.press("Backspace");
+  await expect(region).toHaveCount(0);
+});
+
 for (const scheme of ["light", "dark"] as const)
   test(`the sidebar passes axe in ${scheme}`, async ({ page }) => {
     const { default: AxeBuilder } = await import("@axe-core/playwright");

@@ -446,8 +446,8 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
       break;
     case "Backspace":
     case "Delete":
-      if (!node || (e.key === "Backspace" && !cmd)) return;
-      void trashItem(node.rel);
+      // plain Backspace does nothing here, but is kept from the browser, which would go back a page
+      if (node && (e.key === "Delete" || cmd)) void trashItem(node.rel);
       break;
     case "ContextMenu":
     case "F10":
