@@ -111,7 +111,9 @@ function Dialog() {
             each={results()}
             fallback={
               <div class="palette-empty">
-                {all.length ? "Nothing matches" : "Nothing to refer to yet: add a heading, or a caption to a figure or table."}
+                {all.length
+                  ? "Nothing matches"
+                  : "Nothing to refer to yet: add a heading, or a caption to a figure or table."}
               </div>
             }
           >

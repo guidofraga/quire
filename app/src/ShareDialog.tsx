@@ -86,7 +86,9 @@ function Dialog() {
             <p class="share-note">Links leave out images. Send the .quirez file to include them.</p>
           </Show>
           <Show when={(link()?.length ?? 0) > LONG_LINK}>
-            <p class="share-note">Long link ({Math.round((link()?.length ?? 0) / 1000)}k characters): some chat apps cut it short.</p>
+            <p class="share-note">
+              Long link ({Math.round((link()?.length ?? 0) / 1000)}k characters): some chat apps cut it short.
+            </p>
           </Show>
         </div>
       </div>

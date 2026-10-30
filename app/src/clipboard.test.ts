@@ -18,11 +18,17 @@ import {
 import type { Region } from "./types";
 
 // the app's rule with no variables defined: a word of two letters or more is prose
-const isProse = (s: string) => /^[\p{L}][\p{L}]+$/u.test(s) || /^[\p{L}][\p{L}\p{N}_.]*(?:\s+[\p{L}][\p{L}\p{N}_.]*)*\s+\p{L}{3,}$/u.test(s);
+const isProse = (s: string) =>
+  /^[\p{L}][\p{L}]+$/u.test(s) || /^[\p{L}][\p{L}\p{N}_.]*(?:\s+[\p{L}][\p{L}\p{N}_.]*)*\s+\p{L}{3,}$/u.test(s);
 
 const regions: Region[] = [
   { id: "a", kind: "math", at: [36, 36], expr: "L:=6 m" },
-  { id: "b", kind: "area", at: [36, 90], regions: [{ id: "c", kind: "image", at: [0, 18], src: "assets/0123456789abcdef.png", size: [10, 10] }] },
+  {
+    id: "b",
+    kind: "area",
+    at: [36, 90],
+    regions: [{ id: "c", kind: "image", at: [0, 18], src: "assets/0123456789abcdef.png", size: [10, 10] }],
+  },
 ];
 
 describe("regions on the clipboard", () => {
@@ -48,20 +54,40 @@ describe("regions on the clipboard", () => {
 
 describe("HTML for other apps", () => {
   it("turns Djot attributes into styles and drops the app's markup", () => {
-    const html = portableHtml('<p><span color="#c00" size="14" class="x">red</span> see <a href="#ref:fig1" class="xref">Figure 1</a></p>');
-    expect(html).toBe('<p><span style="font-size: 14pt; color: rgb(204, 0, 0);">red</span> see <span>Figure 1</span></p>');
+    const html = portableHtml(
+      '<p><span color="#c00" size="14" class="x">red</span> see <a href="#ref:fig1" class="xref">Figure 1</a></p>',
+    );
+    expect(html).toBe(
+      '<p><span style="font-size: 14pt; color: rgb(204, 0, 0);">red</span> see <span>Figure 1</span></p>',
+    );
   });
 
   it("gives math its MathML namespace and the linear text", () => {
-    const p = mathParagraph('<math><mrow><mi data-v="M">M</mi><mo>=</mo><mrow class="res"><mn>54</mn></mrow></mrow></math>', "M:=q*L^2/8 =");
-    expect(p).toBe('<p><math xmlns="http://www.w3.org/1998/Math/MathML" alttext="M:=q*L^2/8 ="><mrow><mi>M</mi><mo>=</mo><mrow><mn>54</mn></mrow></mrow></math></p>');
+    const p = mathParagraph(
+      '<math><mrow><mi data-v="M">M</mi><mo>=</mo><mrow class="res"><mn>54</mn></mrow></mrow></math>',
+      "M:=q*L^2/8 =",
+    );
+    expect(p).toBe(
+      '<p><math xmlns="http://www.w3.org/1998/Math/MathML" alttext="M:=q*L^2/8 ="><mrow><mi>M</mi><mo>=</mo><mrow><mn>54</mn></mrow></mrow></math></p>',
+    );
   });
 
   it("writes tables with header cells and alignment", () => {
-    const html = tableHtml([["Load", "q"], ["Dead", "4.5 kN/m"]], { headerRow: true, align: [undefined, "right"] });
-    expect(html).toContain("<th style=\"border:1px solid #999;padding:2px 6px\">Load</th>");
-    expect(html).toContain("text-align:right\">4.5 kN/m</td>");
-    expect(tsv([["a", "b\tc"], ["1", '"x"']])).toBe('a\t"b\tc"\n1\t"""x"""');
+    const html = tableHtml(
+      [
+        ["Load", "q"],
+        ["Dead", "4.5 kN/m"],
+      ],
+      { headerRow: true, align: [undefined, "right"] },
+    );
+    expect(html).toContain('<th style="border:1px solid #999;padding:2px 6px">Load</th>');
+    expect(html).toContain('text-align:right">4.5 kN/m</td>');
+    expect(
+      tsv([
+        ["a", "b\tc"],
+        ["1", '"x"'],
+      ]),
+    ).toBe('a\t"b\tc"\n1\t"""x"""');
   });
 
   it("reads rendered text as lines", () => {
@@ -75,14 +101,24 @@ describe("pasting tables", () => {
       '<meta charset="utf-8"><google-sheets-html-origin><style>td { border: 1px }</style><table><tbody>' +
       "<tr><th>Load</th><th>q</th></tr><tr><td>Dead</td><td>4.5 kN/m</td></tr><tr><td colspan=2>Total</td></tr></tbody></table></google-sheets-html-origin>";
     expect(tableFromHtml(html)).toEqual({
-      rows: [["Load", "q"], ["Dead", "4.5 kN/m"], ["Total", ""]],
+      rows: [
+        ["Load", "q"],
+        ["Dead", "4.5 kN/m"],
+        ["Total", ""],
+      ],
       header: true,
     });
   });
 
   it("spreads merged rows and keeps line breaks in cells", () => {
     const html = "<table><tr><td rowspan=2>A</td><td>1<br>2</td></tr><tr><td>3</td></tr></table>";
-    expect(tableFromHtml(html)).toEqual({ rows: [["A", "1\n2"], ["", "3"]], header: false });
+    expect(tableFromHtml(html)).toEqual({
+      rows: [
+        ["A", "1\n2"],
+        ["", "3"],
+      ],
+      header: false,
+    });
   });
 
   it("leaves a document with a table in it to the text", () => {
@@ -93,7 +129,9 @@ describe("pasting tables", () => {
 
 describe("pasting text", () => {
   it("makes one region per line, math or text by the typing rules", () => {
-    expect(piecesFromText("The span is simply supported.\nq := 12 kN/m\n\nL:=6 m\nM:=q*L^2/8=\nTotal load 12 kN", isProse)).toEqual([
+    expect(
+      piecesFromText("The span is simply supported.\nq := 12 kN/m\n\nL:=6 m\nM:=q*L^2/8=\nTotal load 12 kN", isProse),
+    ).toEqual([
       { kind: "text", text: "The span is simply supported." },
       { kind: "math", text: "q := 12 kN/m" },
       { kind: "math", text: "L:=6 m" },

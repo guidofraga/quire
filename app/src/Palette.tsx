@@ -76,7 +76,14 @@ const COMMANDS: [string, string, string][] = [
 ];
 
 /** Commands that need files on disk: notebooks and templates of your own. */
-const WEB_HIDDEN = new Set(["new_section", "new_notebook", "open_notebook", "search_notebook", "toggle_sidebar", "save_template"]);
+const WEB_HIDDEN = new Set([
+  "new_section",
+  "new_notebook",
+  "open_notebook",
+  "search_notebook",
+  "toggle_sidebar",
+  "save_template",
+]);
 
 const TEXT_COMMANDS: [string, string, string][] = [
   ["fmt_bold", "Bold", `${mod}B`],
@@ -107,12 +114,23 @@ const SNIPPETS = [...SYMBOLS, ...STRUCTURES].flatMap((c) =>
 );
 
 function items(runCommand: (id: string) => void): Item[] {
-  const cmds = [...COMMANDS.filter(([id]) => !(isWeb && WEB_HIDDEN.has(id))), ...(activeView() ? TEXT_COMMANDS : []), ...(state.selection.length > 1 ? ARRANGE_COMMANDS : [])];
+  const cmds = [
+    ...COMMANDS.filter(([id]) => !(isWeb && WEB_HIDDEN.has(id))),
+    ...(activeView() ? TEXT_COMMANDS : []),
+    ...(state.selection.length > 1 ? ARRANGE_COMMANDS : []),
+  ];
   const out: Item[] = cmds.map(([id, label, hint]) => ({ label, hint, group: "Commands", run: () => runCommand(id) }));
   // every note of the notebook, with its section ("Kinematics — Mechanics")
   for (const n of nb.book ? notes() : []) {
-    const where = trail(n.rel).map((s) => s.name).join(" › ");
-    out.push({ label: where ? `${n.name} — ${where}` : n.name, hint: "note", group: "Go to", run: () => void openNote(n.rel) });
+    const where = trail(n.rel)
+      .map((s) => s.name)
+      .join(" › ");
+    out.push({
+      label: where ? `${n.name} — ${where}` : n.name,
+      hint: "note",
+      group: "Go to",
+      run: () => void openNote(n.rel),
+    });
   }
   // each variable once, at its first definition
   const seen = new Set<string>();
@@ -164,7 +182,10 @@ function Dialog(props: { runCommand: (id: string) => void }) {
   const all = createMemo(() => items(props.runCommand));
   const results = createMemo(() => {
     const q = query().trim().toLowerCase();
-    if (!q) return all().filter((i) => i.group !== "Insert").slice(0, 60);
+    if (!q)
+      return all()
+        .filter((i) => i.group !== "Insert")
+        .slice(0, 60);
     const scored = all().flatMap((item, order) => {
       const s = score(item.label, q);
       return s === null ? [] : [{ item, s, order }];

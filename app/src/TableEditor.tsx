@@ -6,7 +6,22 @@ import { esc, prettyValue } from "./math";
 import { verdictOf } from "./checks";
 import { decimalComma, parseCsv, tableNameFrom, toCsv, withDecimalComma } from "./csv";
 import { tableFromHtml } from "./clipboard";
-import { commitEditing, contentBottom, flash, insertRegion, layout, type Placed, LINE, redo, setState, snap, startEditing, state, undo, updateRegion } from "./store";
+import {
+  commitEditing,
+  contentBottom,
+  flash,
+  insertRegion,
+  layout,
+  type Placed,
+  LINE,
+  redo,
+  setState,
+  snap,
+  startEditing,
+  state,
+  undo,
+  updateRegion,
+} from "./store";
 import type { Region } from "./types";
 
 export interface Column {
@@ -44,7 +59,8 @@ const sizeOf = (r: Region): [number, number] => {
 // References
 // ---------------------------------------------------------------------------
 
-export const colName = (c: number): string => (c < 26 ? "" : colName(Math.floor(c / 26) - 1)) + String.fromCharCode(65 + (c % 26));
+export const colName = (c: number): string =>
+  (c < 26 ? "" : colName(Math.floor(c / 26) - 1)) + String.fromCharCode(65 + (c % 26));
 export const cellName = (r: number, c: number) => `${colName(c)}${r + 1}`;
 const colIndex = (letters: string) => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
 
@@ -52,7 +68,10 @@ const colIndex = (letters: string) => [...letters].reduce((n, ch) => n * 26 + ch
 const REF = /(?<![\p{L}\p{N}_.!$])(\$?)([A-Z]{1,3})(\$?)([1-9]\d*)(?![\p{L}\p{N}_(])/gu;
 
 /** Rewrite the references of a formula, leaving quoted text alone. */
-function mapRefs(formula: string, fn: (r: number, c: number, absR: boolean, absC: boolean) => [number, number] | null): string {
+function mapRefs(
+  formula: string,
+  fn: (r: number, c: number, absR: boolean, absC: boolean) => [number, number] | null,
+): string {
   return formula
     .split(/("(?:[^"]|"")*")/)
     .map((part, i) =>
@@ -131,7 +150,9 @@ const editingTable = (): Region | undefined => {
 };
 
 function focusGrid() {
-  queueMicrotask(() => document.querySelector<HTMLElement>(".region.editing .sheet-wrap")?.focus({ preventScroll: true }));
+  queueMicrotask(() =>
+    document.querySelector<HTMLElement>(".region.editing .sheet-wrap")?.focus({ preventScroll: true }),
+  );
 }
 
 function select(r: number, c: number, extend = false) {
@@ -226,23 +247,30 @@ function sortRows(descending: boolean) {
     return Number.isFinite(n) && !text.startsWith('"') ? n : text.replace(/^"|"$/g, "").toLowerCase();
   };
   editRows(t.id, (rows) => {
-    const sums = (i: number) => rows[i].some((cell) => cell.startsWith("=") && /[A-Z]+\$?\d+:\$?[A-Z]+\$?\d+/i.test(cell));
+    const sums = (i: number) =>
+      rows[i].some((cell) => cell.startsWith("=") && /[A-Z]+\$?\d+:\$?[A-Z]+\$?\d+/i.test(cell));
     const movable = rows.map((_, i) => i).filter((i) => i >= first && !sums(i));
     const sorted = [...movable].sort((a, b) => {
       const ka = key(a);
       const kb = key(b);
       if (ka === null || kb === null) return ka === kb ? 0 : ka === null ? 1 : -1;
-      const cmp = typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb), undefined, { numeric: true });
+      const cmp =
+        typeof ka === "number" && typeof kb === "number"
+          ? ka - kb
+          : String(ka).localeCompare(String(kb), undefined, { numeric: true });
       return descending ? -cmp : cmp;
     });
     // where each row ends up (rows are 1-based in references)
     const newRow = new Map<number, number>();
     sorted.forEach((from, k) => newRow.set(from + 1, movable[k] + 1));
     const follow = (formula: string) =>
-      formula.replace(/(^|[^A-Za-z0-9_!.$])(\$?[A-Z]{1,3})(\$?)(\d+)(?![\w(])/g, (m, pre: string, col: string, abs: string, row: string) => {
-        const to = newRow.get(Number(row));
-        return to ? `${pre}${col}${abs}${to}` : m;
-      });
+      formula.replace(
+        /(^|[^A-Za-z0-9_!.$])(\$?[A-Z]{1,3})(\$?)(\d+)(?![\w(])/g,
+        (m, pre: string, col: string, abs: string, row: string) => {
+          const to = newRow.get(Number(row));
+          return to ? `${pre}${col}${abs}${to}` : m;
+        },
+      );
     const next = rows.map((row) => row.map((cell) => (cell.startsWith("=") ? `=${follow(cell.slice(1))}` : cell)));
     const result = next.map((row) => [...row]);
     sorted.forEach((from, k) => (result[movable[k]] = next[from]));
@@ -301,7 +329,8 @@ export function structure(op: "row_above" | "row_below" | "col_left" | "col_righ
       }
     }
   });
-  if (delta < 0) select(axis === "row" ? Math.min(r0, h + delta - 1) : r0, axis === "col" ? Math.min(c0, w + delta - 1) : c0);
+  if (delta < 0)
+    select(axis === "row" ? Math.min(r0, h + delta - 1) : r0, axis === "col" ? Math.min(c0, w + delta - 1) : c0);
   else if (op === "row_below") select(r1 + 1, c0);
   else if (op === "col_right") select(r0, c1 + 1);
 }
@@ -338,7 +367,8 @@ function copyCells(e: ClipboardEvent, cut: boolean) {
   const { r0, r1, c0, c1 } = range(sel());
   const rows = rowsOf(t);
   const block = [];
-  for (let r = r0; r <= r1; r++) block.push(Array.from({ length: c1 - c0 + 1 }, (_, j) => tsvCell(rows[r]?.[c0 + j] ?? "")).join("\t"));
+  for (let r = r0; r <= r1; r++)
+    block.push(Array.from({ length: c1 - c0 + 1 }, (_, j) => tsvCell(rows[r]?.[c0 + j] ?? "")).join("\t"));
   e.clipboardData?.setData("text/plain", block.join("\n"));
   e.preventDefault();
   e.stopPropagation();
@@ -423,7 +453,10 @@ export function insertTable(rows?: string[][], name?: string) {
 // ---------------------------------------------------------------------------
 
 /** A cell as it reads on the page: the value of a formula, `#ERROR`, or what was typed. */
-export function cellText(raw: string, v: { result: { t: string; c?: unknown } | null; text: string | null; error: string | null } | undefined): string {
+export function cellText(
+  raw: string,
+  v: { result: { t: string; c?: unknown } | null; text: string | null; error: string | null } | undefined,
+): string {
   if (v?.error) return "#ERROR";
   if (v?.result?.t === "Str") return String(v.result.c);
   if (v?.text) return prettyValue(v.text);
@@ -570,7 +603,9 @@ export function SheetGrid(props: { p: Placed }) {
   const trackDrag = (onCell: (i: number, j: number) => void) => {
     let last = "";
     const move = (ev: PointerEvent) => {
-      const td = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>(`[data-sheet="${r().id}"] td[data-r]`);
+      const td = document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest<HTMLElement>(`[data-sheet="${r().id}"] td[data-r]`);
       if (!td) return;
       const key = `${td.dataset.r},${td.dataset.c}`;
       if (key === last) return;
@@ -590,7 +625,12 @@ export function SheetGrid(props: { p: Placed }) {
     if (!editing() || draft() !== null) return;
     const { r: i, c: j, r2, c2 } = sel();
     const mod = e.metaKey || e.ctrlKey;
-    const arrows: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    const arrows: Record<string, [number, number]> = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    };
     if (arrows[e.key] && !mod) {
       e.preventDefault();
       const [dr, dc] = arrows[e.key];
@@ -641,7 +681,12 @@ export function SheetGrid(props: { p: Placed }) {
       cancelDraft();
     } else if (typedOver && !(draft() ?? "").startsWith("=") && e.key.startsWith("Arrow")) {
       e.preventDefault();
-      const d: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+      const d: Record<string, [number, number]> = {
+        ArrowUp: [-1, 0],
+        ArrowDown: [1, 0],
+        ArrowLeft: [0, -1],
+        ArrowRight: [0, 1],
+      };
       commitDraft(...d[e.key]);
     }
   };
@@ -653,7 +698,13 @@ export function SheetGrid(props: { p: Placed }) {
     if (editing() || !tableEl.rows[0]) return;
     const box = tableEl.getBoundingClientRect();
     const z = state.view.zoom;
-    setEdges([...tableEl.rows[0].cells].map((td, j) => ({ j, x: (td.getBoundingClientRect().right - box.left) / z, h: box.height / z })));
+    setEdges(
+      [...tableEl.rows[0].cells].map((td, j) => ({
+        j,
+        x: (td.getBoundingClientRect().right - box.left) / z,
+        h: box.height / z,
+      })),
+    );
   };
   const setColumnWidth = (j: number, w: number | undefined) =>
     updateRegion(r().id, (reg) => {
@@ -768,12 +819,18 @@ export function SheetGrid(props: { p: Placed }) {
           <Show when={editing()}>
             <col class="row-head-col" />
           </Show>
-          <For each={colIdx()}>{(j) => <col style={{ width: cols()[j]?.width ? `${cols()[j]!.width}px` : undefined }} />}</For>
+          <For each={colIdx()}>
+            {(j) => <col style={{ width: cols()[j]?.width ? `${cols()[j]!.width}px` : undefined }} />}
+          </For>
         </colgroup>
         <Show when={editing()}>
           <thead>
             <tr>
-              <th class="corner" aria-label="Select all" onPointerDown={(e) => (e.preventDefault(), tableCommand("select_all"))} />
+              <th
+                class="corner"
+                aria-label="Select all"
+                onPointerDown={(e) => (e.preventDefault(), tableCommand("select_all"))}
+              />
               <For each={colIdx()}>
                 {(j) => (
                   <th
@@ -849,7 +906,10 @@ export function SheetGrid(props: { p: Placed }) {
                       <Show when={editing()}>
                         <span class="sr-only">{cellName(i, j)} </span>
                       </Show>
-                      <Show when={active(i, j) && draft() !== null} fallback={<span class="cell" innerHTML={cellContent(i, j)} />}>
+                      <Show
+                        when={active(i, j) && draft() !== null}
+                        fallback={<span class="cell" innerHTML={cellContent(i, j)} />}
+                      >
                         <input
                           class="cell-input"
                           aria-label={`Cell ${cellName(i, j)}`}

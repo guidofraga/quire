@@ -28,7 +28,13 @@ function target(p: Placed): Target | null {
   const start = (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
   const page = layout().pageView ? p.page + start : 0;
   if (r.kind === "text") {
-    return { id: r.id, kind: "heading", number: p.number, title: textOf(state.report?.html[r.id], "h1, h2, h3, h4, h5, h6"), page };
+    return {
+      id: r.id,
+      kind: "heading",
+      number: p.number,
+      title: textOf(state.report?.html[r.id], "h1, h2, h3, h4, h5, h6"),
+      page,
+    };
   }
   if (!r.caption) return null;
   const caption = textOf(state.report?.html[`${r.id}:caption`]) || localized(r.caption.text);

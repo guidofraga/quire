@@ -10,7 +10,13 @@ const doc = (regions: Region[], extra: Partial<Doc> = {}): Doc => ({ format: "qu
 describe("pdfMeta", () => {
   it("takes the details from the document", () => {
     const d = doc([], {
-      meta: { title: { en: "Deck check", pt: "Verificação" }, lang: "pt-BR", authors: ["A. Engineer", "B. Checker"], company: "Acme", keywords: ["steel", "bridge"] },
+      meta: {
+        title: { en: "Deck check", pt: "Verificação" },
+        lang: "pt-BR",
+        authors: ["A. Engineer", "B. Checker"],
+        company: "Acme",
+        keywords: ["steel", "bridge"],
+      },
       page: { pageNumber: { start: 3 } },
     });
     expect(pdfMeta(d, "file")).toEqual({
@@ -60,7 +66,14 @@ describe("pdfOutline", () => {
   });
 
   it("skips headings inside collapsed areas", () => {
-    const area: Region = { id: "a", kind: "area", at: [0, 300], height: 200, collapsed: true, regions: [text("hid", 20, "# Hidden")] };
+    const area: Region = {
+      id: "a",
+      kind: "area",
+      at: [0, 300],
+      height: 200,
+      collapsed: true,
+      regions: [text("hid", 20, "# Hidden")],
+    };
     const hidden = computeLayout(doc([text("h1", 0, "# Shown"), area]), {}, true, true);
     expect(pdfOutline(hidden.list, {}, true).map((h) => h.title)).toEqual(["1 Shown"]);
   });
@@ -69,7 +82,10 @@ describe("pdfOutline", () => {
 describe("pdfLinks", () => {
   const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, height }) as DOMRect;
   /** What getClientRects returns for an element: one box per line. */
-  const lines = (...boxes: DOMRect[]) => () => boxes as unknown as DOMRectList;
+  const lines =
+    (...boxes: DOMRect[]) =>
+    () =>
+      boxes as unknown as DOMRectList;
 
   it("measures contents rows and cross-references on each sheet in points, whatever the zoom", () => {
     const root = document.createElement("div");

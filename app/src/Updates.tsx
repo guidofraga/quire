@@ -64,7 +64,9 @@ export function UpdateBanner(props: { beforeRestart: () => Promise<boolean> }) {
     if (!(await props.beforeRestart())) return;
     try {
       setBusy("Downloading…");
-      await a.install((done, total) => setBusy(total ? `Downloading… ${Math.round((done / total) * 100)}%` : "Downloading…"));
+      await a.install((done, total) =>
+        setBusy(total ? `Downloading… ${Math.round((done / total) * 100)}%` : "Downloading…"),
+      );
       setBusy("Restarting…");
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();

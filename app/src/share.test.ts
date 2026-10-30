@@ -34,7 +34,9 @@ describe("documents in links", () => {
 
   it("leave images out, and know when a document has any", () => {
     expect(hasImages(doc)).toBe(false);
-    expect(hasImages({ ...doc, regions: [...doc.regions, { id: "i", kind: "image", at: [0, 0], src: "assets/x.png" }] })).toBe(true);
+    expect(
+      hasImages({ ...doc, regions: [...doc.regions, { id: "i", kind: "image", at: [0, 0], src: "assets/x.png" }] }),
+    ).toBe(true);
     expect(hasImages({ ...doc, page: { backgrounds: [{ pages: "1", src: "assets/y.png" }] } })).toBe(true);
   });
 });

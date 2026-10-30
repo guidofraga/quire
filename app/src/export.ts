@@ -144,7 +144,12 @@ function headingText(html: string | undefined, source: string): string {
 }
 
 /** Bookmarks: the numbered headings in reading order, with their level and place. */
-export function pdfOutline(list: Placed[], html: Record<string, string>, numbered: boolean, lang?: string): PdfHeading[] {
+export function pdfOutline(
+  list: Placed[],
+  html: Record<string, string>,
+  numbered: boolean,
+  lang?: string,
+): PdfHeading[] {
   const out: PdfHeading[] = [];
   for (const p of list) {
     if (p.hidden || !p.number || p.region.kind !== "text") continue;
@@ -174,7 +179,14 @@ export function pdfLinks(paperW: number, root: ParentNode = document): PdfLink[]
       // a cross-reference that wraps over lines gets one box per line
       for (const r of el.getClientRects()) {
         if (!r.width || !r.height) continue;
-        out.push({ page, left: (r.left - box.left) * s, top: (r.top - box.top) * s, width: r.width * s, height: r.height * s, to });
+        out.push({
+          page,
+          left: (r.left - box.left) * s,
+          top: (r.top - box.top) * s,
+          width: r.width * s,
+          height: r.height * s,
+          to,
+        });
       }
     }
   }

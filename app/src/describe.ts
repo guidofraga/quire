@@ -16,7 +16,9 @@ export function mathWords(id: string, withError = true): string {
   if (!r) return "";
   const check = mathCheck(r, v);
   const comparison = check !== null && isComparison(v?.input);
-  const words = v?.input ? spokenMath(v.input, r.show && !comparison ? v.result : null, v.units, v.constants, r.show === "symbolic") : r.expr ?? "";
+  const words = v?.input
+    ? spokenMath(v.input, r.show && !comparison ? v.result : null, v.units, v.constants, r.show === "symbolic")
+    : (r.expr ?? "");
   const verdict = check === null ? "" : check ? ", check passes" : ", check fails";
   const error = withError && v?.error ? `. Error: ${v.error}` : "";
   return `${words}${verdict}${error}`;

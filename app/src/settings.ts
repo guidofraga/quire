@@ -104,7 +104,11 @@ export function withDefaults(doc: Doc): Doc {
   const d = structuredClone(doc);
   d.settings = {
     ...(d.settings as object),
-    display: { ...((d.settings as { display?: object })?.display ?? {}), decimals: prefs.decimals, resultUnits: "working" },
+    display: {
+      ...((d.settings as { display?: object })?.display ?? {}),
+      decimals: prefs.decimals,
+      resultUnits: "working",
+    },
   };
   d.page = { ...(d.page ?? {}), paper: prefs.paper, view: prefs.view };
   if (prefs.lang) d.meta = { ...(d.meta ?? {}), lang: prefs.lang };

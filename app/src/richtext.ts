@@ -233,7 +233,12 @@ function block(node: PMNode, indent = ""): string {
     case N.paragraph:
       return indent + blockAttrLine(node.attrs) + inline(node);
     case N.heading:
-      return blockAttrLine(node.attrs, node.attrs.title ? [".title"] : []) + "#".repeat(node.attrs.level) + " " + inline(node);
+      return (
+        blockAttrLine(node.attrs, node.attrs.title ? [".title"] : []) +
+        "#".repeat(node.attrs.level) +
+        " " +
+        inline(node)
+      );
     case N.bullet_list:
     case N.ordered_list: {
       const items: string[] = [];
@@ -326,7 +331,11 @@ export function setStyle(style: BlockStyle): Command {
   return (state, dispatch) => {
     const keep = keepAttrs(state);
     if (style === "body") return setBlockType(N.paragraph, keep)(state, dispatch);
-    if (style === "title") return setBlockType(N.heading, { ...keep, level: 1, title: true, align: keep.align ?? "center" })(state, dispatch);
+    if (style === "title")
+      return setBlockType(N.heading, { ...keep, level: 1, title: true, align: keep.align ?? "center" })(
+        state,
+        dispatch,
+      );
     return setBlockType(N.heading, { ...keep, level: Number(style[1]), title: false })(state, dispatch);
   };
 }
@@ -358,10 +367,12 @@ export const commands = {
   bulletList: toggleList(N.bullet_list),
   orderedList: toggleList(N.ordered_list),
   /** A cross-reference to a heading, figure or table, at the caret. */
-  insertRef: (id: string, style: RefStyle): Command => (state, dispatch) => {
-    dispatch?.(state.tr.replaceSelectionWith(N.xref.create({ id, style })).scrollIntoView());
-    return true;
-  },
+  insertRef:
+    (id: string, style: RefStyle): Command =>
+    (state, dispatch) => {
+      dispatch?.(state.tr.replaceSelectionWith(N.xref.create({ id, style })).scrollIntoView());
+      return true;
+    },
   insertMath: ((state, dispatch) => {
     const node = N.math.create({ expr: "" });
     dispatch?.(state.tr.replaceSelectionWith(node).scrollIntoView());
@@ -505,7 +516,11 @@ class MathChip implements NodeView {
       if (pos !== undefined) view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { expr: this.input.value }));
     });
     this.input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === "Escape" || e.key === "ArrowRight" && this.input.selectionStart === this.input.value.length) {
+      if (
+        e.key === "Enter" ||
+        e.key === "Escape" ||
+        (e.key === "ArrowRight" && this.input.selectionStart === this.input.value.length)
+      ) {
         e.preventDefault();
         const pos = getPos();
         if (pos !== undefined) {
@@ -614,10 +629,12 @@ export interface EditorHooks {
 
 /** `content` is editor HTML, or plain text taken literally (spaces included). */
 export function createEditor(host: HTMLElement, content: string | { text: string }, hooks: EditorHooks): EditorView {
-  const exit = (below: boolean): Command => () => {
-    hooks.onExit(below);
-    return true;
-  };
+  const exit =
+    (below: boolean): Command =>
+    () => {
+      hooks.onExit(below);
+      return true;
+    };
   const state = EditorState.create({
     doc:
       typeof content === "string"

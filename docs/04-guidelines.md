@@ -32,7 +32,7 @@ Quire is a calculation notebook: you write maths with units the way you would on
 
 ### TypeScript and SolidJS
 
-- TypeScript strict mode; two-space indentation; double quotes. `npx tsc --noEmit` must pass.
+- TypeScript strict mode, formatted by Prettier (`app/.prettierrc.json`: 120 columns); `npm run format` formats, and `npm run format:check` and `npx tsc --noEmit` must pass.
 - Components are functions in `PascalCase.tsx`; logic without UI lives in `camelCase.ts` so it can be tested with Vitest.
 - **Change the document only through `mutate()`** (`store.ts`): it records the undo step and schedules evaluation. `mutate(fn, false)` is for changes that join the previous step. Never write to `state.doc` with `setState` directly.
 - Read component props through `props.x` (destructuring breaks reactivity). Derived values that many components read go in a `createMemo` or `createRoot` at module level, as `layout` does.

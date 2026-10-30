@@ -76,7 +76,7 @@ The test is a ratchet. `FLOOR` in the file holds, for each worksheet, the number
 cargo fmt --all --check
 cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
 cargo test --workspace --exclude quire-app
-cd app && npx tsc --noEmit && npm test && npm run e2e
+cd app && npm run format:check && npx tsc --noEmit && npm test && npm run e2e
 ```
 
 And try UI changes by hand, in the browser setup or `npm --prefix app run tauri dev`, in light and dark and in a narrow window.

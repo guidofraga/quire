@@ -20,6 +20,9 @@ export async function audit(page: Page, state: string, include?: string) {
     bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
     if (!bad.length) break;
   }
-  const report = bad.map((v) => `${state}: ${v.id} (${v.impact}) ${v.help}\n${v.nodes.map((n) => `    ${n.target.join(" ")}  ${n.failureSummary?.split("\n")[1] ?? ""}`).join("\n")}`);
+  const report = bad.map(
+    (v) =>
+      `${state}: ${v.id} (${v.impact}) ${v.help}\n${v.nodes.map((n) => `    ${n.target.join(" ")}  ${n.failureSummary?.split("\n")[1] ?? ""}`).join("\n")}`,
+  );
   expect(report, report.join("\n")).toEqual([]);
 }

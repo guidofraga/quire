@@ -36,7 +36,12 @@ export function loadPreviews() {
   const items = STRUCTURES.flatMap((c) => c.items);
   const doc: Doc = {
     format: "quire/1",
-    regions: items.map((it, i) => ({ id: `tpl${String(i).padStart(3, "0")}`, kind: "math", at: [0, i * 20], expr: it.insert })),
+    regions: items.map((it, i) => ({
+      id: `tpl${String(i).padStart(3, "0")}`,
+      kind: "math",
+      at: [0, i * 20],
+      expr: it.insert,
+    })),
   };
   api
     .report(doc)
@@ -62,7 +67,10 @@ export { library };
 
 export function loadLibrary() {
   if (library()) return;
-  api.library().then(setLibrary).catch(() => {});
+  api
+    .library()
+    .then(setLibrary)
+    .catch(() => {});
 }
 
 export { prettyValue as valueText } from "./math";

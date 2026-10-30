@@ -35,6 +35,9 @@ jobs:
       - name: Front-end type check
         run: npm ci && npx tsc --noEmit
         working-directory: app
+      - name: Front-end formatting
+        run: npm run format:check
+        working-directory: app
       - name: Front-end unit tests
         run: npm test
         working-directory: app

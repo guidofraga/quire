@@ -38,13 +38,17 @@ describe("pageGeom", () => {
   });
 
   it("reads custom sizes and margins", () => {
-    const g = pageGeom(doc({ paper: ["100mm", "200mm"], margins: { top: "1cm", right: "0mm", bottom: "1cm", left: "0mm" } }));
+    const g = pageGeom(
+      doc({ paper: ["100mm", "200mm"], margins: { top: "1cm", right: "0mm", bottom: "1cm", left: "0mm" } }),
+    );
     expect(g.contentW).toBeCloseTo(100 * PX_PER_MM);
     expect(g.contentH).toBeCloseTo(180 * PX_PER_MM);
   });
 
   it("never leaves less than 100 px of content", () => {
-    const g = pageGeom(doc({ paper: ["50mm", "50mm"], margins: { top: "30mm", right: "30mm", bottom: "30mm", left: "30mm" } }));
+    const g = pageGeom(
+      doc({ paper: ["50mm", "50mm"], margins: { top: "30mm", right: "30mm", bottom: "30mm", left: "30mm" } }),
+    );
     expect(g.contentW).toBe(100);
     expect(g.contentH).toBe(100);
   });
@@ -76,7 +80,16 @@ describe("pageMatches", () => {
 });
 
 describe("fillFields", () => {
-  const c = { page: 2, pages: 5, file: "beam.quire", title: "Beam", author: "Ana", company: "ACME", lang: "en-US", now: new Date(2026, 0, 31, 9, 5) };
+  const c = {
+    page: 2,
+    pages: 5,
+    file: "beam.quire",
+    title: "Beam",
+    author: "Ana",
+    company: "ACME",
+    lang: "en-US",
+    now: new Date(2026, 0, 31, 9, 5),
+  };
 
   it("fills every field", () => {
     expect(fillFields("{title} – {file} – Page {page} of {pages} – {author}, {company}", c)).toBe(

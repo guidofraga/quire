@@ -145,12 +145,16 @@ test.describe("keyboard", () => {
     }
     const last = page.locator(".region.math").nth(2);
     await expect(last).toContainText(/=54\s*kN\W?m/);
-    await expect(last.locator(".sr-only")).toHaveText("M is defined as q times L squared over 8, equals 54 kilonewton metres");
+    await expect(last.locator(".sr-only")).toHaveText(
+      "M is defined as q times L squared over 8, equals 54 kilonewton metres",
+    );
     await expect(last.locator(".m")).toHaveAttribute("aria-hidden", "true");
     // Tab on the page selects regions in reading order, and the live region describes it
     await page.keyboard.press("Escape");
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("status").filter({ hasText: "Math:" })).toHaveText("Math: q is defined as 12 kilonewtons per metre");
+    await expect(page.getByRole("status").filter({ hasText: "Math:" })).toHaveText(
+      "Math: q is defined as 12 kilonewtons per metre",
+    );
   });
 
   test("a table being edited is a grid with named cells", async ({ page }) => {

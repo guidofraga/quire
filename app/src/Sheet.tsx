@@ -34,10 +34,12 @@ function Slots(props: { hf: HeaderFooter; page: number; pages: number; style: Re
 export function Sheet(props: { k: number; regions: Placed[]; onDragStart: (id: string, e: PointerEvent) => void }) {
   const g = () => layout().geom;
   const page = () => state.doc.page ?? {};
-  const first = () => props.k === 0 ? ((page().firstPage as { header?: boolean; footer?: boolean } | undefined) ?? {}) : {};
+  const first = () =>
+    props.k === 0 ? ((page().firstPage as { header?: boolean; footer?: boolean } | undefined) ?? {}) : {};
   const header = () => (first().header === false ? undefined : (page().header as HeaderFooter | undefined));
   const footer = () => (first().footer === false ? undefined : (page().footer as HeaderFooter | undefined));
-  const backgrounds = () => ((page().backgrounds as Background[] | undefined) ?? []).filter((b) => pageMatches(b.pages, props.k + 1));
+  const backgrounds = () =>
+    ((page().backgrounds as Background[] | undefined) ?? []).filter((b) => pageMatches(b.pages, props.k + 1));
   const m = () => g().margins;
   // what's on screen while editing; on paper, only pages with something on them
   const total = () => (state.printing ? layout().contentPages : layout().pages);

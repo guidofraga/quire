@@ -52,8 +52,26 @@ import { checks, failing, tableName } from "./checks";
 import { PagePopover } from "./Popover";
 import { checkForUpdates, UpdateBanner } from "./Updates";
 import { setWelcomeOpen, Welcome } from "./Welcome";
-import { adoptPath, flushSave, installAutosave, lastNotebook, nb, newNote, newSection, sidebarShown, toggleSidebar } from "./notebook";
-import { focusNotebookSearch, newNotebookDialog, NoteTitle, openNotebookDialog, openNotebookAt, Sidebar, SidebarToggle } from "./Sidebar";
+import {
+  adoptPath,
+  flushSave,
+  installAutosave,
+  lastNotebook,
+  nb,
+  newNote,
+  newSection,
+  sidebarShown,
+  toggleSidebar,
+} from "./notebook";
+import {
+  focusNotebookSearch,
+  newNotebookDialog,
+  NoteTitle,
+  openNotebookDialog,
+  openNotebookAt,
+  Sidebar,
+  SidebarToggle,
+} from "./Sidebar";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
@@ -92,7 +110,11 @@ import {
 
 function fileName(path: string | null): string {
   if (!path) return localized(state.doc.meta?.title) || "Untitled";
-  return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()!.replace(/\.quirez?$/i, "");
+  return path
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .pop()!
+    .replace(/\.quirez?$/i, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +357,9 @@ async function settle() {
   let last = "";
   for (let i = 0; i < 20; i++) {
     await sleep(80);
-    const sig = layout().list.map((p) => `${p.page}:${Math.round(p.top)}`).join(",");
+    const sig = layout()
+      .list.map((p) => `${p.page}:${Math.round(p.top)}`)
+      .join(",");
     if (sig === last) break;
     last = sig;
   }
@@ -368,7 +392,8 @@ async function exportPdf(target?: string) {
   const path = target ?? (await pickPdfPath(`${docTitle()}.pdf`));
   if (!path) return;
   await withPrintLayout(async () => {
-    if (isTauri) await api.exportPdf(path, paperPoints(layout().geom), docTitle(), prefs.compressPhotos, pdfInfo(docTitle()));
+    if (isTauri)
+      await api.exportPdf(path, paperPoints(layout().geom), docTitle(), prefs.compressPhotos, pdfInfo(docTitle()));
     else window.print();
   });
   if (isTauri) flash(`Exported ${path.split("/").pop()}`);
@@ -405,7 +430,11 @@ async function runExportJob(job: { open: string; pdf: string }) {
 /** Insert ▾ in the toolbar: everything but math and text, which have their own buttons. */
 function openInsertMenu(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const item = (label: string, id: string, shortcut?: string) => ({ label, shortcut, run: () => (closeMenu(), runCommand(id)) });
+  const item = (label: string, id: string, shortcut?: string) => ({
+    label,
+    shortcut,
+    run: () => (closeMenu(), runCommand(id)),
+  });
   setMenu({
     x: box.left,
     y: box.bottom + 4,
@@ -433,7 +462,11 @@ function openZoomMenu(e: MouseEvent) {
     x: box.right - 180,
     y: box.bottom + 4,
     items: [
-      ...[50, 75, 100, 125, 150, 200].map((p) => ({ label: `${p}%`, checked: Math.round(state.view.zoom * 100) === p, run: to(p / 100) })),
+      ...[50, 75, 100, 125, 150, 200].map((p) => ({
+        label: `${p}%`,
+        checked: Math.round(state.view.zoom * 100) === p,
+        run: to(p / 100),
+      })),
       null,
       { label: pages ? "Fit Page Width" : "Fit Printable Width", run: () => (closeMenu(), zoomToFit("width")) },
       ...(pages ? [{ label: "Fit Whole Page", run: () => (closeMenu(), zoomToFit("page")) }] : []),
@@ -447,7 +480,7 @@ function openZoomMenu(e: MouseEvent) {
 /** One line of a status menu: what the region says, shortened. */
 function regionText(id: string): string {
   const r = layout().byId.get(id)?.region;
-  const text = r?.kind === "math" ? (r.expr ?? "") : r?.kind === "table" ? tableName(r) : r?.kind ?? "";
+  const text = r?.kind === "math" ? (r.expr ?? "") : r?.kind === "table" ? tableName(r) : (r?.kind ?? "");
   return text.length > 34 ? `${text.slice(0, 33)}…` : text;
 }
 
@@ -506,7 +539,9 @@ function showInspector(tab: "region" | "document" | "page") {
 function runCommand(id: string) {
   if (tableCommand(id)) return;
   // a table being edited (not a cell being typed in) undoes like the canvas
-  const inTable = isSheet(state.editing ? layout().byId.get(state.editing)?.region : undefined) && !(document.activeElement instanceof HTMLInputElement);
+  const inTable =
+    isSheet(state.editing ? layout().byId.get(state.editing)?.region : undefined) &&
+    !(document.activeElement instanceof HTMLInputElement);
   const editingField = !!state.editing && !inTable;
   if (TEXT_FORMAT[id]) return activeView() ? TEXT_FORMAT[id]() : undefined;
   if (id.startsWith("fmt_align_")) return activeView() && runText(commands.align(id.slice(10) as Align));
@@ -684,7 +719,12 @@ if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__quire 
 
 /** What a screen reader hears without asking: messages, new errors, regions selected from the keyboard. */
 function speakChanges() {
-  createEffect(on(() => state.message, (m) => m && announce(m)));
+  createEffect(
+    on(
+      () => state.message,
+      (m) => m && announce(m),
+    ),
+  );
   // the error of the region just edited, once the edit ends and evaluation catches up
   let edited: string | null = null;
   createEffect(
@@ -783,7 +823,9 @@ export function App() {
         const at = clientToDoc(ev.payload.position.x / ratio, ev.payload.position.y / ratio);
         ev.payload.paths
           .filter(isImagePath)
-          .forEach((path, i) => insertImagePath(path, [at[0] + i * 18, at[1] + i * 18]).catch((err) => flash(String(err))));
+          .forEach((path, i) =>
+            insertImagePath(path, [at[0] + i * 18, at[1] + i * 18]).catch((err) => flash(String(err))),
+          );
       });
     }
     void applyTheme();
@@ -814,7 +856,13 @@ export function App() {
       const url = new URLSearchParams(location.search).get("open");
       if (url) await openUrl(url);
       else {
-        loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+        loadDoc(
+          await api
+            .newDocument()
+            .then(withDefaults)
+            .catch(() => state.doc),
+          null,
+        );
         setWelcomeOpen(true);
       }
     } else {
@@ -830,7 +878,13 @@ export function App() {
       if (open) await openPath(open);
       else if (last) await openPath(last).catch(() => undefined);
       if (!open && (!last || !state.path)) {
-        loadDoc(await api.newDocument().then(withDefaults).catch(() => state.doc), null);
+        loadDoc(
+          await api
+            .newDocument()
+            .then(withDefaults)
+            .catch(() => state.doc),
+          null,
+        );
         if (prefs.onLaunch === "welcome") setWelcomeOpen(true);
       }
     }
@@ -838,99 +892,147 @@ export function App() {
     if (isWeb) keepLinkCurrent();
   });
 
-    return (
+  return (
     <div class="app" classList={{ tauri: isTauri, printing: state.printing, "with-sidebar": sidebarShown() }}>
       {/* with a notebook the sidebar stays mounted, so hiding and showing it can slide */}
       <Show when={nb.book || sidebarShown()}>
         <Sidebar collapsed={!sidebarShown()} />
       </Show>
       <div class="main">
-      <header class="toolbar" data-tauri-drag-region>
-        {/* the first column of the toolbar's grid: the sidebar button (when the sidebar is hidden) and the title */}
-        <div class="toolbar-lead" data-tauri-drag-region>
-        <Show when={!sidebarShown() && !isWeb}>
-          <SidebarToggle />
-        </Show>
-        <h1 class="title" data-tauri-drag-region>
-          <Show
-            when={nb.current}
-            fallback={
-              <>
-                {fileName(state.path)}
-                <Show when={state.dirty}>
-                  <span class="edited"> — Edited</span>
-                </Show>
-              </>
-            }
-          >
-            <NoteTitle />
-          </Show>
-        </h1>
-        </div>
-        <div class="tools" role="toolbar" aria-label="Insert" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
-          <button onMouseDown={(e) => e.preventDefault()} onClick={() => runCommand("insert_math")} title="Math (⇧⌘M)">
-            <span class="glyph math-glyph" aria-hidden="true">
-              x<sup>2</sup>
-            </span>
-            <span class="tool-label">Math</span>
-          </button>
-          <button onClick={() => insertAtCaret("text")} title="Text (⇧⌘T)">
-            <span class="glyph" aria-hidden="true">¶</span> <span class="tool-label">Text</span>
-          </button>
-          <button onClick={(e) => openInsertMenu(e)} title="Insert" aria-haspopup="menu">
-            <span class="glyph" aria-hidden="true">＋</span> <span class="tool-label">Insert</span>
-          </button>
-        </div>
-        <div class="status" data-tauri-drag-region role="toolbar" aria-label="Document" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
-          <Show when={(state.report?.errorCount ?? 0) > 0}>
-            <button class="errors" onClick={openErrorsMenu} title="Errors (⌘' for the next)" aria-haspopup="menu">
-              {state.report!.errorCount} {state.report!.errorCount === 1 ? "error" : "errors"}
+        <header class="toolbar" data-tauri-drag-region>
+          {/* the first column of the toolbar's grid: the sidebar button (when the sidebar is hidden) and the title */}
+          <div class="toolbar-lead" data-tauri-drag-region>
+            <Show when={!sidebarShown() && !isWeb}>
+              <SidebarToggle />
+            </Show>
+            <h1 class="title" data-tauri-drag-region>
+              <Show
+                when={nb.current}
+                fallback={
+                  <>
+                    {fileName(state.path)}
+                    <Show when={state.dirty}>
+                      <span class="edited"> — Edited</span>
+                    </Show>
+                  </>
+                }
+              >
+                <NoteTitle />
+              </Show>
+            </h1>
+          </div>
+          <div class="tools" role="toolbar" aria-label="Insert" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => runCommand("insert_math")}
+              title="Math (⇧⌘M)"
+            >
+              <span class="glyph math-glyph" aria-hidden="true">
+                x<sup>2</sup>
+              </span>
+              <span class="tool-label">Math</span>
             </button>
-          </Show>
-          <Show when={checks().length}>
-            <button class="checks-pill" classList={{ failing: failing().length > 0 }} onClick={openChecksMenu} title="List the checks" aria-haspopup="menu">
-              {failing().length ? `✗ ${failing().length} of ${checks().length} failing` : `✓ ${checks().length} ${checks().length === 1 ? "check" : "checks"}`}
+            <button onClick={() => insertAtCaret("text")} title="Text (⇧⌘T)">
+              <span class="glyph" aria-hidden="true">
+                ¶
+              </span>{" "}
+              <span class="tool-label">Text</span>
             </button>
-          </Show>
-          <div class="segmented" role="group" aria-label="View">
-            <button classList={{ on: !layout().pageView }} aria-pressed={!layout().pageView} onClick={() => layout().pageView && togglePageView()} title="Free canvas">
-              Canvas
-            </button>
-            <button classList={{ on: layout().pageView }} aria-pressed={layout().pageView} onClick={() => !layout().pageView && togglePageView()} title="Page view (⇧⌘P)">
-              Pages
+            <button onClick={(e) => openInsertMenu(e)} title="Insert" aria-haspopup="menu">
+              <span class="glyph" aria-hidden="true">
+                ＋
+              </span>{" "}
+              <span class="tool-label">Insert</span>
             </button>
           </div>
-          <button class="share-btn" onClick={() => runCommand("share_link")} title="Share a link">
-            Share
-          </button>
-          <button
-            class="icon-btn"
-            classList={{ on: state.inspector }}
-            onClick={() => runCommand("toggle_inspector")}
-            title="Inspector (⌥⌘I)"
-            aria-label="Inspector"
-            aria-pressed={state.inspector}
+          <div
+            class="status"
+            data-tauri-drag-region
+            role="toolbar"
+            aria-label="Document"
+            onKeyDown={(e) => toolbarKeys(e, focusCanvas)}
           >
-            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-              <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
-              <path d="M10 2.5v11" />
-            </svg>
-          </button>
-          <button class="zoom" onClick={(e) => openZoomMenu(e)} title="Zoom" aria-label={`Zoom ${Math.round(state.view.zoom * 100)}%`} aria-haspopup="menu">
-            {Math.round(state.view.zoom * 100)}%
-          </button>
+            <Show when={(state.report?.errorCount ?? 0) > 0}>
+              <button class="errors" onClick={openErrorsMenu} title="Errors (⌘' for the next)" aria-haspopup="menu">
+                {state.report!.errorCount} {state.report!.errorCount === 1 ? "error" : "errors"}
+              </button>
+            </Show>
+            <Show when={checks().length}>
+              <button
+                class="checks-pill"
+                classList={{ failing: failing().length > 0 }}
+                onClick={openChecksMenu}
+                title="List the checks"
+                aria-haspopup="menu"
+              >
+                {failing().length
+                  ? `✗ ${failing().length} of ${checks().length} failing`
+                  : `✓ ${checks().length} ${checks().length === 1 ? "check" : "checks"}`}
+              </button>
+            </Show>
+            <div class="segmented" role="group" aria-label="View">
+              <button
+                classList={{ on: !layout().pageView }}
+                aria-pressed={!layout().pageView}
+                onClick={() => layout().pageView && togglePageView()}
+                title="Free canvas"
+              >
+                Canvas
+              </button>
+              <button
+                classList={{ on: layout().pageView }}
+                aria-pressed={layout().pageView}
+                onClick={() => !layout().pageView && togglePageView()}
+                title="Page view (⇧⌘P)"
+              >
+                Pages
+              </button>
+            </div>
+            <button class="share-btn" onClick={() => runCommand("share_link")} title="Share a link">
+              Share
+            </button>
+            <button
+              class="icon-btn"
+              classList={{ on: state.inspector }}
+              onClick={() => runCommand("toggle_inspector")}
+              title="Inspector (⌥⌘I)"
+              aria-label="Inspector"
+              aria-pressed={state.inspector}
+            >
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.3"
+              >
+                <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+                <path d="M10 2.5v11" />
+              </svg>
+            </button>
+            <button
+              class="zoom"
+              onClick={(e) => openZoomMenu(e)}
+              title="Zoom"
+              aria-label={`Zoom ${Math.round(state.view.zoom * 100)}%`}
+              aria-haspopup="menu"
+            >
+              {Math.round(state.view.zoom * 100)}%
+            </button>
+          </div>
+        </header>
+        <FormatBar />
+        <div class="workspace">
+          <div class="canvas-pane">
+            <Canvas />
+            <FindBar />
+          </div>
+          <Show when={state.inspector}>
+            <Inspector onAddBackground={() => addBackground().catch((e) => flash(String(e)))} />
+          </Show>
         </div>
-      </header>
-      <FormatBar />
-      <div class="workspace">
-        <div class="canvas-pane">
-          <Canvas />
-          <FindBar />
-        </div>
-        <Show when={state.inspector}>
-          <Inspector onAddBackground={() => addBackground().catch((e) => flash(String(e)))} />
-        </Show>
-      </div>
       </div>
       <ContextMenu />
       <CompletionPopup />

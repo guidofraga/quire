@@ -15,11 +15,7 @@ interface Props {
 }
 
 export function TemplatesDialog(props: Props) {
-  return (
-    <Show when={templates()}>
-      {(mode) => <Dialog mode={mode()} {...props} />}
-    </Show>
-  );
+  return <Show when={templates()}>{(mode) => <Dialog mode={mode()} {...props} />}</Show>;
 }
 
 function Dialog(props: Props & { mode: "new" | "save" }) {
@@ -114,7 +110,12 @@ function Chooser(props: Props & { close: () => void }) {
                   <span class="template-name">{t.name}</span>
                   <span class="template-desc">{t.description || "Your template"}</span>
                 </button>
-                <button class="template-delete" title="Delete this template" aria-label={`Delete ${t.name}`} onClick={() => void remove(t)}>
+                <button
+                  class="template-delete"
+                  title="Delete this template"
+                  aria-label={`Delete ${t.name}`}
+                  onClick={() => void remove(t)}
+                >
                   ✕
                 </button>
               </div>
