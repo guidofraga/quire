@@ -1353,6 +1353,8 @@ impl Converter {
                     Some((lo, hi)) if mentions_x(item) => {
                         json!({"y": y, "x": "x", "range": format!("{}..{}", bound(lo), bound(hi))})
                     }
+                    // a 3D graph's input is a height: z(x, y), or a matrix of heights
+                    _ if kind == "plot3d" => json!({"surface": y}),
                     _ => json!({"y": y}),
                 });
             }
@@ -1743,6 +1745,22 @@ mod tests {
             regions.first().and_then(|p| p.get("series")).and_then(Json::as_array).ok_or("no series")?;
         let range = series.first().and_then(|s| s.get("range")).and_then(Json::as_str);
         assert_eq!(range, Some("-19.583..9.583"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_3d_graph_plots_its_input_as_a_surface() -> TestResult {
+        let xml = r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="p" left="9" top="9" width="300" height="300">
+<plot type="3d" render="lines"><input><e type="operand">M</e></input></plot>
+</region>
+</regions>"#;
+        let out = crate::convert(xml)?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let plot = regions.first().ok_or("no plot")?;
+        assert_eq!(plot.get("kind"), Some(&json!("plot3d")));
+        assert_eq!(plot.get("series"), Some(&json!([{"surface": "M"}])));
         Ok(())
     }
 

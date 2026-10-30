@@ -18,8 +18,8 @@ use base64::Engine;
 use quire_ast::{Expr, parse};
 use quire_doc::Document;
 use quire_eval::{
-    Animate, DisplaySettings, DisplaySpec, Fix, Marker, MathInput, Notation, Outcome, PlotInput, PlotOutcome,
-    SeriesInput, SeriesOutcome, TableInput, Worksheet,
+    Animate, DisplaySettings, DisplaySpec, Fix, Marker, MathInput, Notation, Outcome, Plot3Input, PlotInput,
+    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, TableInput, Worksheet,
 };
 use serde::Serialize;
 use serde_json::{Value as Json, json};
@@ -143,11 +143,51 @@ fn table_input(r: &quire_doc::Region) -> TableInput {
     }
 }
 
-/// A `plot2d` region's series and axis units (docs/02-file-format.md §4.7).
+/// A trimmed, non-empty string field.
+fn given(v: Option<&Json>) -> Option<String> {
+    v.and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from)
+}
+
+/// One `plot3d` series (docs/02-file-format.md §4.7).
+fn series3_input(s: &serde_json::Map<String, Json>) -> Series3Input {
+    let parametric = s
+        .get("parametric")
+        .and_then(Json::as_array)
+        .map(|p| std::array::from_fn(|i| p.get(i).and_then(Json::as_str).unwrap_or_default().to_string()));
+    // Quire 0.2.0 imported an SMath 3D graph's input as `y`: that is the height
+    let legacy = parametric.is_none() && s.get("surface").is_none();
+    Series3Input {
+        surface: given(s.get(if legacy { "y" } else { "surface" })),
+        parametric,
+        xrange: given(s.get("xrange")),
+        yrange: given(s.get("yrange")),
+        range: given(s.get("range")),
+        urange: given(s.get("urange")),
+        vrange: given(s.get("vrange")),
+    }
+}
+
+/// A `plot3d` region's series and axis units. `surface` or `parametric` on the region
+/// itself, with its ranges there too, is a plot of one series.
+fn plot3_input(r: &quire_doc::Region) -> Plot3Input {
+    let mut series: Vec<Series3Input> = r
+        .extra
+        .get("series")
+        .and_then(Json::as_array)
+        .map(|list| list.iter().filter_map(Json::as_object).map(series3_input).collect())
+        .unwrap_or_default();
+    if series.is_empty() && (r.extra.contains_key("surface") || r.extra.contains_key("parametric")) {
+        series.push(series3_input(&r.extra));
+    }
+    let axis = |a: &str| given(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
+    Plot3Input { series, units: [axis("x"), axis("y"), axis("z")] }
+}
+
+/// A plot region's series and axis units (docs/02-file-format.md §4.7); a `plot3d` goes to `plot3_input`.
 fn plot_input(r: &quire_doc::Region) -> PlotInput {
-    let text = |v: Option<&Json>| {
-        v.and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from)
-    };
+    if r.kind == "plot3d" {
+        return PlotInput { three: Some(plot3_input(r)), ..Default::default() };
+    }
     let series = r
         .extra
         .get("series")
@@ -155,14 +195,14 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
         .map(|list| {
             list.iter()
                 .map(|s| SeriesInput {
-                    y: text(s.get("y")).unwrap_or_default(),
-                    x: text(s.get("x")),
-                    range: text(s.get("range")),
+                    y: given(s.get("y")).unwrap_or_default(),
+                    x: given(s.get("x")),
+                    range: given(s.get("range")),
                 })
                 .collect()
         })
         .unwrap_or_default();
-    let axis = |a: &str| text(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
+    let axis = |a: &str| given(r.extra.get("axes").and_then(|x| x.get(a)).and_then(|x| x.get("unit")));
     // `axes` is a boolean or an object of axis settings; only `false` hides them
     // `"axes": false`, or a window with `"visible": false` (an SMath plot drawn without axes)
     let axes = match r.extra.get("axes") {
@@ -171,14 +211,14 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
         None => true,
     };
     let grid = !matches!(r.extra.get("grid"), Some(Json::Bool(false)));
-    let equal = text(r.extra.get("aspect")).as_deref() == Some("equal");
+    let equal = given(r.extra.get("aspect")).as_deref() == Some("equal");
     let animate = r.extra.get("animate").and_then(|a| {
-        let var = text(a.get("var"))?;
-        let over = text(a.get("over"))?;
+        let var = given(a.get("var"))?;
+        let over = given(a.get("over"))?;
         let fps = a.get("fps").and_then(Json::as_f64).filter(|f| f.is_finite() && *f > 0.0);
         Some(Animate { var, over, fps: fps.unwrap_or(quire_eval::DEFAULT_FPS) })
     });
-    PlotInput { series, x_unit: axis("x"), y_unit: axis("y"), axes, grid, equal, animate }
+    PlotInput { series, x_unit: axis("x"), y_unit: axis("y"), axes, grid, equal, animate, three: None }
 }
 
 /// Trailing `→` (or `->`) inside text asks for the expression worked out symbolically.
@@ -256,7 +296,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     symbolic: false,
                 });
             }
-            "plot2d" => {
+            "plot2d" | "plot3d" => {
                 out.push(MathInput {
                     id: r.id.clone(),
                     expr: String::new(),
@@ -373,6 +413,44 @@ pub struct PlotView {
     /// Frames per second, for an animated plot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fps: Option<f64>,
+    /// A 3D plot: its axis units and series (the fields above are then unused).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub three: Option<Plot3View>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Plot3View {
+    /// The x, y and z axis units, empty for plain numbers.
+    pub units: [String; 3],
+    pub series: Vec<Series3View>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Series3View {
+    /// `"surface"`: a grid of points row by row, `cols` to a row; `"curve"`: points in order.
+    pub shape: &'static str,
+    pub cols: usize,
+    /// One entry per point; `null` where a point could not be computed.
+    pub xs: Vec<f64>,
+    pub ys: Vec<f64>,
+    pub zs: Vec<f64>,
+    pub error: Option<String>,
+}
+
+fn series3_view(s: &Series3Outcome) -> Series3View {
+    Series3View {
+        shape: match s.shape {
+            Shape::Surface => "surface",
+            Shape::Curve => "curve",
+        },
+        cols: s.cols,
+        xs: s.xs.clone(),
+        ys: s.ys.clone(),
+        zs: s.zs.clone(),
+        error: s.error.clone(),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -428,6 +506,10 @@ fn plot_view(p: &PlotOutcome) -> PlotView {
         equal: p.equal,
         frames: p.frames.iter().map(|f| f.iter().map(series_view).collect()).collect(),
         fps: p.fps,
+        three: p.three.as_ref().map(|t| Plot3View {
+            units: t.units.clone(),
+            series: t.series.iter().map(series3_view).collect(),
+        }),
     }
 }
 
@@ -1051,6 +1133,42 @@ mod tests {
         // a unit of another kind keeps the rest in SI
         assert_eq!(view("e")?.result_text.as_deref(), Some("10 'kg*'m/'s^2"));
         assert!(view("e")?.unit_choices.iter().any(|c| c.unit == "kN"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_3d_plot_samples_its_surface() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                { "id": "m", "kind": "math", "at": [0, 0], "expr": "M := [1, 2; 3, 4]" },
+                { "id": "p", "kind": "plot3d", "at": [0, 30], "size": [420, 340], "series": [
+                    { "surface": "x*y", "xrange": "0..2", "yrange": "0..1" },
+                    { "parametric": ["cos(t)", "sin(t)", "t"], "range": "0..1" }
+                ] },
+                // as Quire 0.2.0 imported an SMath 3D graph
+                { "id": "q", "kind": "plot3d", "at": [0, 400], "size": [420, 340], "series": [{ "y": "M" }] },
+                // `surface` on the region itself
+                { "id": "s", "kind": "plot3d", "at": [0, 800], "size": [420, 340],
+                  "surface": "x + y", "xrange": "0..1", "yrange": "0..1" }
+            ]
+        });
+        let r = report(&doc)?;
+        let three = |id: &str| -> std::result::Result<&Plot3View, String> {
+            let v = r.regions.iter().find(|v| v.id == id).ok_or_else(|| format!("no region {id}"))?;
+            assert_eq!(v.error, None, "{id}");
+            v.plot.as_ref().and_then(|p| p.three.as_ref()).ok_or_else(|| format!("{id} is no 3D plot"))
+        };
+        let p = three("p")?;
+        let shapes: Vec<(&str, usize, usize)> =
+            p.series.iter().map(|s| (s.shape, s.cols, s.zs.len())).collect();
+        assert_eq!(shapes, [("surface", 41, 41 * 41), ("curve", 0, 241)]);
+        assert_eq!(p.series.first().and_then(|s| s.zs.last()), Some(&2.0));
+        let q = three("q")?;
+        assert_eq!(q.series.first().map(|s| (s.cols, s.zs.clone())), Some((2, vec![1.0, 2.0, 3.0, 4.0])));
+        assert_eq!(three("s")?.series.first().and_then(|s| s.zs.last()), Some(&2.0));
+        let json = serde_json::to_value(p)?;
+        assert_eq!(json["series"][0]["shape"], "surface");
         Ok(())
     }
 

@@ -1,5 +1,6 @@
 // Document actions that span the UI: clipboard, images, duplicate, context menus.
 import { copyPlotImage, editPlot } from "./Plot";
+import { copyPlot3dImage, editPlot3d } from "./Plot3D";
 import { setCaptionToEdit } from "./Region";
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
@@ -533,6 +534,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Table", run: go("insert_table") },
         { label: "Insert Table from CSV…", run: go("import_csv") },
         { label: "Insert Plot", run: go("insert_plot") },
+        { label: "Insert 3D Plot", run: go("insert_plot3d") },
         { label: "Insert Area", run: go("insert_area") },
         null,
         { label: "Table of Contents", run: go("insert_toc") },
@@ -557,6 +559,8 @@ export function installContextMenus(run: (command: string) => void) {
       items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
     else if (!many && r?.kind === "plot2d")
       items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
+    else if (!many && r?.kind === "plot3d")
+      items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot3d(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({
         label: isSheet(r) ? "Edit Table" : "Edit",
@@ -619,8 +623,10 @@ export function installContextMenus(run: (command: string) => void) {
       );
     } else if (!many && r?.kind === "text" && state.editing !== id) {
       items.push({ label: "Convert to Math", run: () => (closeMenu(), convertRegion(id, "math")) }, null);
-    } else if (r && ["image", "table", "plot2d"].includes(r.kind)) {
+    } else if (r && ["image", "table", "plot2d", "plot3d"].includes(r.kind)) {
       if (r.kind === "plot2d") items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlotImage(id)) });
+      if (r.kind === "plot3d")
+        items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlot3dImage(id)) });
       items.push(
         {
           label: r.caption ? "Remove Caption" : "Add Caption",

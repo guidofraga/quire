@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 const regions = (page: Page) => page.locator(".region");
 
@@ -238,4 +238,48 @@ test("a region this version can't read shows as a placeholder and is saved back 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/** Pixels of a canvas in colour (a surface), as opposed to the grey box and numbers around it. */
+const coloured = (canvas: Locator) =>
+  canvas.evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4)
+      if (d[i + 3] > 0 && Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 60) n++;
+    return n;
+  });
+
+test("Insert ▸ 3D Plot draws a surface the engine sampled, and the Inspector edits it", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.getByRole("button", { name: "Insert" }).click();
+  await page.getByRole("menuitem", { name: "3D Plot" }).click();
+  const plot = page.locator(".region.plot3d");
+  await expect(plot).toHaveCount(1);
+  const canvas = plot.getByRole("img", { name: "3D plot of sin(x)*cos(y)" });
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => coloured(canvas)).toBeGreaterThan(1000);
+  await expect(plot.locator(".err")).toHaveCount(0);
+  // a height that cannot be computed anywhere is an error under the plot
+  await plot.dblclick();
+  const z = page.getByRole("textbox", { name: "z(x, y)" });
+  await z.fill("x^2 - q");
+  await z.press("Enter");
+  await expect(plot.locator(".err")).toContainText("q is not defined");
+  await z.fill("x^2 - y^2");
+  await z.press("Enter");
+  await expect(plot.getByRole("img", { name: "3D plot of x^2 - y^2" })).toBeVisible();
+  await expect(plot.locator(".err")).toHaveCount(0);
+  // ⌥ + scroll zooms; the zoom is saved once, so one undo takes it back
+  const reset = plot.getByRole("button", { name: "Back to the standard view" });
+  await expect(reset).toHaveCount(0);
+  await plot.locator("canvas").click();
+  await page.keyboard.down("Alt");
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Alt");
+  await expect(reset).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(reset).toHaveCount(0);
+  await expect(plot).toHaveClass(/selected/);
 });

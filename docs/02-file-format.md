@@ -296,7 +296,37 @@ Series are evaluated where the plot sits in reading order, so they see the defin
 
 An animated plot (SMath's `animate`) keeps one set of axes for all its frames, so the view does not jump. The file stores the last frame's series in the drawing and the rest as frames, so printing shows the last frame. The app plays frames at `fps` with Play and Pause and a frame slider; with Reduce motion on, it starts paused on the last frame.
 
-`plot3d` adds `surface: "f(x, y)"` (or `parametric: [x(u,v), y(u,v), z(u,v)]`), `x`/`y` ranges and a `camera: { "azimuth": 30, "elevation": 25, "distance": 3 }` that is saved when the user stops orbiting.
+#### `plot3d`
+
+A 3D plot (SMath's 3D graph) holds series of its own, sampled where it sits in reading order like a 2D plot's:
+
+```json
+{
+  "id": "…",
+  "kind": "plot3d",
+  "at": [9, 2700],
+  "size": [420, 340],
+  "series": [
+    { "surface": "sin(x)*cos(y)", "xrange": "-π..π", "yrange": "-π..π" },
+    { "parametric": ["cos(t)", "sin(t)", "t/(2*π)"], "range": "0..4*π", "label": "Helix" }
+  ],
+  "axes": { "x": { "unit": "m" }, "z": { "unit": "kN" } },
+  "camera": { "azimuth": -50, "elevation": 25, "distance": 3 }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `series[].surface` | A height in two variables, `z(x, y)`, sampled on a 41 × 41 grid over `xrange` × `yrange` (`start..end`). The variables are always `x` and `y`, as in SMath. Without ranges it is data: a matrix of heights, drawn over its column (x) and row (y) numbers, as SMath draws it. |
+| `series[].parametric` | Three expressions `[x, y, z]`. With `range`, they are a curve of `t` (241 points). With `urange` and `vrange`, a surface of `u` and `v` (41 × 41), such as a sphere or a tube. Without ranges, three vectors of the same length: a line through those points. |
+| `series[].label` | Shown in the plot's description for screen readers. |
+| `axes.x` / `axes.y` / `axes.z` | `unit` each axis is drawn in; otherwise the units the document works in, as for results (SI when Results are in SI). |
+| `camera` | The view: `azimuth` (degrees around the vertical z axis), `elevation` (degrees above the horizontal, −89…89) and `distance` (3 fits the box to the plot; less is closer). Saved when the user stops turning or zooming; without it the plot uses the standard view `{ "azimuth": -50, "elevation": 25, "distance": 3 }`. |
+| `surface`, `parametric` (on the region) | A plot of one series may give it on the region itself, with its ranges there too (`"surface": "x*y", "xrange": "0..1", "yrange": "0..1"`). `series`, when present and not empty, wins. |
+
+A point that cannot be computed is a gap: a surface leaves out the faces around it, a curve breaks there. A series whose every point fails reports the first error. All series share the three axes, so each axis must have one kind of unit. Surfaces are coloured by height, from blue (lowest) to red (highest).
+
+The SMath importer writes a 3D graph's input as `surface` (an expression or a matrix of heights). Files written by Quire 0.2.0's importer have it as `y`; a `plot3d` series with `y` and neither `surface` nor `parametric` is read as `surface`, and the app writes `surface` when the series is edited.
 
 ### 4.8 `data` (CSV / JSON import)
 
