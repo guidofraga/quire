@@ -164,6 +164,7 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 | Definition / global definition | `x := 2`, `g ≡ 9.81 'm/'s^2` (`::=` is the ASCII alias for `≡`) | x := 2 |
 | Function | `f(x, y) := x^2 + y` | |
 | Literal subscript | `A.net`, `L.span.max` | A with subscript ÁREA |
+| Primes | `σ′`, `f″`, `τ′.xy`: `′ ″ ‴` may end a name (the importer writes SMath's `σ'` this way, since `'` starts a unit) | σ′ |
 | Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it | 5.1 m |
 | Constants | built in: `π` `e` `∞` `g` `c` `G` `h` `ħ` `k.B` `N.A` `R` `q.e` `m.e` `m.p` `ε.0` `μ.0` `σ.SB` `ρ.w` `p.atm` (SI values, CODATA 2018) | purple |
 | Implicit multiplication | a number followed by a name, unit or call: `25.5 m^2`, `2 x`, `2 sin(x)`. It binds tighter than `*` `/` and looser than `^` | |
@@ -379,6 +380,7 @@ The importer (first written in Python, then ported to Rust in `crates/quire-smat
 SMath conventions the importer handles:
 - **Math embedded in text** (`\[REGION[id]]\` markers) becomes inline math `` $`expr` ``. It is evaluated in reading order with id `<text region id>:m<n>`.
 - **Page margins** are stored in hundredths of an inch, but SMath applies them at 72 dpi against 96-px coordinates. The importer therefore uses ¾ of the nominal value. Only that reading makes real reports' text width and cover forms line up.
+- **Option lists** (`radiobuttonlist`) become a math region defining their variable: `Categoria := 2`, the number of the chosen option (from 1), or with `output="Element"` the chosen row of the list's table, `valor := Tabela[3, 2]`. The options are listed in the region's note, the chosen one in bold.
 - **Comparisons:** SMath's `≈` (approximately equal, usually in the condition of an `if`) and `≡` inside an expression are equality tests and become `==`, which already allows for rounding.
 
 Known gaps for P1: plot axis ranges and styles, table cell styling, and SMath `description` positions other than right are only partly carried over. The text→heading and text→caption heuristics are tuned for Portuguese/English report conventions.
