@@ -9,20 +9,25 @@ import {
   insertRegion,
   loadDoc,
   localized,
+  markSaved,
   moveTo,
   mutate,
   noteRoom,
   nudge,
+  onCommitEditing,
   originsOf,
   redo,
   regroup,
   setState,
+  setLive,
   settleRegions,
+  startEditing,
   state,
   togglePageView,
   undo,
   undoDepth,
   updateRegion,
+  withLocalized,
 } from "./store";
 import type { Doc, Region } from "./types";
 
@@ -137,6 +142,58 @@ describe("localized", () => {
     expect(localized({ en: "Load", pt: "Carga" }, "de")).toBe("Load");
     expect(localized(undefined)).toBe("");
     expect(localized({})).toBe("");
+  });
+
+  it("edits the translation that is shown, keeping the others", () => {
+    // an SMath worksheet: Russian first, English too, no document language; English is shown
+    const ruEn = { ru: "Нагрузка", en: "Load" };
+    expect(localized(ruEn)).toBe("Load");
+    expect(withLocalized(ruEn, "Loads")).toEqual({ ru: "Нагрузка", en: "Loads" });
+    expect(withLocalized(ruEn, "Нагрузки", "ru-RU")).toEqual({ ru: "Нагрузки", en: "Load" });
+    expect(withLocalized({ ru: "Нагрузка", de: "Last" }, "x")).toEqual({ ru: "x", de: "Last" });
+    expect(withLocalized("Load", "Loads", "ru")).toBe("Loads");
+    expect(withLocalized(undefined, "Loads")).toBe("Loads");
+  });
+
+  it("typing into text in several languages changes the one on the page", () => {
+    loadDoc(doc([{ id: "t", kind: "text", at: [0, 0], text: { ru: "Нагрузка", en: "Load" } }]), null);
+    setLive("t", "Loads");
+    expect(state.doc.regions[0].text).toEqual({ ru: "Нагрузка", en: "Loads" });
+    expect(localized(state.doc.regions[0].text)).toBe("Loads");
+  });
+});
+
+describe("saving", () => {
+  beforeEach(() => loadDoc(doc([math("a", 0, "x := 1")]), null));
+
+  it("a save marks the document clean", () => {
+    updateRegion("a", { expr: "x := 2" });
+    markSaved(state.rev);
+    expect(state.dirty).toBe(false);
+  });
+
+  it("an edit made while saving keeps the document Edited", () => {
+    updateRegion("a", { expr: "x := 2" });
+    const rev = state.rev; // the save starts
+    updateRegion("a", { expr: "x := 3" }); // typed before it finished
+    markSaved(rev);
+    expect(state.dirty).toBe(true);
+  });
+});
+
+describe("ending an edit", () => {
+  it("lets an editor put what is half typed into the document first", () => {
+    loadDoc(doc([math("a", 0, "x := 1")]), null);
+    let pending: string | null = null;
+    onCommitEditing(() => {
+      if (pending !== null && state.editing === "a") updateRegion("a", { expr: pending });
+      pending = null;
+    });
+    startEditing("a");
+    pending = "x := 42";
+    commitEditing();
+    expect(state.editing).toBe(null);
+    expect(state.doc.regions[0].expr).toBe("x := 42");
   });
 });
 

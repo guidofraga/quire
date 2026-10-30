@@ -14,6 +14,7 @@ import {
   layout,
   type Placed,
   LINE,
+  onCommitEditing,
   redo,
   setState,
   snap,
@@ -180,14 +181,25 @@ function beginEdit(text: string | null, typed: boolean) {
   });
 }
 
-/** Write the cell being typed and move by (dr, dc); Enter past the last row adds one. */
-function commitDraft(dr = 0, dc = 0) {
+/** Put the cell being typed into the table; false when nothing was being typed. */
+function writeDraft(): boolean {
   const t = editingTable();
   const text = draft();
-  if (!t || text === null) return;
+  if (!t || text === null) return false;
   const { r, c } = sel();
   setDraft(null);
   if ((rowsOf(t)[r]?.[c] ?? "") !== text) setCells(t.id, [r, c], [[text]]);
+  return true;
+}
+
+// the edit ending (a click on the page, Save, Export) keeps the cell being typed
+onCommitEditing(writeDraft);
+
+/** Write the cell being typed and move by (dr, dc); Enter past the last row adds one. */
+function commitDraft(dr = 0, dc = 0) {
+  const t = editingTable();
+  if (!t || !writeDraft()) return;
+  const { r, c } = sel();
   if (dr > 0 && r + dr >= sizeOf(t)[0]) editRows(t.id, (rows) => rows.push([]));
   if (dr || dc) select(r + dr, c + dc);
   focusGrid();
@@ -561,6 +573,8 @@ export function SheetGrid(props: { p: Placed }) {
         else if (untrack(sel).r >= size()[0] || untrack(sel).c >= size()[1]) setSel({ r: 0, c: 0, r2: 0, c2: 0 });
         focusGrid();
       } else if (untrack(draft) !== null) {
+        // only another document opening in its place gets here; commitEditing has already
+        // written the cell otherwise
         setDraft(null);
       }
     }),

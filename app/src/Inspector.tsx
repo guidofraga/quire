@@ -3,13 +3,14 @@ import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEdi
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { arrowFocus } from "./a11y";
 import { type Background, PX_PER_MM, toPx } from "./pages";
-import { commitEditing, layout, localized, state, updateDoc, updateRegion } from "./store";
+import { commitEditing, layout, localized, state, updateDoc, updateRegion, withLocalized } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import { defaultLabel } from "./labels";
 import type { Doc, Region } from "./types";
 
 type Tab = "region" | "document" | "page";
 const [tab, setTab] = createSignal<Tab>("region");
+const lang = () => state.doc.meta?.lang;
 export { setTab as setInspectorTab };
 
 export function Field(props: { label: string; hint?: string; children: JSX.Element }) {
@@ -164,8 +165,12 @@ function CaptionFields(props: { r: Region }) {
       <Show when={props.r.caption}>
         <Field label="Text">
           <Text
-            value={localized(props.r.caption!.text)}
-            onCommit={(v) => updateRegion(props.r.id, { caption: { ...props.r.caption!, text: v } })}
+            value={localized(props.r.caption!.text, lang())}
+            onCommit={(v) =>
+              updateRegion(props.r.id, {
+                caption: { ...props.r.caption!, text: withLocalized(props.r.caption!.text, v, lang()) },
+              })
+            }
           />
         </Field>
         <Field label="Position">
@@ -360,7 +365,10 @@ function RegionTab() {
               </Match>
               <Match when={r().kind === "area"}>
                 <Field label="Title">
-                  <Text value={localized(r().title)} onCommit={(v) => updateRegion(r().id, { title: v })} />
+                  <Text
+                    value={localized(r().title, lang())}
+                    onCommit={(v) => updateRegion(r().id, { title: withLocalized(r().title, v, lang()) })}
+                  />
                 </Field>
                 <Field label="Height">
                   <Num value={r().height} onCommit={(v) => updateRegion(r().id, { height: v })} />
