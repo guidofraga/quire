@@ -5,7 +5,7 @@ use quire_ast::BinaryOp;
 use quire_units::{Dim, Rational};
 
 use crate::error::{Result, bail, internal};
-use crate::format::{DisplaySettings, format_number};
+use crate::format::{DisplaySettings, describe_dim, format_number};
 use crate::ops::{self, arith, same_dim, uniform};
 use crate::value::{Matrix, Quantity, Value};
 
@@ -37,6 +37,13 @@ fn real(name: &str, f: fn(f64) -> f64, args: &[Value]) -> Result<Value> {
     let v = f(x);
     if v.is_nan() && !x.is_nan() {
         bail!("{name}({x}) has no real result");
+    }
+    // ∞ in, ∞ out is fine (exp(∞)); from a finite x it is overflow or a pole
+    if v.is_infinite() && x.is_finite() {
+        if matches!(name, "exp" | "sinh" | "cosh") {
+            bail!("{name}({x}) is too large: results go up to about 1.8e308");
+        }
+        bail!("{name}({x}) is infinite");
     }
     Ok(Value::num(v))
 }
@@ -125,8 +132,16 @@ fn concat_blocks(name: &str, args: &[Value], vertical: bool) -> Result<Value> {
     Ok(Value::Matrix(Matrix::new(first.rows, cols, data)))
 }
 
+/// `a..b` steps by ±1. With units there is no natural "1" (1 m would make `0 'mm..10 'mm` a
+/// single element), so the caller passes the step: one of the unit written on the ends.
 pub fn range(a: Quantity, b: Quantity, step: Option<Quantity>) -> Result<Value> {
     same_dim(a.dim, b.dim, "make a range from")?;
+    if step.is_none() && !a.dim.is_dimensionless() {
+        bail!(
+            "a range of {} needs a step: write the unit on its ends (0 'mm..10 'mm steps by 1 mm) or give the step with range(start, end, step)",
+            describe_dim(a.dim)
+        );
+    }
     let step = step.unwrap_or(Quantity::new(if b.v >= a.v { 1.0 } else { -1.0 }, a.dim));
     same_dim(a.dim, step.dim, "use a step for")?;
     if step.v == 0.0 || (b.v - a.v) * step.v < 0.0 {
@@ -267,12 +282,30 @@ fn atan2(args: &[Value]) -> Result<Value> {
 fn round(args: &[Value]) -> Result<Value> {
     arity("round", args, |n| n == 1 || n == 2, "1 or 2 arguments")?;
     let q = arg(args, 0)?.as_num("the argument of round")?;
+    // 10^±308 is as far as a decimal scale goes before it overflows to ∞ or 0
+    const MAX_DECIMALS: i64 = 308;
     let digits = match args.get(1) {
-        Some(d) => d.as_int("the number of decimals")? as i32,
+        Some(d) => d.as_int("the number of decimals")?,
         None => 0,
     };
-    let scale = 10f64.powi(digits);
-    Ok(Value::Num(Quantity::new((q.v * scale).round() / scale, q.dim)))
+    if !(-MAX_DECIMALS..=MAX_DECIMALS).contains(&digits) {
+        bail!(
+            "round: the number of decimals must be between -{MAX_DECIMALS} and {MAX_DECIMALS}, not {digits}"
+        );
+    }
+    let rounded = if digits >= 0 {
+        let scale = 10f64.powi(digits as i32);
+        let scaled = q.v * scale;
+        // a number too large to scale has no digits that far right: it is already round
+        if scaled.is_finite() { scaled.round() / scale } else { q.v }
+    } else {
+        let scale = 10f64.powi(-digits as i32);
+        (q.v / scale).round() * scale
+    };
+    if rounded.is_infinite() && q.v.is_finite() {
+        bail!("round: rounding {} to {digits} decimals is too large", q.v);
+    }
+    Ok(Value::Num(Quantity::new(rounded, q.dim)))
 }
 
 fn sign(args: &[Value]) -> Result<Value> {

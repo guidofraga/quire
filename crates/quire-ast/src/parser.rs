@@ -4,7 +4,8 @@
 //! `* / %` · unary `- + ±` · `^` (right) · postfix `!` `[…]` · primary.
 //!
 //! A number directly followed by a unit (`25.5 'm^2`) is a single primary, so it
-//! binds tighter than any operator.
+//! binds tighter than any operator; so is a name or parentheses followed by a quoted
+//! unit (`T '°C`, `(-20) '°C`).
 
 use std::fmt;
 
@@ -248,14 +249,14 @@ impl Parser {
                 if self.eat("(") {
                     return Ok(Expr::Call(name, self.list(")")?));
                 }
-                Ok(Expr::Ident(name))
+                self.quoted_unit_after(Expr::Ident(name))
             }
             Tok::Unit(u) => Ok(Expr::Unit(u)),
             Tok::Str(s) => Ok(Expr::Str(s)),
             Tok::Sym("(") => {
                 let e = self.define()?;
                 self.expect(")")?;
-                Ok(Expr::Paren(Box::new(e)))
+                self.quoted_unit_after(Expr::Paren(Box::new(e)))
             }
             Tok::Sym("[") => {
                 let m = self.matrix(pos)?;
@@ -271,6 +272,16 @@ impl Parser {
             Tok::Sym("?") => Ok(Expr::Placeholder),
             t => Err(ParseError::new(format!("expected a value but found {}", describe(&t)), pos)),
         }
+    }
+
+    /// `x '°C`, `(-20) '°C`: a quoted unit after a name or parentheses applies to it, as after a
+    /// number. Only a quoted unit: a plain name there (`x m`) would read as two variables.
+    fn quoted_unit_after(&mut self, e: Expr) -> Result<Expr> {
+        if matches!(self.peek(), Tok::Unit(_)) {
+            let unit = self.unit_term()?;
+            return Ok(bin(BinaryOp::Juxt, e, unit));
+        }
+        Ok(e)
     }
 
     fn unit_term(&mut self) -> Result<Expr> {

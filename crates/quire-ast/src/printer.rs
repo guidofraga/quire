@@ -233,6 +233,10 @@ mod tests {
             "M := [1, 2; 3, 4]",
             "t := [0; 1; 2] s",
             "F := [1, 2] kN/m",
+            "T := x '°C",
+            "(-20) '°C",
+            "-t '°F",
+            "A := b 'm^2",
             "[\n  1, 2, 3;\n  4, 5, 6;\n  7, 8, 9\n]",
             "x ≡ ?",
             "[a, …; …, b]",
@@ -282,6 +286,19 @@ mod tests {
         assert!(parse("(1 + 2").err().is_some_and(|e| e.message.contains("')'")));
         assert!(parse("[1, 2; 3]").err().is_some_and(|e| e.message.contains("different lengths")));
         assert!(parse("5 '").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn a_quoted_unit_applies_to_a_name_or_parentheses() -> TestResult {
+        let Expr::Binary(crate::BinaryOp::Juxt, value, unit) = parse("(-20) '°C")? else {
+            return Err("expected a quantity".into());
+        };
+        assert!(matches!(*value, Expr::Paren(_)));
+        assert_eq!(*unit, Expr::Unit("°C".into()));
+        assert!(parse("x '°C")?.is_quantity());
+        // a plain name after a name is not read as a unit
+        assert!(parse("x m").is_err());
         Ok(())
     }
 }

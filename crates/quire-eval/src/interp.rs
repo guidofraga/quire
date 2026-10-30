@@ -119,7 +119,31 @@ fn quantity_like(e: &Expr) -> bool {
 }
 
 fn parse_num(t: &str) -> Result<f64> {
-    t.parse::<f64>().map_err(|_| EvalError::new(format!("'{t}' is not a valid number")))
+    let v = t.parse::<f64>().map_err(|_| EvalError::new(format!("'{t}' is not a valid number")))?;
+    if v.is_infinite() {
+        bail!("{t} is too large: numbers go up to about 1.8e308");
+    }
+    Ok(v)
+}
+
+/// A plain number `v` read on the temperature scale `u`: `-5 '°C` is 268.15 K, and a matrix
+/// of plain numbers is read element by element. Next to other units (`'W/('m*'°C)`) only the
+/// size of the degree counts, as for `'K`.
+fn on_scale(v: Value, u: Unit) -> Result<Value> {
+    let plain = |e: &Value| matches!(e, Value::Num(q) if q.dim.is_dimensionless());
+    match v {
+        Value::Num(q) if q.dim.is_dimensionless() => {
+            Ok(Value::Num(Quantity::new(q.v * u.factor + u.offset, u.dim)))
+        }
+        Value::Matrix(m) if m.data.iter().all(plain) => {
+            let data = m.data.into_iter().map(|e| on_scale(e, u)).collect::<Result<Vec<_>>>()?;
+            Ok(Value::Matrix(Matrix::new(m.rows, m.cols, data)))
+        }
+        Value::Sym(_) => {
+            bail!("a temperature in °C or °F needs a number in front of the unit, not a formula")
+        }
+        other => arith(BinaryOp::Mul, &other, &Value::Num(Quantity::new(u.factor, u.dim))),
+    }
 }
 
 fn ident<'a>(e: &'a Expr, what: &str) -> Result<&'a str> {
@@ -180,6 +204,14 @@ impl<'u> Interp<'u> {
             }
             Expr::Paren(x) => self.eval(s, x),
             Expr::Unary(op, x) => {
+                // `-5 '°C` is five degrees below zero on the scale, not minus 278.15 K
+                if *op == UnaryOp::Neg
+                    && let Expr::Binary(times, a, b) = &**x
+                    && let Some(u) = self.offset_unit(s, *times, b)?
+                {
+                    let v = ops::negate(&self.eval(s, a)?)?;
+                    return on_scale(v, u);
+                }
                 let v = self.eval(s, x)?;
                 match op {
                     UnaryOp::Neg => ops::negate(&v),
@@ -224,10 +256,11 @@ impl<'u> Interp<'u> {
                 }
                 Ok(Value::Matrix(Matrix::new(rows.len(), cols, data)))
             }
-            Expr::Range(a, b) => {
-                let a = self.eval(s, a)?.as_num("the range start")?;
-                let b = self.eval(s, b)?.as_num("the range end")?;
-                builtins::range(a, b, None)
+            Expr::Range(start, end) => {
+                let a = self.eval(s, start)?.as_num("the range start")?;
+                let b = self.eval(s, end)?.as_num("the range end")?;
+                let step = self.range_step(s, start, end, a, b)?;
+                builtins::range(a, b, step)
             }
             Expr::Define { lhs, rhs, .. } => {
                 let v = self.eval(s, rhs)?;
@@ -268,21 +301,10 @@ impl<'u> Interp<'u> {
             }
             _ => {}
         }
-        // `20 '°C` / `20 degC` is an absolute temperature: apply the scale's offset.
-        if let (BinaryOp::Juxt | BinaryOp::Mul, Expr::Num(t)) = (op, a) {
-            let unit = match b {
-                Expr::Unit(name) => Some(self.unit(name)?),
-                Expr::Ident(name) if !s.is_local(name) && (op == BinaryOp::Juxt || s.get(name).is_none()) => {
-                    self.unit_named(name)
-                }
-                _ => None,
-            };
-            if let Some(u) = unit.filter(|u| u.offset != 0.0) {
-                if let Expr::Ident(name) = b {
-                    self.unit_idents.insert(name.clone());
-                }
-                return Ok(Value::Num(Quantity::new(parse_num(t)? * u.factor + u.offset, u.dim)));
-            }
+        // `20 '°C`, `T '°C`, `[10; 20] degC`: absolute temperatures, with the scale's offset
+        if let Some(u) = self.offset_unit(s, op, b)? {
+            let x = self.eval(s, a)?;
+            return on_scale(x, u);
         }
         let x = self.eval(s, a)?;
         // right after a number or unit, a plain name is a unit: `2 g` grams, `100 km/h` hours,
@@ -293,6 +315,91 @@ impl<'u> Interp<'u> {
             self.eval(s, b)?
         };
         arith(op, &x, &y)
+    }
+
+    /// The step of `start..end` with units: one of the unit written on its ends, so
+    /// `0 'mm..10 'mm` steps by 1 mm. `None` (the range then asks for a step) when no unit is
+    /// written on either end, as in `a..b` for two lengths; an error when the ends are written
+    /// in different units.
+    fn range_step(
+        &mut self,
+        s: &mut Scope,
+        start: &Expr,
+        end: &Expr,
+        a: Quantity,
+        b: Quantity,
+    ) -> Result<Option<Quantity>> {
+        if a.dim.is_dimensionless() && b.dim.is_dimensionless() {
+            return Ok(None);
+        }
+        same_dim(a.dim, b.dim, "make a range from")?;
+        let unit = match (self.written_unit(s, start)?, self.written_unit(s, end)?) {
+            (Some(x), Some(y)) if x != y => bail!(
+                "the ends of this range are written in different units, so its step is unclear: give it with range(start, end, step)"
+            ),
+            (Some(u), _) | (None, Some(u)) => u,
+            (None, None) => return Ok(None),
+        };
+        let sign = if b.v >= a.v { 1.0 } else { -1.0 };
+        Ok(Some(Quantity::new(sign * unit.v, unit.dim)))
+    }
+
+    /// The unit written after the number of a range end: `'mm` in `0 'mm`, `km/h` in `100 km/h`.
+    fn written_unit(&mut self, s: &mut Scope, e: &Expr) -> Result<Option<Quantity>> {
+        match e {
+            Expr::Paren(x) | Expr::Unary(UnaryOp::Neg | UnaryOp::Pos, x) => self.written_unit(s, x),
+            Expr::Binary(BinaryOp::Juxt, n, u)
+                if matches!(**n, Expr::Num(_)) && self.is_unit_term(s, u, true) =>
+            {
+                Ok(Some(self.eval_unit_position(s, u)?.as_num("a unit")?))
+            }
+            Expr::Binary(op @ (BinaryOp::Mul | BinaryOp::Div), l, r)
+                if quantity_like(l) && self.is_unit_term(s, r, *op == BinaryOp::Div) =>
+            {
+                let Some(left) = self.written_unit(s, l)? else { return Ok(None) };
+                let right =
+                    if *op == BinaryOp::Div { self.eval_unit_position(s, r)? } else { self.eval(s, r)? };
+                Ok(Some(ops::arith(*op, &Value::Num(left), &right)?.as_num("a unit")?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// `e` is a unit as written (`'mm`, `kN`, `m^2`). In unit position (after a number, or
+    /// after `/` in a quantity) a unit name wins over a variable; elsewhere a variable wins.
+    fn is_unit_term(&self, s: &Scope, e: &Expr, unit_position: bool) -> bool {
+        match e {
+            Expr::Unit(_) => true,
+            Expr::Ident(n) => {
+                let unit = !s.is_local(n) && self.unit_named(n).is_some();
+                unit && (unit_position || (s.get(n).is_none() && constant(n).is_none()))
+            }
+            Expr::Binary(BinaryOp::Pow, base, _) | Expr::Paren(base) => {
+                self.is_unit_term(s, base, unit_position)
+            }
+            _ => false,
+        }
+    }
+
+    /// The temperature scale (°C, °F: a unit with an offset) that `b` names when a value is
+    /// multiplied by it, as in `20 '°C` or `T*degC`. A plain name counts only where it would be
+    /// read as a unit.
+    fn offset_unit(&mut self, s: &Scope, op: BinaryOp, b: &Expr) -> Result<Option<Unit>> {
+        if !matches!(op, BinaryOp::Juxt | BinaryOp::Mul) {
+            return Ok(None);
+        }
+        let unit = match b {
+            Expr::Unit(name) => Some(self.unit(name)?),
+            Expr::Ident(name) if !s.is_local(name) && (op == BinaryOp::Juxt || s.get(name).is_none()) => {
+                self.unit_named(name)
+            }
+            _ => None,
+        };
+        let Some(u) = unit.filter(|u| u.offset != 0.0) else { return Ok(None) };
+        if let Expr::Ident(name) = b {
+            self.unit_idents.insert(name.clone());
+        }
+        Ok(Some(u))
     }
 
     fn eval_unit_position(&mut self, s: &mut Scope, e: &Expr) -> Result<Value> {
@@ -584,7 +691,7 @@ impl<'u> Interp<'u> {
             let at = |t: f64| Quantity::new(t, dim);
             let (mut lo, mut hi) = (a.v.min(b.v), a.v.max(b.v));
             let mut flo = self.sample(s, &f, var, at(lo), &mut fdim)?;
-            let fhi = self.sample(s, &f, var, at(hi), &mut fdim)?;
+            let mut fhi = self.sample(s, &f, var, at(hi), &mut fdim)?;
             if flo == 0.0 {
                 return Ok(lo);
             }
@@ -604,16 +711,17 @@ impl<'u> Interp<'u> {
                         return Ok(x1);
                     }
                     if f1.signum() != flo.signum() {
-                        found = Some((x0, x1));
+                        found = Some((x0, x1, f1));
                         break;
                     }
                     (x0, flo) = (x1, f1);
                 }
-                let Some((x0, x1)) = found else {
+                let Some((x0, x1, f1)) = found else {
                     bail!("no root between the limits: the expression doesn't change sign there")
                 };
-                (lo, hi) = (x0, x1);
+                (lo, hi, fhi) = (x0, x1, f1);
             }
+            let (width, scale) = (hi - lo, flo.abs().max(fhi.abs()));
             for _ in 0..200 {
                 self.tick()?;
                 let mid = 0.5 * (lo + hi);
@@ -627,13 +735,38 @@ impl<'u> Interp<'u> {
                 if fm.signum() == flo.signum() {
                     (lo, flo) = (mid, fm);
                 } else {
-                    hi = mid;
+                    (hi, fhi) = (mid, fm);
                 }
+            }
+            // A sign change is not a root when the expression jumps across zero (floor(x) - 1.5)
+            // or through a pole (tan(x)): there it stays far from zero however narrow the
+            // bracket gets. Near a root it shrinks with the bracket: allow 1e-6 of the values
+            // the bisection started from, or what a straight line would leave in the bracket
+            // when it stopped (a range too wide for 200 halvings).
+            let residual = flo.abs().min(fhi.abs());
+            if residual > scale * (1e-6 + 64.0 * (hi - lo) / width) {
+                let at_x = self.show_quantity(at(if flo.abs() <= fhi.abs() { lo } else { hi }));
+                if residual > scale {
+                    bail!(
+                        "no root between the limits: the expression changes sign at {var} = {at_x} by going through infinity (a pole), not through zero"
+                    );
+                }
+                bail!(
+                    "no root between the limits: the expression jumps across zero at {var} = {at_x} without reaching it"
+                );
             }
             Ok(0.5 * (lo + hi))
         })();
         s.restore(var, prev);
         Ok(Value::Num(Quantity::new(r?, dim)))
+    }
+
+    /// A quantity as a message shows it: `1.5708`, `0.25 'm`.
+    fn show_quantity(&self, q: Quantity) -> String {
+        let (spec, settings) =
+            (crate::format::DisplaySpec::default(), crate::format::DisplaySettings::default());
+        crate::format::format_value(&Value::Num(q), &spec, &settings, self.units)
+            .unwrap_or_else(|_| q.v.to_string())
     }
 
     /// `solve(f(x), x)`: a root near the current value of x (secant steps), or near a

@@ -165,15 +165,15 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 | Function | `f(x, y) := x^2 + y` | |
 | Literal subscript | `A.net`, `L.span.max` | A with subscript ÁREA |
 | Primes | `σ′`, `f″`, `τ′.xy`: `′ ″ ‴` may end a name (the importer writes SMath's `σ'` this way, since `'` starts a unit) | σ′ |
-| Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it | 5.1 m |
+| Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it. `°C` and `°F` after a value make an absolute temperature (`-5 '°C` is 268.15 K, `T '°C` and `[10; 20] '°C` likewise); inside a compound unit (`'W/('m*'°C)`) they stand for the size of their degree; a temperature difference is written in `'K` | 5.1 m |
 | Constants | built in: `π` `e` `∞` `g` `c` `G` `h` `ħ` `k.B` `N.A` `R` `q.e` `m.e` `m.p` `ε.0` `μ.0` `σ.SB` `ρ.w` `p.atm` (SI values, CODATA 2018) | purple |
-| Implicit multiplication | a number followed by a name, unit or call: `25.5 m^2`, `2 x`, `2 sin(x)`. It binds tighter than `*` `/` and looser than `^` | |
+| Implicit multiplication | a number followed by a name, unit or call: `25.5 m^2`, `2 x`, `2 sin(x)`; a name or parentheses followed by a quoted unit: `T '°C`, `(-20) '°C`. It binds tighter than `*` `/` and looser than `^` | |
 | Strings | `"OK"` | |
 | Comparison (boolean) | `==` `≠` `<` `≤` `>` `≥`; chains allowed: `a < c < b` | bold = |
 | Logic | `and` `or` `not` | |
 | Index | `v[i]`, `M[i, j]` | subscript index |
 | Matrix | `[1, 2; 3, 4]`; multi-line allowed | 2D matrix |
-| Range | `1..10`, or `range(0, 1, 0.1)` for a step | |
+| Range | `1..10`, or `range(0, 1, 0.1)` for a step. With units, `..` steps by one of the unit written on its ends (`0 'mm..10 'mm` is 0, 1, …, 10 mm); with no unit written there (`a..b` for two lengths) or two different ones, the step must be given: `range(0 'm, L, 0.5 'm)` | |
 | Empty slot | `?` (an unfinished expression; evaluating it is an error) | placeholder box |
 | Symbolic evaluation | stored as `"show": "symbolic"` (typed as a trailing `→` or `->`, or Ctrl+.). Names stay symbols and the document's functions are expanded; `diff(e, x)`, `diff(e, x, n)`, `int(e, x)`, `int(e, x, a, b)`, `expand(e)`, `simplify(e)` and `solve(a == b, x)` (degree one or two) work symbolically. Inline math in text takes a trailing `→` too | `→ result` |
 | Calculus | `diff(f(x), x)`, `diff(f, x, 2)`, `int(f, x)`, `int(f, x, a, b)`, `sum(e, i, 1, n)`, `prod(...)`, `lim(e, x, a)` | 2D operators |
