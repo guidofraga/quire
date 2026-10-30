@@ -34,7 +34,14 @@ const keep = (e: MouseEvent) => e.preventDefault(); // never steal focus from th
 /** The name a screen reader gives a button: its tooltip without the shortcut. */
 const nameOf = (title: string) => title.split("  ")[0];
 
-function Btn(props: { title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: JSX.Element; hiddenLabel?: boolean }) {
+function Btn(props: {
+  title: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: JSX.Element;
+  hiddenLabel?: boolean;
+}) {
   return (
     <button
       class="fb-btn"
@@ -97,7 +104,9 @@ function Dropdown(props: {
     setOpen(true);
     if (!fromKeyboard()) return;
     // the current choice (or selected tab) first, else the first item
-    requestAnimationFrame(() => (pop?.querySelector<HTMLElement>("[aria-checked=true], [aria-selected=true]") ?? items()[0])?.focus());
+    requestAnimationFrame(() =>
+      (pop?.querySelector<HTMLElement>("[aria-checked=true], [aria-selected=true]") ?? items()[0])?.focus(),
+    );
   };
   const onKey = (e: KeyboardEvent) => {
     if (!open()) {
@@ -128,7 +137,15 @@ function Dropdown(props: {
         } else arrowFocus(e, tabs, "horizontal");
         return;
       }
-      if (arrowFocus(e, items().filter((el) => !tabs.includes(el)), props.kind === "menu" ? "vertical" : "both") && document.activeElement === target && e.key === "ArrowUp")
+      if (
+        arrowFocus(
+          e,
+          items().filter((el) => !tabs.includes(el)),
+          props.kind === "menu" ? "vertical" : "both",
+        ) &&
+        document.activeElement === target &&
+        e.key === "ArrowUp"
+      )
         pop.querySelector<HTMLElement>("[role=tab][aria-selected=true]")?.focus();
     }
   };
@@ -203,7 +220,12 @@ function keepInWindow(el: HTMLElement) {
   requestAnimationFrame(() => {
     const r = el.getBoundingClientRect();
     const margin = 8;
-    const shift = r.left < margin ? margin - r.left : r.right > innerWidth - margin ? Math.max(margin - r.left, innerWidth - margin - r.right) : 0;
+    const shift =
+      r.left < margin
+        ? margin - r.left
+        : r.right > innerWidth - margin
+          ? Math.max(margin - r.left, innerWidth - margin - r.right)
+          : 0;
     if (!shift) return;
     el.style.left = `${el.offsetLeft + shift}px`;
     el.style.right = "auto";
@@ -211,7 +233,15 @@ function keepInWindow(el: HTMLElement) {
 }
 
 const icon = (d: string) => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.4"
+    stroke-linecap="round"
+  >
     <path d={d} />
   </svg>
 );
@@ -227,7 +257,18 @@ const STYLES: [BlockStyle, string][] = [
   ["h2", "Heading 2"],
   ["h3", "Heading 3"],
 ];
-const COLORS = ["#1b1d22", "#6b7280", "#d1302a", "#e8730c", "#c79a00", "#2e8b3a", "#1d6fd1", "#6a3fc8", "#c2185b", "#0f766e"];
+const COLORS = [
+  "#1b1d22",
+  "#6b7280",
+  "#d1302a",
+  "#e8730c",
+  "#c79a00",
+  "#2e8b3a",
+  "#1d6fd1",
+  "#6a3fc8",
+  "#c2185b",
+  "#0f766e",
+];
 const COLOR_NAMES = ["Automatic", "Grey", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Teal"];
 const SIZES = [7, 8, 9, 10, 11, 12, 14, 16, 18, 24, 32];
 const ALIGN_ICONS: Record<Align, string> = {
@@ -293,23 +334,59 @@ function TextGroup() {
           </For>
         )}
       </Dropdown>
-      <Btn title="Bold  ⌘B" disabled={!textEnabled()} active={markActive("strong")} onClick={() => applyText(commands.bold)}>
+      <Btn
+        title="Bold  ⌘B"
+        disabled={!textEnabled()}
+        active={markActive("strong")}
+        onClick={() => applyText(commands.bold)}
+      >
         <b>B</b>
       </Btn>
-      <Btn title="Italic  ⌘I" disabled={!textEnabled()} active={markActive("em")} onClick={() => applyText(commands.italic)}>
+      <Btn
+        title="Italic  ⌘I"
+        disabled={!textEnabled()}
+        active={markActive("em")}
+        onClick={() => applyText(commands.italic)}
+      >
         <i class="serif">I</i>
       </Btn>
-      <Btn title="Underline  ⌘U" disabled={!textEnabled()} active={markActive("underline")} onClick={() => applyText(commands.underline)}>
+      <Btn
+        title="Underline  ⌘U"
+        disabled={!textEnabled()}
+        active={markActive("underline")}
+        onClick={() => applyText(commands.underline)}
+      >
         <u>U</u>
       </Btn>
-      <Btn title="Strikethrough" disabled={!textEnabled()} active={markActive("strike")} onClick={() => applyText(commands.strike)}>
+      <Btn
+        title="Strikethrough"
+        disabled={!textEnabled()}
+        active={markActive("strike")}
+        onClick={() => applyText(commands.strike)}
+      >
         <s>S</s>
       </Btn>
-      <Btn title="Superscript" hiddenLabel disabled={!textEnabled()} active={markActive("sup")} onClick={() => applyText(commands.sup)}>
-        <span aria-hidden="true">x<sup>2</sup></span>
+      <Btn
+        title="Superscript"
+        hiddenLabel
+        disabled={!textEnabled()}
+        active={markActive("sup")}
+        onClick={() => applyText(commands.sup)}
+      >
+        <span aria-hidden="true">
+          x<sup>2</sup>
+        </span>
       </Btn>
-      <Btn title="Subscript" hiddenLabel disabled={!textEnabled()} active={markActive("sub")} onClick={() => applyText(commands.sub)}>
-        <span aria-hidden="true">x<sub>2</sub></span>
+      <Btn
+        title="Subscript"
+        hiddenLabel
+        disabled={!textEnabled()}
+        active={markActive("sub")}
+        onClick={() => applyText(commands.sub)}
+      >
+        <span aria-hidden="true">
+          x<sub>2</sub>
+        </span>
       </Btn>
       <Dropdown
         title="Text colour"
@@ -397,10 +474,20 @@ function ParagraphGroup() {
           </Btn>
         )}
       </For>
-      <Btn title="Bulleted list" disabled={!textEnabled()} active={listActive("bullet")} onClick={() => applyText(commands.bulletList)}>
+      <Btn
+        title="Bulleted list"
+        disabled={!textEnabled()}
+        active={listActive("bullet")}
+        onClick={() => applyText(commands.bulletList)}
+      >
         {icon("M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5M2.5 4h.1M2.5 8h.1M2.5 12h.1")}
       </Btn>
-      <Btn title="Numbered list" disabled={!textEnabled()} active={listActive("ordered")} onClick={() => applyText(commands.orderedList)}>
+      <Btn
+        title="Numbered list"
+        disabled={!textEnabled()}
+        active={listActive("ordered")}
+        onClick={() => applyText(commands.orderedList)}
+      >
         {icon("M6 4h8M6 8h8M6 12h8M2 3.2l.9-.7v3M1.9 7.3c.3-.5 1.6-.5 1.6.3 0 .6-1.6 1.3-1.6 1.9h1.7")}
       </Btn>
     </div>
@@ -443,7 +530,11 @@ function StructuresGallery(props: { close: () => void }) {
   );
 }
 
-const SYMBOL_TABS = [...SYMBOLS.map((c) => [c.id, c.title] as const), ["constants", "Constants"] as const, ["units", "Units"] as const];
+const SYMBOL_TABS = [
+  ...SYMBOLS.map((c) => [c.id, c.title] as const),
+  ["constants", "Constants"] as const,
+  ["units", "Units"] as const,
+];
 const [symbolTab, setSymbolTab] = createSignal<string>("greek");
 
 /** The list or grid a symbol tab shows. */
@@ -536,7 +627,10 @@ function EquationGroup() {
         onOpen={loadPreviews}
         label={
           <span class="fb-eq">
-            <span class="math-font" aria-hidden="true">∑</span> Structures
+            <span class="math-font" aria-hidden="true">
+              ∑
+            </span>{" "}
+            Structures
           </span>
         }
       >
@@ -549,7 +643,10 @@ function EquationGroup() {
         onOpen={loadLibrary}
         label={
           <span class="fb-eq">
-            <span class="math-font" aria-hidden="true">Ω</span> Symbols
+            <span class="math-font" aria-hidden="true">
+              Ω
+            </span>{" "}
+            Symbols
           </span>
         }
       >
@@ -642,7 +739,16 @@ export function FormatBar() {
         )}
       </For>
       <Show when={hidden().length}>
-        <Dropdown label={<span class="fb-more" aria-hidden="true">⋯</span>} title="More formatting" name="More formatting" class="wide fb-more-pop">
+        <Dropdown
+          label={
+            <span class="fb-more" aria-hidden="true">
+              ⋯
+            </span>
+          }
+          title="More formatting"
+          name="More formatting"
+          class="wide fb-more-pop"
+        >
           {() => (
             <For each={GROUPS.filter((g) => !inBar(g.id))}>
               {(g) => (

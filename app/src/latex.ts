@@ -2,12 +2,36 @@
 import { SYMBOLS } from "./symbols";
 import type { BinaryOp, CmpOp, Expr } from "./types";
 
-const GREEK = new Map(SYMBOLS.filter((c) => c.id === "greek" || c.id === "Greek").flatMap((c) => c.items.map((s) => [s.insert, s.name])));
-const FUNCS = new Set(["sin", "cos", "tan", "cot", "sec", "csc", "sinh", "cosh", "tanh", "coth", "ln", "log", "lg", "exp", "det", "max", "min"]);
+const GREEK = new Map(
+  SYMBOLS.filter((c) => c.id === "greek" || c.id === "Greek").flatMap((c) => c.items.map((s) => [s.insert, s.name])),
+);
+const FUNCS = new Set([
+  "sin",
+  "cos",
+  "tan",
+  "cot",
+  "sec",
+  "csc",
+  "sinh",
+  "cosh",
+  "tanh",
+  "coth",
+  "ln",
+  "log",
+  "lg",
+  "exp",
+  "det",
+  "max",
+  "min",
+]);
 
 let units: ReadonlySet<string> = new Set();
 
-const greek = (s: string) => [...s].map((ch) => (GREEK.has(ch) ? `\\${GREEK.get(ch)} ` : ch)).join("").trim();
+const greek = (s: string) =>
+  [...s]
+    .map((ch) => (GREEK.has(ch) ? `\\${GREEK.get(ch)} ` : ch))
+    .join("")
+    .trim();
 const word = (s: string, upright = false) => {
   const g = greek(s);
   if (g !== s) return g;
@@ -27,7 +51,14 @@ function ident(name: string): string {
 const isUnitTerm = (e: Expr): boolean =>
   e.t === "Unit" || (e.t === "Ident" && units.has(e.c)) || (e.t === "Binary" && e.c[0] === "Pow" && isUnitTerm(e.c[1]));
 const unparen = (e: Expr): Expr => (e.t === "Paren" ? e.c : e);
-const BIN: Partial<Record<BinaryOp, string>> = { Add: "+", Sub: "-", PlusMinus: "\\pm", Mod: "\\bmod", And: "\\land", Or: "\\lor" };
+const BIN: Partial<Record<BinaryOp, string>> = {
+  Add: "+",
+  Sub: "-",
+  PlusMinus: "\\pm",
+  Mod: "\\bmod",
+  And: "\\land",
+  Or: "\\lor",
+};
 const CMP: Record<CmpOp, string> = { Eq: "=", Ne: "\\neq", Lt: "<", Le: "\\le", Gt: ">", Ge: "\\ge" };
 const d = "\\mathrm{d}";
 
@@ -66,7 +97,11 @@ function call(name: string, args: Expr[]): string {
   // the sample/population spellings read as stdev_s, var_p
   const variant = /^(stdev|var)\.([sp])$/.exec(name);
   if (variant) return `\\operatorname{${variant[1]}}_{\\mathrm{${variant[2]}}}\\left(${args.map(t).join(", ")}\\right)`;
-  const head = FUNCS.has(name) ? `\\${name}` : name.length > 1 && !name.includes(".") ? `\\operatorname{${name}}` : ident(name);
+  const head = FUNCS.has(name)
+    ? `\\${name}`
+    : name.length > 1 && !name.includes(".")
+      ? `\\operatorname{${name}}`
+      : ident(name);
   return `${head}\\left(${args.map(t).join(", ")}\\right)`;
 }
 

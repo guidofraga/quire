@@ -91,7 +91,23 @@ export function looksLikeProse(value: string, id: string): boolean {
 }
 
 const LATEX_BEFORE = /\\([A-Za-z]*)$/;
-const POPULAR = ["alpha", "beta", "gamma", "delta", "Delta", "theta", "lambda", "mu", "sigma", "omega", "phi", "sqrt", "frac", "sum", "int"]
+const POPULAR = [
+  "alpha",
+  "beta",
+  "gamma",
+  "delta",
+  "Delta",
+  "theta",
+  "lambda",
+  "mu",
+  "sigma",
+  "omega",
+  "phi",
+  "sqrt",
+  "frac",
+  "sum",
+  "int",
+]
   .map((n) => exact(n))
   .filter((x): x is Sym => !!x);
 
@@ -164,7 +180,8 @@ export function MathEditor(props: { r: Region }) {
   const atEnd = () => input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
   const latexBefore = () => (prefs.latex ? LATEX_BEFORE.exec(input.value.slice(0, input.selectionStart ?? 0)) : null);
 
-  const traceCaret = () => setCaretName(input.selectionStart === input.selectionEnd ? nameAt(input.value, input.selectionStart ?? 0) : null);
+  const traceCaret = () =>
+    setCaretName(input.selectionStart === input.selectionEnd ? nameAt(input.value, input.selectionStart ?? 0) : null);
   const updateCompletion = () => {
     const m = latexBefore();
     if (!m) return unitSuggestions();
@@ -183,21 +200,38 @@ export function MathEditor(props: { r: Region }) {
     const typed = (unit ?? "").toLowerCase();
     const items: Sym[] = choices
       .filter((c) => c.unit.toLowerCase().startsWith(typed))
-      .map((c) => ({ name: c.unit, insert: c.unit, label: prettyValue(`'${c.unit.replace(/\*/g, "*'").replace(/\//g, "/'")}`), note: prettyValue(c.text) }));
+      .map((c) => ({
+        name: c.unit,
+        insert: c.unit,
+        label: prettyValue(`'${c.unit.replace(/\*/g, "*'").replace(/\//g, "/'")}`),
+        note: prettyValue(c.text),
+      }));
     if (!items.length || (items.length === 1 && items[0].name === unit)) return hideCompletions();
     // below the whole box, so the live result stays in view
     const [x] = caretPoint(input);
     const y = (input.closest(".region")?.getBoundingClientRect().bottom ?? caretPoint(input)[1]) + 6;
-    showCompletions(x, y, items, (sym) => {
-      const v = input.value;
-      const start = unit ? v.length - unit.length : v.length;
-      input.focus();
-      input.setSelectionRange(start, v.length);
-      document.execCommand("insertText", false, `${unit || v.endsWith(" ") ? "" : " "}${sym.insert}`);
-    }, true);
+    showCompletions(
+      x,
+      y,
+      items,
+      (sym) => {
+        const v = input.value;
+        const start = unit ? v.length - unit.length : v.length;
+        input.focus();
+        input.setSelectionRange(start, v.length);
+        document.execCommand("insertText", false, `${unit || v.endsWith(" ") ? "" : " "}${sym.insert}`);
+      },
+      true,
+    );
   };
   // the choices arrive with the next evaluation after `=` is typed
-  createEffect(on(() => state.views[props.r.id]?.unitChoices, () => document.activeElement === input && updateCompletion(), { defer: true }));
+  createEffect(
+    on(
+      () => state.views[props.r.id]?.unitChoices,
+      () => document.activeElement === input && updateCompletion(),
+      { defer: true },
+    ),
+  );
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (completionKey(e)) {
@@ -243,12 +277,7 @@ export function MathEditor(props: { r: Region }) {
       // SMath's key for a global definition
       e.preventDefault();
       document.execCommand("insertText", false, " ≡ ");
-    } else if (
-      e.key === " " &&
-      state.editingFresh &&
-      atEnd() &&
-      looksLikeProse(input.value, props.r.id)
-    ) {
+    } else if (e.key === " " && state.editingFresh && atEnd() && looksLikeProse(input.value, props.r.id)) {
       // a word and a space, or words ending in a real word: this is prose, not math
       e.preventDefault();
       convertEditing("text", `${input.value} `);
@@ -349,7 +378,6 @@ export function forceUnit(name: string) {
   document.execCommand("insertText", false, next);
 }
 
-
 /** `10 m` → `10*m`: the variable m, not the unit, in the math being edited. */
 function useVariable(name: string) {
   const input = activeMathInput;
@@ -374,11 +402,16 @@ export function NameNotes(props: { id: string }) {
     for (const name of v?.constants ?? []) {
       const c = g[`constant:${name}`];
       if (c?.meanings.includes("unit"))
-        out.push({ name, text: `${c.title} = ${prettyValue(c.value)}`, action: [`Use unit ${name}`, () => forceUnit(name)] });
+        out.push({
+          name,
+          text: `${c.title} = ${prettyValue(c.value)}`,
+          action: [`Use unit ${name}`, () => forceUnit(name)],
+        });
     }
     for (const name of v?.units ?? []) {
       const u = g[`unit:${name}`];
-      if (u?.meanings.includes("constant")) out.push({ name, text: `unit, ${prettyValue(u.value)} · *${name} for the constant` });
+      if (u?.meanings.includes("constant"))
+        out.push({ name, text: `unit, ${prettyValue(u.value)} · *${name} for the constant` });
     }
     for (const name of v?.unitsOverVariables ?? []) {
       out.push({

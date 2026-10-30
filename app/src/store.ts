@@ -268,13 +268,16 @@ export function computeLayout(
   }
   const shiftAt = (y: number) => {
     let s = 0;
-    for (const a of collapsed) if (y >= a.y + (a.region.height ?? 0)) s += (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
+    for (const a of collapsed)
+      if (y >= a.y + (a.region.height ?? 0)) s += (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
     return s;
   };
   // inverse: a visible ("effective") y back to a document y
   const effToDoc = (eff: number) => {
     let y = eff;
-    for (const a of collapsed) if (eff >= a.y - a.shift + AREA_COLLAPSED_HEIGHT) y = eff + a.shift + (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
+    for (const a of collapsed)
+      if (eff >= a.y - a.shift + AREA_COLLAPSED_HEIGHT)
+        y = eff + a.shift + (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
     return y;
   };
 
@@ -347,7 +350,16 @@ export function computeLayout(
       p.number = String(r.kind === "table" ? ++tables : ++figures);
     }
   }
-  return { list, byId: new Map(list.map((p) => [p.region.id, p])), pageView, geom, pages, contentPages, toScene, fromScene };
+  return {
+    list,
+    byId: new Map(list.map((p) => [p.region.id, p])),
+    pageView,
+    geom,
+    pages,
+    contentPages,
+    toScene,
+    fromScene,
+  };
 }
 
 export const layout = createRoot(() =>
@@ -361,7 +373,8 @@ export const pagedLayout = createRoot(() =>
 
 export function contentBottom(): number {
   let bottom = 0;
-  for (const p of layout().list) if (!p.hidden) bottom = Math.max(bottom, p.y - p.shift + (heights[p.region.id] ?? DEFAULT_HEIGHT));
+  for (const p of layout().list)
+    if (!p.hidden) bottom = Math.max(bottom, p.y - p.shift + (heights[p.region.id] ?? DEFAULT_HEIGHT));
   return bottom;
 }
 
@@ -376,7 +389,12 @@ export function availableWidth(x: number): number {
  * shares, and within the printable width (`available`), so a long note wraps instead of
  * running into its neighbour.
  */
-export function noteRoom(p: Placed, list: readonly Placed[], measured: Record<string, number>, available: number): number {
+export function noteRoom(
+  p: Placed,
+  list: readonly Placed[],
+  measured: Record<string, number>,
+  available: number,
+): number {
   const height = (q: Placed) => measured[q.region.id] ?? DEFAULT_HEIGHT;
   const bottom = p.top + height(p);
   let room = available;
@@ -720,10 +738,13 @@ export function regroup(ids: string[]) {
   const l = layout();
   const moving = movable(ids);
   const inMoved = (p: Placed): boolean => {
-    for (let q: Region | null = p.region; q; q = l.byId.get(q.id)?.parent ?? null) if (moving.includes(q.id)) return true;
+    for (let q: Region | null = p.region; q; q = l.byId.get(q.id)?.parent ?? null)
+      if (moving.includes(q.id)) return true;
     return false;
   };
-  const areas = l.list.filter((p) => p.region.kind === "area" && !p.hidden && !p.region.collapsed && p.region.height && !inMoved(p));
+  const areas = l.list.filter(
+    (p) => p.region.kind === "area" && !p.hidden && !p.region.collapsed && p.region.height && !inMoved(p),
+  );
   const moves: { id: string; to: string | null; at: [number, number] }[] = [];
   for (const id of moving) {
     const p = l.byId.get(id);
@@ -766,7 +787,8 @@ export function shiftBelow(y: number, dy: number): boolean {
   if (dy < 0) {
     const highest = Math.min(...below.map((p) => p.region.at[1]));
     let floor = 0;
-    for (const p of top) if (p.region.at[1] < y) floor = Math.max(floor, p.region.at[1] + (heights[p.region.id] ?? DEFAULT_HEIGHT) + GRID);
+    for (const p of top)
+      if (p.region.at[1] < y) floor = Math.max(floor, p.region.at[1] + (heights[p.region.id] ?? DEFAULT_HEIGHT) + GRID);
     const room = Math.floor((highest - floor) / GRID) * GRID;
     dy = Math.max(dy, -room);
     if (dy >= 0) return false;
@@ -937,8 +959,7 @@ export function commitEditing() {
       }, false);
   }
   const r = layout().byId.get(id)?.region;
-  const empty =
-    !r || (r.kind === "math" ? !(r.expr ?? "").trim() : r.kind === "text" ? !editText(r).trim() : false);
+  const empty = !r || (r.kind === "math" ? !(r.expr ?? "").trim() : r.kind === "text" ? !editText(r).trim() : false);
   if (r && empty) {
     setState(
       "doc",
@@ -976,7 +997,8 @@ export function regionGrew(id: string, before: number, after: number) {
   const overlaps = (q: Placed) => q.region.at[0] < x1 && q.region.at[0] + (widths[q.region.id] ?? 40) > x0;
   const hit = top.filter((q) => q.region.at[1] < newBottom + GRID && overlaps(q));
   const caret = state.caret;
-  const caretHit = caret && caret[1] >= oldBottom - 0.5 && caret[1] < newBottom + GRID && caret[0] < x1 && caret[0] >= x0 - GRID;
+  const caretHit =
+    caret && caret[1] >= oldBottom - 0.5 && caret[1] < newBottom + GRID && caret[0] < x1 && caret[0] >= x0 - GRID;
   if (!hit.length && !caretHit) return;
   const highest = Math.min(...hit.map((q) => q.region.at[1]), caretHit ? caret[1] : Infinity);
   const dy = Math.ceil(newBottom / GRID) * GRID + GRID - highest;
@@ -1121,8 +1143,12 @@ export function alignRegions(ids: string[], mode: AlignMode) {
     for (const r of b) {
       const reg = findDraft(d, r.id);
       if (!reg) continue;
-      const dx = { left: left - r.x, right: right - r.w - r.x, hcenter: (left + right) / 2 - r.w / 2 - r.x }[mode as string] ?? 0;
-      const dy = { top: top - r.y, bottom: bottom - r.h - r.y, vcenter: (top + bottom) / 2 - r.h / 2 - r.y }[mode as string] ?? 0;
+      const dx =
+        { left: left - r.x, right: right - r.w - r.x, hcenter: (left + right) / 2 - r.w / 2 - r.x }[mode as string] ??
+        0;
+      const dy =
+        { top: top - r.y, bottom: bottom - r.h - r.y, vcenter: (top + bottom) / 2 - r.h / 2 - r.y }[mode as string] ??
+        0;
       reg.at = [Math.max(0, Math.round(reg.at[0] + dx)), Math.max(0, Math.round(reg.at[1] + dy))];
     }
   });
@@ -1157,7 +1183,12 @@ export type ContentsKind = "headings" | "figures" | "tables" | "checks";
 export function insertContents(of: ContentsKind) {
   commitEditing();
   const [x, y] = state.caret ?? [0, snap(contentBottom() + GRID)];
-  const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables", checks: "Summary of Checks" }[of];
+  const title = {
+    headings: "Contents",
+    figures: "List of Figures",
+    tables: "List of Tables",
+    checks: "Summary of Checks",
+  }[of];
   const id = newId();
   mutate((d) => {
     d.regions.push({ id, kind: "toc", at: [x, y], of, title });
@@ -1204,5 +1235,9 @@ export function insertArea() {
 }
 
 export function selectAll() {
-  setState({ selection: layout().list.filter((p) => !p.hidden && !p.parent).map((p) => p.region.id) });
+  setState({
+    selection: layout()
+      .list.filter((p) => !p.hidden && !p.parent)
+      .map((p) => p.region.id),
+  });
 }

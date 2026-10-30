@@ -26,7 +26,9 @@ describe("isComparison", () => {
   });
   it("rejects everything else", () => {
     expect(isComparison({ t: "Ident", c: "σ" })).toBe(false);
-    expect(isComparison({ t: "Define", c: { lhs: { t: "Ident", c: "x" }, rhs: { t: "Num", c: "1" }, global: false } })).toBe(false);
+    expect(
+      isComparison({ t: "Define", c: { lhs: { t: "Ident", c: "x" }, rhs: { t: "Num", c: "1" }, global: false } }),
+    ).toBe(false);
     expect(isComparison(null)).toBe(false);
   });
 });
@@ -102,10 +104,7 @@ describe("parseTsv edge cases", () => {
     ]);
   });
   it("keeps a stray quote that does not close a cell as text", () => {
-    expect(parseTsv('5" pipe\tb\n"open')).toEqual([
-      ['5" pipe', "b"],
-      ['"open'],
-    ]);
+    expect(parseTsv('5" pipe\tb\n"open')).toEqual([['5" pipe', "b"], ['"open']]);
   });
   it("reads an empty clipboard as one empty cell", () => {
     expect(parseTsv("")).toEqual([[""]]);

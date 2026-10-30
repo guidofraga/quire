@@ -20,13 +20,20 @@ export function showCompletions(x: number, y: number, items: Sym[], pick: (s: Sy
   if (!items.length) return hideCompletions();
   const prev = popup();
   const same = prev && prev.soft === soft;
-  setPopup({ x, y, items, index: same ? Math.min(prev.index, items.length - 1) : 0, pick, soft, touched: same ? prev.touched : false });
+  setPopup({
+    x,
+    y,
+    items,
+    index: same ? Math.min(prev.index, items.length - 1) : 0,
+    pick,
+    soft,
+    touched: same ? prev.touched : false,
+  });
 }
 
 export function hideCompletions() {
   setPopup(null);
 }
-
 
 /** Arrow keys, Enter/Tab and Escape while the list is open. Returns true when handled. */
 export function completionKey(e: KeyboardEvent): boolean {
@@ -35,7 +42,8 @@ export function completionKey(e: KeyboardEvent): boolean {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     const n = p.items.length;
     // the first arrow on a suggestion list selects its first entry
-    const index = p.soft && !p.touched ? (e.key === "ArrowDown" ? 0 : n - 1) : (p.index + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+    const index =
+      p.soft && !p.touched ? (e.key === "ArrowDown" ? 0 : n - 1) : (p.index + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
     setPopup({ ...p, index, touched: true });
     // the list isn't focused (the editor keeps the caret), so say what the arrows landed on
     const item = p.items[index];
@@ -91,7 +99,9 @@ export function CompletionPopup() {
                   hideCompletions();
                 }}
               >
-                <span class="completion-glyph">{isTemplate(item) || item.note ? (item.label ?? item.insert) : item.insert}</span>
+                <span class="completion-glyph">
+                  {isTemplate(item) || item.note ? (item.label ?? item.insert) : item.insert}
+                </span>
                 <span class="completion-name">{item.note ?? `\\${item.name}`}</span>
                 <Show when={item.textOnly}>
                   <span class="completion-note">text</span>

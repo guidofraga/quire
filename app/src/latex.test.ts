@@ -11,7 +11,10 @@ const call = (name: string, ...args: Expr[]): Expr => ({ t: "Call", c: [name, ar
 
 describe("latex", () => {
   it("writes a definition with a fraction and a power", () => {
-    const e: Expr = { t: "Define", c: { lhs: id("M"), rhs: bin("Div", bin("Mul", id("q"), bin("Pow", id("L"), num("2"))), num("8")), global: false } };
+    const e: Expr = {
+      t: "Define",
+      c: { lhs: id("M"), rhs: bin("Div", bin("Mul", id("q"), bin("Pow", id("L"), num("2"))), num("8")), global: false },
+    };
     expect(latex(e, null)).toBe("M := \\frac{q \\cdot {L}^{2}}{8}");
   });
 
@@ -23,7 +26,9 @@ describe("latex", () => {
   });
 
   it("sets units upright with a thin space", () => {
-    expect(latex(id("M"), bin("Mul", num("54"), bin("Mul", unit("kN"), unit("m"))))).toBe("M = 54 \\cdot \\mathrm{kN}\\,\\mathrm{m}");
+    expect(latex(id("M"), bin("Mul", num("54"), bin("Mul", unit("kN"), unit("m"))))).toBe(
+      "M = 54 \\cdot \\mathrm{kN}\\,\\mathrm{m}",
+    );
     expect(latex(bin("Mul", num("2"), id("m")), null, ["m"])).toBe("2\\,\\mathrm{m}");
   });
 
@@ -40,7 +45,9 @@ describe("latex", () => {
     expect(latex(call("series", call("exp", id("x")), id("x"), num("0"), num("4")), null)).toBe(
       "\\operatorname{series}\\left(\\exp\\left(x\\right);\\; x = 0,\\; 4\\right)",
     );
-    expect(latex(call("subs", bin("Pow", id("x"), num("2")), id("x"), id("a")), null)).toBe("\\left.{x}^{2}\\right|_{x = a}");
+    expect(latex(call("subs", bin("Pow", id("x"), num("2")), id("x"), id("a")), null)).toBe(
+      "\\left.{x}^{2}\\right|_{x = a}",
+    );
     expect(latex(call("lim", call("exp", id("x")), id("x"), { t: "Unary", c: ["Neg", id("∞")] }), id("∞"))).toBe(
       "\\lim_{x\\to -\\infty} \\exp\\left(x\\right) = \\infty",
     );
@@ -48,9 +55,18 @@ describe("latex", () => {
 
   it("writes comparisons and matrices", () => {
     expect(latex({ t: "Compare", c: [id("σ"), [["Le", id("f.y")]]] }, null)).toBe("\\sigma \\le f_{y}");
-    expect(latex({ t: "Matrix", c: [[num("1"), num("2")], [num("3"), num("4")]] }, null)).toBe(
-      "\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}",
-    );
+    expect(
+      latex(
+        {
+          t: "Matrix",
+          c: [
+            [num("1"), num("2")],
+            [num("3"), num("4")],
+          ],
+        },
+        null,
+      ),
+    ).toBe("\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}");
   });
 
   it("does not leak units into the next call", () => {

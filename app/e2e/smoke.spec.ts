@@ -136,7 +136,9 @@ test("imports a CSV file as a table and exports its values", async ({ page }) =>
   await page.mouse.click(700, 250, { button: "right" });
   const chooser = page.waitForEvent("filechooser");
   await page.getByText("Insert Table from CSV…").click();
-  await (await chooser).setFiles({
+  await (
+    await chooser
+  ).setFiles({
     name: "wind loads.csv",
     mimeType: "text/csv",
     buffer: Buffer.from('Load,q,twice\nDead,4.5 kN/m,=B2*2\n"Live, roof",1.5 kN/m,=B3*2\n'),
@@ -162,7 +164,10 @@ test("the Insert menu adds tables, plots and contents, from the mouse or the key
   await page.goto("/");
   await page.getByRole("button", { name: /Blank document/ }).click();
   await page.getByRole("button", { name: "Insert" }).click();
-  await page.getByRole("menuitem", { name: /^Table/ }).first().click();
+  await page
+    .getByRole("menuitem", { name: /^Table/ })
+    .first()
+    .click();
   await expect(page.locator(".region.table")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Insert" }).focus();

@@ -6,7 +6,18 @@ import { prettyValue } from "./math";
 import { advance, equalSpans, markerDiameter, markerPath } from "./plotGeometry";
 import { Check, Field, Num, Select, Text } from "./Inspector";
 import { closePopover, openPopover } from "./Popover";
-import { contentBottom, flash, heights, insertRegion, layout, LINE, setState, snap, state, updateRegion } from "./store";
+import {
+  contentBottom,
+  flash,
+  heights,
+  insertRegion,
+  layout,
+  LINE,
+  setState,
+  snap,
+  state,
+  updateRegion,
+} from "./store";
 import type { PlotMarkView, PlotView, Region } from "./types";
 import type { Placed } from "./store";
 
@@ -55,7 +66,8 @@ function ticks(lo: number, hi: number, count: number): number[] {
   const mag = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((s) => s >= raw) ?? 10 * mag;
   const out: number[] = [];
-  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step) out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step)
+    out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
   return out;
 }
 
@@ -101,7 +113,19 @@ interface Layout {
   iy: (py: number) => number;
 }
 
-const SUPER: Record<string, string> = { "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹" };
+const SUPER: Record<string, string> = {
+  "-": "⁻",
+  "0": "⁰",
+  "1": "¹",
+  "2": "²",
+  "3": "³",
+  "4": "⁴",
+  "5": "⁵",
+  "6": "⁶",
+  "7": "⁷",
+  "8": "⁸",
+  "9": "⁹",
+};
 
 /** One axis's scale: linear or logarithmic, between `lo` and `hi` (data values). */
 function scale(lo: number, hi: number, log: boolean, count: number) {
@@ -137,12 +161,15 @@ export function PlotBody(props: { r: Region }) {
   const shownFrame = () => Math.max(0, Math.min(state.printing ? frames().length - 1 : frame(), frames().length - 1));
   const current = () => frames()[shownFrame()] ?? view()?.series ?? [];
   const drawn = () => {
-    const d = current().map((s, i) => ({ ...s, i, spec: series()[i] })).filter((s) => !s.error && s.xs.length);
+    const d = current()
+      .map((s, i) => ({ ...s, i, spec: series()[i] }))
+      .filter((s) => !s.error && s.xs.length);
     // SMath paints its first series on top (the beam over the supports, the bar over the wheel)
     return r().palette === "smath" ? d.reverse() : d;
   };
   /** Every frame's series, so the axes of an animation fit all of its frames and do not jump. */
-  const everyFrame = () => (frames().length ? frames().flat() : (view()?.series ?? [])).filter((s) => !s.error && s.xs.length);
+  const everyFrame = () =>
+    (frames().length ? frames().flat() : (view()?.series ?? [])).filter((s) => !s.error && s.xs.length);
   const showAxes = () => view()?.axes !== false;
   // the drawing keeps the whole box, as in SMath; the animation bar sits below it (printing has none)
   const animated = () => frames().length > 1 && !state.printing;
@@ -177,9 +204,22 @@ export function PlotBody(props: { r: Region }) {
     const all = everyFrame();
     const logX = !!axes().x?.log;
     const logY = !!axes().y?.log;
-    const usable = (vs: (number | null)[], log: boolean) => (vs as number[]).filter((v) => Number.isFinite(v) && (!log || v > 0));
-    let x = extent(usable(all.flatMap((s) => s.xs), logX), axes().x);
-    let y = extent(usable(all.flatMap((s) => s.ys), logY), axes().y);
+    const usable = (vs: (number | null)[], log: boolean) =>
+      (vs as number[]).filter((v) => Number.isFinite(v) && (!log || v > 0));
+    let x = extent(
+      usable(
+        all.flatMap((s) => s.xs),
+        logX,
+      ),
+      axes().x,
+    );
+    let y = extent(
+      usable(
+        all.flatMap((s) => s.ys),
+        logY,
+      ),
+      axes().y,
+    );
     // printing shows the plot as saved, never a temporary zoom
     const z = state.printing ? null : zoomed();
     if (z) {
@@ -197,7 +237,8 @@ export function PlotBody(props: { r: Region }) {
       if (axes().y?.min === undefined && yTicks[0] > y[0]) y = [yTicks[0] - (yTicks[1] - yTicks[0]), y[1]];
       if (axes().y?.max === undefined && yTicks.at(-1)! < y[1]) y = [y[0], yTicks.at(-1)! + (yTicks[1] - yTicks[0])];
     }
-    if (logX && !z) x = [axes().x?.min ?? 10 ** Math.floor(Math.log10(x[0])), axes().x?.max ?? 10 ** Math.ceil(Math.log10(x[1]))];
+    if (logX && !z)
+      x = [axes().x?.min ?? 10 ** Math.floor(Math.log10(x[0])), axes().x?.max ?? 10 ** Math.ceil(Math.log10(x[1]))];
     let X = scale(x[0], x[1], logX, Math.max(2, Math.round(w / 90)));
     let Y = scale(y[0], y[1], logY, Math.max(2, Math.round(h / 50)));
     const longest = Math.max(...Y.ticks.map((t) => Y.label(t).length));
@@ -219,7 +260,24 @@ export function PlotBody(props: { r: Region }) {
     const sy = (v: number) => h - bottom - ((Y.t(v) - ty0) / (ty1 - ty0)) * (h - top - bottom);
     const ix = (px: number) => X.inv(tx0 + ((px - left) / (w - left - right)) * (tx1 - tx0));
     const iy = (py: number) => Y.inv(ty0 + ((h - bottom - py) / (h - top - bottom)) * (ty1 - ty0));
-    return { w, h, left, top, right, bottom, x, y, xTicks: X.ticks, yTicks: Y.ticks, xLabel: X.label, yLabel: Y.label, sx, sy, ix, iy };
+    return {
+      w,
+      h,
+      left,
+      top,
+      right,
+      bottom,
+      x,
+      y,
+      xTicks: X.ticks,
+      yTicks: Y.ticks,
+      xLabel: X.label,
+      yLabel: Y.label,
+      sx,
+      sy,
+      ix,
+      iy,
+    };
   });
 
   /** Zoom the view by `f` (< 1 zooms in) around a pixel, in each axis's own scale. */
@@ -233,7 +291,10 @@ export function PlotBody(props: { r: Region }) {
       const tc = T(c);
       return [I(tc + (T(lo) - tc) * f), I(tc + (T(hi) - tc) * f)];
     };
-    setZoomed({ x: around(L.x[0], L.x[1], L.ix(cx), !!axes().x?.log), y: around(L.y[0], L.y[1], L.iy(cy), !!axes().y?.log) });
+    setZoomed({
+      x: around(L.x[0], L.x[1], L.ix(cx), !!axes().x?.log),
+      y: around(L.y[0], L.y[1], L.iy(cy), !!axes().y?.log),
+    });
   };
   /** Move the view by a pixel offset (⌥ + drag). */
   const panBy = (dx: number, dy: number, from: Layout) => {
@@ -278,8 +339,16 @@ export function PlotBody(props: { r: Region }) {
 
   const inside = (x: number | null, y: number | null) => {
     const L = layout();
-    const within = (v: number, [a, b]: [number, number]) => v >= Math.min(a, b) - 1e-9 * Math.abs(b - a) && v <= Math.max(a, b) + 1e-9 * Math.abs(b - a);
-    return x !== null && y !== null && Number.isFinite(L.sx(x)) && Number.isFinite(L.sy(y)) && within(x, L.x) && within(y, L.y);
+    const within = (v: number, [a, b]: [number, number]) =>
+      v >= Math.min(a, b) - 1e-9 * Math.abs(b - a) && v <= Math.max(a, b) + 1e-9 * Math.abs(b - a);
+    return (
+      x !== null &&
+      y !== null &&
+      Number.isFinite(L.sx(x)) &&
+      Number.isFinite(L.sy(y)) &&
+      within(x, L.x) &&
+      within(y, L.y)
+    );
   };
   /** How a series is drawn: a line (solid, dashed, dotted), points, or both. */
   // a line, unless the document asks for points: SMath's data lines carry no dots at their vertices
@@ -299,7 +368,12 @@ export function PlotBody(props: { r: Region }) {
   const palette = () => (r().palette === "smath" ? SMATH_COLORS : SERIES_COLORS);
   const color = (i: number) => series()[i]?.style?.color ?? palette()[i % palette().length];
   /** The styled points of a series (SMath's marker columns), inside the plot's box. */
-  const markNodes = (s: { i: number; xs: (number | null)[]; ys: (number | null)[]; marks?: (PlotMarkView | null)[] }) => {
+  const markNodes = (s: {
+    i: number;
+    xs: (number | null)[];
+    ys: (number | null)[];
+    marks?: (PlotMarkView | null)[];
+  }) => {
     const nodes = (s.marks ?? []).flatMap((m, k) => {
       const x = s.xs[k];
       const y = s.ys[k];
@@ -372,7 +446,11 @@ export function PlotBody(props: { r: Region }) {
     <div class="plot" style={{ width: `${size()[0]}px`, height: `${size()[1] + (animated() ? ANIM_BAR : 0)}px` }}>
       <svg
         role="img"
-        aria-label={`Plot of ${series().map((s) => s.label || s.y).join(", ") || "nothing yet"}${series()[0]?.x ? ` against ${series()[0].x}` : ""}`}
+        aria-label={`Plot of ${
+          series()
+            .map((s) => s.label || s.y)
+            .join(", ") || "nothing yet"
+        }${series()[0]?.x ? ` against ${series()[0].x}` : ""}`}
         width={size()[0]}
         height={drawH()}
         viewBox={`0 0 ${size()[0]} ${drawH()}`}
@@ -432,75 +510,95 @@ export function PlotBody(props: { r: Region }) {
         <g class="plot-grid">
           <Show when={showGrid()}>
             <For each={layout().yTicks}>
-              {(t) => <line x1={layout().left} x2={layout().w - layout().right} y1={layout().sy(t)} y2={layout().sy(t)} />}
+              {(t) => (
+                <line x1={layout().left} x2={layout().w - layout().right} y1={layout().sy(t)} y2={layout().sy(t)} />
+              )}
             </For>
             <For each={layout().xTicks}>
-              {(t) => <line y1={layout().top} y2={layout().h - layout().bottom} x1={layout().sx(t)} x2={layout().sx(t)} />}
+              {(t) => (
+                <line y1={layout().top} y2={layout().h - layout().bottom} x1={layout().sx(t)} x2={layout().sx(t)} />
+              )}
             </For>
           </Show>
         </g>
         <Show when={showAxes()}>
-        <g class="plot-axis">
-          <line x1={layout().left} x2={layout().w - layout().right} y1={layout().h - layout().bottom} y2={layout().h - layout().bottom} />
-          <line x1={layout().left} x2={layout().left} y1={layout().top} y2={layout().h - layout().bottom} />
-          <Show when={layout().y[0] < 0 && layout().y[1] > 0}>
-            <line class="zero" x1={layout().left} x2={layout().w - layout().right} y1={layout().sy(0)} y2={layout().sy(0)} />
-          </Show>
-        </g>
-        {/* double-click an axis (its numbers or title) to edit it */}
-        <rect
-          class="plot-axis-hit"
-          x={layout().left}
-          y={layout().h - layout().bottom}
-          width={layout().w - layout().left - layout().right}
-          height={layout().bottom}
-          onDblClick={(e) => editAxis(e, r().id, "x")}
-        />
-        <rect
-          class="plot-axis-hit"
-          x={0}
-          y={layout().top}
-          width={layout().left}
-          height={layout().h - layout().top - layout().bottom}
-          onDblClick={(e) => editAxis(e, r().id, "y")}
-        />
-        <g class="plot-ticks">
-          <For each={layout().xTicks}>
-            {(t) => (
-              <text x={layout().sx(t)} y={layout().h - layout().bottom + 14} text-anchor="middle">
-                {layout().xLabel(t)}
-              </text>
-            )}
-          </For>
-          <For each={layout().yTicks}>
-            {(t) => (
-              <text x={layout().left - 6} y={layout().sy(t) + 3.5} text-anchor="end">
-                {layout().yLabel(t)}
-              </text>
-            )}
-          </For>
-        </g>
-        <g class="plot-titles">
-          <text
-            x={(layout().left + layout().w - layout().right) / 2}
-            y={layout().h - 6}
-            text-anchor="middle"
+          <g class="plot-axis">
+            <line
+              x1={layout().left}
+              x2={layout().w - layout().right}
+              y1={layout().h - layout().bottom}
+              y2={layout().h - layout().bottom}
+            />
+            <line x1={layout().left} x2={layout().left} y1={layout().top} y2={layout().h - layout().bottom} />
+            <Show when={layout().y[0] < 0 && layout().y[1] > 0}>
+              <line
+                class="zero"
+                x1={layout().left}
+                x2={layout().w - layout().right}
+                y1={layout().sy(0)}
+                y2={layout().sy(0)}
+              />
+            </Show>
+          </g>
+          {/* double-click an axis (its numbers or title) to edit it */}
+          <rect
+            class="plot-axis-hit"
+            x={layout().left}
+            y={layout().h - layout().bottom}
+            width={layout().w - layout().left - layout().right}
+            height={layout().bottom}
             onDblClick={(e) => editAxis(e, r().id, "x")}
-          >
-            {xTitle()}
-          </text>
-          <text
-            transform={`translate(11 ${(layout().top + layout().h - layout().bottom) / 2}) rotate(-90)`}
-            text-anchor="middle"
+          />
+          <rect
+            class="plot-axis-hit"
+            x={0}
+            y={layout().top}
+            width={layout().left}
+            height={layout().h - layout().top - layout().bottom}
             onDblClick={(e) => editAxis(e, r().id, "y")}
-          >
-            {yTitle()}
-          </text>
-        </g>
+          />
+          <g class="plot-ticks">
+            <For each={layout().xTicks}>
+              {(t) => (
+                <text x={layout().sx(t)} y={layout().h - layout().bottom + 14} text-anchor="middle">
+                  {layout().xLabel(t)}
+                </text>
+              )}
+            </For>
+            <For each={layout().yTicks}>
+              {(t) => (
+                <text x={layout().left - 6} y={layout().sy(t) + 3.5} text-anchor="end">
+                  {layout().yLabel(t)}
+                </text>
+              )}
+            </For>
+          </g>
+          <g class="plot-titles">
+            <text
+              x={(layout().left + layout().w - layout().right) / 2}
+              y={layout().h - 6}
+              text-anchor="middle"
+              onDblClick={(e) => editAxis(e, r().id, "x")}
+            >
+              {xTitle()}
+            </text>
+            <text
+              transform={`translate(11 ${(layout().top + layout().h - layout().bottom) / 2}) rotate(-90)`}
+              text-anchor="middle"
+              onDblClick={(e) => editAxis(e, r().id, "y")}
+            >
+              {yTitle()}
+            </text>
+          </g>
         </Show>
         {/* the series, clipped to the plot area */}
         <clipPath id={`clip-${r().id}`}>
-          <rect x={layout().left} y={layout().top} width={layout().w - layout().left - layout().right} height={layout().h - layout().top - layout().bottom} />
+          <rect
+            x={layout().left}
+            y={layout().top}
+            width={layout().w - layout().left - layout().right}
+            height={layout().h - layout().top - layout().bottom}
+          />
         </clipPath>
         {/* each series whole, line then its styled points, so a later series paints over an
             earlier one (SMath's order is reversed in drawn()); lines are clipped to the plot
@@ -531,7 +629,14 @@ export function PlotBody(props: { r: Region }) {
                   // (F1 beside its arrow, not on it), in the row's colour and size
                   if (node.m.shape === "text") {
                     return (
-                      <text class="plot-mark-text" x={node.cx + 2} y={node.cy + node.m.size + 2} text-anchor="start" fill={node.c} font-size={`${node.m.size}px`}>
+                      <text
+                        class="plot-mark-text"
+                        x={node.cx + 2}
+                        y={node.cy + node.m.size + 2}
+                        text-anchor="start"
+                        fill={node.c}
+                        font-size={`${node.m.size}px`}
+                      >
                         {node.m.text}
                       </text>
                     );
@@ -550,7 +655,14 @@ export function PlotBody(props: { r: Region }) {
                       />
                     );
                   }
-                  return <path class="plot-mark-line" d={markerPath(node.m.shape, node.cx, node.cy, r0)} stroke={node.c} fill="none" />;
+                  return (
+                    <path
+                      class="plot-mark-line"
+                      d={markerPath(node.m.shape, node.cx, node.cy, r0)}
+                      stroke={node.c}
+                      fill="none"
+                    />
+                  );
                 }}
               </For>
             </g>
@@ -618,7 +730,15 @@ export function PlotBody(props: { r: Region }) {
                 <For each={rows()}>
                   {(s, k) => (
                     <g transform={`translate(8 ${12 + k() * 16})`} onDblClick={(e) => editSeries(e, r().id, s.i)}>
-                      <line x1={0} x2={14} y1={0} y2={0} stroke={color(s.i)} stroke-width={2.5} stroke-dasharray={dash(s.i)} />
+                      <line
+                        x1={0}
+                        x2={14}
+                        y1={0}
+                        y2={0}
+                        stroke={color(s.i)}
+                        stroke-width={2.5}
+                        stroke-dasharray={dash(s.i)}
+                      />
                       <text x={20} y={4}>
                         {name(s.i)}
                       </text>
@@ -633,7 +753,12 @@ export function PlotBody(props: { r: Region }) {
         <Show when={readout()}>
           {(h) => (
             <g class="plot-hover">
-              <line x1={layout().sx(h().x)} x2={layout().sx(h().x)} y1={layout().top} y2={layout().h - layout().bottom} />
+              <line
+                x1={layout().sx(h().x)}
+                x2={layout().sx(h().x)}
+                y1={layout().top}
+                y2={layout().h - layout().bottom}
+              />
               <For each={h().rows}>
                 {(row) => <circle cx={layout().sx(row.x)} cy={layout().sy(row.y)} r={4} fill={color(row.i)} />}
               </For>
@@ -737,7 +862,9 @@ function guessRange(definition: string, param: string): string {
   const names = new Set(body.match(/[\p{L}][\p{L}\p{N}_.]*/gu) ?? []);
   names.delete(param);
   for (const p of layout().list) {
-    const m = /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)(.*)$/u.exec(p.region.kind === "math" ? (p.region.expr ?? "") : "");
+    const m = /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)(.*)$/u.exec(
+      p.region.kind === "math" ? (p.region.expr ?? "") : "",
+    );
     const unit = m && names.has(m[1]) ? /(?:\d|\s|\*|')(mm|cm|m|km|in|ft)\s*$/.exec(m[2]) : null;
     if (unit) return `0 ${unit[1]}..${m![1]}`;
   }
@@ -764,7 +891,10 @@ export function insertPlot() {
   const p = isFunction(selected) ? selected : functionAbove(below);
   const fn = p ? FUNCTION.exec(p.region.expr ?? "") : null;
   // a vector (`d := [0; 4; 15] m`) is plotted as data
-  const vector = p?.region.kind === "math" ? /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)\s*(?:\[|range\()/u.exec(p.region.expr ?? "") : null;
+  const vector =
+    p?.region.kind === "math"
+      ? /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)\s*(?:\[|range\()/u.exec(p.region.expr ?? "")
+      : null;
   const series: Series[] = fn
     ? [{ y: `${fn[1]}(${fn[2]})`, x: fn[2], range: guessRange(p!.region.expr ?? "", fn[2]) }]
     : vector
@@ -852,7 +982,12 @@ export function SeriesEditor(props: { id: string; i: number; title?: boolean }) 
         <div class="insp-subtitle">
           <span class="plot-swatch" style={{ background: colour() }} />
           Series {props.i + 1}
-          <button class="insp-mini" title="Remove this series" aria-label="Remove this series" onClick={() => removeSeries(props.id, props.i)}>
+          <button
+            class="insp-mini"
+            title="Remove this series"
+            aria-label="Remove this series"
+            onClick={() => removeSeries(props.id, props.i)}
+          >
             ✕
           </button>
         </div>
@@ -862,7 +997,12 @@ export function SeriesEditor(props: { id: string; i: number; title?: boolean }) 
       </Field>
       <div class="insp-row">
         <Field label={s().range ? "Variable" : "x values"}>
-          <Text value={s().x} mono placeholder={s().range ? "x" : "1, 2, 3…"} onCommit={(v) => set({ x: v || undefined })} />
+          <Text
+            value={s().x}
+            mono
+            placeholder={s().range ? "x" : "1, 2, 3…"}
+            onCommit={(v) => set({ x: v || undefined })}
+          />
         </Field>
         <Field label="Range" hint="start..end; empty plots data">
           <Text value={s().range} mono placeholder="data" onCommit={(v) => set({ range: v || undefined })} />
@@ -873,7 +1013,12 @@ export function SeriesEditor(props: { id: string; i: number; title?: boolean }) 
           <Text value={s().label} placeholder={s().y || "Series"} onCommit={(v) => set({ label: v || undefined })} />
         </Field>
         <Field label="Colour">
-          <input class="insp-color" type="color" value={colour()} onChange={(e) => set({ style: { ...s().style, color: e.currentTarget.value } })} />
+          <input
+            class="insp-color"
+            type="color"
+            value={colour()}
+            onChange={(e) => set({ style: { ...s().style, color: e.currentTarget.value } })}
+          />
         </Field>
       </div>
       <Field label="Draw as">
@@ -915,7 +1060,12 @@ export function AxisEditor(props: { id: string; axis: "x" | "y"; title?: boolean
           <Text value={spec()?.label} placeholder="automatic" onCommit={(v) => set({ label: v || undefined })} />
         </Field>
         <Field label="Unit" hint="e.g. m, kN*m">
-          <Text value={spec()?.unit} mono placeholder={unit() || "automatic"} onCommit={(v) => set({ unit: v || undefined })} />
+          <Text
+            value={spec()?.unit}
+            mono
+            placeholder={unit() || "automatic"}
+            onCommit={(v) => set({ unit: v || undefined })}
+          />
         </Field>
       </div>
       <div class="insp-row">
@@ -936,7 +1086,11 @@ export function OptionsEditor(props: { id: string }) {
   const r = () => regionOf(props.id) ?? ({} as Region);
   return (
     <>
-      <Check checked={r().grid !== false} label="Grid" onChange={(on) => updateRegion(props.id, { grid: on ? true : false })} />
+      <Check
+        checked={r().grid !== false}
+        label="Grid"
+        onChange={(on) => updateRegion(props.id, { grid: on ? true : false })}
+      />
       <Field label="Legend" hint="Shown with two or more series">
         <Select<string>
           value={(r().legend as string | undefined) ?? "top-left"}
@@ -950,7 +1104,11 @@ export function OptionsEditor(props: { id: string }) {
           onChange={(v) => updateRegion(props.id, { legend: v === "top-left" ? undefined : v })}
         />
       </Field>
-      <Check checked={!!r().extrema} label="Mark maximum and minimum" onChange={(on) => updateRegion(props.id, { extrema: on || undefined })} />
+      <Check
+        checked={!!r().extrema}
+        label="Mark maximum and minimum"
+        onChange={(on) => updateRegion(props.id, { extrema: on || undefined })}
+      />
     </>
   );
 }
@@ -975,7 +1133,9 @@ export function PlotFields(props: { r: Region }) {
 // ---------------------------------------------------------------------------
 
 export function editAxis(e: MouseEvent, id: string, axis: "x" | "y") {
-  openPopover(e, axis === "x" ? "Horizontal axis" : "Vertical axis", () => <AxisEditor id={id} axis={axis} title={false} />);
+  openPopover(e, axis === "x" ? "Horizontal axis" : "Vertical axis", () => (
+    <AxisEditor id={id} axis={axis} title={false} />
+  ));
 }
 
 export function editSeries(e: MouseEvent, id: string, i: number) {
@@ -1003,7 +1163,10 @@ export function editWholePlot(e: MouseEvent, id: string) {
       <Index each={seriesOf(regionOf(id) ?? ({} as Region))}>
         {(s, i) => (
           <button class="plot-series-link" onClick={(ev) => editSeries(ev, id, i)}>
-            <span class="plot-swatch" style={{ background: s().style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length] }} />
+            <span
+              class="plot-swatch"
+              style={{ background: s().style?.color ?? SERIES_COLORS[i % SERIES_COLORS.length] }}
+            />
             {s().label || s().y || `Series ${i + 1}`}
           </button>
         )}
@@ -1022,7 +1185,19 @@ export function editPlot(id: string) {
   setTimeout(() => document.querySelector<HTMLInputElement>(".plot-series input")?.focus(), 30);
 }
 
-const INLINED = ["fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linejoin", "stroke-linecap", "paint-order", "font-size", "font-family", "font-weight", "opacity"];
+const INLINED = [
+  "fill",
+  "stroke",
+  "stroke-width",
+  "stroke-dasharray",
+  "stroke-linejoin",
+  "stroke-linecap",
+  "paint-order",
+  "font-size",
+  "font-family",
+  "font-weight",
+  "opacity",
+];
 
 /** Right-click ▸ Copy as Image: the plot as a PNG at twice its size, for Word or e-mail. */
 export async function copyPlotImage(id: string) {
@@ -1054,7 +1229,9 @@ export async function copyPlotImage(id: string) {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("no image"))), "image/png"));
+    return new Promise<Blob>((ok, fail) =>
+      canvas.toBlob((b) => (b ? ok(b) : fail(new Error("no image"))), "image/png"),
+    );
   })();
   try {
     await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);

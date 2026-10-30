@@ -3,7 +3,16 @@ import { onCleanup, onMount, Show } from "solid-js";
 import { useModal } from "./a11y";
 import { directPdf } from "./export";
 import { Check, Field, LANGS, Num, Section, Select, Text } from "./Inspector";
-import { type CanvasPattern, type Prefs, prefs, resetPrefs, setPref, setSettingsOpen, settingsOpen, type Theme } from "./settings";
+import {
+  type CanvasPattern,
+  type Prefs,
+  prefs,
+  resetPrefs,
+  setPref,
+  setSettingsOpen,
+  settingsOpen,
+  type Theme,
+} from "./settings";
 
 const PAPERS: [string, string][] = ["A4", "A3", "A5", "Letter", "Legal"].map((p) => [p, p]);
 
@@ -118,7 +127,10 @@ function Dialog() {
             </div>
             <div class="insp-row">
               <Field label="Decimals">
-                <Num value={prefs.decimals} onCommit={(v) => setPref("decimals", v === undefined ? 4 : Math.max(0, Math.min(15, v)))} />
+                <Num
+                  value={prefs.decimals}
+                  onCommit={(v) => setPref("decimals", v === undefined ? 4 : Math.max(0, Math.min(15, v)))}
+                />
               </Field>
               <Field label="Language">
                 <Select value={prefs.lang} options={[["", "System"], ...LANGS]} onChange={(v) => setPref("lang", v)} />

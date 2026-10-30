@@ -46,7 +46,9 @@ const FOCUSABLE =
 
 /** The elements Tab reaches inside `root`, in order. */
 export function focusables(root: ParentNode): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0 && !el.closest("[inert]"));
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (el) => el.getClientRects().length > 0 && !el.closest("[inert]"),
+  );
 }
 
 /**
@@ -78,7 +80,14 @@ export function useModal(root: () => HTMLElement | undefined) {
     const el = root();
     for (let node = el; node && node !== document.body; node = node.parentElement ?? undefined) {
       for (const sib of node.parentElement?.children ?? []) {
-        if (sib === node || !(sib instanceof HTMLElement) || sib.inert || sib.hasAttribute("aria-live") || sib.matches("script, style")) continue;
+        if (
+          sib === node ||
+          !(sib instanceof HTMLElement) ||
+          sib.inert ||
+          sib.hasAttribute("aria-live") ||
+          sib.matches("script, style")
+        )
+          continue;
         sib.inert = true;
         sib.setAttribute("aria-hidden", "true");
         hidden.push(sib);
@@ -107,7 +116,11 @@ export function useModal(root: () => HTMLElement | undefined) {
  * above or below (rows of a list, or a grid of tiles), Home/End to the ends.
  * Returns true when the key was handled.
  */
-export function arrowFocus(e: KeyboardEvent, items: HTMLElement[], axis: "both" | "horizontal" | "vertical" = "both"): boolean {
+export function arrowFocus(
+  e: KeyboardEvent,
+  items: HTMLElement[],
+  axis: "both" | "horizontal" | "vertical" = "both",
+): boolean {
   if (e.metaKey || e.ctrlKey || e.altKey || !items.length) return false;
   const at = items.indexOf(document.activeElement as HTMLElement);
   let next: HTMLElement | undefined;
@@ -120,7 +133,10 @@ export function arrowFocus(e: KeyboardEvent, items: HTMLElement[], axis: "both" 
   else if (horizontal && e.key === "ArrowRight") next = items[(at + 1) % items.length];
   else if (horizontal && e.key === "ArrowLeft") next = items[(at - 1 + items.length) % items.length];
   else if (vertical && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-    next = axis === "vertical" ? items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length] : below(items, at, e.key === "ArrowDown" ? 1 : -1);
+    next =
+      axis === "vertical"
+        ? items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]
+        : below(items, at, e.key === "ArrowDown" ? 1 : -1);
   } else return false;
   e.preventDefault();
   e.stopPropagation();
@@ -153,7 +169,11 @@ export function toolbarKeys(e: KeyboardEvent, escape: () => void) {
     return escape();
   }
   if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key))
-    arrowFocus(e, focusables(bar).filter((el) => !el.closest(".fb-pop")), "horizontal");
+    arrowFocus(
+      e,
+      focusables(bar).filter((el) => !el.closest(".fb-pop")),
+      "horizontal",
+    );
 }
 
 // ---------------------------------------------------------------------------

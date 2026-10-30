@@ -11,7 +11,12 @@ const book = (path: string) =>
         name: "Mechanics",
         rel: "Mechanics",
         children: [
-          { kind: "section", name: "Forces", rel: "Mechanics/Forces", children: [{ kind: "note", name: "Friction", rel: "Mechanics/Forces/Friction.quire" }] },
+          {
+            kind: "section",
+            name: "Forces",
+            rel: "Mechanics/Forces",
+            children: [{ kind: "note", name: "Friction", rel: "Mechanics/Forces/Friction.quire" }],
+          },
           { kind: "note", name: "Kinematics", rel: "Mechanics/Kinematics.quirez" },
         ],
       },

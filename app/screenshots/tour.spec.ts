@@ -83,7 +83,10 @@ test("notebooks: a course's notes in sections", async ({ page }) => {
   mkdirSync(join(book, "Lab reports"), { recursive: true });
   writeFileSync(
     join(book, ".quire-notebook.json"),
-    JSON.stringify({ order: { "": ["Mechanics", "Statics", "Maths review", "Lab reports"] }, style: { Mechanics: { color: "#3e63dd" }, Statics: { color: "#f76b15" }, "Maths review": { color: "#30a46c" } } }),
+    JSON.stringify({
+      order: { "": ["Mechanics", "Statics", "Maths review", "Lab reports"] },
+      style: { Mechanics: { color: "#3e63dd" }, Statics: { color: "#f76b15" }, "Maths review": { color: "#30a46c" } },
+    }),
   );
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`/?notebook=${encodeURIComponent(book)}`);

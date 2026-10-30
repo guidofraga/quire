@@ -46,7 +46,14 @@ interface NbState {
   hits: Hit[] | null;
 }
 
-export const [nb, setNb] = createStore<NbState>({ book: null, current: null, expanded: {}, renaming: null, query: "", hits: null });
+export const [nb, setNb] = createStore<NbState>({
+  book: null,
+  current: null,
+  expanded: {},
+  renaming: null,
+  query: "",
+  hits: null,
+});
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -109,8 +116,13 @@ function write(key: string, value: unknown) {
 }
 
 export const recentNotebooks = (): string[] => read<string[]>(RECENT, []).filter((p) => typeof p === "string");
-const rememberNotebook = (path: string) => write(RECENT, [path, ...recentNotebooks().filter((p) => p !== path)].slice(0, 8));
-export const forgetNotebook = (path: string) => write(RECENT, recentNotebooks().filter((p) => p !== path));
+const rememberNotebook = (path: string) =>
+  write(RECENT, [path, ...recentNotebooks().filter((p) => p !== path)].slice(0, 8));
+export const forgetNotebook = (path: string) =>
+  write(
+    RECENT,
+    recentNotebooks().filter((p) => p !== path),
+  );
 export const lastNotebook = () => read<string | null>("quire.notebook.last", null);
 
 const lastNoteKey = () => `quire.notebook.note:${nb.book?.path}`;
@@ -350,13 +362,21 @@ export async function rename(rel: string, name: string) {
   const current = find(rel);
   if (!current || name.trim() === current.name) return;
   if (nb.current === rel || nb.current?.startsWith(`${rel}/`)) await flushSave();
-  await run("rename it", () => call<string>("rename", { rel, name }), (to) => follow(rel, to));
+  await run(
+    "rename it",
+    () => call<string>("rename", { rel, name }),
+    (to) => follow(rel, to),
+  );
 }
 
 /** Move into section `to` (`""` is the notebook itself) at `index` there. */
 export async function moveTo(rel: string, to: string, index?: number) {
   if (nb.current === rel || nb.current?.startsWith(`${rel}/`)) await flushSave();
-  const moved = await run("move it", () => call<string>("move", { rel, to, index }), (m) => follow(rel, m));
+  const moved = await run(
+    "move it",
+    () => call<string>("move", { rel, to, index }),
+    (m) => follow(rel, m),
+  );
   if (moved && to) setExpanded(to, true);
 }
 
@@ -369,7 +389,11 @@ export async function duplicate(rel: string) {
 export async function setStyle(rel: string, style: { color?: string | null; icon?: string | null }) {
   const node = find(rel);
   await run("change it", () =>
-    call("set_style", { rel, color: style.color === undefined ? node?.color : style.color, icon: style.icon === undefined ? node?.icon : style.icon }),
+    call("set_style", {
+      rel,
+      color: style.color === undefined ? node?.color : style.color,
+      icon: style.icon === undefined ? node?.icon : style.icon,
+    }),
   );
 }
 
@@ -381,7 +405,12 @@ export async function trashItem(rel: string) {
   const list = notes().map((n) => n.rel);
   const gone = (r: string) => r === rel || r.startsWith(`${rel}/`);
   const at = list.findIndex(gone);
-  const next = list.slice(at).find((r) => !gone(r)) ?? list.slice(0, Math.max(0, at)).reverse().find((r) => !gone(r));
+  const next =
+    list.slice(at).find((r) => !gone(r)) ??
+    list
+      .slice(0, Math.max(0, at))
+      .reverse()
+      .find((r) => !gone(r));
   if (holdsCurrent) {
     clearTimeout(saveTimer);
     setState({ dirty: false });

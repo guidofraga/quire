@@ -14,7 +14,7 @@ type Row = [string, string];
 const WRITING: Row[] = [
   ["Click anywhere and type", "starts a math region at the red cross"],
   ["A word and a space", "turns it into text (The span…)"],
-  ["\"", "starts a text region straight away"],
+  ['"', "starts a text region straight away"],
   [`$t = $ or ${shift}${mod}M in text`, "live math inside a sentence, with its result"],
   ["Return", "ends the region; the next one goes below"],
   ["Tab / ⇧Tab", "moves between the ? slots of a template"],
@@ -39,7 +39,7 @@ const SYNTAX: Row[] = [
   ["[1, 2; 3, 4]", "matrix (; starts a row); v[2], M[1, 2] index"],
   ["1..10, range(0, 1, 0.1)", "ranges"],
   ["a == b, a <= b", "comparisons (1 is true, 0 false)"],
-  ["if(σ <= f, \"OK\", \"NO\")", "a choice"],
+  ['if(σ <= f, "OK", "NO")', "a choice"],
 ];
 
 const UNITS: Row[] = [
@@ -71,7 +71,7 @@ const FUNCTIONS: Row[] = [
 const TABLES: Row[] = [
   ["12 kN, 1,5, 15%, Dead", "values with units, decimal commas, percentages, text"],
   ["=B2*C2, =SUM(D2:D4)", "formulas: A1 references and ranges"],
-  ["=IF(B5<=C5, \"OK\", \"FAIL\")", "= and <> compare, & joins text"],
+  ['=IF(B5<=C5, "OK", "FAIL")', "= and <> compare, & joins text"],
   ["SUMIF, COUNTIF, VLOOKUP, INDEX, MATCH", "and ROUND, MIN, MAX, AVERAGE, AND, OR…"],
   ["=σ, =B2 + 5 kN", "variables above and units work in formulas"],
   ["Inspector ▸ Name: loads", "math below uses loads[4, 4]; tables use loads!B2"],

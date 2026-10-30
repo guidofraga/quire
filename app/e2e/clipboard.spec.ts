@@ -91,7 +91,9 @@ test("pastes lines of text as math and text regions", async ({ page }) => {
   await expect(regions(page).first()).toHaveClass(/\btext\b/);
   await expect(regions(page).nth(3)).toContainText(/=54\s*kN\W?m$/);
   // one below the other, none covering the next
-  const boxes = await regions(page).evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => [r.top, r.bottom]));
+  const boxes = await regions(page).evaluateAll((els) =>
+    els.map((e) => e.getBoundingClientRect()).map((r) => [r.top, r.bottom]),
+  );
   for (let i = 1; i < boxes.length; i++) expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i - 1][1]);
 });
 
@@ -104,7 +106,9 @@ test("pastes LaTeX as linear math", async ({ page }) => {
   await regions(page).nth(2).dblclick();
   await expect(page.locator("input.math-input")).toHaveValue("M := q*L^2/8");
   // into the math being edited, too
-  await page.locator("input.math-input").evaluate((i: HTMLInputElement) => i.setSelectionRange(i.value.length, i.value.length));
+  await page
+    .locator("input.math-input")
+    .evaluate((i: HTMLInputElement) => i.setSelectionRange(i.value.length, i.value.length));
   await page.keyboard.type(" + ");
   await paste(page, { "text/plain": "\\sqrt{q^{2}} \\cdot L^2" });
   await expect(page.locator("input.math-input")).toHaveValue("M := q*L^2/8 + sqrt(q^2)*L^2");
@@ -113,7 +117,8 @@ test("pastes LaTeX as linear math", async ({ page }) => {
 test("pastes an HTML table as a spreadsheet table", async ({ page }) => {
   await blank(page);
   await paste(page, {
-    "text/html": "<table><tr><th>Load</th><th>q</th></tr><tr><td>Dead</td><td>4.5 kN/m</td></tr><tr><td>Live<br>roof</td><td>1.5 kN/m</td></tr></table>",
+    "text/html":
+      "<table><tr><th>Load</th><th>q</th></tr><tr><td>Dead</td><td>4.5 kN/m</td></tr><tr><td>Live<br>roof</td><td>1.5 kN/m</td></tr></table>",
     "text/plain": "Load q\nDead 4.5 kN/m\nLive roof 1.5 kN/m",
   });
   await expect(regions(page)).toHaveCount(1);

@@ -16,7 +16,10 @@ export function NameTooltip() {
     if (!g) return setTip(null);
     const rect = el.getBoundingClientRect();
     const name = key.split(":").slice(1).join(":");
-    timer = setTimeout(() => setTip({ x: rect.left, y: rect.bottom + 6, name, title: g.title, value: valueText(g.value) }), 350);
+    timer = setTimeout(
+      () => setTip({ x: rect.left, y: rect.bottom + 6, name, title: g.title, value: valueText(g.value) }),
+      350,
+    );
   };
   const hide = () => {
     clearTimeout(timer);

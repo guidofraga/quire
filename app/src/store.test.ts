@@ -1,9 +1,37 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, commitEditing, computeLayout, deleteRegions, insertAtCaret, insertRegion, loadDoc, localized, moveTo, mutate, noteRoom, nudge, originsOf, redo, regroup, setState, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
+import {
+  AREA_COLLAPSED_HEIGHT,
+  commitEditing,
+  computeLayout,
+  deleteRegions,
+  insertAtCaret,
+  insertRegion,
+  loadDoc,
+  localized,
+  moveTo,
+  mutate,
+  noteRoom,
+  nudge,
+  originsOf,
+  redo,
+  regroup,
+  setState,
+  settleRegions,
+  state,
+  togglePageView,
+  undo,
+  undoDepth,
+  updateRegion,
+} from "./store";
 import type { Doc, Region } from "./types";
 
-const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
+const doc = (regions: Region[], page?: Doc["page"]): Doc => ({
+  format: "quire/1",
+  meta: { title: "T" },
+  regions,
+  page,
+});
 const text = (id: string, y: number, t: string): Region => ({ id, kind: "text", at: [0, y], text: t });
 const math = (id: string, y: number, expr: string): Region => ({ id, kind: "math", at: [0, y], expr });
 
@@ -152,7 +180,12 @@ describe("computeLayout pages", () => {
   const H = pageGeom(doc([])).contentH;
 
   it("keeps a region whole by starting it on the next page", () => {
-    const l = computeLayout(doc([math("a", 0, "1"), math("b", H - 10, "2"), math("c", H + 40, "3")]), { b: 30 }, true, false);
+    const l = computeLayout(
+      doc([math("a", 0, "1"), math("b", H - 10, "2"), math("c", H + 40, "3")]),
+      { b: 30 },
+      true,
+      false,
+    );
     const b = l.byId.get("b")!;
     expect(b.page).toBe(1);
     expect(b.top).toBeCloseTo(l.geom.margins.top);
@@ -169,7 +202,11 @@ describe("computeLayout pages", () => {
 
   it("maps document points to the scene and back", () => {
     const l = computeLayout(doc([math("a", 0, "1"), math("b", H * 2 + 50, "2")]), {}, true, false);
-    for (const [x, y] of [[10, 5], [40, H + 100], [0, H * 2 + 50]] as [number, number][]) {
+    for (const [x, y] of [
+      [10, 5],
+      [40, H + 100],
+      [0, H * 2 + 50],
+    ] as [number, number][]) {
       const [sx, sy] = l.toScene(x, y);
       const [dx, dy] = l.fromScene(sx, sy);
       expect(dx).toBeCloseTo(x);
@@ -178,7 +215,14 @@ describe("computeLayout pages", () => {
   });
 
   it("moves what is below a collapsed area up and hides its content", () => {
-    const area: Region = { id: "ar", kind: "area", at: [0, 100], height: 200, collapsed: true, regions: [math("in", 20, "x")] };
+    const area: Region = {
+      id: "ar",
+      kind: "area",
+      at: [0, 100],
+      height: 200,
+      collapsed: true,
+      regions: [math("in", 20, "x")],
+    };
     const l = computeLayout(doc([area, math("below", 400, "y")]), {}, false, false);
     expect(l.byId.get("in")!.hidden).toBe(true);
     expect(l.byId.get("below")!.top).toBe(400 - (200 - AREA_COLLAPSED_HEIGHT));
@@ -186,8 +230,15 @@ describe("computeLayout pages", () => {
 });
 
 describe("regroup: a moved region belongs where it lands", () => {
-  const area = (extra: Partial<Region> = {}): Region => ({ id: "ar", kind: "area", at: [0, 100], height: 200, regions: [math("in", 20, "x")], ...extra });
-  const parentOf = (id: string) => (state.doc.regions.find((r) => r.regions?.some((c) => c.id === id))?.id ?? null);
+  const area = (extra: Partial<Region> = {}): Region => ({
+    id: "ar",
+    kind: "area",
+    at: [0, 100],
+    height: 200,
+    regions: [math("in", 20, "x")],
+    ...extra,
+  });
+  const parentOf = (id: string) => state.doc.regions.find((r) => r.regions?.some((c) => c.id === id))?.id ?? null;
 
   it("leaves the area when dragged below it, keeping its place on the page", () => {
     loadDoc(doc([area()]), null);
@@ -247,7 +298,14 @@ describe("regroup: a moved region belongs where it lands", () => {
 });
 
 describe("deleteRegions", () => {
-  const area = (collapsed?: true): Region => ({ id: "ar", kind: "area", at: [0, 100], height: 200, collapsed, regions: [math("in", 20, "x")] });
+  const area = (collapsed?: true): Region => ({
+    id: "ar",
+    kind: "area",
+    at: [0, 100],
+    height: 200,
+    collapsed,
+    regions: [math("in", 20, "x")],
+  });
 
   it("deletes a collapsed area and its content, and keeps what is below where it was seen (#8)", () => {
     loadDoc(doc([math("above", 0, "a"), area(true), text("below", 400, "Conclusion"), math("end", 500, "b")]), null);
@@ -258,13 +316,21 @@ describe("deleteRegions", () => {
     // it moves up by the bar the collapsed area showed, not down by the band it hid
     expect(computeLayout(state.doc, {}, false, false).byId.get("below")!.top).toBe(seen - AREA_COLLAPSED_HEIGHT);
     undo();
-    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([["above", 0], ["ar", 100], ["below", 400], ["end", 500]]);
+    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([
+      ["above", 0],
+      ["ar", 100],
+      ["below", 400],
+      ["end", 500],
+    ]);
   });
 
   it("closes an open area's band too, and leaves what is above or beside it", () => {
     loadDoc(doc([area(), { ...math("beside", 150, "c"), at: [400, 150] }, math("below", 300, "y")]), null);
     deleteRegions(["ar"]);
-    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([["beside", 150], ["below", 100]]);
+    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([
+      ["beside", 150],
+      ["below", 100],
+    ]);
   });
 
   it("keeps a region dragged out of the area when the area goes", () => {
@@ -276,7 +342,13 @@ describe("deleteRegions", () => {
   });
 
   it("moves only the area's own level", () => {
-    const outer: Region = { id: "out", kind: "area", at: [0, 0], height: 600, regions: [area(), math("inner", 350, "z")] };
+    const outer: Region = {
+      id: "out",
+      kind: "area",
+      at: [0, 0],
+      height: 600,
+      regions: [area(), math("inner", 350, "z")],
+    };
     loadDoc(doc([outer, math("top", 700, "t")]), null);
     deleteRegions(["ar"]);
     const out = state.doc.regions[0];
@@ -288,7 +360,12 @@ describe("deleteRegions", () => {
 describe("noteRoom", () => {
   const at = (id: string, x: number, y: number): Region => ({ id, kind: "math", at: [x, y], expr: "1" });
   const measured = { a: 40 };
-  const l = computeLayout(doc([at("a", 0, 0), at("b", 300, 0), at("c", 200, 100), at("d", 500, 9)]), measured, false, false);
+  const l = computeLayout(
+    doc([at("a", 0, 0), at("b", 300, 0), at("c", 200, 100), at("d", 500, 9)]),
+    measured,
+    false,
+    false,
+  );
   const room = (id: string) => noteRoom(l.byId.get(id)!, l.list, measured, 640);
   it("stops at the nearest region to the right on the same rows", () => {
     expect(room("a")).toBe(300 - 12);
@@ -304,8 +381,21 @@ describe("noteRoom", () => {
 });
 
 describe("settleRegions (imported SMath positions)", () => {
-  const box = (id: string, x: number, y: number, extra: Partial<Region> = {}): Region => ({ id, kind: "text", at: [x, y], text: "t", ...extra });
-  const area = (id: string, x: number, y: number, height: number, regions: Region[], extra: Partial<Region> = {}): Region => ({
+  const box = (id: string, x: number, y: number, extra: Partial<Region> = {}): Region => ({
+    id,
+    kind: "text",
+    at: [x, y],
+    text: "t",
+    ...extra,
+  });
+  const area = (
+    id: string,
+    x: number,
+    y: number,
+    height: number,
+    regions: Region[],
+    extra: Partial<Region> = {},
+  ): Region => ({
     id,
     kind: "area",
     at: [x, y],

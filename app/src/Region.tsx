@@ -76,7 +76,9 @@ function fillInlineMath(el: HTMLElement) {
     const v = state.views[span.dataset.math!];
     span.classList.toggle("inline-error", !!v?.error);
     span.title = v?.error ?? "";
-    span.innerHTML = v?.input ? mathml(v.input, v.result, v.units, v.constants, v.symbolic) : `<code class="raw">?</code>`;
+    span.innerHTML = v?.input
+      ? mathml(v.input, v.result, v.units, v.constants, v.symbolic)
+      : `<code class="raw">?</code>`;
     // read as words, not as the MathML
     if (v?.input) span.setAttribute("aria-label", spokenMath(v.input, v.result, v.units, v.constants, v.symbolic));
     span.setAttribute("role", "img");
@@ -142,7 +144,10 @@ function Caption(props: { p: Placed }) {
     // a caption in several languages keeps the others
     const next =
       typeof caption.text === "object" && caption.text !== null
-        ? { ...caption.text, [Object.keys(caption.text).find((k) => lang()?.startsWith(k)) ?? Object.keys(caption.text)[0]]: text }
+        ? {
+            ...caption.text,
+            [Object.keys(caption.text).find((k) => lang()?.startsWith(k)) ?? Object.keys(caption.text)[0]]: text,
+          }
         : text;
     updateRegion(r().id, { caption: { ...caption, text: next } });
   };
@@ -274,7 +279,12 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           <span class="m" innerHTML={rendered()!} aria-hidden="true" />
         </Show>
         <Show when={comparison()}>
-          <span class="check-badge" aria-hidden="true" classList={{ pass: check() === true, fail: check() === false }} title={check() ? "This check passes" : "This check fails"}>
+          <span
+            class="check-badge"
+            aria-hidden="true"
+            classList={{ pass: check() === true, fail: check() === false }}
+            title={check() ? "This check passes" : "This check fails"}
+          >
             {check() ? "✓" : "✗ fails"}
           </span>
         </Show>
@@ -336,7 +346,10 @@ function ImageBody(props: { p: Placed }) {
       <Show when={r().caption?.position === "above"}>
         <Caption p={props.p} />
       </Show>
-      <Show when={url()} fallback={<div class="img-missing" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }} />}>
+      <Show
+        when={url()}
+        fallback={<div class="img-missing" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }} />}
+      >
         <img src={url()} width={size()[0]} height={size()[1]} draggable={false} alt={r().caption ? "" : "Image"} />
       </Show>
       <Show when={r().caption?.position !== "above"}>
@@ -402,29 +415,29 @@ function TableBody(props: { p: Placed }) {
     return res?.t === "Matrix" ? res.c : null;
   };
   const BoundTable = () => (
-        <Show
-          when={rows()}
-          fallback={
-            <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 300}px` }}>
-              Table of <code>{r().source ?? "—"}</code>
-              <Show when={view()?.error}>
-                <div class="err">{view()!.error}</div>
-              </Show>
-            </div>
-          }
-        >
-          <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
-            <tbody>
-              <For each={rows()!}>
-                {(row) => (
-                  <tr>
-                    <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </Show>
+    <Show
+      when={rows()}
+      fallback={
+        <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 300}px` }}>
+          Table of <code>{r().source ?? "—"}</code>
+          <Show when={view()?.error}>
+            <div class="err">{view()!.error}</div>
+          </Show>
+        </div>
+      }
+    >
+      <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
+        <tbody>
+          <For each={rows()!}>
+            {(row) => (
+              <tr>
+                <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
+    </Show>
   );
   return (
     <figure class="figure">
@@ -473,13 +486,22 @@ function ChecksBody(props: { p: Placed }) {
   return (
     <div class="contents checks-summary" style={{ width: `${Math.min(availableWidth(props.p.x), 640)}px` }}>
       <div class="contents-title">{String(r().title ?? "Summary of Checks")}</div>
-      <Show when={checks().length} fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}>
+      <Show
+        when={checks().length}
+        fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}
+      >
         <div class="checks-total" classList={{ failing: failing().length > 0 }}>
           {summary()}
         </div>
         <For each={checks()}>
           {(c) => (
-            <div class="contents-row" data-ref={c.id} onPointerDown={(ev) => ev.stopPropagation()} onClick={() => revealRegion(c.id)} title="Go to">
+            <div
+              class="contents-row"
+              data-ref={c.id}
+              onPointerDown={(ev) => ev.stopPropagation()}
+              onClick={() => revealRegion(c.id)}
+              title="Go to"
+            >
               <span class="checks-mark" classList={{ pass: c.pass, fail: !c.pass }}>
                 {c.pass ? "✓" : "✗"}
               </span>
@@ -587,7 +609,12 @@ function ResizeHandle(props: { p: Placed }) {
     window.addEventListener("pointerup", up);
   };
   return (
-    <div class="resize-handle" classList={{ corner: r().kind === "image" || r().kind === "plot2d" }} onPointerDown={onDown} title="Drag to resize" />
+    <div
+      class="resize-handle"
+      classList={{ corner: r().kind === "image" || r().kind === "plot2d" }}
+      onPointerDown={onDown}
+      title="Drag to resize"
+    />
   );
 }
 
@@ -603,7 +630,11 @@ function openUnitMenu(e: MouseEvent, r: Region) {
       if (!Object.keys(d.display).length) delete d.display;
     });
   };
-  const items: MenuItems = choices.map((c) => ({ label: prettyValue(c.text), checked: c.unit === current, run: () => setUnit(c.unit) }));
+  const items: MenuItems = choices.map((c) => ({
+    label: prettyValue(c.text),
+    checked: c.unit === current,
+    run: () => setUnit(c.unit),
+  }));
   items.push(null, { label: "Automatic", checked: !current, run: () => setUnit(undefined) });
   items.push({
     label: "Other Unit…",
@@ -680,7 +711,12 @@ export function RegionBox(props: RegionProps) {
         // inside the region being edited, clicks belong to the editor, not the canvas
         if (editing()) return e.stopPropagation();
         // a result's unit: pick another one
-        if (e.button === 0 && !e.shiftKey && (e.target as Element).closest?.(".res .u") && state.views[r().id]?.unitChoices?.length) {
+        if (
+          e.button === 0 &&
+          !e.shiftKey &&
+          (e.target as Element).closest?.(".res .u") &&
+          state.views[r().id]?.unitChoices?.length
+        ) {
           e.stopPropagation();
           e.preventDefault();
           setState({ selection: [r().id], caret: null });
@@ -704,7 +740,10 @@ export function RegionBox(props: RegionProps) {
     >
       <Switch
         fallback={
-          <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 240}px`, height: `${r().size?.[1] ?? 60}px` }}>
+          <div
+            class="placeholder-box"
+            style={{ width: `${r().size?.[0] ?? 240}px`, height: `${r().size?.[1] ?? 60}px` }}
+          >
             {KIND_LABEL[r().kind] ?? r().kind}
           </div>
         }
@@ -736,13 +775,19 @@ export function RegionBox(props: RegionProps) {
       </Switch>
       <Show
         when={
-          selected() && state.selection.length === 1 && !editing() && !state.printing && ["text", "image", "plot2d"].includes(r().kind)
+          selected() &&
+          state.selection.length === 1 &&
+          !editing() &&
+          !state.printing &&
+          ["text", "image", "plot2d"].includes(r().kind)
         }
       >
         <ResizeHandle p={placed()} />
       </Show>
       {/* a function definition can be plotted in one click (shown on hover or when selected) */}
-      <Show when={r().kind === "math" && !editing() && !state.printing && /\(/.test(state.views[r().id]?.defines ?? "")}>
+      <Show
+        when={r().kind === "math" && !editing() && !state.printing && /\(/.test(state.views[r().id]?.defines ?? "")}
+      >
         <button
           class="plot-this"
           title="Plot this function below it"

@@ -52,13 +52,19 @@ describe("parseCsv", () => {
 
 describe("toCsv", () => {
   it("quotes only what needs it, with a BOM and CRLF", () => {
-    expect(toCsv([["a", "b,c", 'x"y'], ["two\nlines", " pad", "σ = 3 kN·m"]])).toBe(
-      '\uFEFFa,"b,c","x""y"\r\n"two\nlines"," pad",σ = 3 kN·m\r\n',
-    );
+    expect(
+      toCsv([
+        ["a", "b,c", 'x"y'],
+        ["two\nlines", " pad", "σ = 3 kN·m"],
+      ]),
+    ).toBe('\uFEFFa,"b,c","x""y"\r\n"two\nlines"," pad",σ = 3 kN·m\r\n');
   });
 
   it("round-trips through parseCsv", () => {
-    const rows = [["Load", "q; per m", "note"], ["Dead", "4,5 kN/m", 'the "usual"\nvalue']];
+    const rows = [
+      ["Load", "q; per m", "note"],
+      ["Dead", "4,5 kN/m", 'the "usual"\nvalue'],
+    ];
     for (const d of [",", ";", "\t"] as const) expect(parseCsv(toCsv(rows, d), d)).toEqual(rows);
   });
 });

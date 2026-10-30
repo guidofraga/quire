@@ -74,8 +74,14 @@ const tight = (s: string) => mo(s, ' lspace="0" rspace="0"');
 
 /** Units written tight, products with a dot: `(m·s)`, `s²`. */
 function unitRow(e: Expr): string {
-  if (e.t === "Paren") return row(mo("(", ' lspace="0" rspace="0" stretchy="false"'), unitRow(e.c), mo(")", ' lspace="0" rspace="0" stretchy="false"'));
-  if (e.t === "Binary" && (e.c[0] === "Mul" || e.c[0] === "Juxt")) return row(unitRow(e.c[1]), tight("·"), unitRow(e.c[2]));
+  if (e.t === "Paren")
+    return row(
+      mo("(", ' lspace="0" rspace="0" stretchy="false"'),
+      unitRow(e.c),
+      mo(")", ' lspace="0" rspace="0" stretchy="false"'),
+    );
+  if (e.t === "Binary" && (e.c[0] === "Mul" || e.c[0] === "Juxt"))
+    return row(unitRow(e.c[1]), tight("·"), unitRow(e.c[2]));
   if (e.t === "Binary" && e.c[0] === "Div") return row(unitRow(e.c[1]), tight("/"), unitRow(e.c[2]));
   return m(e);
 }
@@ -175,7 +181,10 @@ function loop(name: string, args: Expr[]): string {
 
 /** `sys(e1, …, en, rows, cols)`: the elements in a column under a brace; rows and cols are not shown. */
 function system(args: Expr[]): string {
-  const rows = args.slice(0, -2).map((e) => mtr(m(e))).join("");
+  const rows = args
+    .slice(0, -2)
+    .map((e) => mtr(m(e)))
+    .join("");
   return row(mo("{", ' stretchy="true"'), column("q-sys", rows, "axis"));
 }
 
@@ -299,7 +308,19 @@ export function cellHtml(e: Expr): string {
 
 export { esc };
 
-const SUPERSCRIPT: Record<string, string> = { "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹" };
+const SUPERSCRIPT: Record<string, string> = {
+  "-": "⁻",
+  "0": "⁰",
+  "1": "¹",
+  "2": "²",
+  "3": "³",
+  "4": "⁴",
+  "5": "⁵",
+  "6": "⁶",
+  "7": "⁷",
+  "8": "⁸",
+  "9": "⁹",
+};
 
 /** A linear-syntax value as readable text: `9.80665 'm/'s^2` → `9.80665 m/s²`. */
 export function prettyValue(v: string): string {

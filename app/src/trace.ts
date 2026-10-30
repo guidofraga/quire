@@ -103,7 +103,11 @@ export function definitionFor(name: string, from: string): string | null {
   const all = lines();
   const at = all.findIndex((l) => l.id === from);
   for (let i = (at < 0 ? all.length : at) - 1; i >= 0; i--) if (all[i].defines === name) return all[i].id;
-  return all.find((l) => l.defines === name && l.global)?.id ?? all.find((l) => l.defines === name && l.id !== from)?.id ?? null;
+  return (
+    all.find((l) => l.defines === name && l.global)?.id ??
+    all.find((l) => l.defines === name && l.id !== from)?.id ??
+    null
+  );
 }
 
 const IDENT = /[\p{L}\p{N}_.]/u;
@@ -153,7 +157,9 @@ export function installTrace() {
   createRoot(() =>
     createEffect(() => {
       const t = trace();
-      style.textContent = t ? `.region [data-v="${CSS.escape(t.name)}"] { background: var(--trace-name); border-radius: 2px; }` : "";
+      style.textContent = t
+        ? `.region [data-v="${CSS.escape(t.name)}"] { background: var(--trace-name); border-radius: 2px; }`
+        : "";
     }),
   );
 }
