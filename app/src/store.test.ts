@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, deleteRegions, loadDoc, localized, mutate, noteRoom, redo, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, commitEditing, computeLayout, deleteRegions, insertAtCaret, insertRegion, loadDoc, localized, moveTo, mutate, noteRoom, nudge, originsOf, redo, regroup, setState, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -185,6 +185,67 @@ describe("computeLayout pages", () => {
   });
 });
 
+describe("regroup: a moved region belongs where it lands", () => {
+  const area = (extra: Partial<Region> = {}): Region => ({ id: "ar", kind: "area", at: [0, 100], height: 200, regions: [math("in", 20, "x")], ...extra });
+  const parentOf = (id: string) => (state.doc.regions.find((r) => r.regions?.some((c) => c.id === id))?.id ?? null);
+
+  it("leaves the area when dragged below it, keeping its place on the page", () => {
+    loadDoc(doc([area()]), null);
+    moveTo(originsOf(["in"]), 0, 250); // from 120 to 370, past the area's bottom at 300
+    regroup(["in"]);
+    expect(parentOf("in")).toBe(null);
+    expect(state.doc.regions.find((r) => r.id === "in")!.at).toEqual([0, 370]);
+  });
+
+  it("joins an open area when dropped in its band, at the same place on the page", () => {
+    loadDoc(doc([area(), math("out", 400, "y")]), null);
+    moveTo(originsOf(["out"]), 36, -250); // to (36, 150), inside the band 100…300
+    regroup(["out"]);
+    expect(parentOf("out")).toBe("ar");
+    expect(state.doc.regions[0].regions!.find((r) => r.id === "out")!.at).toEqual([36, 50]);
+  });
+
+  it("stays put when moved within its area, and takes the innermost of nested areas", () => {
+    const inner: Region = { id: "inner", kind: "area", at: [0, 100], height: 60, regions: [] };
+    loadDoc(doc([area({ regions: [math("in", 20, "x"), inner] })]), null);
+    nudge(["in"], 0, 18);
+    expect(parentOf("in")).toBe("ar");
+    nudge(["in"], 0, 80); // to 218 on the page, inside the inner area's band 200…260
+    expect(state.doc.regions[0].regions!.find((r) => r.id === "inner")!.regions!.map((r) => r.id)).toEqual(["in"]);
+  });
+
+  it("puts a region typed or inserted in an area's band into the area, as one undo step", () => {
+    loadDoc(doc([area(), math("out", 400, "y")]), null);
+    setState({ caret: [36, 180] });
+    insertAtCaret("math", "z");
+    const typed = state.editing!;
+    commitEditing();
+    expect(parentOf(typed)).toBe("ar");
+    expect(state.doc.regions[0].regions!.find((r) => r.id === typed)!.at).toEqual([36, 80]);
+    setState({ caret: [36, 500] });
+    insertAtCaret("math", "w");
+    const below = state.editing!;
+    commitEditing();
+    expect(parentOf(below)).toBe(null);
+    const plot = insertRegion({ kind: "plot2d", at: [36, 260] });
+    expect(parentOf(plot)).toBe("ar");
+    undo();
+    expect(JSON.stringify(state.doc).includes(`"${plot}"`)).toBe(false);
+  });
+
+  it("never drops a region into a collapsed area, and undoes as one step with the move", () => {
+    loadDoc(doc([area({ collapsed: true }), math("out", 400, "y")]), null);
+    nudge(["out"], 0, -295); // onto the collapsed area's place
+    expect(state.doc.regions.map((r) => r.id)).toEqual(["ar", "out"]);
+    loadDoc(doc([area()]), null);
+    nudge(["in"], 0, 250);
+    expect(parentOf("in")).toBe(null);
+    undo();
+    expect(parentOf("in")).toBe("ar");
+    expect(state.doc.regions[0].regions![0].at).toEqual([0, 20]);
+  });
+});
+
 describe("deleteRegions", () => {
   const area = (collapsed?: true): Region => ({ id: "ar", kind: "area", at: [0, 100], height: 200, collapsed, regions: [math("in", 20, "x")] });
 
@@ -204,6 +265,14 @@ describe("deleteRegions", () => {
     loadDoc(doc([area(), { ...math("beside", 150, "c"), at: [400, 150] }, math("below", 300, "y")]), null);
     deleteRegions(["ar"]);
     expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([["beside", 150], ["below", 100]]);
+  });
+
+  it("keeps a region dragged out of the area when the area goes", () => {
+    loadDoc(doc([area(), math("below", 400, "y")]), null);
+    moveTo(originsOf(["in"]), 0, 200);
+    regroup(["in"]);
+    deleteRegions(["ar"]);
+    expect(state.doc.regions.map((r) => r.id).sort()).toEqual(["below", "in"]);
   });
 
   it("moves only the area's own level", () => {

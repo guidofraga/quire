@@ -706,7 +706,50 @@ export function nudge(ids: string[], dx: number, dy: number) {
   if (!origins.size) return;
   checkpoint();
   moveTo(origins, dx, dy);
+  regroup(ids);
   touch();
+}
+
+/**
+ * After a move or an insertion, each region belongs where it now sits, as in SMath: inside the open area
+ * whose band holds its top (the innermost one), otherwise at the top level. Without this a
+ * region dragged out of an area still belonged to it, and collapsing or deleting the area took
+ * it along. Collapsed areas take nothing in: their content is out of sight.
+ */
+export function regroup(ids: string[]) {
+  const l = layout();
+  const moving = movable(ids);
+  const inMoved = (p: Placed): boolean => {
+    for (let q: Region | null = p.region; q; q = l.byId.get(q.id)?.parent ?? null) if (moving.includes(q.id)) return true;
+    return false;
+  };
+  const areas = l.list.filter((p) => p.region.kind === "area" && !p.hidden && !p.region.collapsed && p.region.height && !inMoved(p));
+  const moves: { id: string; to: string | null; at: [number, number] }[] = [];
+  for (const id of moving) {
+    const p = l.byId.get(id);
+    if (!p) continue;
+    const holder = areas
+      .filter((a) => a.y <= p.y && p.y < a.y + a.region.height!)
+      .sort((a, b) => a.region.height! - b.region.height!)[0];
+    const to = holder?.region.id ?? null;
+    if (to === (p.parent?.id ?? null)) continue;
+    moves.push({ id, to, at: holder ? [p.x - holder.x, p.y - holder.y] : [p.x, p.y] });
+  }
+  if (!moves.length) return;
+  setState(
+    "doc",
+    produce((d) => {
+      for (const m of moves) {
+        const loc = locate(d.regions, m.id);
+        if (!loc) continue;
+        const [r] = loc.list.splice(loc.index, 1);
+        r.at = m.at;
+        const area = m.to ? findDraft(d, m.to) : undefined;
+        if (area) (area.regions ??= []).push(r);
+        else d.regions.push(r);
+      }
+    }),
+  );
 }
 
 /** One blank line, as inserted or removed by Enter / Backspace on empty space. */
@@ -989,6 +1032,7 @@ export function insertAtCaret(kind: "math" | "text", initial = "") {
     region = { id, kind: "text", at: [x, y], text: initial };
   }
   addRegion(region);
+  regroup([id]);
   setState({ editing: id, selection: [id], caret: null, editingFresh: true });
 }
 
@@ -1114,9 +1158,11 @@ export function insertContents(of: ContentsKind) {
   commitEditing();
   const [x, y] = state.caret ?? [0, snap(contentBottom() + GRID)];
   const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables", checks: "Summary of Checks" }[of];
+  const id = newId();
   mutate((d) => {
-    d.regions.push({ id: newId(), kind: "toc", at: [x, y], of, title });
+    d.regions.push({ id, kind: "toc", at: [x, y], of, title });
   });
+  regroup([id]);
 }
 
 export function insertRegion(region: Omit<Region, "id">) {
@@ -1125,6 +1171,7 @@ export function insertRegion(region: Omit<Region, "id">) {
   mutate((d) => {
     d.regions.push({ ...region, id } as Region);
   });
+  regroup([id]);
   setState({ selection: [id], caret: null });
   return id;
 }
@@ -1149,9 +1196,11 @@ export function updateDoc(fn: (d: Doc) => void) {
 export function insertArea() {
   commitEditing();
   const y = state.caret?.[1] ?? snap(contentBottom() + GRID);
+  const id = newId();
   mutate((d) => {
-    d.regions.push({ id: newId(), kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
+    d.regions.push({ id, kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
   });
+  regroup([id]);
 }
 
 export function selectAll() {
