@@ -11,10 +11,12 @@ import {
   type BlockStyle,
   commands,
   currentAlign,
+  currentLink,
   currentMarkAttr,
   currentStyle,
   listActive,
   markActive,
+  normalizeHref,
   run,
 } from "./richtext";
 import {
@@ -29,12 +31,22 @@ import {
 } from "./store";
 import { STRUCTURES, SYMBOLS, type Sym } from "./symbols";
 
-const keep = (e: MouseEvent) => e.preventDefault(); // never steal focus from the editor
+// never steal focus from the editor, except to type into a field (the link address)
+const keep = (e: MouseEvent) => {
+  if (!(e.target as Element).closest("input")) e.preventDefault();
+};
 
 /** The name a screen reader gives a button: its tooltip without the shortcut. */
 const nameOf = (title: string) => title.split("  ")[0];
 
-function Btn(props: { title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: JSX.Element; hiddenLabel?: boolean }) {
+function Btn(props: {
+  title: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: JSX.Element;
+  hiddenLabel?: boolean;
+}) {
   return (
     <button
       class="fb-btn"
@@ -97,7 +109,9 @@ function Dropdown(props: {
     setOpen(true);
     if (!fromKeyboard()) return;
     // the current choice (or selected tab) first, else the first item
-    requestAnimationFrame(() => (pop?.querySelector<HTMLElement>("[aria-checked=true], [aria-selected=true]") ?? items()[0])?.focus());
+    requestAnimationFrame(() =>
+      (pop?.querySelector<HTMLElement>("[aria-checked=true], [aria-selected=true]") ?? items()[0])?.focus(),
+    );
   };
   const onKey = (e: KeyboardEvent) => {
     if (!open()) {
@@ -128,7 +142,15 @@ function Dropdown(props: {
         } else arrowFocus(e, tabs, "horizontal");
         return;
       }
-      if (arrowFocus(e, items().filter((el) => !tabs.includes(el)), props.kind === "menu" ? "vertical" : "both") && document.activeElement === target && e.key === "ArrowUp")
+      if (
+        arrowFocus(
+          e,
+          items().filter((el) => !tabs.includes(el)),
+          props.kind === "menu" ? "vertical" : "both",
+        ) &&
+        document.activeElement === target &&
+        e.key === "ArrowUp"
+      )
         pop.querySelector<HTMLElement>("[role=tab][aria-selected=true]")?.focus();
     }
   };
@@ -203,7 +225,12 @@ function keepInWindow(el: HTMLElement) {
   requestAnimationFrame(() => {
     const r = el.getBoundingClientRect();
     const margin = 8;
-    const shift = r.left < margin ? margin - r.left : r.right > innerWidth - margin ? Math.max(margin - r.left, innerWidth - margin - r.right) : 0;
+    const shift =
+      r.left < margin
+        ? margin - r.left
+        : r.right > innerWidth - margin
+          ? Math.max(margin - r.left, innerWidth - margin - r.right)
+          : 0;
     if (!shift) return;
     el.style.left = `${el.offsetLeft + shift}px`;
     el.style.right = "auto";
@@ -211,7 +238,15 @@ function keepInWindow(el: HTMLElement) {
 }
 
 const icon = (d: string) => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.4"
+    stroke-linecap="round"
+  >
     <path d={d} />
   </svg>
 );
@@ -226,8 +261,22 @@ const STYLES: [BlockStyle, string][] = [
   ["h1", "Heading 1"],
   ["h2", "Heading 2"],
   ["h3", "Heading 3"],
+  ["h4", "Heading 4"],
+  ["h5", "Heading 5"],
+  ["h6", "Heading 6"],
 ];
-const COLORS = ["#1b1d22", "#6b7280", "#d1302a", "#e8730c", "#c79a00", "#2e8b3a", "#1d6fd1", "#6a3fc8", "#c2185b", "#0f766e"];
+const COLORS = [
+  "#1b1d22",
+  "#6b7280",
+  "#d1302a",
+  "#e8730c",
+  "#c79a00",
+  "#2e8b3a",
+  "#1d6fd1",
+  "#6a3fc8",
+  "#c2185b",
+  "#0f766e",
+];
 const COLOR_NAMES = ["Automatic", "Grey", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Teal"];
 const SIZES = [7, 8, 9, 10, 11, 12, 14, 16, 18, 24, 32];
 const ALIGN_ICONS: Record<Align, string> = {
@@ -293,24 +342,64 @@ function TextGroup() {
           </For>
         )}
       </Dropdown>
-      <Btn title="Bold  ⌘B" disabled={!textEnabled()} active={markActive("strong")} onClick={() => applyText(commands.bold)}>
+      <Btn
+        title="Bold  ⌘B"
+        disabled={!textEnabled()}
+        active={markActive("strong")}
+        onClick={() => applyText(commands.bold)}
+      >
         <b>B</b>
       </Btn>
-      <Btn title="Italic  ⌘I" disabled={!textEnabled()} active={markActive("em")} onClick={() => applyText(commands.italic)}>
+      <Btn
+        title="Italic  ⌘I"
+        disabled={!textEnabled()}
+        active={markActive("em")}
+        onClick={() => applyText(commands.italic)}
+      >
         <i class="serif">I</i>
       </Btn>
-      <Btn title="Underline  ⌘U" disabled={!textEnabled()} active={markActive("underline")} onClick={() => applyText(commands.underline)}>
+      <Btn
+        title="Underline  ⌘U"
+        disabled={!textEnabled()}
+        active={markActive("underline")}
+        onClick={() => applyText(commands.underline)}
+      >
         <u>U</u>
       </Btn>
-      <Btn title="Strikethrough" disabled={!textEnabled()} active={markActive("strike")} onClick={() => applyText(commands.strike)}>
+      <Btn
+        title="Strikethrough"
+        disabled={!textEnabled()}
+        active={markActive("strike")}
+        onClick={() => applyText(commands.strike)}
+      >
         <s>S</s>
       </Btn>
-      <Btn title="Superscript" hiddenLabel disabled={!textEnabled()} active={markActive("sup")} onClick={() => applyText(commands.sup)}>
-        <span aria-hidden="true">x<sup>2</sup></span>
+      <Btn
+        title="Superscript"
+        hiddenLabel
+        disabled={!textEnabled()}
+        active={markActive("sup")}
+        onClick={() => applyText(commands.sup)}
+      >
+        <span aria-hidden="true">
+          x<sup>2</sup>
+        </span>
       </Btn>
-      <Btn title="Subscript" hiddenLabel disabled={!textEnabled()} active={markActive("sub")} onClick={() => applyText(commands.sub)}>
-        <span aria-hidden="true">x<sub>2</sub></span>
+      <Btn
+        title="Subscript"
+        hiddenLabel
+        disabled={!textEnabled()}
+        active={markActive("sub")}
+        onClick={() => applyText(commands.sub)}
+      >
+        <span aria-hidden="true">
+          x<sub>2</sub>
+        </span>
       </Btn>
+      <Btn title="Code" disabled={!textEnabled()} active={markActive("code")} onClick={() => applyText(commands.code)}>
+        {icon("M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5")}
+      </Btn>
+      <LinkButton />
       <Dropdown
         title="Text colour"
         name="Text colour"
@@ -382,6 +471,63 @@ function TextGroup() {
   );
 }
 
+/** Add, change or remove the link at the selection. */
+function LinkButton() {
+  const [href, setHref] = createSignal("");
+  return (
+    <Dropdown
+      title="Link"
+      name={currentLink() ? "Edit link" : "Link"}
+      class="fb-link-pop"
+      disabled={!activeView()}
+      label={icon(
+        "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 013.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 01-3.7-3.7L5.3 7.8",
+      )}
+      onOpen={() => setHref(currentLink() ?? "")}
+    >
+      {(close) => (
+        <form
+          class="fb-link"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const to = normalizeHref(href());
+            close();
+            run(commands.link(to || null));
+          }}
+        >
+          <input
+            type="text"
+            aria-label="Link address"
+            placeholder="https://… or #heading"
+            spellcheck={false}
+            value={href()}
+            ref={(el) => requestAnimationFrame(() => el.select())}
+            onInput={(e) => setHref(e.currentTarget.value)}
+            // the arrows move the caret here, not between the popover's controls
+            onKeyDown={(e) =>
+              ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key) && e.stopPropagation()
+            }
+          />
+          <button type="submit" class="fb-item" disabled={!href().trim()}>
+            {currentLink() ? "Change" : "Link"}
+          </button>
+          <button
+            type="button"
+            class="fb-item"
+            disabled={!currentLink()}
+            onClick={() => {
+              close();
+              run(commands.link(null));
+            }}
+          >
+            Remove link
+          </button>
+        </form>
+      )}
+    </Dropdown>
+  );
+}
+
 function ParagraphGroup() {
   return (
     <div class="fb-group">
@@ -397,10 +543,20 @@ function ParagraphGroup() {
           </Btn>
         )}
       </For>
-      <Btn title="Bulleted list" disabled={!textEnabled()} active={listActive("bullet")} onClick={() => applyText(commands.bulletList)}>
+      <Btn
+        title="Bulleted list"
+        disabled={!textEnabled()}
+        active={listActive("bullet")}
+        onClick={() => applyText(commands.bulletList)}
+      >
         {icon("M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5M2.5 4h.1M2.5 8h.1M2.5 12h.1")}
       </Btn>
-      <Btn title="Numbered list" disabled={!textEnabled()} active={listActive("ordered")} onClick={() => applyText(commands.orderedList)}>
+      <Btn
+        title="Numbered list"
+        disabled={!textEnabled()}
+        active={listActive("ordered")}
+        onClick={() => applyText(commands.orderedList)}
+      >
         {icon("M6 4h8M6 8h8M6 12h8M2 3.2l.9-.7v3M1.9 7.3c.3-.5 1.6-.5 1.6.3 0 .6-1.6 1.3-1.6 1.9h1.7")}
       </Btn>
     </div>
@@ -443,7 +599,11 @@ function StructuresGallery(props: { close: () => void }) {
   );
 }
 
-const SYMBOL_TABS = [...SYMBOLS.map((c) => [c.id, c.title] as const), ["constants", "Constants"] as const, ["units", "Units"] as const];
+const SYMBOL_TABS = [
+  ...SYMBOLS.map((c) => [c.id, c.title] as const),
+  ["constants", "Constants"] as const,
+  ["units", "Units"] as const,
+];
 const [symbolTab, setSymbolTab] = createSignal<string>("greek");
 
 /** The list or grid a symbol tab shows. */
@@ -536,7 +696,10 @@ function EquationGroup() {
         onOpen={loadPreviews}
         label={
           <span class="fb-eq">
-            <span class="math-font" aria-hidden="true">∑</span> Structures
+            <span class="math-font" aria-hidden="true">
+              ∑
+            </span>{" "}
+            Structures
           </span>
         }
       >
@@ -549,7 +712,10 @@ function EquationGroup() {
         onOpen={loadLibrary}
         label={
           <span class="fb-eq">
-            <span class="math-font" aria-hidden="true">Ω</span> Symbols
+            <span class="math-font" aria-hidden="true">
+              Ω
+            </span>{" "}
+            Symbols
           </span>
         }
       >
@@ -642,7 +808,16 @@ export function FormatBar() {
         )}
       </For>
       <Show when={hidden().length}>
-        <Dropdown label={<span class="fb-more" aria-hidden="true">⋯</span>} title="More formatting" name="More formatting" class="wide fb-more-pop">
+        <Dropdown
+          label={
+            <span class="fb-more" aria-hidden="true">
+              ⋯
+            </span>
+          }
+          title="More formatting"
+          name="More formatting"
+          class="wide fb-more-pop"
+        >
           {() => (
             <For each={GROUPS.filter((g) => !inBar(g.id))}>
               {(g) => (

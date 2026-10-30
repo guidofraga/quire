@@ -49,7 +49,11 @@ export const COLORS: [string, string][] = [
   ["Grey", "#8b8d98"],
 ];
 
-const folderName = (path: string) => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? path;
+const folderName = (path: string) =>
+  path
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .pop() ?? path;
 
 // ---------------------------------------------------------------------------
 // Opening and making notebooks
@@ -113,7 +117,12 @@ function itemMenu(node: NbNode | null, x: number, y: number) {
       { label: "Rename", shortcut: "F2", run: go(() => setNb("renaming", node.rel)) },
       null,
       { label: "No Colour", checked: !node.color, run: go(() => void setStyle(node.rel, { color: null })) },
-      ...COLORS.map(([name, c]) => ({ label: name, swatch: c, checked: node.color === c, run: go(() => void setStyle(node.rel, { color: c })) })),
+      ...COLORS.map(([name, c]) => ({
+        label: name,
+        swatch: c,
+        checked: node.color === c,
+        run: go(() => void setStyle(node.rel, { color: c })),
+      })),
       null,
       { label: "Move to Trash", shortcut: `${mod}⌫`, run: go(() => void trashItem(node.rel)) },
     ];
@@ -151,7 +160,9 @@ async function dropOn(onto: string | null, where: Where) {
   if (!dropAllowed(from, onto, where)) return;
   if (where === "inside") return void moveTo(from, onto, undefined);
   const dir = parentOf(onto);
-  const siblings = (dir ? (find(dir)?.children ?? []) : (nb.book?.children ?? [])).map((n) => n.rel).filter((r) => r !== from);
+  const siblings = (dir ? (find(dir)?.children ?? []) : (nb.book?.children ?? []))
+    .map((n) => n.rel)
+    .filter((r) => r !== from);
   const at = siblings.indexOf(onto) + (where === "after" ? 1 : 0);
   await moveTo(from, dir, at);
 }
@@ -261,7 +272,15 @@ function Row(props: { node: NbNode; depth: number }) {
           if (!from) return;
           const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const y = (e.clientY - box.top) / box.height;
-          const where: Where = isSection() ? (y < 0.28 ? "before" : y > 0.72 && !open() ? "after" : "inside") : y < 0.5 ? "before" : "after";
+          const where: Where = isSection()
+            ? y < 0.28
+              ? "before"
+              : y > 0.72 && !open()
+                ? "after"
+                : "inside"
+            : y < 0.5
+              ? "before"
+              : "after";
           if (!dropAllowed(from, n().rel, where)) return setDrop(null);
           e.preventDefault();
           e.stopPropagation();
@@ -285,12 +304,22 @@ function Row(props: { node: NbNode; depth: number }) {
           }}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
-            <path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path
+              d="M3.5 2l3 3-3 3"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </span>
         <Glyph node={n()} />
         <Show when={nb.renaming === n().rel} fallback={<span class="nb-name">{n().name}</span>}>
-          <NameInput value={n().name} onDone={(v) => (v === null ? setNb("renaming", null) : void rename(n().rel, v))} />
+          <NameInput
+            value={n().name}
+            onDone={(v) => (v === null ? setNb("renaming", null) : void rename(n().rel, v))}
+          />
         </Show>
         <span class="nb-actions">
           <Show when={isSection()}>
@@ -406,7 +435,9 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
         // is a Tab or Esc away
         const rel = node.rel;
         void openNote(rel).then(() =>
-          setTimeout(() => root.querySelector<HTMLElement>(`[data-rel="${CSS.escape(rel)}"]`)?.focus({ preventScroll: true })),
+          setTimeout(() =>
+            root.querySelector<HTMLElement>(`[data-rel="${CSS.escape(rel)}"]`)?.focus({ preventScroll: true }),
+          ),
         );
       }
       break;
@@ -415,8 +446,8 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
       break;
     case "Backspace":
     case "Delete":
-      if (!node || (e.key === "Backspace" && !cmd)) return;
-      void trashItem(node.rel);
+      // plain Backspace does nothing here, but is kept from the browser, which would go back a page
+      if (node && (e.key === "Delete" || cmd)) void trashItem(node.rel);
       break;
     case "ContextMenu":
     case "F10":
@@ -550,12 +581,20 @@ export function Sidebar(props: { collapsed?: boolean }) {
       () => nb.current,
       (rel) => {
         if (!rel || !tree) return;
-        queueMicrotask(() => tree?.querySelector<HTMLElement>(`[data-rel="${CSS.escape(rel)}"]`)?.scrollIntoView({ block: "nearest" }));
+        queueMicrotask(() =>
+          tree?.querySelector<HTMLElement>(`[data-rel="${CSS.escape(rel)}"]`)?.scrollIntoView({ block: "nearest" }),
+        );
       },
     ),
   );
   // the screen reader hears which note opened
-  createEffect(on(() => nb.current, (rel) => rel && announce(`${titleOf(rel)} opened`), { defer: true }));
+  createEffect(
+    on(
+      () => nb.current,
+      (rel) => rel && announce(`${titleOf(rel)} opened`),
+      { defer: true },
+    ),
+  );
 
   const onResize = (e: PointerEvent) => {
     e.preventDefault();
@@ -585,15 +624,36 @@ export function Sidebar(props: { collapsed?: boolean }) {
       style={{ width: `${sidebarWidth()}px`, "--sb-width": `${sidebarWidth()}px` }}
     >
       <div class="sidebar-top" data-tauri-drag-region>
-        <button class="sb-icon" onClick={() => setSidebarOpen(false)} title={`Hide the sidebar (${mod}\\)`} aria-label="Hide the sidebar">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+        <button
+          class="sb-icon"
+          onClick={() => setSidebarOpen(false)}
+          title={`Hide the sidebar (${mod}\\)`}
+          aria-label="Hide the sidebar"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            aria-hidden="true"
+          >
             <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
             <path d="M6 2.5v11" />
           </svg>
         </button>
         <Show when={nb.book}>
           <button class="sb-icon" onClick={() => void newNote()} title={`New note (${mod}N)`} aria-label="New note">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              aria-hidden="true"
+            >
               <path d="M9.5 2.5h-6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-6" stroke-linecap="round" />
               <path d="M12.2 1.8l2 2L8.6 9.4l-2.6.6.6-2.6z" stroke-linejoin="round" />
             </svg>
@@ -616,7 +676,15 @@ export function Sidebar(props: { collapsed?: boolean }) {
               </svg>
             </button>
             <div class="nb-search">
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 13 13"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.3"
+                aria-hidden="true"
+              >
                 <circle cx="5.6" cy="5.6" r="3.9" />
                 <path d="M8.6 8.6l2.9 2.9" stroke-linecap="round" />
               </svg>
@@ -638,7 +706,11 @@ export function Sidebar(props: { collapsed?: boolean }) {
                     if (first) void openNote(first.rel, first.region);
                   } else if (e.key === "ArrowDown") {
                     e.preventDefault();
-                    (e.currentTarget.closest(".sidebar")?.querySelector(searching() ? ".nb-hit" : '[role="treeitem"]') as HTMLElement | null)?.focus();
+                    (
+                      e.currentTarget
+                        .closest(".sidebar")
+                        ?.querySelector(searching() ? ".nb-hit" : '[role="treeitem"]') as HTMLElement | null
+                    )?.focus();
                   }
                 }}
               />
@@ -676,7 +748,13 @@ export function Sidebar(props: { collapsed?: boolean }) {
                   />
                 }
               >
-                <ul ref={tree} class="nb-tree" role="tree" aria-label={book().name} onKeyDown={(e) => tree && treeKeys(e, tree)}>
+                <ul
+                  ref={tree}
+                  class="nb-tree"
+                  role="tree"
+                  aria-label={book().name}
+                  onKeyDown={(e) => tree && treeKeys(e, tree)}
+                >
                   <For each={book().children}>{(n) => <Row node={n} depth={0} />}</For>
                 </ul>
                 <Show when={count() === 0 && !book().children.length}>
@@ -691,9 +769,25 @@ export function Sidebar(props: { collapsed?: boolean }) {
                 </svg>
                 New note
               </button>
-              <button class="sb-icon" onClick={() => void newSection("")} title={`New section (⌥${mod}N)`} aria-label="New section">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
-                  <path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.4 1.6h5.6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z" stroke-linejoin="round" />
+              <button
+                class="sb-icon"
+                onClick={() => void newSection("")}
+                title={`New section (⌥${mod}N)`}
+                aria-label="New section"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.4 1.6h5.6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"
+                    stroke-linejoin="round"
+                  />
                   <path d="M8 7.2v3.6M6.2 9h3.6" stroke-linecap="round" />
                 </svg>
               </button>
@@ -701,7 +795,13 @@ export function Sidebar(props: { collapsed?: boolean }) {
           </>
         )}
       </Show>
-      <div class="sidebar-resize" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" onPointerDown={onResize} />
+      <div
+        class="sidebar-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the sidebar"
+        onPointerDown={onResize}
+      />
     </nav>
   );
 }
@@ -709,8 +809,21 @@ export function Sidebar(props: { collapsed?: boolean }) {
 /** Show the sidebar again (⌘\, or the button where it was). */
 export function SidebarToggle() {
   return (
-    <button class="icon-btn sb-show" onClick={() => setSidebarOpen(true)} title={`Show the sidebar (${mod}\\)`} aria-label="Show the sidebar">
-      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+    <button
+      class="icon-btn sb-show"
+      onClick={() => setSidebarOpen(true)}
+      title={`Show the sidebar (${mod}\\)`}
+      aria-label="Show the sidebar"
+    >
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.3"
+      >
         <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
         <path d="M6 2.5v11" />
       </svg>
@@ -756,4 +869,3 @@ export function NoteTitle() {
     </span>
   );
 }
-

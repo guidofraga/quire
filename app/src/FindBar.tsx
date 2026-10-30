@@ -43,7 +43,8 @@ export function FindBar() {
     const i = currentHit();
     return i < 0 ? `${n} ${n === 1 ? "region" : "regions"}` : `${i + 1} of ${n}`;
   };
-  const say = (n: number) => flash(n ? `Replaced ${n} ${n === 1 ? "occurrence" : "occurrences"}` : "Nothing to replace");
+  const say = (n: number) =>
+    flash(n ? `Replaced ${n} ${n === 1 ? "occurrence" : "occurrences"}` : "Nothing to replace");
   // the selected match first, then on to the next one
   const replaceOne = () => {
     const list = hits();
@@ -98,10 +99,22 @@ export function FindBar() {
           >
             <u>ab</u>
           </button>
-          <button class="find-nav" onClick={() => findStep(-1)} disabled={!hits().length} title="Previous (⇧↩)" aria-label="Previous match">
+          <button
+            class="find-nav"
+            onClick={() => findStep(-1)}
+            disabled={!hits().length}
+            title="Previous (⇧↩)"
+            aria-label="Previous match"
+          >
             ‹
           </button>
-          <button class="find-nav" onClick={() => findStep(1)} disabled={!hits().length} title="Next (↩)" aria-label="Next match">
+          <button
+            class="find-nav"
+            onClick={() => findStep(1)}
+            disabled={!hits().length}
+            title="Next (↩)"
+            aria-label="Next match"
+          >
             ›
           </button>
           <button class="find-nav" onClick={close} title="Close (Esc)" aria-label="Close">

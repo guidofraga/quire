@@ -1,4 +1,8 @@
 // End to end: the UI in WebKit against `quire serve`, typing as a user would.
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 
 const regions = (page: Page) => page.locator(".region");
@@ -136,7 +140,9 @@ test("imports a CSV file as a table and exports its values", async ({ page }) =>
   await page.mouse.click(700, 250, { button: "right" });
   const chooser = page.waitForEvent("filechooser");
   await page.getByText("Insert Table from CSV…").click();
-  await (await chooser).setFiles({
+  await (
+    await chooser
+  ).setFiles({
     name: "wind loads.csv",
     mimeType: "text/csv",
     buffer: Buffer.from('Load,q,twice\nDead,4.5 kN/m,=B2*2\n"Live, roof",1.5 kN/m,=B3*2\n'),
@@ -162,7 +168,10 @@ test("the Insert menu adds tables, plots and contents, from the mouse or the key
   await page.goto("/");
   await page.getByRole("button", { name: /Blank document/ }).click();
   await page.getByRole("button", { name: "Insert" }).click();
-  await page.getByRole("menuitem", { name: /^Table/ }).first().click();
+  await page
+    .getByRole("menuitem", { name: /^Table/ })
+    .first()
+    .click();
   await expect(page.locator(".region.table")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Insert" }).focus();
@@ -170,4 +179,63 @@ test("the Insert menu adds tables, plots and contents, from the mouse or the key
   await expect(page.getByRole("menuitem").first()).toBeFocused();
   await page.getByRole("menuitem", { name: "Contents" }).click();
   await expect(page.locator(".region.toc")).toHaveCount(1);
+});
+
+test("contents and checks lists keep their rows through an edit elsewhere", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Simply supported beam/ }).click();
+  for (const item of ["Contents", "Summary of Checks"]) {
+    await page.getByRole("button", { name: "Insert" }).click();
+    await page.getByRole("menuitem", { name: item }).click();
+  }
+  const rows = page.locator(".region.toc .contents-row");
+  await expect(rows.filter({ hasText: "Calculations" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: /[✓✗]/ }).first()).toBeVisible();
+  const count = await rows.count();
+  // count every row the lists take out of the page from here on
+  await page.evaluate(() => {
+    const w = window as unknown as { replacedRows: number };
+    w.replacedRows = 0;
+    new MutationObserver((records) => {
+      for (const r of records)
+        for (const n of r.removedNodes)
+          if (n instanceof Element && (n.matches(".contents-row") || n.querySelector(".contents-row")))
+            w.replacedRows++;
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  // typing a paragraph elsewhere changes the document, its layout and the report many times over
+  const paragraph = page.locator('[data-region="b01"]');
+  await paragraph.dblclick();
+  await expect(paragraph.locator(".ProseMirror")).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" It carries a uniform load along its whole length, from end to end.");
+  await page.keyboard.press("Escape");
+  await expect(paragraph).toContainText("from end to end.");
+  await expect(rows).toHaveCount(count);
+  expect(await page.evaluate(() => (window as unknown as { replacedRows: number }).replacedRows)).toBe(0);
+});
+
+test("a region this version can't read shows as a placeholder and is saved back as it was", async ({ page }) => {
+  // a fixture shared with the engine's tests (crates/quire-cli/tests/check.rs), copied so saving can't change it
+  const fixture = fileURLToPath(
+    new URL("../../crates/quire-cli/tests/fixtures/lenient-unreadable.quire", import.meta.url),
+  );
+  const dir = mkdtempSync(join(tmpdir(), "quire-unreadable-e2e-"));
+  const bundle = join(dir, "Odd.quire");
+  cpSync(fixture, bundle, { recursive: true });
+  const original = readFileSync(join(bundle, "document.json"), "utf8");
+  try {
+    await page.goto(`/?open=${encodeURIComponent(bundle)}`);
+    await expect(page.locator(".toast")).toContainText("2 parts of this document aren't understood");
+    const placeholders = page.locator(".region.unreadable");
+    await expect(placeholders).toHaveCount(2);
+    await expect(placeholders.first()).toContainText("can't read");
+    // the other regions still evaluate, and the placeholder's own `a := 100` doesn't count
+    await expect(regions(page).last()).toContainText(/=6$/);
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(page.locator(".toast")).toHaveText("Saved Odd");
+    expect(readFileSync(join(bundle, "document.json"), "utf8")).toBe(original);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -1,0 +1,21 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "A position with a third number"
+  },
+  "regions": [
+    {
+      "id": "a",
+      "kind": "math",
+      "at": [0, 0, 5],
+      "expr": "a := 4 'm"
+    },
+    {
+      "id": "b",
+      "kind": "math",
+      "at": [0, 27],
+      "expr": "b := 2*a",
+      "show": "value"
+    }
+  ]
+}

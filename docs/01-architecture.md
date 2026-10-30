@@ -1,7 +1,7 @@
 # 01 — Architecture & Engine Selection
 
 > **Quire**: a *quire* is a gathering of paper sheets, a notebook.
-> Status: the Phase 1 decision record, kept as the reasoning behind the design; the roadmap (§5) is kept current. For where the code is today, see [03-code-map.md](03-code-map.md).
+> Status: the Phase 1 decision record, kept as the reasoning behind the design; the roadmap (§5) is kept current. Several parts of the plan were not built the way they are described here, or were replaced by something simpler that proved good enough. Each such place is marked **What was built**, with the reason; the original reasoning stays beside it so the trade-off can be revisited. For where the code is today, see [03-code-map.md](03-code-map.md), which wins wherever the two disagree.
 
 ## 0. What we learned from the real SMath file
 
@@ -23,6 +23,8 @@ Before choosing anything, I dissected a real-world SMath structural calculation 
 
 **Recommendation: Tauri 2 + a Rust core**, but with the rendering split described in §3 (DOM for structure and text, custom Rust math layout, GPU only for plots). Not a "draw everything in one big `<canvas>`" design.
 
+> **What was built:** Tauri 2 and a Rust core, as recommended. The rendering is all DOM: math is MathML, plots are SVG, and there is no Rust math layout (§3).
+
 ### Why not Option A (Swift/SwiftUI + Metal)
 SwiftUI gives the most native feel, but:
 1. **The hard parts aren't UI.** The CAS, units, evaluation graph, math typesetting and PDF export make up about 70 % of the effort. Writing them in Swift locks them to Apple. You'd end up writing them in Rust/C++ anyway and bridging, which leaves you with two stacks.
@@ -39,7 +41,7 @@ SwiftUI gives the most native feel, but:
 |---|---|
 | WebKitGTK on Linux is the weakest webview. | macOS-first anyway; Linux is "works", not "flagship". Keep rendering on boring, well-supported primitives (absolutely positioned DOM, Canvas2D, WebGL2). |
 | WebView feels "webby". | No web-style scrollbars or hover effects. Use SF Pro / system font, native menus, native context menus (Tauri `Menu::popup`), ⌘-shortcuts registered on the native side, respect `prefers-reduced-motion` and accent color. |
-| IPC overhead per keystroke. | Math editing state lives in the frontend. Only *committed* edits cross IPC, as small patches. Layout results come back as compact binary (MessagePack) glyph lists. |
+| IPC overhead per keystroke. | Math editing state lives in the frontend. Only *committed* edits cross IPC, as small patches. Layout results come back as compact binary (MessagePack) glyph lists. **What was built:** the whole document crosses as JSON after every edit (Tauri's `invoke`), and the evaluated report comes back as JSON. Evaluating a typical document takes well under a millisecond, so patches and a binary format would add complexity without a measurable gain. |
 
 ## 2. Computation engine
 
@@ -63,6 +65,8 @@ SwiftUI gives the most native feel, but:
 │              evaluator, layout, serializer                     │
 └───────────────────────────────────────────────────────────────┘
 ```
+
+> **What was built:** there is no `quire-num` or `quire-sym` crate. The numeric kernel, the built-in functions and the symbolic engine all live in `quire-eval` (`symbolic/` for `→`), over the AST in `quire-ast` and the units in `quire-units`. No external CAS is linked or run, and linear algebra is plain Rust (`linalg.rs`, `numeric.rs`) rather than `faer` or `nalgebra`: the matrices in worksheets are small, and every dependency has to earn its place.
 
 **a) The AST is ours (custom Rust).** Every other component speaks it: the structural editor, the linear-text serializer, the units checker, the typesetter. External CAS libraries are *backends* we translate to and from at the boundary. We never let a third-party expression type leak into the document model. That's what makes swapping or adding backends cheap.
 
@@ -93,6 +97,8 @@ Generic unit crates (`uom`, `dimensioned`) check units at Rust *compile time*, w
 - **Display-unit selection** for results, in order: (1) the region's explicit display unit (SMath's "contract", e.g. `F = 1800 kgf`); (2) the document's preferred-unit system for that dimension (e.g. "stress → MPa, force → kN"); (3) a heuristic that picks the derived SI unit with the fewest symbols (`kg·m·s⁻²` → `N`).
 - Custom units per document: `units: { tf: "1000 kgf" }` (see the file schema).
 
+> **What was built:** `Dim` has the seven SI exponents as rationals; angles are dimensionless (rad = 1), as in SMath and Mathcad, and there is no information dimension. The unit table is Rust code (`quire-units/src/db.rs`) with factors from NIST SP 811, not a TOML file.
+
 ### 2.3 Evaluation model (`quire-eval`)
 Keeps SMath/Mathcad semantics users know, with a modern implementation:
 - **Document order** is reading order: regions sort by `(y, x)` within flow. A definition is visible to regions *after* it. **Global definitions** (`≡`) are visible everywhere and evaluated first.
@@ -100,6 +106,8 @@ Keeps SMath/Mathcad semantics users know, with a modern implementation:
 - Runs on a **worker thread pool** with **cooperative cancellation** (generation counter checked inside loops and solvers). Typing never waits for compute.
 - Redefinition is allowed (SMath style) but shown with a subtle marker. Use-before-define gets a clear error with a jump-to-definition.
 - Every result is cached by a hash of (expression AST, input values), so reopening a document and scrolling cost nothing.
+
+> **What was built:** the document-order semantics, global `≡` and "defined further down" errors, as above. The rest was not needed: the whole document re-evaluates on every change, on the calling thread, in well under a millisecond for a typical document, so there is no dependency graph, worker pool, cancellation or result cache to keep in sync. The app numbers its requests so a slow answer never replaces a newer one (`latest.ts`).
 
 ## 3. Rendering engine
 
@@ -114,6 +122,12 @@ Keeps SMath/Mathcad semantics users know, with a modern implementation:
 | 3D plots | **WebGL2** (raw or via `regl`): surfaces, wireframes, parametric curves, with orbit controls. | Hardware accelerated on WKWebView/Metal. Doesn't need WebGPU, whose cross-webview support is still uneven. |
 | PDF/print | Rendered **in Rust** from the same layout tree (`krilla` crate: PDF/A, font subsetting). | What you print is exactly what you see. No dependence on WebView print quirks. |
 
+> **What was built:**
+>
+> - **Math is MathML** (`app/src/math.ts`, AST → MathML), with a bundled math font (`QuireMath.woff`, from STIX Two Math). There is no `quire-layout` crate and no `rustybuzz`. MathML in WebKit turned out good enough for worksheets, and it gives screen readers and copy to other apps something they understand.
+> - **2D plots are SVG** (`Plot.tsx`): the engine samples, the front end lays out. SVG prints as vectors and stays sharp at any zoom without redrawing. 3D plots are not built yet.
+> - **PDF comes from WebKit's print engine** rendering the page view, so it matches the page view exactly, with vector, selectable text. On macOS and Linux the app then finishes the file with `lopdf` (`app/src-tauri/src/pdf.rs`: details, bookmarks, links, page labels, smaller photos). There is no `krilla` and no Rust PDF renderer: without a Rust layout tree there was nothing for it to render from, and the print engine already gave what users asked for.
+
 ### 3.2 Staying smooth with hundreds (and thousands) of regions on Retina
 1. **Viewport virtualization:** only regions that intersect the viewport plus one screen of margin get mounted. The rest exist only as model data with known boxes. A spatial index (an R-tree, `rstar` in Rust and mirrored in TS) answers hit tests and visibility.
 2. **Layout is cached in the model.** Each region's measured box is stored. Re-layout happens only when its content or style changes, never on scroll.
@@ -122,13 +136,19 @@ Keeps SMath/Mathcad semantics users know, with a modern implementation:
 5. **Pages** (in page view) are separate DOM layers, so a 60-page report is 60 cheap containers, and only visible pages hold children.
 6. **Budget:** under 4 ms main-thread work per frame during pan/zoom; under 16 ms from keystroke to math re-layout; evaluation is asynchronous and never on the input path.
 
+> **What was built:** pan and zoom are one CSS transform, and each region is its own DOM element that moves without being rebuilt when the layout changes. Every region is mounted (no viewport virtualization or R-tree yet): real reports have a few hundred regions, which the DOM handles. Heights are measured in the browser (`ResizeObserver` in `Region.tsx`) and kept in the store.
+
 ### 3.3 The math editor
 A **structural (template) editor**, like SMath/Mathcad. The AST *is* the editing model, not a text box that's reparsed:
 - Typing `/` wraps the left operand into a fraction, `^` opens a superscript, `.` after an identifier starts a literal subscript (SMath's `A.net`), `[` an index, `Ctrl+M` a matrix template, `Ctrl+=`/`:` gives `:=`, `'` starts a unit.
 - Each AST node has a stable ID. The layout output maps glyph boxes to node IDs and child slots. That's how caret movement, selection, and red-squiggle error placement work.
 - Paste accepts linear text (`(a+b)/2 'm`), LaTeX, MathML, and SMath/Mathcad clipboard XML where feasible.
 
+> **What was built:** a linear-text editor with a live 2D preview (`MathEditor.tsx`): you type `M := q*L^2/8` and see it typeset as you go, with Greek, LaTeX shortcuts and completion. A structural editor needs caret geometry from our own math layout, which was not built. Paste accepts linear text, LaTeX and HTML tables (`clipboard.ts`).
+
 ## 4. Process & crate layout
+
+> **What was built:** the layout below was the plan. `quire-sym`, `quire-layout`, `quire-export` and `plugins/` were never created (symbolic math went into `quire-eval`, math layout and PDF are done by WebKit, §3); `quire-service` (one function per editor call), `quire-web` (the service as WebAssembly for the web version) and `app/src-tauri` were added; the UI is in `app/src`, not `app/ui`. The contract is not patches and streamed events in MessagePack: the app sends the whole document as JSON to `report`, `open`, `save` and a few other calls, through Tauri commands, `quire serve` or WebAssembly, and gets JSON back. [03-code-map.md](03-code-map.md) has the crates, the calls and the path of an edit as they are.
 
 ```
 quire/
@@ -149,7 +169,7 @@ quire/
 └─ docs/               ← you are here
 ```
 
-**Frontend ↔ core contract** (Tauri commands and events, MessagePack payloads):
+**Frontend ↔ core contract**, as planned (Tauri commands and events, MessagePack payloads):
 - `doc.apply(patch[])` → `{ rev, invalidated: RegionId[] }`. Patches are small model operations (move, set expression, set text). They also drive undo/redo and, later, CRDT collaboration.
 - `layout.math(regionId)` → glyph list plus slot map.
 - event `eval.result { regionId, rev, value | error, displayed }`, streamed.
@@ -162,8 +182,8 @@ The **`quire-cli`** is a first-class deliverable: it lets CI pipelines re-run en
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
 | **P1 Core** ✅ | `quire-ast` + `quire-units` + `quire-eval` (numeric kernel included) + `quire-doc` + `quire-cli` + SMath importer | **Met:** `quire check` reproduces all 44 SMath results of a real-world report exactly; 689/689 corpus expressions round-trip |
-| **P2 Canvas MVP** ✅ | Tauri shell, free-form canvas, math editor, text regions, images, live evaluation | **Met:** a real report opens, renders, edits, re-evaluates and saves byte-identically. Interim choices: linear-text math input with live 2D preview, MathML rendering (Rust typesetter and structural editor still to come) |
-| **P3 Document** ✅ | Page view, headers/footers, auto numbering, captions, cross-refs, tables, PDF export | **Met:** a real report exports to a 7-page A4 PDF with its cover form, live header/footer fields and keep-together pagination. Interim choice: PDF comes from WebKit's print engine rendering the page view (vector text, selectable), not yet from the Rust typesetter + krilla. Cross-references followed in 0.1.7. On macOS the app then finishes the file with lopdf (`app/src-tauri/src/pdf.rs`): the front end sends what only the page view knows (document details, each heading's page and position, where every link target and contents-list row landed), and the PDF gets its info dictionary and language, nested bookmarks, page labels, and internal links in place of WebKit's links back into the app; photos are re-encoded as JPEG in the same pass. Linux writes the same file through GTK's "Print to File" backend and gets the same finishing, except web links, which WebKitGTK does not keep; Windows prints through the system dialog and gets none of this yet |
+| **P2 Canvas MVP** ✅ | Tauri shell, free-form canvas, math editor, text regions, images, live evaluation | **Met:** a real report opens, renders, edits, re-evaluates and saves byte-identically. Choices that stayed: linear-text math input with live 2D preview and MathML rendering, in place of the planned Rust typesetter and structural editor (§3) |
+| **P3 Document** ✅ | Page view, headers/footers, auto numbering, captions, cross-refs, tables, PDF export | **Met:** a real report exports to a 7-page A4 PDF with its cover form, live header/footer fields and keep-together pagination. PDF comes from WebKit's print engine rendering the page view (vector text, selectable), in place of the planned Rust typesetter + krilla (§3). Cross-references followed in 0.1.7. On macOS the app then finishes the file with lopdf (`app/src-tauri/src/pdf.rs`): the front end sends what only the page view knows (document details, each heading's page and position, where every link target and contents-list row landed), and the PDF gets its info dictionary and language, nested bookmarks, page labels, and internal links in place of WebKit's links back into the app; photos are re-encoded as JPEG in the same pass. Linux writes the same file through GTK's "Print to File" backend and gets the same finishing, except web links, which WebKitGTK does not keep; Windows prints through the system dialog and gets none of this yet |
 | **P3.5 Editor polish** ✅ | Units without markers, implicit multiplication, word→text typing, rich text (ProseMirror ↔ Djot), format bar, inspector, align/distribute, smart guides, resize, contents lists, clipboard and images | Verified end to end in the browser and through PDF export |
 | **P3.6 Writing math** ✅ | Ribbon v2 (Text / Paragraph / Equation / Arrange), structures and symbols galleries, LaTeX shortcuts with completion, built-in constants, positional unit/constant/variable resolution with hover glossary and disambiguation notes, click-to-edit at the pointer | Verified in the browser, through PDF export and 44/44 SMath results unchanged |
 | **P4 Visualization & data** (in progress) | 2D/3D plots, CSV/JSON/clipboard import/export, data regions | 2D plots done (0.1.7): functions and data, units on the axes, editing on the page, vector PDF. CSV import/export for tables. Still to do: 3D plots, JSON and other file formats, data regions |

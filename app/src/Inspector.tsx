@@ -3,13 +3,14 @@ import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEdi
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { arrowFocus } from "./a11y";
 import { type Background, PX_PER_MM, toPx } from "./pages";
-import { commitEditing, layout, localized, state, updateDoc, updateRegion } from "./store";
+import { commitEditing, layout, localized, state, updateDoc, updateRegion, withLocalized } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import { defaultLabel } from "./labels";
 import type { Doc, Region } from "./types";
 
 type Tab = "region" | "document" | "page";
 const [tab, setTab] = createSignal<Tab>("region");
+const lang = () => state.doc.meta?.lang;
 export { setTab as setInspectorTab };
 
 export function Field(props: { label: string; hint?: string; children: JSX.Element }) {
@@ -22,7 +23,12 @@ export function Field(props: { label: string; hint?: string; children: JSX.Eleme
 }
 
 /** Text field that commits on Enter or when it loses focus. */
-export function Text(props: { value: string | undefined; placeholder?: string; mono?: boolean; onCommit: (v: string) => void }) {
+export function Text(props: {
+  value: string | undefined;
+  placeholder?: string;
+  mono?: boolean;
+  onCommit: (v: string) => void;
+}) {
   return (
     <input
       class="insp-input"
@@ -40,7 +46,12 @@ export function Text(props: { value: string | undefined; placeholder?: string; m
   );
 }
 
-export function Num(props: { value: number | undefined; placeholder?: string; step?: number; onCommit: (v: number | undefined) => void }) {
+export function Num(props: {
+  value: number | undefined;
+  placeholder?: string;
+  step?: number;
+  onCommit: (v: number | undefined) => void;
+}) {
   return (
     <input
       class="insp-input num"
@@ -86,7 +97,8 @@ function ColumnFields(props: { r: Region }) {
       const list = [...((d.columns as Column[] | undefined) ?? [])];
       while (list.length <= c()) list.push({});
       const next: Column = { ...list[c()], ...patch };
-      for (const k of Object.keys(next) as (keyof Column)[]) if (next[k] === undefined || next[k] === "") delete next[k];
+      for (const k of Object.keys(next) as (keyof Column)[])
+        if (next[k] === undefined || next[k] === "") delete next[k];
       list[c()] = next;
       d.columns = list;
     });
@@ -112,7 +124,12 @@ function ColumnFields(props: { r: Region }) {
       </div>
       <div class="insp-row">
         <Field label="Unit" hint="e.g. kN, MPa">
-          <Text value={col().unit} mono placeholder="automatic" onCommit={(v) => set({ unit: v.trim() || undefined })} />
+          <Text
+            value={col().unit}
+            mono
+            placeholder="automatic"
+            onCommit={(v) => set({ unit: v.trim() || undefined })}
+          />
         </Field>
         <Field label="Decimals">
           <Num value={col().decimals} placeholder="table" onCommit={(v) => set({ decimals: v })} />
@@ -141,13 +158,19 @@ function CaptionFields(props: { r: Region }) {
       <Check
         checked={!!props.r.caption}
         label="Show a numbered caption"
-        onChange={(on) => updateRegion(props.r.id, { caption: on ? { text: "Caption", position: "below" } : undefined })}
+        onChange={(on) =>
+          updateRegion(props.r.id, { caption: on ? { text: "Caption", position: "below" } : undefined })
+        }
       />
       <Show when={props.r.caption}>
         <Field label="Text">
           <Text
-            value={localized(props.r.caption!.text)}
-            onCommit={(v) => updateRegion(props.r.id, { caption: { ...props.r.caption!, text: v } })}
+            value={localized(props.r.caption!.text, lang())}
+            onCommit={(v) =>
+              updateRegion(props.r.id, {
+                caption: { ...props.r.caption!, text: withLocalized(props.r.caption!.text, v, lang()) },
+              })
+            }
           />
         </Field>
         <Field label="Position">
@@ -180,7 +203,19 @@ function RegionTab() {
     >
       {(r) => (
         <>
-          <Section title={{ math: "Math", text: "Text", image: "Image", table: "Table", area: "Area", toc: "Contents", plot2d: "Plot" }[r().kind] ?? r().kind}>
+          <Section
+            title={
+              {
+                math: "Math",
+                text: "Text",
+                image: "Image",
+                table: "Table",
+                area: "Area",
+                toc: "Contents",
+                plot2d: "Plot",
+              }[r().kind] ?? r().kind
+            }
+          >
             <div class="insp-row">
               <Field label="X">
                 <Num value={r().at[0]} onCommit={(v) => updateRegion(r().id, { at: [v ?? 0, r().at[1]] })} />
@@ -205,22 +240,26 @@ function RegionTab() {
                       value={r().display?.unit}
                       mono
                       placeholder="automatic"
-                      onCommit={(v) => updateRegion(r().id, (d) => {
-                        d.display = { ...d.display, unit: v || undefined };
-                        if (!d.display.unit) delete d.display.unit;
-                        if (!Object.keys(d.display).length) delete d.display;
-                      })}
+                      onCommit={(v) =>
+                        updateRegion(r().id, (d) => {
+                          d.display = { ...d.display, unit: v || undefined };
+                          if (!d.display.unit) delete d.display.unit;
+                          if (!Object.keys(d.display).length) delete d.display;
+                        })
+                      }
                     />
                   </Field>
                   <Field label="Decimals">
                     <Num
                       value={r().display?.decimals}
                       placeholder="document"
-                      onCommit={(v) => updateRegion(r().id, (d) => {
-                        d.display = { ...d.display, decimals: v };
-                        if (d.display.decimals === undefined) delete d.display.decimals;
-                        if (!Object.keys(d.display).length) delete d.display;
-                      })}
+                      onCommit={(v) =>
+                        updateRegion(r().id, (d) => {
+                          d.display = { ...d.display, decimals: v };
+                          if (d.display.decimals === undefined) delete d.display.decimals;
+                          if (!Object.keys(d.display).length) delete d.display;
+                        })
+                      }
                     />
                   </Field>
                 </div>
@@ -242,11 +281,13 @@ function RegionTab() {
                     value={r().style?.size}
                     placeholder={String(state.doc.styles?.body?.size ?? 10)}
                     step={0.5}
-                    onCommit={(v) => updateRegion(r().id, (d) => {
-                      d.style = { ...d.style, size: v };
-                      if (d.style.size === undefined) delete d.style.size;
-                      if (!Object.keys(d.style).length) delete d.style;
-                    })}
+                    onCommit={(v) =>
+                      updateRegion(r().id, (d) => {
+                        d.style = { ...d.style, size: v };
+                        if (d.style.size === undefined) delete d.style.size;
+                        if (!Object.keys(d.style).length) delete d.style;
+                      })
+                    }
                   />
                 </Field>
               </Match>
@@ -255,11 +296,19 @@ function RegionTab() {
                   <Field label="Width">
                     <Num
                       value={r().size?.[0]}
-                      onCommit={(v) => v && updateRegion(r().id, { size: [v, Math.round((v * (r().size?.[1] ?? 1)) / (r().size?.[0] ?? 1))] })}
+                      onCommit={(v) =>
+                        v &&
+                        updateRegion(r().id, {
+                          size: [v, Math.round((v * (r().size?.[1] ?? 1)) / (r().size?.[0] ?? 1))],
+                        })
+                      }
                     />
                   </Field>
                   <Field label="Height">
-                    <Num value={r().size?.[1]} onCommit={(v) => v && updateRegion(r().id, { size: [r().size?.[0] ?? v, v] })} />
+                    <Num
+                      value={r().size?.[1]}
+                      onCommit={(v) => v && updateRegion(r().id, { size: [r().size?.[0] ?? v, v] })}
+                    />
                   </Field>
                 </div>
               </Match>
@@ -287,11 +336,13 @@ function RegionTab() {
                     <Num
                       value={r().display?.decimals}
                       placeholder="document"
-                      onCommit={(v) => updateRegion(r().id, (d) => {
-                        d.display = { ...d.display, decimals: v };
-                        if (d.display.decimals === undefined) delete d.display.decimals;
-                        if (!Object.keys(d.display).length) delete d.display;
-                      })}
+                      onCommit={(v) =>
+                        updateRegion(r().id, (d) => {
+                          d.display = { ...d.display, decimals: v };
+                          if (d.display.decimals === undefined) delete d.display.decimals;
+                          if (!Object.keys(d.display).length) delete d.display;
+                        })
+                      }
                     />
                   </Field>
                 </div>
@@ -314,20 +365,33 @@ function RegionTab() {
               </Match>
               <Match when={r().kind === "area"}>
                 <Field label="Title">
-                  <Text value={localized(r().title)} onCommit={(v) => updateRegion(r().id, { title: v })} />
+                  <Text
+                    value={localized(r().title, lang())}
+                    onCommit={(v) => updateRegion(r().id, { title: withLocalized(r().title, v, lang()) })}
+                  />
                 </Field>
                 <Field label="Height">
                   <Num value={r().height} onCommit={(v) => updateRegion(r().id, { height: v })} />
                 </Field>
-                <Check checked={!!r().collapsed} label="Collapsed" onChange={(on) => updateRegion(r().id, { collapsed: on || undefined })} />
+                <Check
+                  checked={!!r().collapsed}
+                  label="Collapsed"
+                  onChange={(on) => updateRegion(r().id, { collapsed: on || undefined })}
+                />
               </Match>
               <Match when={r().kind === "plot2d"}>
                 <div class="insp-row">
                   <Field label="Width">
-                    <Num value={(r().size ?? DEFAULT_SIZE)[0]} onCommit={(v) => v && updateRegion(r().id, { size: [v, (r().size ?? DEFAULT_SIZE)[1]] })} />
+                    <Num
+                      value={(r().size ?? DEFAULT_SIZE)[0]}
+                      onCommit={(v) => v && updateRegion(r().id, { size: [v, (r().size ?? DEFAULT_SIZE)[1]] })}
+                    />
                   </Field>
                   <Field label="Height">
-                    <Num value={(r().size ?? DEFAULT_SIZE)[1]} onCommit={(v) => v && updateRegion(r().id, { size: [(r().size ?? DEFAULT_SIZE)[0], v] })} />
+                    <Num
+                      value={(r().size ?? DEFAULT_SIZE)[1]}
+                      onCommit={(v) => v && updateRegion(r().id, { size: [(r().size ?? DEFAULT_SIZE)[0], v] })}
+                    />
                   </Field>
                 </div>
                 <PlotFields r={r()} />
@@ -402,7 +466,16 @@ function DocumentTab() {
         <Field label="Authors" hint="Comma-separated">
           <Text
             value={((meta().authors as string[] | undefined) ?? []).join(", ")}
-            onCommit={(v) => set(["meta", "authors"])(v ? v.split(",").map((a) => a.trim()).filter(Boolean) : undefined)}
+            onCommit={(v) =>
+              set(["meta", "authors"])(
+                v
+                  ? v
+                      .split(",")
+                      .map((a) => a.trim())
+                      .filter(Boolean)
+                  : undefined,
+              )
+            }
           />
         </Field>
         <Field label="Company">
@@ -425,7 +498,11 @@ function DocumentTab() {
         </Field>
         <div class="insp-row">
           <Field label="Decimals">
-            <Num value={display().decimals as number | undefined} placeholder="4" onCommit={set(["settings", "display", "decimals"])} />
+            <Num
+              value={display().decimals as number | undefined}
+              placeholder="4"
+              onCommit={set(["settings", "display", "decimals"])}
+            />
           </Field>
           <Field label="Scientific from 10^">
             <Num
@@ -447,7 +524,11 @@ function DocumentTab() {
           />
         </Field>
         <Field label="Significant figures" hint="Instead of a number of decimals">
-          <Num value={display().sigFigs as number | undefined} placeholder="off" onCommit={(v) => set(["settings", "display", "sigFigs"])(v && v > 0 ? v : undefined)} />
+          <Num
+            value={display().sigFigs as number | undefined}
+            placeholder="off"
+            onCommit={(v) => set(["settings", "display", "sigFigs"])(v && v > 0 ? v : undefined)}
+          />
         </Field>
         <Check
           checked={!!display().trailingZeros}
@@ -475,13 +556,25 @@ function DocumentTab() {
           onChange={(on) => set(["styles", "numbering", "headings"])(on ? "1.1" : "")}
         />
         <Field label="Figure captions" hint="{n} is the number; empty follows the language">
-          <Text value={numbering().figures} placeholder={defaultLabel("figure")} onCommit={(v) => set(["styles", "numbering", "figures"])(v || undefined)} />
+          <Text
+            value={numbering().figures}
+            placeholder={defaultLabel("figure")}
+            onCommit={(v) => set(["styles", "numbering", "figures"])(v || undefined)}
+          />
         </Field>
         <Field label="Table captions">
-          <Text value={numbering().tables} placeholder={defaultLabel("table")} onCommit={(v) => set(["styles", "numbering", "tables"])(v || undefined)} />
+          <Text
+            value={numbering().tables}
+            placeholder={defaultLabel("table")}
+            onCommit={(v) => set(["styles", "numbering", "tables"])(v || undefined)}
+          />
         </Field>
         <Field label="References to headings" hint="How a cross-reference to a heading reads">
-          <Text value={numbering().sections} placeholder={defaultLabel("section")} onCommit={(v) => set(["styles", "numbering", "sections"])(v || undefined)} />
+          <Text
+            value={numbering().sections}
+            placeholder={defaultLabel("section")}
+            onCommit={(v) => set(["styles", "numbering", "sections"])(v || undefined)}
+          />
         </Field>
       </Section>
     </>
@@ -544,7 +637,11 @@ function PageTab(props: { onAddBackground: () => void }) {
           <For each={["top", "bottom", "left", "right"]}>
             {(side) => (
               <Field label={`${side[0].toUpperCase()}${side.slice(1)} mm`}>
-                <Num value={mm(margins()[side], 20)} step={0.5} onCommit={(v) => set(["page", "margins", side])(v === undefined ? undefined : `${v}mm`)} />
+                <Num
+                  value={mm(margins()[side], 20)}
+                  step={0.5}
+                  onCommit={(v) => set(["page", "margins", side])(v === undefined ? undefined : `${v}mm`)}
+                />
               </Field>
             )}
           </For>
@@ -580,7 +677,10 @@ function PageTab(props: { onAddBackground: () => void }) {
               </Show>
               <div class="insp-bg-fields">
                 <Field label="Pages" hint="all, 1, 2-4, odd, even">
-                  <Text value={b.pages ?? "all"} onCommit={(v) => updateDoc((d) => ((d.page!.backgrounds as Background[])[i()].pages = v || "all"))} />
+                  <Text
+                    value={b.pages ?? "all"}
+                    onCommit={(v) => updateDoc((d) => ((d.page!.backgrounds as Background[])[i()].pages = v || "all"))}
+                  />
                 </Field>
                 <Select
                   value={b.fit ?? "margins"}
@@ -590,7 +690,10 @@ function PageTab(props: { onAddBackground: () => void }) {
                   ]}
                   onChange={(v) => updateDoc((d) => ((d.page!.backgrounds as Background[])[i()].fit = v))}
                 />
-                <button class="insp-link" onClick={() => updateDoc((d) => (d.page!.backgrounds as Background[]).splice(i(), 1))}>
+                <button
+                  class="insp-link"
+                  onClick={() => updateDoc((d) => (d.page!.backgrounds as Background[]).splice(i(), 1))}
+                >
                   Remove
                 </button>
               </div>

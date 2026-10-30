@@ -4,9 +4,34 @@
 import type { BinaryOp, CmpOp, Expr } from "./types";
 
 const GREEK: Record<string, string> = {
-  α: "alpha", β: "beta", γ: "gamma", δ: "delta", ε: "epsilon", ϵ: "epsilon", ζ: "zeta", η: "eta", θ: "theta", ϑ: "theta",
-  ι: "iota", κ: "kappa", λ: "lambda", μ: "mu", ν: "nu", ξ: "xi", ο: "omicron", π: "pi", ρ: "rho", σ: "sigma", ς: "sigma",
-  τ: "tau", υ: "upsilon", φ: "phi", ϕ: "phi", χ: "chi", ψ: "psi", ω: "omega",
+  α: "alpha",
+  β: "beta",
+  γ: "gamma",
+  δ: "delta",
+  ε: "epsilon",
+  ϵ: "epsilon",
+  ζ: "zeta",
+  η: "eta",
+  θ: "theta",
+  ϑ: "theta",
+  ι: "iota",
+  κ: "kappa",
+  λ: "lambda",
+  μ: "mu",
+  ν: "nu",
+  ξ: "xi",
+  ο: "omicron",
+  π: "pi",
+  ρ: "rho",
+  σ: "sigma",
+  ς: "sigma",
+  τ: "tau",
+  υ: "upsilon",
+  φ: "phi",
+  ϕ: "phi",
+  χ: "chi",
+  ψ: "psi",
+  ω: "omega",
 };
 
 /** `σ.max` → "sigma max", `Δ` → "capital delta", `ħ` → "h bar". */
@@ -183,7 +208,8 @@ function sayUnits(e: Expr, cx: Ctx, plural: boolean): string {
       const [op, a, b] = e.c;
       if (op === "Pow") {
         const n = unparen(b);
-        if (n.t === "Unary" && n.c[0] === "Neg") return `per ${sayUnits(a, cx, false)}${n.c[1].t === "Num" && n.c[1].c === "1" ? "" : ` ${power(n.c[1], cx)}`}`;
+        if (n.t === "Unary" && n.c[0] === "Neg")
+          return `per ${sayUnits(a, cx, false)}${n.c[1].t === "Num" && n.c[1].c === "1" ? "" : ` ${power(n.c[1], cx)}`}`;
         return `${sayUnits(a, cx, plural)} ${power(b, cx)}`;
       }
       if (op === "Div") return `${sayUnits(a, cx, plural)} per ${sayUnits(b, cx, false)}`;
@@ -206,9 +232,16 @@ function binary(op: BinaryOp, a: Expr, b: Expr, cx: Ctx): string {
     case "Mul":
     case "Juxt":
       // a quantity: 54 kilonewton metres, also when written (54 kN)·m
-      if (unitsOnly(b, cx) && a.t === "Binary" && (a.c[0] === "Mul" || a.c[0] === "Juxt") && a.c[1].t === "Num" && unitsOnly(a.c[2], cx))
+      if (
+        unitsOnly(b, cx) &&
+        a.t === "Binary" &&
+        (a.c[0] === "Mul" || a.c[0] === "Juxt") &&
+        a.c[1].t === "Num" &&
+        unitsOnly(a.c[2], cx)
+      )
         return binary("Juxt", a.c[1], { t: "Binary", c: ["Mul", a.c[2], b] }, cx);
-      if (unitsOnly(b, cx) && !unitsOnly(a, cx)) return `${say(a, cx)} ${sayUnits(b, cx, !(a.t === "Num" && isOne(a.c)))}`;
+      if (unitsOnly(b, cx) && !unitsOnly(a, cx))
+        return `${say(a, cx)} ${sayUnits(b, cx, !(a.t === "Num" && isOne(a.c)))}`;
       if (op === "Juxt") return `${say(a, cx)} ${say(b, cx)}`;
       return `${say(a, cx)} times ${say(b, cx)}`;
     case "Div":
@@ -229,12 +262,17 @@ function call(name: string, args: Expr[], cx: Ctx): string {
   if (name === "if" && (args.length === 2 || args.length === 3)) {
     return `if ${say(args[0], cx)}, then ${say(args[1], cx)}${args.length === 3 ? `, otherwise ${say(args[2], cx)}` : ""}`;
   }
-  if (name === "for" && args.length === 3) return `for each ${say(args[0], cx)} in ${say(args[1], cx)}, do ${say(args[2], cx)}`;
+  if (name === "for" && args.length === 3)
+    return `for each ${say(args[0], cx)} in ${say(args[1], cx)}, do ${say(args[2], cx)}`;
   if (name === "for" && args.length === 4) {
     return `for ${say(args[0], cx)}, while ${say(args[1], cx)}, step ${say(args[2], cx)}, do ${say(args[3], cx)}`;
   }
   if (name === "while" && args.length === 2) return `while ${say(args[0], cx)}, do ${say(args[1], cx)}`;
-  if (name === "sys" && args.length >= 3) return `system of ${args.slice(0, -2).map((e) => say(e, cx)).join(", ")}`;
+  if (name === "sys" && args.length >= 3)
+    return `system of ${args
+      .slice(0, -2)
+      .map((e) => say(e, cx))
+      .join(", ")}`;
   const [x, y, z, w] = args.map((e) => say(unparen(e), cx));
   switch (`${name}/${args.length}`) {
     case "sqrt/1":

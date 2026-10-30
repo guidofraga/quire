@@ -48,7 +48,8 @@ export function parseCsv(text: string, delimiter: Delimiter = detectDelimiter(te
 
 /** CSV text, quoting only cells that need it. Starts with a BOM so Excel reads it as UTF-8. */
 export function toCsv(rows: string[][], delimiter: Delimiter = ","): string {
-  const quote = (s: string) => (s.includes(delimiter) || /["\n\r]/.test(s) || /^\s|\s$/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const quote = (s: string) =>
+    s.includes(delimiter) || /["\n\r]/.test(s) || /^\s|\s$/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   return "﻿" + rows.map((r) => r.map(quote).join(delimiter)).join("\r\n") + "\r\n";
 }
 
@@ -67,6 +68,9 @@ export const withDecimalComma = (s: string) => s.replace(/^(-?\d+)\.(\d)/, "$1,$
 /** A table name from a file name: `Wind loads 2024.csv` → `Wind_loads_2024`. */
 export function tableNameFrom(file: string): string | undefined {
   const stem = file.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "");
-  const name = stem.trim().replace(/[\s-]+/g, "_").replace(/[^\p{L}\p{N}_]/gu, "");
+  const name = stem
+    .trim()
+    .replace(/[\s-]+/g, "_")
+    .replace(/[^\p{L}\p{N}_]/gu, "");
   return /^\p{L}/u.test(name) ? name : undefined;
 }

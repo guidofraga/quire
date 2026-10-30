@@ -56,7 +56,14 @@ function Panel(props: Open) {
   useModal(() => el);
   return (
     <Portal>
-      <div ref={el} class="page-popover insp-body" role="dialog" aria-modal="true" aria-label={props.title} style={{ left: `${props.x}px`, top: `${props.y + 8}px` }}>
+      <div
+        ref={el}
+        class="page-popover insp-body"
+        role="dialog"
+        aria-modal="true"
+        aria-label={props.title}
+        style={{ left: `${props.x}px`, top: `${props.y + 8}px` }}
+      >
         <div class="page-popover-head">
           <span>{props.title}</span>
           <button class="insp-mini" onClick={closePopover} aria-label="Close">

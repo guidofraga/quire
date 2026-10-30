@@ -43,6 +43,7 @@ import {
   layout,
   localized,
   mutate,
+  regroup,
   newId,
   type Placed,
   setState,
@@ -156,7 +157,11 @@ function exportRegion(r: Region): { html: string; text: string } {
   }
   if (isSheet(r)) {
     const cells = shownCells(r);
-    const table = tableHtml(cells, { headerRow: r.header?.row, headerColumn: r.header?.column, align: columnsOf(r).map((c) => c.align) });
+    const table = tableHtml(cells, {
+      headerRow: r.header?.row,
+      headerColumn: r.header?.column,
+      align: columnsOf(r).map((c) => c.align),
+    });
     const caption = captionHtml(r);
     return { html: r.caption?.position === "below" ? table + caption : caption + table, text: tsv(cells) };
   }
@@ -190,7 +195,13 @@ export function onCopy(e: ClipboardEvent, cut: boolean) {
   const parts = regions.map(exportRegion);
   e.clipboardData?.setData(REGIONS_TYPE, encodeClip(clip));
   e.clipboardData?.setData("text/html", clipHtml(parts.map((p) => p.html).join(""), clip));
-  e.clipboardData?.setData("text/plain", parts.map((p) => p.text).filter(Boolean).join("\n"));
+  e.clipboardData?.setData(
+    "text/plain",
+    parts
+      .map((p) => p.text)
+      .filter(Boolean)
+      .join("\n"),
+  );
   e.preventDefault();
   if (cut) deleteRegions(state.selection);
 }
@@ -214,10 +225,17 @@ export function pasteRegions(regions: Region[]) {
   mutate((d) => {
     d.regions.push(...pasted);
   });
+  regroup(pasted.map((r) => r.id));
   setState({ selection: pasted.map((r) => r.id), caret: null });
 }
 
-const IMAGE_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/svg+xml": "svg", "image/webp": "webp" };
+const IMAGE_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/svg+xml": "svg",
+  "image/webp": "webp",
+};
 
 /** Regions from another window or document: their images are added to this one first. */
 async function pasteClip(clip: Clip) {
@@ -273,6 +291,7 @@ function pasteLines(text: string) {
   mutate((d) => {
     d.regions.push(...made);
   });
+  regroup(made.map((r) => r.id));
   setState({ selection: made.map((r) => r.id), caret: null });
   if (made.length > 1) stackPasted(made.map((r) => r.id));
 }
@@ -409,6 +428,7 @@ async function placeImage(src: string, at?: [number, number]) {
   mutate((d) => {
     d.regions.push({ id, kind: "image", at: [snap(x), snap(y)], size: [w, Math.round((w * nh) / nw)], src });
   });
+  regroup([id]);
   setState({ selection: [id], caret: null });
 }
 
@@ -434,7 +454,10 @@ export async function insertImageBlob(file: Blob, at?: [number, number]) {
 export async function pickImage(): Promise<{ path?: string; file?: File } | null> {
   if (isTauri) {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const p = await open({ title: "Insert image", filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp"] }] });
+    const p = await open({
+      title: "Insert image",
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp"] }],
+    });
     return typeof p === "string" ? { path: p } : null;
   }
   return new Promise((resolve) => {
@@ -458,7 +481,10 @@ export async function addBackground() {
   if (!pick) return;
   const src = pick.path
     ? await api.importImage(pick.path)
-    : await api.stageImage(await readAsBase64(pick.file!), (pick.file!.type.split("/")[1] ?? "png").replace("jpeg", "jpg"));
+    : await api.stageImage(
+        await readAsBase64(pick.file!),
+        (pick.file!.type.split("/")[1] ?? "png").replace("jpeg", "jpg"),
+      );
   setState("assets", src, await api.readAsset(state.path ?? "", src));
   mutate((d) => {
     const page = (d.page ??= {});
@@ -527,13 +553,24 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Cross-Reference…", shortcut: "⇧⌘R", run: go("insert_ref") },
         null,
       );
-    if (!many && r && isSheet(r) && state.editing === id) items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
-    else if (!many && r?.kind === "plot2d") items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
+    if (!many && r && isSheet(r) && state.editing === id)
+      items.push(...tableMenuItems((fn) => () => (closeMenu(), fn())));
+    else if (!many && r?.kind === "plot2d")
+      items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
-      items.push({ label: isSheet(r) ? "Edit Table" : "Edit", shortcut: "↩", run: () => (closeMenu(), startEditing(id)) });
-    if (!many && r && isSheet(r)) items.push({ label: "Export as CSV…", run: () => (closeMenu(), void exportCsv(id)) }, null);
+      items.push({
+        label: isSheet(r) ? "Edit Table" : "Edit",
+        shortcut: "↩",
+        run: () => (closeMenu(), startEditing(id)),
+      });
+    if (!many && r && isSheet(r))
+      items.push({ label: "Export as CSV…", run: () => (closeMenu(), void exportCsv(id)) }, null);
     items.push(
-      { label: "Cut", shortcut: "⌘X", run: () => (closeMenu(), copyToInternal(), document.execCommand("cut") || deleteRegions(state.selection)) },
+      {
+        label: "Cut",
+        shortcut: "⌘X",
+        run: () => (closeMenu(), copyToInternal(), document.execCommand("cut") || deleteRegions(state.selection)),
+      },
       { label: "Copy", shortcut: "⌘C", run: () => (closeMenu(), copyToInternal(), document.execCommand("copy")) },
       { label: "Paste", shortcut: "⌘V", run: () => void pasteFromMenu() },
       { label: "Duplicate", shortcut: "⌘D", run: go("duplicate") },
@@ -560,12 +597,23 @@ export function installContextMenus(run: (command: string) => void) {
         {
           label: "Copy as LaTeX",
           disabled: !view?.input,
-          run: () => (closeMenu(), copyText(latex(view!.input!, view!.error ? null : view!.result, view!.units), "as LaTeX")),
+          run: () => (
+            closeMenu(),
+            copyText(latex(view!.input!, view!.error ? null : view!.result, view!.units), "as LaTeX")
+          ),
         },
         null,
-        { label: "Show Result", checked: !!r.show, run: () => (closeMenu(), updateRegion(id, { show: r.show ? undefined : "value" })) },
+        {
+          label: "Show Result",
+          checked: !!r.show,
+          run: () => (closeMenu(), updateRegion(id, { show: r.show ? undefined : "value" })),
+        },
         ...(r.show === "value" ? decimalsItems(id, r) : []),
-        { label: "Exclude from Calculation", checked: !!r.disabled, run: () => (closeMenu(), updateRegion(id, { disabled: r.disabled ? undefined : true })) },
+        {
+          label: "Exclude from Calculation",
+          checked: !!r.disabled,
+          run: () => (closeMenu(), updateRegion(id, { disabled: r.disabled ? undefined : true })),
+        },
         { label: "Convert to Text", run: () => (closeMenu(), commitEditing(), convertRegion(id, "text")) },
         null,
       );
@@ -580,7 +628,9 @@ export function installContextMenus(run: (command: string) => void) {
             closeMenu();
             // r is live: read whether it had a caption before changing it
             const adding = !r.caption;
-            updateRegion(id, { caption: adding ? { text: "Caption", position: r.kind === "table" ? "above" : "below" } : undefined });
+            updateRegion(id, {
+              caption: adding ? { text: "Caption", position: r.kind === "table" ? "above" : "below" } : undefined,
+            });
             // a new caption opens for typing
             if (adding) setCaptionToEdit(id);
           },

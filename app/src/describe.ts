@@ -16,7 +16,9 @@ export function mathWords(id: string, withError = true): string {
   if (!r) return "";
   const check = mathCheck(r, v);
   const comparison = check !== null && isComparison(v?.input);
-  const words = v?.input ? spokenMath(v.input, r.show && !comparison ? v.result : null, v.units, v.constants, r.show === "symbolic") : r.expr ?? "";
+  const words = v?.input
+    ? spokenMath(v.input, r.show && !comparison ? v.result : null, v.units, v.constants, r.show === "symbolic")
+    : (r.expr ?? "");
   const verdict = check === null ? "" : check ? ", check passes" : ", check fails";
   const error = withError && v?.error ? `. Error: ${v.error}` : "";
   return `${words}${verdict}${error}`;
@@ -48,6 +50,8 @@ export function describeRegion(id: string): string {
       return `Area${plain(html[`${id}:title`]) ? ` ${plain(html[`${id}:title`])}` : ""}, ${r.collapsed ? "collapsed" : "expanded"}`;
     case "toc":
       return String(r.title ?? (r.of === "checks" ? "Summary of checks" : "Contents"));
+    case "unreadable":
+      return "A region this version of Quire can't read";
     default:
       return r.kind;
   }

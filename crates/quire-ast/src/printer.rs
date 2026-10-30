@@ -233,6 +233,10 @@ mod tests {
             "M := [1, 2; 3, 4]",
             "t := [0; 1; 2] s",
             "F := [1, 2] kN/m",
+            "T := x '°C",
+            "(-20) '°C",
+            "-t '°F",
+            "A := b 'm^2",
             "[\n  1, 2, 3;\n  4, 5, 6;\n  7, 8, 9\n]",
             "x ≡ ?",
             "[a, …; …, b]",
@@ -267,6 +271,28 @@ mod tests {
     }
 
     #[test]
+    fn primes_end_a_name() -> TestResult {
+        assert_eq!(print(&parse("σ′ := τ′.xy^2 + f″(x)")?), "σ′ := τ′.xy^2 + f″(x)");
+        assert_eq!(parse("σ′")?, Expr::Ident("σ′".into()));
+        assert_eq!(print(&parse("2 'm")?), "2 'm");
+        Ok(())
+    }
+
+    #[test]
+    fn quoted_unit_names() -> TestResult {
+        // SMath's names: symbols, a dot between letters, Greek and Δ
+        for src in ["9.81 'g.e", "15 '%", "2 '‰", "3 'Δ°C", "1 'μ.0", "4 'lb.m*'ft"] {
+            roundtrip(src)?;
+        }
+        // a run of name characters is one unit: an unknown one is reported by name
+        let Expr::Binary(_, _, unit) = parse("1 '%m")? else { return Err("not a quantity".into()) };
+        assert_eq!(*unit, Expr::Unit("%m".into()));
+        // the remainder operator, written with spaces, is not part of the name
+        assert_eq!(print(&parse("5 'm % 3")?), "5 'm % 3");
+        Ok(())
+    }
+
+    #[test]
     fn errors_point_at_the_problem() -> TestResult {
         let err = parse("x = 2").err().ok_or("expected a parse error")?;
         assert!(err.message.contains(":="), "{err}");
@@ -274,6 +300,19 @@ mod tests {
         assert!(parse("(1 + 2").err().is_some_and(|e| e.message.contains("')'")));
         assert!(parse("[1, 2; 3]").err().is_some_and(|e| e.message.contains("different lengths")));
         assert!(parse("5 '").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn a_quoted_unit_applies_to_a_name_or_parentheses() -> TestResult {
+        let Expr::Binary(crate::BinaryOp::Juxt, value, unit) = parse("(-20) '°C")? else {
+            return Err("expected a quantity".into());
+        };
+        assert!(matches!(*value, Expr::Paren(_)));
+        assert_eq!(*unit, Expr::Unit("°C".into()));
+        assert!(parse("x '°C")?.is_quantity());
+        // a plain name after a name is not read as a unit
+        assert!(parse("x m").is_err());
         Ok(())
     }
 }

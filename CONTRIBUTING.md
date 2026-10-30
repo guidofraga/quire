@@ -58,7 +58,7 @@ CI runs these on every push; run them first:
 cargo fmt --all --check
 cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
 cargo test --workspace --exclude quire-app
-cd app && npx tsc --noEmit && npm test && npm run e2e
+cd app && npm run format:check && npx tsc --noEmit && npm test && npm run e2e
 ```
 
 And:

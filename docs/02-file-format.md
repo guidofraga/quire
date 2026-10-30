@@ -1,6 +1,6 @@
 # 02 — The `.quire` Document Format (v1)
 
-> Replaces SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
+> An open JSON alternative to SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
 > Importer: [`crates/quire-smath`](../crates/quire-smath) (`quire import`, or File ▸ Open in the app).
 
 ## 1. Design goals, measured against a real SMath file
@@ -164,15 +164,16 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 | Definition / global definition | `x := 2`, `g ≡ 9.81 'm/'s^2` (`::=` is the ASCII alias for `≡`) | x := 2 |
 | Function | `f(x, y) := x^2 + y` | |
 | Literal subscript | `A.net`, `L.span.max` | A with subscript ÁREA |
-| Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it. A quoted name may contain a dot, for SMath's `'g.e` (standard gravity); `'%` is a hundredth | 5.1 m |
+| Primes | `σ′`, `f″`, `τ′.xy`: `′ ″ ‴` may end a name (the importer writes SMath's `σ'` this way, since `'` starts a unit) | σ′ |
+| Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it. `°C` and `°F` after a value make an absolute temperature (`-5 '°C` is 268.15 K, `T '°C` and `[10; 20] '°C` likewise); inside a compound unit (`'W/('m*'°C)`) they stand for the size of their degree; a temperature difference is written in `'K` (or SMath's `'Δ°C`). A quoted name is a run of letters, digits, `_`, `°`, `%`, `‰` and `¤`, with dots between them (`'kN`, `'Δ°C`, `'%`, `'g.e`); `'%m` is one name, and an unknown one is an error. Every unit and constant SMath Studio writes reads with SMath's meaning (`crates/quire-eval/tests/smath_units.rs` lists them); the ones Quire had no name for (`'%`, `'g.e`, `'e`, `'c`, `'kn`…) only work quoted, so a bare `e` is still Euler's number | 5.1 m |
 | Constants | built in: `π` `e` `∞` `g` `c` `G` `h` `ħ` `k.B` `N.A` `R` `q.e` `m.e` `m.p` `ε.0` `μ.0` `σ.SB` `ρ.w` `p.atm` (SI values, CODATA 2018) | purple |
-| Implicit multiplication | a number followed by a name, unit or call: `25.5 m^2`, `2 x`, `2 sin(x)`. It binds tighter than `*` `/` and looser than `^` | |
+| Implicit multiplication | a number followed by a name, unit or call: `25.5 m^2`, `2 x`, `2 sin(x)`; a name or parentheses followed by a quoted unit: `T '°C`, `(-20) '°C`. It binds tighter than `*` `/` and looser than `^` | |
 | Strings | `"OK"` | |
 | Comparison (boolean) | `==` `≠` `<` `≤` `>` `≥`; chains allowed: `a < c < b` | bold = |
 | Logic | `and` `or` `not` | |
 | Index | `v[i]`, `M[i, j]` | subscript index |
 | Matrix | `[1, 2; 3, 4]`; multi-line allowed | 2D matrix |
-| Range | `1..10`, or `range(0, 1, 0.1)` for a step | |
+| Range | `1..10`, or `range(0, 1, 0.1)` for a step. With units, `..` steps by one of the unit written on its ends (`0 'mm..10 'mm` is 0, 1, …, 10 mm); with no unit written there (`a..b` for two lengths) or two different ones, the step must be given: `range(0 'm, L, 0.5 'm)` | |
 | Empty slot | `?` (an unfinished expression; evaluating it is an error) | placeholder box |
 | Symbolic evaluation | stored as `"show": "symbolic"` (typed as a trailing `→` or `->`, or Ctrl+.). Names stay symbols and the document's functions are expanded; `diff(e, x)`, `diff(e, x, n)`, `int(e, x)`, `int(e, x, a, b)`, `expand(e)`, `simplify(e)` and `solve(a == b, x)` (degree one or two) work symbolically. Inline math in text takes a trailing `→` too | `→ result` |
 | Calculus | `diff(f(x), x)`, `diff(f, x, 2)`, `int(f, x)`, `int(f, x, a, b)`, `sum(e, i, 1, n)`, `prod(...)`, `lim(e, x, a)` | 2D operators |
@@ -189,6 +190,8 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 In a **marked** document (`"settings": {"units": {"marked": true}}`, which the SMath importer writes for every worksheet, since SMath marks every unit) a bare name is never a unit or a constant. Only `π`, `pi`, `e` and `∞` resolve without a definition. As in SMath, any other name with no value is a symbol: `y := Fz*2` defines `y` as the formula `2*Fz`, and `→` works with it. Showing such a value with `=` asks for a number, so it is an error naming the first undefined name (`Fz is not defined; did you mean F?`, or `m is not defined; for the unit, write 'm` when the name is a unit). Quoted units work as before. The Inspector's Document tab shows the setting for these documents and can turn it off.
 
 The report tells the editor how each name was resolved, and which variables hide a constant. The editor colours units blue and constants purple, explains a name on hover, and offers a one-click "use the unit" fix while you type.
+
+SMath unit names that mean something else in Quire are rewritten by the importer: `'h` (SMath's Planck constant) as `'ℎ`, `'cal`/`'kcal` (International Table) as `'cal.IT`/`'kcal.IT`, `'yr` (Gregorian) as `'yr.Gregorian`, `'rpm` (2π rad a minute; Quire's `'rpm` counts cycles) as `'rev/'min`, and SMath's `'`/`"` of arc as `'arcmin`/`'arcsec`. Not supported, so an "unknown unit" error: the information units (`'bit`, `'B` and multiples), `'dB`, `'¤`, `'hildebrand` (a fractional dimension), and `'R` (SMath's value, 0.01 C/kg, is not the roentgen's).
 
 Canonical function names are English (`tan`, `sinh`, `atan`, `log10`). The importer maps SMath's `tg`, `sh`, `arctg`, `nthroot` and so on.
 
@@ -360,6 +363,12 @@ The importer already obeys these rules. Converting the same `.sm` twice gives by
 ## 7. Versioning & compatibility
 
 - `format: "quire/<major>"`. **Minor additions don't bump the major**: readers must **ignore and preserve** unknown keys (round-trip safety), and writers never drop them.
+- **Readers are lenient.** One unexpected value never stops a document from opening or saving:
+  - a value is read when it can be, even in another spelling (`"decimals": 2.0` as 2, `"at": [0, 0, 5]` by its first two numbers);
+  - a known key whose value can't be read is ignored, with a warning;
+  - a region without a string `id` and `kind`, an `at` of two numbers, or `regions` as a list is shown as a placeholder and evaluated as nothing, with a warning.
+
+  In every case the value or region is written back exactly as it was found.
 - A breaking change bumps the major and ships a migration in `quire-doc::migrate`, which always runs on load. Old files are never rewritten silently: the app asks before upgrading.
 - `requires` lists optional capabilities (`plot3d`, `cas.giac`, plugin ids). A reader missing one still opens the file and shows those regions as placeholders.
 
@@ -376,8 +385,10 @@ The importer (first written in Python, then ported to Rust in `crates/quire-smat
 | plot | 8 | 0 |
 | table | 1 (bound to a summary matrix) | 0 |
 
-Two SMath conventions the importer handles:
+SMath conventions the importer handles:
 - **Math embedded in text** (`\[REGION[id]]\` markers) becomes inline math `` $`expr` ``. It is evaluated in reading order with id `<text region id>:m<n>`.
 - **Page margins** are stored in hundredths of an inch, but SMath applies them at 72 dpi against 96-px coordinates. The importer therefore uses ¾ of the nominal value. Only that reading makes real reports' text width and cover forms line up.
+- **Option lists** (`radiobuttonlist`) become a math region defining their variable: `Categoria := 2`, the number of the chosen option (from 1), or with `output="Element"` the chosen row of the list's table, `valor := Tabela[3, 2]`. The options are listed in the region's note, the chosen one in bold.
+- **Comparisons:** SMath's `≈` (approximately equal, usually in the condition of an `if`) and `≡` inside an expression are equality tests and become `==`, which already allows for rounding.
 
 Known gaps for P1: plot axis ranges and styles, table cell styling, and SMath `description` positions other than right are only partly carried over. The text→heading and text→caption heuristics are tuned for Portuguese/English report conventions.

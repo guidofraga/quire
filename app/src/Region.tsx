@@ -3,21 +3,33 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
 import { fillRefs } from "./xref";
-import { type Check, checks, failing, isComparison, mathCheck, tableName } from "./checks";
+import { type Check, checks, failing, isComparison, mathCheck, regionOf, tableName } from "./checks";
 import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
 import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
-import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { produce } from "solid-js/store";
 import { api } from "./api";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
 import { mathWords } from "./describe";
 import { spokenMath } from "./speech";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
-import { createEditor, placeCaret, plainText, releaseEditor } from "./richtext";
+import { createEditor, isLiteral, placeCaret, plainText, releaseEditor } from "./richtext";
 import {
   AREA_COLLAPSED_HEIGHT,
   availableWidth,
@@ -48,6 +60,7 @@ import {
   updateDoc,
   updateRegion,
   widths,
+  withLocalized,
 } from "./store";
 import type { Expr, Fix, Region } from "./types";
 
@@ -76,7 +89,9 @@ function fillInlineMath(el: HTMLElement) {
     const v = state.views[span.dataset.math!];
     span.classList.toggle("inline-error", !!v?.error);
     span.title = v?.error ?? "";
-    span.innerHTML = v?.input ? mathml(v.input, v.result, v.units, v.constants, v.symbolic) : `<code class="raw">?</code>`;
+    span.innerHTML = v?.input
+      ? mathml(v.input, v.result, v.units, v.constants, v.symbolic)
+      : `<code class="raw">?</code>`;
     // read as words, not as the MathML
     if (v?.input) span.setAttribute("aria-label", spokenMath(v.input, v.result, v.units, v.constants, v.symbolic));
     span.setAttribute("role", "img");
@@ -89,6 +104,9 @@ function Html(props: { html: string | undefined; class?: string }) {
     el.innerHTML = props.html ?? "";
     applyDjotAttributes(el);
     fillInlineMath(el);
+    // this effect also reruns when results arrive, and rewriting the HTML empties the
+    // references: fill them again here, without making the text depend on the numbering
+    untrack(() => fillRefs(el));
   });
   // references follow the numbering without re-rendering the text
   createEffect(() => {
@@ -137,11 +155,7 @@ function Caption(props: { p: Placed }) {
     const caption = r().caption;
     if (!caption || text === localized(caption.text, lang())) return;
     // a caption in several languages keeps the others
-    const next =
-      typeof caption.text === "object" && caption.text !== null
-        ? { ...caption.text, [Object.keys(caption.text).find((k) => lang()?.startsWith(k)) ?? Object.keys(caption.text)[0]]: text }
-        : text;
-    updateRegion(r().id, { caption: { ...caption, text: next } });
+    updateRegion(r().id, { caption: { ...caption, text: withLocalized(caption.text, text, lang()) } });
   };
   return (
     <Show when={r().caption}>
@@ -200,7 +214,7 @@ function RichTextEditor(props: { p: Placed; style: Record<string, string | undef
   onMount(async () => {
     const src = untrack(() => editText(props.p.region));
     // plain text (e.g. just switched from math) opens instantly; markup goes through the parser
-    const plain = !/[\\*_[\]{}`~^$<>#|-]|^\s*\d+\./.test(src);
+    const plain = !/[\\*_[\]{}`~^$<>#|-]|^\s*\d+\./.test(src) && isLiteral(src);
     const html = plain ? null : await api.djotHtml(src).catch(() => "");
     if (state.editing !== id) return;
     view = createEditor(host, html ?? { text: src }, {
@@ -271,7 +285,12 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           <span class="m" innerHTML={rendered()!} aria-hidden="true" />
         </Show>
         <Show when={comparison()}>
-          <span class="check-badge" aria-hidden="true" classList={{ pass: check() === true, fail: check() === false }} title={check() ? "This check passes" : "This check fails"}>
+          <span
+            class="check-badge"
+            aria-hidden="true"
+            classList={{ pass: check() === true, fail: check() === false }}
+            title={check() ? "This check passes" : "This check fails"}
+          >
             {check() ? "✓" : "✗ fails"}
           </span>
         </Show>
@@ -333,7 +352,10 @@ function ImageBody(props: { p: Placed }) {
       <Show when={r().caption?.position === "above"}>
         <Caption p={props.p} />
       </Show>
-      <Show when={url()} fallback={<div class="img-missing" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }} />}>
+      <Show
+        when={url()}
+        fallback={<div class="img-missing" style={{ width: `${size()[0]}px`, height: `${size()[1]}px` }} />}
+      >
         <img src={url()} width={size()[0]} height={size()[1]} draggable={false} alt={r().caption ? "" : "Image"} />
       </Show>
       <Show when={r().caption?.position !== "above"}>
@@ -399,29 +421,29 @@ function TableBody(props: { p: Placed }) {
     return res?.t === "Matrix" ? res.c : null;
   };
   const BoundTable = () => (
-        <Show
-          when={rows()}
-          fallback={
-            <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 300}px` }}>
-              Table of <code>{r().source ?? "—"}</code>
-              <Show when={view()?.error}>
-                <div class="err">{view()!.error}</div>
-              </Show>
-            </div>
-          }
-        >
-          <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
-            <tbody>
-              <For each={rows()!}>
-                {(row) => (
-                  <tr>
-                    <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </Show>
+    <Show
+      when={rows()}
+      fallback={
+        <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 300}px` }}>
+          Table of <code>{r().source ?? "—"}</code>
+          <Show when={view()?.error}>
+            <div class="err">{view()!.error}</div>
+          </Show>
+        </div>
+      }
+    >
+      <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
+        <tbody>
+          <For each={rows()!}>
+            {(row) => (
+              <tr>
+                <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
+    </Show>
   );
   return (
     <figure class="figure">
@@ -447,101 +469,152 @@ const headingOf = (html: string | undefined) => {
   return (doc.querySelector("h1, h2, h3, h4, h5, h6") ?? doc.body).textContent?.trim() ?? "";
 };
 
-/** Table of contents / list of figures / list of tables — always current. */
 /** Insert ▸ Summary of Checks: every check, ✓ or ✗, kept current. */
 function ChecksBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const start = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
-  const label = (c: Check) => {
-    const v = state.views[c.id];
-    const region = layout().byId.get(c.id)?.region;
-    if (c.cell && region) return esc(`${tableName(region)} · ${c.row || `row ${c.cell[0] + 1}`}`);
-    // the comparison itself, typeset, and its note if it has one
-    const input = v?.input?.t === "Define" ? v.input.c.rhs : v?.input;
-    const math = input ? mathml(input, null, v!.units, v!.constants) : esc(region?.expr ?? "");
-    const note = region?.note ? ` <span class="checks-note">${esc(String(region.note))}</span>` : "";
-    return math + note;
-  };
   const summary = () => {
     const f = failing().length;
     const n = checks().length;
     return f ? `${f} of ${n} failing` : n === 1 ? "1 check, passing" : `All ${n} checks pass`;
   };
+  // rows stay in place as the layout changes; each one updates only what changed in it
   return (
     <div class="contents checks-summary" style={{ width: `${Math.min(availableWidth(props.p.x), 640)}px` }}>
       <div class="contents-title">{String(r().title ?? "Summary of Checks")}</div>
-      <Show when={checks().length} fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}>
+      <Show
+        when={checks().length}
+        fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}
+      >
         <div class="checks-total" classList={{ failing: failing().length > 0 }}>
           {summary()}
         </div>
-        <For each={checks()}>
-          {(c) => (
-            <div class="contents-row" data-ref={c.id} onPointerDown={(ev) => ev.stopPropagation()} onClick={() => revealRegion(c.id)} title="Go to">
-              <span class="checks-mark" classList={{ pass: c.pass, fail: !c.pass }}>
-                {c.pass ? "✓" : "✗"}
-              </span>
-              <span class="contents-label" innerHTML={label(c)} />
-              <span class="contents-dots" />
-              <Show when={layout().pageView}>
-                <span class="contents-page">{c.page + start()}</span>
-              </Show>
-            </div>
-          )}
-        </For>
+        <Index each={checks()}>{(c) => <CheckRow c={c()} start={start()} />}</Index>
       </Show>
     </div>
   );
 }
 
+function CheckRow(props: { c: Check; start: number }) {
+  // regions keep their identity across layouts, so this changes only when the row shows another region
+  const region = createMemo(() => regionOf(props.c.id));
+  const label = createMemo(() => {
+    const c = props.c;
+    const v = state.views[c.id];
+    const r = region();
+    if (c.cell && r) return esc(`${tableName(r)} · ${c.row || `row ${c.cell[0] + 1}`}`);
+    // the comparison itself, typeset, and its note if it has one
+    const input = v?.input?.t === "Define" ? v.input.c.rhs : v?.input;
+    const math = input ? mathml(input, null, v!.units, v!.constants) : esc(r?.expr ?? "");
+    const note = r?.note ? ` <span class="checks-note">${esc(String(r.note))}</span>` : "";
+    return math + note;
+  });
+  return (
+    <div
+      class="contents-row"
+      data-ref={props.c.id}
+      onPointerDown={(ev) => ev.stopPropagation()}
+      onClick={() => revealRegion(props.c.id)}
+      title="Go to"
+    >
+      <span class="checks-mark" classList={{ pass: props.c.pass, fail: !props.c.pass }}>
+        {props.c.pass ? "✓" : "✗"}
+      </span>
+      <span class="contents-label" innerHTML={label()} />
+      <span class="contents-dots" />
+      <Show when={layout().pageView}>
+        <span class="contents-page">{props.c.page + props.start}</span>
+      </Show>
+    </div>
+  );
+}
+
+interface ContentsEntry {
+  id: string;
+  number: string;
+  label: string;
+  level: number;
+  page: number;
+}
+
+const sameEntries = (a: ContentsEntry[], b: ContentsEntry[]) =>
+  a.length === b.length &&
+  a.every(
+    (e, i) =>
+      e.id === b[i].id &&
+      e.number === b[i].number &&
+      e.label === b[i].label &&
+      e.level === b[i].level &&
+      e.page === b[i].page,
+  );
+
+/** Table of contents / list of figures / list of tables — always current. */
 function ContentsBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const of = () => (r().of as string | undefined) ?? "headings";
   const start = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
-  const entries = () =>
-    layout()
-      .list.filter((q) => !q.hidden && q.number)
-      .filter((q) =>
-        of() === "headings"
-          ? q.region.kind === "text"
-          : of() === "tables"
-            ? q.region.kind === "table" && !!q.region.caption
-            : q.region.kind !== "table" && q.region.kind !== "text" && !!q.region.caption,
-      )
-      .map((q) => {
-        const headings = of() === "headings";
-        const html = state.report?.html[headings ? q.region.id : `${q.region.id}:caption`];
-        return {
-          id: q.region.id,
-          number: headings ? q.number! : "",
-          label: headings ? headingOf(html) : `${captionPrefix(q.region, q.number)}${textOf(html)}`,
-          level: headings ? q.number!.split(".").length : 1,
-          page: q.page,
-        };
-      });
+  // the layout changes with every height measured: parse a heading's HTML only when it changes
+  let parsed = new Map<string, string>();
+  const entries = createMemo(
+    (): ContentsEntry[] => {
+      const headings = of() === "headings";
+      const seen = new Map<string, string>();
+      const text = (html: string | undefined) => {
+        const key = `${headings ? "h" : "c"}:${html ?? ""}`;
+        const t = parsed.get(key) ?? (headings ? headingOf(html) : textOf(html));
+        seen.set(key, t);
+        return t;
+      };
+      const out = layout()
+        .list.filter((q) => !q.hidden && q.number)
+        .filter((q) =>
+          headings
+            ? q.region.kind === "text"
+            : of() === "tables"
+              ? q.region.kind === "table" && !!q.region.caption
+              : q.region.kind !== "table" && q.region.kind !== "text" && !!q.region.caption,
+        )
+        .map((q) => {
+          const html = state.report?.html[headings ? q.region.id : `${q.region.id}:caption`];
+          return {
+            id: q.region.id,
+            number: headings ? q.number! : "",
+            label: headings ? text(html) : `${captionPrefix(q.region, q.number)}${text(html)}`,
+            level: headings ? q.number!.split(".").length : 1,
+            page: q.page,
+          };
+        });
+      parsed = seen;
+      return out;
+    },
+    [],
+    { equals: sameEntries },
+  );
+  // rows stay in place as the layout changes; each one updates only what changed in it
   return (
     <div class="contents" style={{ width: `${Math.min(availableWidth(props.p.x), 640)}px` }}>
       <div class="contents-title">{String(r().title ?? "Contents")}</div>
       <Show when={entries().length} fallback={<div class="contents-empty">Nothing to list yet.</div>}>
-        <For each={entries()}>
+        <Index each={entries()}>
           {(e) => (
             <div
-              class={`contents-row lvl-${e.level}`}
-              data-ref={e.id}
+              class={`contents-row lvl-${e().level}`}
+              data-ref={e().id}
               onPointerDown={(ev) => ev.stopPropagation()}
-              onClick={() => revealRegion(e.id)}
+              onClick={() => revealRegion(e().id)}
               title="Go to"
             >
-              <Show when={e.number}>
-                <span class="contents-num">{e.number}</span>
+              <Show when={e().number}>
+                <span class="contents-num">{e().number}</span>
               </Show>
-              <span class="contents-label">{e.label}</span>
+              <span class="contents-label">{e().label}</span>
               <span class="contents-dots" />
               <Show when={layout().pageView}>
-                <span class="contents-page">{e.page + start()}</span>
+                <span class="contents-page">{e().page + start()}</span>
               </Show>
             </div>
           )}
-        </For>
+        </Index>
       </Show>
     </div>
   );
@@ -584,7 +657,12 @@ function ResizeHandle(props: { p: Placed }) {
     window.addEventListener("pointerup", up);
   };
   return (
-    <div class="resize-handle" classList={{ corner: r().kind === "image" || r().kind === "plot2d" }} onPointerDown={onDown} title="Drag to resize" />
+    <div
+      class="resize-handle"
+      classList={{ corner: r().kind === "image" || r().kind === "plot2d" }}
+      onPointerDown={onDown}
+      title="Drag to resize"
+    />
   );
 }
 
@@ -600,7 +678,11 @@ function openUnitMenu(e: MouseEvent, r: Region) {
       if (!Object.keys(d.display).length) delete d.display;
     });
   };
-  const items: MenuItems = choices.map((c) => ({ label: prettyValue(c.text), checked: c.unit === current, run: () => setUnit(c.unit) }));
+  const items: MenuItems = choices.map((c) => ({
+    label: prettyValue(c.text),
+    checked: c.unit === current,
+    run: () => setUnit(c.unit),
+  }));
   items.push(null, { label: "Automatic", checked: !current, run: () => setUnit(undefined) });
   items.push({
     label: "Other Unit…",
@@ -617,6 +699,8 @@ const KIND_LABEL: Record<string, string> = {
   plot3d: "3D plot (not supported in this version yet)",
   data: "Data import (not supported in this version yet)",
   legacy: "Unconverted SMath region",
+  // held by the engine when it can't read a region (a newer Quire's); saved back as it was
+  unreadable: "A region this version of Quire can't read, kept as it is",
   pagebreak: "Page break",
 };
 
@@ -677,7 +761,12 @@ export function RegionBox(props: RegionProps) {
         // inside the region being edited, clicks belong to the editor, not the canvas
         if (editing()) return e.stopPropagation();
         // a result's unit: pick another one
-        if (e.button === 0 && !e.shiftKey && (e.target as Element).closest?.(".res .u") && state.views[r().id]?.unitChoices?.length) {
+        if (
+          e.button === 0 &&
+          !e.shiftKey &&
+          (e.target as Element).closest?.(".res .u") &&
+          state.views[r().id]?.unitChoices?.length
+        ) {
           e.stopPropagation();
           e.preventDefault();
           setState({ selection: [r().id], caret: null });
@@ -701,7 +790,10 @@ export function RegionBox(props: RegionProps) {
     >
       <Switch
         fallback={
-          <div class="placeholder-box" style={{ width: `${r().size?.[0] ?? 240}px`, height: `${r().size?.[1] ?? 60}px` }}>
+          <div
+            class="placeholder-box"
+            style={{ width: `${r().size?.[0] ?? 240}px`, height: `${r().size?.[1] ?? 60}px` }}
+          >
             {KIND_LABEL[r().kind] ?? r().kind}
           </div>
         }
@@ -733,13 +825,19 @@ export function RegionBox(props: RegionProps) {
       </Switch>
       <Show
         when={
-          selected() && state.selection.length === 1 && !editing() && !state.printing && ["text", "image", "plot2d"].includes(r().kind)
+          selected() &&
+          state.selection.length === 1 &&
+          !editing() &&
+          !state.printing &&
+          ["text", "image", "plot2d"].includes(r().kind)
         }
       >
         <ResizeHandle p={placed()} />
       </Show>
       {/* a function definition can be plotted in one click (shown on hover or when selected) */}
-      <Show when={r().kind === "math" && !editing() && !state.printing && /\(/.test(state.views[r().id]?.defines ?? "")}>
+      <Show
+        when={r().kind === "math" && !editing() && !state.printing && /\(/.test(state.views[r().id]?.defines ?? "")}
+      >
         <button
           class="plot-this"
           title="Plot this function below it"

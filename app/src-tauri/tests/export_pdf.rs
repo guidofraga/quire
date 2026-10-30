@@ -60,7 +60,9 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
         if let Some(status) = child.try_wait()? {
             break status;
         }
-        if start.elapsed() > Duration::from_secs(120) {
+        // longer than the app's own limits (100 s in the front end, 120 s for the print job),
+        // so a stuck export reports where it stopped before it is killed here
+        if start.elapsed() > Duration::from_secs(150) {
             child.kill().ok();
             return Err(
                 "the export did not finish; was the app built with --features tauri/custom-protocol?".into(),

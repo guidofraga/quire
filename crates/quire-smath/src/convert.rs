@@ -389,6 +389,36 @@ fn same_number(a: &Json, b: &Json) -> bool {
 // Math and text bridges (errors as text)
 // ---------------------------------------------------------------------------
 
+/// An option of an SMath list: `"Classe\0020\6x19"` is `Classe 6x19` (`\hhhh\` is a
+/// character), without the surrounding quotes.
+fn unescape_option(s: &str) -> String {
+    let s = s.trim();
+    let s = s.strip_prefix('"').and_then(|t| t.strip_suffix('"')).unwrap_or(s);
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('\\') {
+        out.push_str(rest.get(..i).unwrap_or_default());
+        let after = rest.get(i + 1..).unwrap_or_default();
+        let code = after
+            .get(..4)
+            .filter(|h| h.chars().all(|c| c.is_ascii_hexdigit()) && after.get(4..5) == Some("\\"))
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .and_then(char::from_u32);
+        match code {
+            Some(c) => {
+                out.push(c);
+                rest = after.get(5..).unwrap_or_default();
+            }
+            None => {
+                out.push('\\');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Python `math_expr(container)`: `None` when absent or without tokens.
 fn math_of(container: Option<Node>) -> Res<Option<Ast>> {
     math::math_expr(container).map_err(|e| e.to_string())
@@ -940,6 +970,7 @@ impl Converter {
             "area" => Some(self.area(r, body, origin)),
             "table" => Some(self.table(r, body, origin).map(|v| vec![v])),
             "plot" => Some(self.plot(r, body, origin).map(|v| vec![v])),
+            "radiobuttonlist" => Some(self.radio(r, body, origin).map(|v| vec![v])),
             "pagebreak" => Some(self.base(r, origin, "pagebreak").map(|m| vec![Json::Object(m)])),
             _ => None,
         };
@@ -988,6 +1019,46 @@ impl Converter {
                 0
             }
         }
+    }
+
+    /// SMath's option list: it defines the variable in its `<input>`. With
+    /// `output="Default"` the value is the number of the chosen option (from 1); with
+    /// `output="Element"` it is the chosen row's element in column `outputColumn` of the
+    /// table named by the `input` attribute. The options become the note, chosen one marked.
+    fn radio(&mut self, r: Node, rb: Node, origin: (i64, i64)) -> Res<Json> {
+        let mut reg = self.base(r, origin, "math")?;
+        let var = math_of(child(rb, "input"))?
+            .filter(|v| v.kind == Kind::Id)
+            .ok_or_else(|| "option list without a variable".to_string())?;
+        let attr_int = |name: &str| rb.attribute(name).and_then(|s| s.trim().parse::<i64>().ok());
+        let chosen = attr_int("selected").unwrap_or(1);
+        let mut value = chosen.to_string();
+        if rb.attribute("output") == Some("Element")
+            && let Some(source) = nonempty(rb.attribute("input"))
+        {
+            let col = attr_int("outputColumn").unwrap_or(1);
+            value = format!("{source}[{chosen}, {col}]");
+        }
+        reg.insert("expr".into(), json!(format!("{} := {value}", lin(&var, false)?)));
+        let items: Vec<String> = child(rb, "ul")
+            .map(|ul| {
+                children(ul, "li").into_iter().map(|li| unescape_option(li.text().unwrap_or(""))).collect()
+            })
+            .unwrap_or_default();
+        let note: Vec<String> = (1i64..)
+            .zip(&items)
+            .map(|(k, item)| {
+                if k == chosen {
+                    format!("- *{k} = {}* ✓", text::esc(item))
+                } else {
+                    format!("- {k} = {}", text::esc(item))
+                }
+            })
+            .collect();
+        if !note.is_empty() {
+            reg.insert("note".into(), json!(note.join("\n")));
+        }
+        Ok(Json::Object(reg))
     }
 
     fn math(&mut self, r: Node, m: Node, origin: (i64, i64)) -> Res<Json> {
@@ -1532,6 +1603,37 @@ mod tests {
     }
 
     #[test]
+    fn an_option_list_defines_its_variable() -> TestResult {
+        // the number of the chosen option, or the chosen row of a table
+        let xml = r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="a" left="9" top="9" width="100" height="60">
+<radiobuttonlist input="Categoria" selected="2" output="Default" outputColumn="2">
+<ul><li>"1770"</li><li>"1960"</li><li>"Classe\0020\6x19"</li></ul>
+<input><e type="operand">Categoria</e></input>
+</radiobuttonlist>
+</region>
+<region id="b" left="9" top="99" width="100" height="60">
+<radiobuttonlist input="Tabela" selected="3" output="Element" outputColumn="2">
+<ul><li>"a"</li><li>"b"</li><li>"c"</li></ul>
+<input><e type="operand">valor</e></input>
+</radiobuttonlist>
+</region>
+</regions>"#;
+        let out = crate::convert(xml)?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let field = |k: usize, name: &str| {
+            regions.get(k).and_then(|r| r.get(name)).and_then(Json::as_str).unwrap_or("").to_string()
+        };
+        assert_eq!(regions.first().map(kind_of), Some("math"));
+        assert_eq!(field(0, "expr"), "Categoria := 2");
+        assert_eq!(field(0, "note"), "- 1 = 1770\n- *2 = 1960* ✓\n- 3 = Classe 6x19");
+        assert_eq!(field(1, "expr"), "valor := Tabela[3, 2]");
+        assert!(out.warnings.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn malformed_region_becomes_legacy_with_warning() -> TestResult {
         // an operator with too few operands: the math region cannot be converted
         let xml = r#"<?xml version="1.0"?>
@@ -1585,6 +1687,22 @@ mod tests {
         let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
         let expr = regions.first().and_then(|r| r.get("expr")).and_then(Json::as_str).ok_or("no expr")?;
         assert_eq!(expr, "block(a == 1, a)");
+        Ok(())
+    }
+
+    #[test]
+    fn approximately_equal_is_an_equality_test() -> TestResult {
+        // if(F ≈ G, θ := 1, θ := 2), as SMath writes the choice of a branch
+        let xml = r#"<?xml version="1.0"?>
+<regions xmlns="http://smath.info/schemas/worksheet/1.0">
+<region id="m" left="9" top="9" width="100" height="20">
+<math><input><e type="operand">F</e><e type="operand">G</e><e type="operator" args="2">≈</e><e type="operand">θ</e><e type="operand">1</e><e type="operator" args="2">:</e><e type="operand">θ</e><e type="operand">2</e><e type="operator" args="2">:</e><e type="function" args="3">if</e></input></math>
+</region>
+</regions>"#;
+        let out = crate::convert(xml)?;
+        let regions = out.document.get("regions").and_then(Json::as_array).ok_or("no regions")?;
+        let expr = regions.first().and_then(|r| r.get("expr")).and_then(Json::as_str).ok_or("no expr")?;
+        assert_eq!(expr, "if(F == G, θ := 1, θ := 2)");
         Ok(())
     }
 

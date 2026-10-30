@@ -1,7 +1,7 @@
 {
   "name": "quire-ui",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "format": "prettier --write src e2e screenshots *.ts",
+    "format:check": "prettier --check src e2e screenshots *.ts",
     "screenshots": "playwright test -c screenshots"
   },
   "dependencies": {
@@ -36,6 +38,7 @@
     "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.12.4",
     "jsdom": "^30.1.3",
+    "prettier": "3.9.10",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vite-plugin-solid": "^2.11.14",

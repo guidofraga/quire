@@ -24,6 +24,7 @@ import {
   moveTo,
   nudge,
   originsOf,
+  regroup,
   heights,
   setRevealHandler,
   widths,
@@ -105,7 +106,11 @@ export function zoomToFit(kind: "width" | "page") {
     const stride = l.geom.paperH + SHEET_GAP;
     top = Math.round(Math.max(0, top + h / 3 / zoom) / stride - 0.5) * stride;
   }
-  setState("view", { zoom: z, x: l.pageView ? 0 : 48 * z, y: (kind === "page" && l.pageView ? PAGE_PAD : 0) - top * z });
+  setState("view", {
+    zoom: z,
+    x: l.pageView ? 0 : 48 * z,
+    y: (kind === "page" && l.pageView ? PAGE_PAD : 0) - top * z,
+  });
 }
 
 /** A window point in document coordinates (for drops). */
@@ -147,7 +152,9 @@ let sinkEl: HTMLTextAreaElement | undefined;
 export function focusCanvas() {
   if (!sinkEl || !viewportEl) return;
   // back into the region being edited, where it was left
-  const editor = state.editing && viewportEl.querySelector<HTMLElement>(".region.editing :is(input, [contenteditable=true], .sheet-wrap)");
+  const editor =
+    state.editing &&
+    viewportEl.querySelector<HTMLElement>(".region.editing :is(input, [contenteditable=true], .sheet-wrap)");
   if (editor) return editor.focus({ preventScroll: true });
   if (!state.caret && !state.selection.length && !state.editing) {
     const rect = viewportEl.getBoundingClientRect();
@@ -223,7 +230,9 @@ function smartSnap(ids: Set<string>, origins: Map<string, [number, number]>, dx:
     y1: Math.max(...moving.map((b) => b.y + b.h)),
   };
   const others = l.list
-    .filter((p) => !p.hidden && !ids.has(p.region.id) && p.region.kind !== "area" && !(p.parent && ids.has(p.parent.id)))
+    .filter(
+      (p) => !p.hidden && !ids.has(p.region.id) && p.region.kind !== "area" && !(p.parent && ids.has(p.parent.id)),
+    )
     .map((p) => box(p.region.id, p.x, p.y));
   const tol = SNAP_PX / state.view.zoom;
   let bestX: { d: number; at: number; other: (typeof others)[number] } | null = null;
@@ -232,9 +241,13 @@ function smartSnap(ids: Set<string>, origins: Map<string, [number, number]>, dx:
   const mineY = [g.y0, (g.y0 + g.y1) / 2, g.y1];
   for (const o of others) {
     for (const t of [o.x, o.x + o.w / 2, o.x + o.w])
-      for (const m of mineX) if (Math.abs(t - m) < tol && (!bestX || Math.abs(t - m) < Math.abs(bestX.d))) bestX = { d: t - m, at: t, other: o };
+      for (const m of mineX)
+        if (Math.abs(t - m) < tol && (!bestX || Math.abs(t - m) < Math.abs(bestX.d)))
+          bestX = { d: t - m, at: t, other: o };
     for (const t of [o.y, o.y + o.h / 2, o.y + o.h])
-      for (const m of mineY) if (Math.abs(t - m) < tol && (!bestY || Math.abs(t - m) < Math.abs(bestY.d))) bestY = { d: t - m, at: t, other: o };
+      for (const m of mineY)
+        if (Math.abs(t - m) < tol && (!bestY || Math.abs(t - m) < Math.abs(bestY.d)))
+          bestY = { d: t - m, at: t, other: o };
   }
   const lines: { v?: [number, number, number]; h?: [number, number, number] } = {};
   if (bestX) {
@@ -307,7 +320,8 @@ export function Canvas() {
   function startPan(e: PointerEvent) {
     const start = { x: e.clientX, y: e.clientY, vx: state.view.x, vy: state.view.y };
     setPanning(true);
-    const move = (ev: PointerEvent) => setState("view", { x: start.vx + ev.clientX - start.x, y: start.vy + ev.clientY - start.y });
+    const move = (ev: PointerEvent) =>
+      setState("view", { x: start.vx + ev.clientX - start.x, y: start.vy + ev.clientY - start.y });
     const up = () => {
       setPanning(false);
       window.removeEventListener("pointermove", move);
@@ -397,7 +411,10 @@ export function Canvas() {
       if (!moved && wasOnlySelection && ["text", "math"].includes(layout().byId.get(id)?.region.kind ?? "")) {
         startEditing(id, [ev.clientX, ev.clientY]);
       }
-      if (moved) setState({ dirty: true, rev: state.rev + 1 });
+      if (moved) {
+        regroup([...origins.keys()]);
+        setState({ dirty: true, rev: state.rev + 1 });
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -409,10 +426,20 @@ export function Canvas() {
     else setState("view", { x: state.view.x - e.deltaX, y: state.view.y - e.deltaY });
   }
 
+  /**
+   * Whether a key is aimed at the page: typed into the hidden field, on the page itself,
+   * or with nothing focused (a click on the page leaves focus on the body). Keys from
+   * anywhere else (the sidebar tree, the inspector, a toolbar) belong to what has focus,
+   * and must not delete or move regions the user isn't looking at.
+   */
+  function aimedAtPage(target: EventTarget | null) {
+    if (target === sink || target === document.body || target === document.documentElement) return true;
+    if (!(target instanceof Element) || !viewportEl!.contains(target)) return false;
+    return !target.closest("input, textarea, button, select, [role=dialog], [role=menu]");
+  }
+
   function onKeyDown(e: KeyboardEvent) {
-    if (state.editing) return;
-    const target = e.target as HTMLElement;
-    if (target !== sink && target.closest?.("input, textarea, button, select, [role=dialog], [role=menu]")) return;
+    if (state.editing || !aimedAtPage(e.target)) return;
     const sel = state.selection;
     if (e.key === " " && !e.repeat) {
       spaceDown = true;
@@ -432,7 +459,12 @@ export function Canvas() {
       if (next) selectInView(next);
       return;
     }
-    const way: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const way: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
     if (e.altKey && !e.metaKey && !e.ctrlKey && way[e.key]) {
       e.preventDefault();
       const next = sel.length ? nearestRegion(sel[sel.length - 1], ...way[e.key]) : stepRegion(null, 1);
@@ -471,14 +503,20 @@ export function Canvas() {
         return;
       }
     }
-    const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const arrows: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
     if (arrows[e.key]) {
       e.preventDefault();
       if (e.key === "ArrowUp" && !sel.length && !e.shiftKey && returnToLeftBox()) return;
       const step = GRID * (e.shiftKey ? 5 : 1);
       const [dx, dy] = arrows[e.key];
       if (sel.length) nudge(sel, dx * step, dy * step);
-      else if (state.caret) setState("caret", [Math.max(0, state.caret[0] + dx * step), Math.max(0, state.caret[1] + dy * step)]);
+      else if (state.caret)
+        setState("caret", [Math.max(0, state.caret[0] + dx * step), Math.max(0, state.caret[1] + dy * step)]);
       return;
     }
     // Printable keys fall through to the hidden field (SMath behaviour: typing at the
@@ -559,7 +597,12 @@ export function Canvas() {
   );
 
   // the free canvas: a way back after panning off into empty space
-  const contentTop = () => Math.min(...layout().list.filter((p) => !p.hidden).map((p) => p.top));
+  const contentTop = () =>
+    Math.min(
+      ...layout()
+        .list.filter((p) => !p.hidden)
+        .map((p) => p.top),
+    );
   const lost = createMemo(() => {
     const l = layout();
     const { w, h } = viewportSize();
@@ -611,7 +654,11 @@ export function Canvas() {
       class="viewport"
       role="main"
       aria-label="Document"
-      classList={{ panning: panning(), "page-view": layout().pageView, [`pattern-${prefs.canvasPattern}`]: !layout().pageView }}
+      classList={{
+        panning: panning(),
+        "page-view": layout().pageView,
+        [`pattern-${prefs.canvasPattern}`]: !layout().pageView,
+      }}
       style={gridStyle()}
       onPointerDown={onBackgroundDown}
       onScroll={(e) => {
@@ -630,10 +677,7 @@ export function Canvas() {
         openRegionMenu(e, null);
       }}
     >
-      <div
-        class="scene"
-        style={sceneStyle()}
-      >
+      <div class="scene" style={sceneStyle()}>
         <Show when={!layout().pageView && prefs.pageBreaks && state.doc.page}>
           <div class="page-column" style={{ width: `${layout().geom.contentW}px`, height: `${columnHeight()}px` }}>
             <span class="page-label" style={{ top: "0px" }}>
@@ -658,7 +702,9 @@ export function Canvas() {
         >
           <div class="pages" style={{ gap: `${SHEET_GAP}px` }}>
             {/* keyed by page number: a sheet stays mounted while its contents change */}
-            <Index each={sheets()}>{(regions, k) => <Sheet k={k} regions={regions()} onDragStart={onRegionDown} />}</Index>
+            <Index each={sheets()}>
+              {(regions, k) => <Sheet k={k} regions={regions()} onDragStart={onRegionDown} />}
+            </Index>
             <Show when={!state.printing}>
               <button
                 class="new-page"
@@ -672,16 +718,28 @@ export function Canvas() {
           </div>
         </Show>
         <Show when={guides().v}>
-          {(v) => <div class="guide v" style={{ left: `${v()[0]}px`, top: `${v()[1]}px`, height: `${v()[2] - v()[1]}px` }} />}
+          {(v) => (
+            <div class="guide v" style={{ left: `${v()[0]}px`, top: `${v()[1]}px`, height: `${v()[2] - v()[1]}px` }} />
+          )}
         </Show>
         <Show when={guides().h}>
-          {(h) => <div class="guide h" style={{ top: `${h()[0]}px`, left: `${h()[1]}px`, width: `${h()[2] - h()[1]}px` }} />}
+          {(h) => (
+            <div class="guide h" style={{ top: `${h()[0]}px`, left: `${h()[1]}px`, width: `${h()[2] - h()[1]}px` }} />
+          )}
         </Show>
         <Show when={caretScene()}>
-          <div class="caret" aria-hidden="true" style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }} />
+          <div
+            class="caret"
+            aria-hidden="true"
+            style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }}
+          />
         </Show>
         <Show when={caretScene() && !state.doc.regions.length && !state.printing}>
-          <div class="empty-hint" aria-hidden="true" style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }}>
+          <div
+            class="empty-hint"
+            aria-hidden="true"
+            style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }}
+          >
             Click anywhere to start typing
           </div>
         </Show>
@@ -700,7 +758,12 @@ export function Canvas() {
         <div class="view-pill page-hint">{pageHint()}</div>
       </Show>
       <Show when={lost()}>
-        <button class="view-pill back-to-doc" aria-label="Back to your document" onPointerDown={(e) => e.stopPropagation()} onClick={backToDocument}>
+        <button
+          class="view-pill back-to-doc"
+          aria-label="Back to your document"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={backToDocument}
+        >
           ↖ Back to your document
         </button>
       </Show>

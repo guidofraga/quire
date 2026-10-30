@@ -21,7 +21,11 @@ export function defaultLabel(kind: Kind): string {
   return (DEFAULTS[lang] ?? DEFAULTS[lang.split("-")[0]] ?? DEFAULTS.en)[kind];
 }
 
-const KEY: Record<Kind, "figures" | "tables" | "sections"> = { figure: "figures", table: "tables", section: "sections" };
+const KEY: Record<Kind, "figures" | "tables" | "sections"> = {
+  figure: "figures",
+  table: "tables",
+  section: "sections",
+};
 
 /** The pattern in use: the document's own, else the language's default. */
 export function labelPattern(kind: Kind): string {

@@ -21,10 +21,19 @@ struct Def {
     dim: [i8; 7],
     prefixable: bool,
     offset: f64,
+    /// Only as a quoted unit (`'e`, `'c`): a bare name never means it, so these don't change
+    /// what a name means in a document that writes units bare.
+    quoted: bool,
 }
 
 const fn u(names: &'static [&'static str], factor: f64, dim: [i8; 7], prefixable: bool) -> Def {
-    Def { names, factor, dim, prefixable, offset: 0.0 }
+    Def { names, factor, dim, prefixable, offset: 0.0, quoted: false }
+}
+
+/// A unit or constant SMath Studio writes in its files (`entries/Units.xml`, `Constants.xml`),
+/// for the names Quire had no unit for; quoted only.
+const fn sm(names: &'static [&'static str], factor: f64, dim: [i8; 7]) -> Def {
+    Def { names, factor, dim, prefixable: false, offset: 0.0, quoted: true }
 }
 
 //                         L  M  T  I  Θ  N  J
@@ -39,7 +48,6 @@ const LUMINOUS: [i8; 7] = [0, 0, 0, 0, 0, 0, 1];
 const AREA: [i8; 7] = [2, 0, 0, 0, 0, 0, 0];
 const VOLUME: [i8; 7] = [3, 0, 0, 0, 0, 0, 0];
 const VELOCITY: [i8; 7] = [1, 0, -1, 0, 0, 0, 0];
-const ACCEL: [i8; 7] = [1, 0, -2, 0, 0, 0, 0];
 const FREQUENCY: [i8; 7] = [0, 0, -1, 0, 0, 0, 0];
 pub(crate) const FORCE: [i8; 7] = [1, 1, -2, 0, 0, 0, 0];
 pub(crate) const PRESSURE: [i8; 7] = [-1, 1, -2, 0, 0, 0, 0];
@@ -109,8 +117,6 @@ static DEFS: &[Def] = &[
     u(&["mph"], 63360.0 * INCH / 3600.0, VELOCITY, false),
     u(&["knot"], 1852.0 / 3600.0, VELOCITY, false),
     u(&["rpm"], 1.0 / 60.0, FREQUENCY, false),
-    // SMath's g.e: standard gravity as a unit (`m*'g.e` is a weight)
-    u(&["g.e"], G0, ACCEL, false),
     // force (gravitational units are first-class: kgf = k + gf)
     u(&["gf"], G0 * 1e-3, FORCE, true),
     u(&["tonnef", "tf"], G0 * 1e3, FORCE, false),
@@ -134,20 +140,110 @@ static DEFS: &[Def] = &[
     u(&["hp"], 745.699_871_582_270_2, POWER, false),
     // angle (dimensionless)
     u(&["rad"], 1.0, NONE, true),
-    // SMath's '% (a hundredth)
-    u(&["%"], 0.01, NONE, false),
     u(&["deg", "°"], PI / 180.0, NONE, false),
     u(&["rev"], 2.0 * PI, NONE, false),
     // temperature
-    Def { names: &["°C", "degC"], factor: 1.0, dim: TEMP, prefixable: false, offset: 273.15 },
-    Def {
-        names: &["°F", "degF"],
-        factor: 5.0 / 9.0,
-        dim: TEMP,
-        prefixable: false,
-        offset: 459.67 * 5.0 / 9.0,
-    },
+    Def { offset: 273.15, ..u(&["°C", "degC"], 1.0, TEMP, false) },
+    Def { offset: 459.67 * 5.0 / 9.0, ..u(&["°F", "degF"], 5.0 / 9.0, TEMP, false) },
     u(&["°R", "degR"], 5.0 / 9.0, TEMP, false),
+    // SMath Studio's units: factors as SMath defines them
+    sm(&["%"], 0.01, NONE),
+    sm(&["‰"], 0.001, NONE),
+    sm(&["ppm"], 1e-06, NONE),
+    sm(&["ppb"], 1e-09, NONE),
+    sm(&["arcmin"], 0.0002908882086657216, NONE),
+    sm(&["arcsec"], 4.84813681109536e-06, NONE),
+    sm(&["grad", "gon"], 0.015707963267948967, NONE),
+    sm(&["rph"], 0.0017453292519943296, FREQUENCY),
+    sm(&["barn"], 1e-28, AREA),
+    sm(&["a"], 100.0, AREA),
+    sm(&["ca"], 1.0, AREA),
+    sm(&["daa"], 1000.0, AREA),
+    sm(&["farad"], 1.0, CAPACITANCE),
+    sm(&["kat", "katal"], 1.0, [0, 0, -1, 0, 0, 1, 0]),
+    sm(&["Fr", "statC"], 3.3356409500000003e-10, CHARGE),
+    sm(&["Fd", "faraday"], 96485.3328959, CHARGE),
+    sm(&["Gy", "Sv"], 1.0, [2, 0, -2, 0, 0, 0, 0]),
+    sm(&["Gi"], 0.7957747154594768, CURRENT),
+    sm(&["joule"], 1.0, ENERGY),
+    sm(&["dyne"], 1e-05, FORCE),
+    sm(&["tonf"], 8896.443230521, FORCE),
+    sm(&["radpm"], 0.016666666666666666, FREQUENCY),
+    sm(&["lx"], 1.0, [-2, 0, 0, 0, 0, 0, 1]),
+    sm(&["klx"], 1000.0, [-2, 0, 0, 0, 0, 0, 1]),
+    sm(&["henry"], 1.0, INDUCTANCE),
+    sm(&["micron"], 1e-06, LEN),
+    sm(&["Angstrom"], 1e-10, LEN),
+    sm(&["bohr"], 5.291772108e-11, LEN),
+    sm(&["au"], 149597870700.0, LEN),
+    sm(&["ly"], 9460730472580800.0, LEN),
+    sm(&["pc"], 3.08567758149137e+16, LEN),
+    sm(&["furlong"], 201.168, LEN),
+    sm(&["Smoot"], 1.7018, LEN),
+    sm(&["tesla"], 1.0, FLUX_DENSITY),
+    sm(&["G", "gauss"], 0.0001, FLUX_DENSITY),
+    sm(&["gram"], 0.001, MASS),
+    sm(&["ct"], 0.0002, MASS),
+    sm(&["ton"], 907.1847399999999, MASS),
+    sm(&["ounce"], 0.028349523125, MASS),
+    sm(&["lb.m", "pound"], 0.45359236999999997, MASS),
+    sm(&["volt"], 1.0, VOLTAGE),
+    sm(&["watt"], 1.0, POWER),
+    sm(&["hhp"], 746.043, POWER),
+    sm(&["inHg"], 3386.3889999999997, PRESSURE),
+    sm(&["kpsi"], 6894757.293168359, PRESSURE),
+    sm(&["ksf"], 47880.2589803358, PRESSURE),
+    sm(&["dpi"], 39.37007874015748, [-1, 0, 0, 0, 0, 0, 0]),
+    sm(&["atom"], 1.6605391e-24, [0, 0, 0, 0, 0, 1, 0]),
+    sm(&["lbmol"], 453.59236999999996, [0, 0, 0, 0, 0, 1, 0]),
+    sm(&["°Ra"], 0.5555555555555556, TEMP),
+    sm(&["Δ°C"], 1.0, TEMP),
+    sm(&["Δ°Re"], 1.25, TEMP),
+    sm(&["Δ°F"], 0.5555555555555556, TEMP),
+    Def { offset: 273.15, ..sm(&["°Re"], 1.25, TEMP) },
+    // SMath's 'yr: the Gregorian year ('yr here is the Julian one)
+    sm(&["yr.Gregorian"], 365.2425 * 86400.0, TIME),
+    sm(&["sec"], 1.0, TIME),
+    sm(&["month"], 2629746.0, TIME),
+    sm(&["kph"], 0.2777777777777778, VELOCITY),
+    sm(&["kn"], 0.514444, VELOCITY),
+    sm(&["P", "poise"], 0.1, [-1, 1, -1, 0, 0, 0, 0]),
+    sm(&["St", "stokes"], 0.0001, [2, 0, -1, 0, 0, 0, 0]),
+    sm(&["Bq"], 1.0, FREQUENCY),
+    sm(&["kBq"], 1000.0, FREQUENCY),
+    sm(&["MBq"], 1000000.0, FREQUENCY),
+    sm(&["GBq"], 1000000000.0, FREQUENCY),
+    sm(&["Ci"], 37000000000.0, FREQUENCY),
+    sm(&["μCi"], 37000.0, FREQUENCY),
+    sm(&["mCi"], 37000000.0, FREQUENCY),
+    sm(&["sr"], 1.0, NONE),
+    sm(&["lm"], 1.0, LUMINOUS),
+    sm(&["klm"], 1000.0, LUMINOUS),
+    sm(&["Mx"], 1e-08, FLUX),
+    sm(&["D"], 3.3356409500000006e-30, [1, 0, 1, 1, 0, 0, 0]),
+    sm(&["den"], 1.11e-07, [-1, 1, 0, 0, 0, 0, 0]),
+    sm(&["Oe"], 79.5775, [-1, 0, 0, 1, 0, 0, 0]),
+    sm(&["sb"], 10000.0, [-2, 0, 0, 0, 0, 0, 1]),
+    sm(&["nt"], 1.0, [-2, 0, 0, 0, 0, 0, 1]),
+    // SMath's 'cal and 'kcal: the International Table calorie ('cal here is the thermochemical one)
+    sm(&["cal.IT"], 4.1868, ENERGY),
+    sm(&["kcal.IT"], 4186.8, ENERGY),
+    // SMath Studio's constants, which its files write as units: the values of constants.rs
+    // (CODATA 2018). SMath's 'h is the Planck constant, here 'ℎ, since 'h is the hour.
+    sm(&["g.e"], G0, [1, 0, -2, 0, 0, 0, 0]),
+    sm(&["c"], 299_792_458.0, VELOCITY),
+    sm(&["e"], 1.602_176_634e-19, CHARGE),
+    sm(&["m.e"], 9.109_383_701_5e-31, MASS),
+    sm(&["m.p"], 1.672_621_923_69e-27, MASS),
+    sm(&["m.n"], 1.674_927_498_04e-27, MASS),
+    sm(&["u"], 1.660_539_066_60e-27, MASS),
+    sm(&["ε.0"], 8.854_187_812_8e-12, [-3, -1, 4, 2, 0, 0, 0]),
+    sm(&["G.N"], 6.674_30e-11, [3, -1, -2, 0, 0, 0, 0]),
+    sm(&["ℎ"], 6.626_070_15e-34, [2, 1, -1, 0, 0, 0, 0]),
+    sm(&["N.A"], 6.022_140_76e23, [0, 0, 0, 0, 0, -1, 0]),
+    sm(&["μ.0"], 1.256_637_062_12e-6, [1, 1, -2, -2, 0, 0, 0]),
+    sm(&["R.m"], 8.314_462_618, [2, 1, -2, 0, -1, -1, 0]),
+    sm(&["k"], 1.380_649e-23, [2, 1, -2, 0, -1, 0, 0]),
 ];
 
 /// Two-letter `da` first so it wins over `d`.
@@ -180,14 +276,15 @@ static PREFIXES: &[(&str, f64)] = &[
     ("q", 1e-30),
 ];
 
-fn table() -> &'static HashMap<&'static str, (Unit, bool)> {
-    static TABLE: OnceLock<HashMap<&'static str, (Unit, bool)>> = OnceLock::new();
+/// Name → (unit, prefixable, quoted only).
+fn table() -> &'static HashMap<&'static str, (Unit, bool, bool)> {
+    static TABLE: OnceLock<HashMap<&'static str, (Unit, bool, bool)>> = OnceLock::new();
     TABLE.get_or_init(|| {
         let mut t = HashMap::new();
         for d in DEFS {
             let unit = Unit { factor: d.factor, dim: Dim::from_ints(d.dim), offset: d.offset };
             for name in d.names {
-                t.insert(*name, (unit, d.prefixable));
+                t.insert(*name, (unit, d.prefixable, d.quoted));
             }
         }
         t
@@ -215,22 +312,32 @@ impl UnitRegistry {
             return Some(*u);
         }
         let t = table();
-        if let Some((u, _)) = t.get(name) {
+        if let Some((u, ..)) = t.get(name) {
             return Some(*u);
         }
         PREFIXES.iter().find_map(|(p, scale)| {
             let base = name.strip_prefix(p)?;
             match t.get(base) {
-                Some((u, true)) => Some(Unit { factor: u.factor * scale, ..*u }),
+                Some((u, true, _)) => Some(Unit { factor: u.factor * scale, ..*u }),
                 _ => None,
             }
         })
+    }
+
+    /// [`lookup`](Self::lookup) for a bare name (`5 kN`): units that are only written quoted
+    /// (SMath's `'e`, `'c`, `'%`) are left out.
+    pub fn lookup_bare(&self, name: &str) -> Option<Unit> {
+        match table().get(name) {
+            Some((_, _, true)) if !self.custom.contains_key(name) => None,
+            _ => self.lookup(name),
+        }
     }
 
     /// Every built-in unit name (aliases included) with its definition, for the symbol library.
     pub fn builtin() -> Vec<(&'static str, Unit, bool)> {
         let mut out: Vec<_> = DEFS
             .iter()
+            .filter(|d| !d.quoted)
             .flat_map(|d| {
                 let unit = Unit { factor: d.factor, dim: Dim::from_ints(d.dim), offset: d.offset };
                 d.names.iter().map(move |n| (*n, unit, d.prefixable))

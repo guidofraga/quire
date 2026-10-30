@@ -135,6 +135,8 @@ export interface Report {
   elapsedMs: number;
   errorCount: number;
   documentErrors: string[];
+  /** What this version could not read in the document; it is kept as it is. */
+  warnings: string[];
   /** Keyed `unit:<name>` / `constant:<name>`. */
   glossary: Record<string, Gloss>;
 }

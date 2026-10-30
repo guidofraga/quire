@@ -202,7 +202,11 @@ export async function setWindowTitle(title: string) {
   }
 }
 
-export async function guardClose(isDirty: () => boolean, onDiscard: () => Promise<unknown>, beforeClose?: () => Promise<unknown>) {
+export async function guardClose(
+  isDirty: () => boolean,
+  onDiscard: () => Promise<unknown>,
+  beforeClose?: () => Promise<unknown>,
+) {
   if (!isTauri) {
     window.addEventListener("beforeunload", (e) => {
       if (isDirty()) e.preventDefault();

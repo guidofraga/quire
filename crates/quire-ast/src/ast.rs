@@ -109,7 +109,8 @@ impl CmpOp {
 }
 
 impl Expr {
-    /// A number with a juxtaposed unit or name: `5.1 'm`, `2 m`, `25.5 m^2`.
+    /// A number with a juxtaposed unit or name: `5.1 'm`, `2 m`, `25.5 m^2`, or a name or
+    /// parentheses with a quoted unit: `T '°C`, `(-20) '°C`.
     pub fn is_quantity(&self) -> bool {
         matches!(self, Expr::Binary(BinaryOp::Juxt, ..))
     }

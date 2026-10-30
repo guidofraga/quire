@@ -16,7 +16,12 @@ interface Props {
   openTemplate: (doc: Doc, origin: string | null) => Promise<boolean>;
 }
 
-const nameOf = (path: string) => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop()!.replace(/\.quirez?$/i, "");
+const nameOf = (path: string) =>
+  path
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .pop()!
+    .replace(/\.quirez?$/i, "");
 const folderOf = (path: string) => {
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
   parts.pop();
@@ -60,10 +65,7 @@ function Screen(props: Props) {
     }
   };
   return (
-    <div
-      class="welcome-backdrop"
-      onPointerDown={(e) => e.target === e.currentTarget && close()}
-    >
+    <div class="welcome-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div class="welcome" role="dialog" aria-modal="true" aria-label="Welcome to Quire" ref={el}>
         <div class="welcome-head">
           <div class="welcome-title">Quire</div>
@@ -72,51 +74,62 @@ function Screen(props: Props) {
           <section>
             <h3>Start</h3>
             <button class="welcome-item primary" onClick={close} autofocus>
-              <span class="welcome-icon" aria-hidden="true">＋</span>
+              <span class="welcome-icon" aria-hidden="true">
+                ＋
+              </span>
               <span>
                 <b>Blank document</b>
               </span>
             </button>
             <Show when={!isWeb}>
-            <button class="welcome-item" onClick={() => void run(newNotebookDialog)}>
-              <span class="welcome-icon" aria-hidden="true">
-                <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2">
-                  <path d="M2.5 2.2h7.2a1.3 1.3 0 0 1 1.3 1.3v8.3H3.8a1.3 1.3 0 0 1-1.3-1.3z" stroke-linejoin="round" />
-                  <path d="M2.5 10.5a1.3 1.3 0 0 1 1.3-1.3H11" />
-                </svg>
-              </span>
-              <span>
-                <b>New notebook…</b>
-              </span>
-            </button>
+              <button class="welcome-item" onClick={() => void run(newNotebookDialog)}>
+                <span class="welcome-icon" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2">
+                    <path
+                      d="M2.5 2.2h7.2a1.3 1.3 0 0 1 1.3 1.3v8.3H3.8a1.3 1.3 0 0 1-1.3-1.3z"
+                      stroke-linejoin="round"
+                    />
+                    <path d="M2.5 10.5a1.3 1.3 0 0 1 1.3-1.3H11" />
+                  </svg>
+                </span>
+                <span>
+                  <b>New notebook…</b>
+                </span>
+              </button>
             </Show>
             <button class="welcome-item" onClick={() => void run(props.openDialog)}>
-              <span class="welcome-icon" aria-hidden="true">⌘O</span>
+              <span class="welcome-icon" aria-hidden="true">
+                ⌘O
+              </span>
               <span>
                 <b>Open…</b>
               </span>
             </button>
             <Show when={!isWeb}>
-            <button class="welcome-item" onClick={() => void run(openNotebookDialog)}>
-              <span class="welcome-icon" aria-hidden="true">⇧⌘O</span>
-              <span>
-                <b>Open notebook…</b>
-              </span>
-            </button>
-            <h3>Recent</h3>
-            <Show when={recent.length} fallback={<p class="welcome-empty">No recent documents</p>}>
-              <For each={recent}>
-                {(path) => (
-                  <button class="welcome-item" title={path} onClick={() => void run(() => props.openPath(path))}>
-                    <span class="welcome-icon doc" aria-hidden="true">▤</span>
-                    <span>
-                      <b>{nameOf(path)}</b>
-                      <small>{folderOf(path)}</small>
-                    </span>
-                  </button>
-                )}
-              </For>
-            </Show>
+              <button class="welcome-item" onClick={() => void run(openNotebookDialog)}>
+                <span class="welcome-icon" aria-hidden="true">
+                  ⇧⌘O
+                </span>
+                <span>
+                  <b>Open notebook…</b>
+                </span>
+              </button>
+              <h3>Recent</h3>
+              <Show when={recent.length} fallback={<p class="welcome-empty">No recent documents</p>}>
+                <For each={recent}>
+                  {(path) => (
+                    <button class="welcome-item" title={path} onClick={() => void run(() => props.openPath(path))}>
+                      <span class="welcome-icon doc" aria-hidden="true">
+                        ▤
+                      </span>
+                      <span>
+                        <b>{nameOf(path)}</b>
+                        <small>{folderOf(path)}</small>
+                      </span>
+                    </button>
+                  )}
+                </For>
+              </Show>
             </Show>
           </section>
           <section>
@@ -124,7 +137,9 @@ function Screen(props: Props) {
             <For each={templates() ?? []} fallback={<p class="welcome-empty">Loading…</p>}>
               {(t) => (
                 <button class="welcome-item" onClick={() => void openTemplate(t)}>
-                  <span class="welcome-icon doc" aria-hidden="true">{t.builtin ? "◧" : "★"}</span>
+                  <span class="welcome-icon doc" aria-hidden="true">
+                    {t.builtin ? "◧" : "★"}
+                  </span>
                   <span>
                     <b>{t.name}</b>
                     <small>{t.description || "Your template"}</small>
@@ -145,17 +160,17 @@ function Screen(props: Props) {
               </span>
             }
           >
-          <label>
-            At launch
-            <select
-              value={prefs.onLaunch}
-              onChange={(e) => setPref("onLaunch", e.currentTarget.value as Prefs["onLaunch"])}
-            >
-              <option value="welcome">Welcome screen</option>
-              <option value="last">Last document</option>
-              <option value="blank">Blank document</option>
-            </select>
-          </label>
+            <label>
+              At launch
+              <select
+                value={prefs.onLaunch}
+                onChange={(e) => setPref("onLaunch", e.currentTarget.value as Prefs["onLaunch"])}
+              >
+                <option value="welcome">Welcome screen</option>
+                <option value="last">Last document</option>
+                <option value="blank">Blank document</option>
+              </select>
+            </label>
           </Show>
           <span class="welcome-hint">⌘K Commands · F1 Help</span>
         </div>

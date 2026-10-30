@@ -15,7 +15,11 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${uiPort}`, trace: "retain-on-failure" },
   projects: [
     { name: "webkit", use: { ...devices["Desktop Safari"] }, testIgnore: "web.spec.ts" },
-    { name: "web", use: { ...devices["Desktop Safari"], baseURL: `http://localhost:${webPort}` }, testMatch: "web.spec.ts" },
+    {
+      name: "web",
+      use: { ...devices["Desktop Safari"], baseURL: `http://localhost:${webPort}` },
+      testMatch: "web.spec.ts",
+    },
   ],
   webServer: [
     {

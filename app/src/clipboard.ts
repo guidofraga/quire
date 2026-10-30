@@ -44,7 +44,10 @@ export function decodeClip(json: string | null | undefined): Clip | null {
     if (Array.isArray(v)) return validRegions(v) ? { regions: v, assets: {} } : null;
     if (!v || !validRegions(v.regions)) return null;
     const assets = v.assets && typeof v.assets === "object" ? v.assets : {};
-    return { regions: v.regions, assets: Object.fromEntries(Object.entries(assets).filter(([, u]) => typeof u === "string")) };
+    return {
+      regions: v.regions,
+      assets: Object.fromEntries(Object.entries(assets).filter(([, u]) => typeof u === "string")),
+    };
   } catch {
     return null;
   }
@@ -93,7 +96,8 @@ export function clipFromHtml(html: string | null | undefined): Clip | null {
 
 const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
 
-export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+export const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
  * Rendered Quire HTML made self-contained: Djot's size/font/color attributes become inline
@@ -118,7 +122,8 @@ export function portableHtml(html: string): string {
     a.replaceWith(span);
   }
   for (const el of root.querySelectorAll("*")) {
-    for (const a of [...el.attributes]) if (a.name === "class" || a.name.startsWith("data-") || a.name === "title") el.removeAttribute(a.name);
+    for (const a of [...el.attributes])
+      if (a.name === "class" || a.name.startsWith("data-") || a.name === "title") el.removeAttribute(a.name);
   }
   let out = root.innerHTML;
   out = out.replace(/<math(?![^>]*xmlns)/g, `<math xmlns="${MATHML_NS}"`);
@@ -131,7 +136,10 @@ export function mathParagraph(mathml: string, linear: string): string {
   return `<p>${portableHtml(withAlt)}</p>`;
 }
 
-export function tableHtml(rows: string[][], opts: { headerRow?: boolean; headerColumn?: boolean; align?: (string | undefined)[] } = {}): string {
+export function tableHtml(
+  rows: string[][],
+  opts: { headerRow?: boolean; headerColumn?: boolean; align?: (string | undefined)[] } = {},
+): string {
   const cell = "border:1px solid #999;padding:2px 6px";
   const body = rows
     .map((row, r) => {
@@ -225,7 +233,8 @@ export function tableFromHtml(html: string | null | undefined): { rows: string[]
   const grid = rows.slice(0, Math.max(trs.length, 1)).map((r) => Array.from({ length: width }, (_, i) => r[i] ?? ""));
   if (!width || grid.every((r) => r.every((c) => !c))) return null;
   const first = trs[0];
-  const header = !!first && (first.parentElement?.tagName === "THEAD" || [...first.children].some((c) => c.tagName === "TH"));
+  const header =
+    !!first && (first.parentElement?.tagName === "THEAD" || [...first.children].some((c) => c.tagName === "TH"));
   return { rows: grid, header };
 }
 
@@ -332,17 +341,90 @@ interface Op {
 type Item = Operand | Op;
 
 const FUNCS = new Set([
-  "sin", "cos", "tan", "cot", "sec", "csc", "sinh", "cosh", "tanh", "coth", "arcsin", "arccos", "arctan",
-  "ln", "log", "lg", "exp", "det", "min", "max",
+  "sin",
+  "cos",
+  "tan",
+  "cot",
+  "sec",
+  "csc",
+  "sinh",
+  "cosh",
+  "tanh",
+  "coth",
+  "arcsin",
+  "arccos",
+  "arctan",
+  "ln",
+  "log",
+  "lg",
+  "exp",
+  "det",
+  "min",
+  "max",
 ]);
 const ARC: Record<string, string> = { arcsin: "asin", arccos: "acos", arctan: "atan", lg: "log10" };
-const FONT_CMDS = new Set(["mathrm", "mathit", "mathbf", "mathsf", "mathtt", "mathnormal", "boldsymbol", "bm", "mathbb", "mathcal", "operatorname", "textnormal"]);
+const FONT_CMDS = new Set([
+  "mathrm",
+  "mathit",
+  "mathbf",
+  "mathsf",
+  "mathtt",
+  "mathnormal",
+  "boldsymbol",
+  "bm",
+  "mathbb",
+  "mathcal",
+  "operatorname",
+  "textnormal",
+]);
 const TEXT_CMDS = new Set(["text", "textrm", "textit", "textbf", "mbox", "textsf"]);
-const IGNORE = new Set(["displaystyle", "textstyle", "scriptstyle", "limits", "nolimits", "big", "Big", "bigg", "Bigg", "bigl", "bigr", "Bigl", "Bigr", "biggl", "biggr", "Biggl", "Biggr", "middle", "nonumber", "notag", "label"]);
+const IGNORE = new Set([
+  "displaystyle",
+  "textstyle",
+  "scriptstyle",
+  "limits",
+  "nolimits",
+  "big",
+  "Big",
+  "bigg",
+  "Bigg",
+  "bigl",
+  "bigr",
+  "Bigl",
+  "Bigr",
+  "biggl",
+  "biggr",
+  "Biggl",
+  "Biggr",
+  "middle",
+  "nonumber",
+  "notag",
+  "label",
+]);
 const SPACES = new Set([",", ";", ":", "!", " ", "quad", "qquad", "enspace", "thinspace"]);
 const OPS: Record<string, string> = {
-  cdot: "*", times: "*", ast: "*", div: "/", pm: "±", le: "≤", leq: "≤", ge: "≥", geq: "≥", ne: "≠", neq: "≠",
-  lt: "<", gt: ">", coloneqq: ":=", coloneq: ":=", equiv: "≡", to: "→", rightarrow: "→", approx: "=", cdots: "", ldots: "", dots: "",
+  cdot: "*",
+  times: "*",
+  ast: "*",
+  div: "/",
+  pm: "±",
+  le: "≤",
+  leq: "≤",
+  ge: "≥",
+  geq: "≥",
+  ne: "≠",
+  neq: "≠",
+  lt: "<",
+  gt: ">",
+  coloneqq: ":=",
+  coloneq: ":=",
+  equiv: "≡",
+  to: "→",
+  rightarrow: "→",
+  approx: "=",
+  cdots: "",
+  ldots: "",
+  dots: "",
 };
 const ENVS_MATRIX = new Set(["matrix", "bmatrix", "pmatrix", "vmatrix", "Bmatrix", "Vmatrix", "smallmatrix", "array"]);
 
@@ -379,7 +461,8 @@ class LatexParser {
         this.i++;
         const last = out[out.length - 1];
         const arg = this.arg();
-        if (last && last.op === undefined) out[out.length - 1] = t.v === "^" ? this.power(last, arg) : this.subscript(last, arg);
+        if (last && last.op === undefined)
+          out[out.length - 1] = t.v === "^" ? this.power(last, arg) : this.subscript(last, arg);
         continue;
       }
       if (t.k === "ch" && t.v === "'" && out.length && out[out.length - 1].op === undefined) {
@@ -591,7 +674,10 @@ class LatexParser {
       }
       case "left": {
         const t = this.toks[this.i++];
-        const open = t?.k === "cmd" ? ({ "{": "(", lvert: "|", vert: "|", "|": "|", langle: "(" } as Record<string, string>)[t.v] ?? "(" : (t as { v?: string })?.v ?? "(";
+        const open =
+          t?.k === "cmd"
+            ? (({ "{": "(", lvert: "|", vert: "|", "|": "|", langle: "(" } as Record<string, string>)[t.v] ?? "(")
+            : ((t as { v?: string })?.v ?? "(");
         if (open === "|") return this.char("|", []);
         if (open === ".") {
           const items = this.items((x) => this.isCmd("right", x));
@@ -631,7 +717,11 @@ class LatexParser {
     }
     if (FONT_CMDS.has(name)) {
       const a = this.arg();
-      return name === "operatorname" ? { ...a, kind: FUNCS.has(a.s) ? "fn" : "ident" } : a.kind === "num" ? a : { ...a, kind: a.p === 3 ? "ident" : a.kind };
+      return name === "operatorname"
+        ? { ...a, kind: FUNCS.has(a.s) ? "fn" : "ident" }
+        : a.kind === "num"
+          ? a
+          : { ...a, kind: a.p === 3 ? "ident" : a.kind };
     }
     if (TEXT_CMDS.has(name)) {
       const raw = this.rawGroup();
@@ -649,7 +739,9 @@ class LatexParser {
     const sym = exact(name, "math");
     if (sym && !sym.insert.includes("?") && sym.insert) {
       const ch = sym.insert;
-      return /\p{L}|[∞∂∇ħ]/u.test(ch) ? { s: ch, p: 3, kind: "ident" } : { op: ch === "×" || ch === "·" ? "*" : ch === "÷" ? "/" : ch };
+      return /\p{L}|[∞∂∇ħ]/u.test(ch)
+        ? { s: ch, p: 3, kind: "ident" }
+        : { op: ch === "×" || ch === "·" ? "*" : ch === "÷" ? "/" : ch };
     }
     return { s: name, p: 3, kind: "ident" };
   }
@@ -668,8 +760,13 @@ class LatexParser {
         if (this.isCmd("\\", t)) rows.push([]);
       }
       this.rawGroup();
-      const body = rows.filter((r) => r.some(Boolean)).map((r) => r.join(", ")).join("; ");
-      return name === "vmatrix" || name === "Vmatrix" ? { s: `det([${body}])`, p: 3, kind: "group" } : { s: `[${body}]`, p: 3, kind: "paren" };
+      const body = rows
+        .filter((r) => r.some(Boolean))
+        .map((r) => r.join(", "))
+        .join("; ");
+      return name === "vmatrix" || name === "Vmatrix"
+        ? { s: `det([${body}])`, p: 3, kind: "group" }
+        : { s: `[${body}]`, p: 3, kind: "paren" };
     }
     // equation, align, gather…: the lines become separate equations; `&` only aligns
     const items = this.items(stop);
@@ -688,7 +785,15 @@ function join(input: Item[]): Operand {
   // a name and parentheses right after it: a call (`f(x)`, `M(x)`)
   input = input.reduce<Item[]>((out, it) => {
     const last = out[out.length - 1];
-    if (last && last.op === undefined && last.kind === "ident" && it.op === undefined && it.kind === "paren" && it.s.startsWith("(") && !it.spaced)
+    if (
+      last &&
+      last.op === undefined &&
+      last.kind === "ident" &&
+      it.op === undefined &&
+      it.kind === "paren" &&
+      it.s.startsWith("(") &&
+      !it.spaced
+    )
       out[out.length - 1] = { s: last.s + it.s, p: 3, kind: "group", spaced: last.spaced };
     else out.push(it);
     return out;
@@ -707,7 +812,12 @@ function join(input: Item[]): Operand {
         k++;
         const arg = next.kind === "paren" && next.s.startsWith("(") ? next.s.slice(1, -1) : next.s;
         const pow = /^(\w+)\^(.+)$/.exec(it.s);
-        items.push({ s: pow ? `${pow[1]}(${arg})^${pow[2]}` : `${it.s}(${arg})`, p: 3, kind: "group", spaced: it.spaced });
+        items.push({
+          s: pow ? `${pow[1]}(${arg})^${pow[2]}` : `${it.s}(${arg})`,
+          p: 3,
+          kind: "group",
+          spaced: it.spaced,
+        });
       } else items.push({ ...it, kind: "ident" });
       continue;
     }
@@ -717,14 +827,26 @@ function join(input: Item[]): Operand {
     let dx: string | null = null;
     for (; k2 < input.length; k2++) {
       const x = input[k2];
-      if (x.op !== undefined && (x.op !== "*" && x.op !== "/")) break;
-      if (it.big!.name === "int" && x.op === undefined && (x.s === "d" || x.s === "∂") && input[k2 + 1] && input[k2 + 1].op === undefined) {
+      if (x.op !== undefined && x.op !== "*" && x.op !== "/") break;
+      if (
+        it.big!.name === "int" &&
+        x.op === undefined &&
+        (x.s === "d" || x.s === "∂") &&
+        input[k2 + 1] &&
+        input[k2 + 1].op === undefined
+      ) {
         dx = (input[k2 + 1] as Operand).s;
         k2 += 2;
         break;
       }
       // `dx` typed as one word
-      if (it.big!.name === "int" && x.op === undefined && x.kind === "ident" && /^d\p{L}$/u.test(x.s) && (k2 + 1 === input.length || input[k2 + 1].op !== undefined)) {
+      if (
+        it.big!.name === "int" &&
+        x.op === undefined &&
+        x.kind === "ident" &&
+        /^d\p{L}$/u.test(x.s) &&
+        (k2 + 1 === input.length || input[k2 + 1].op !== undefined)
+      ) {
         dx = x.s.slice(1);
         k2 += 1;
         break;
@@ -738,7 +860,8 @@ function join(input: Item[]): Operand {
     const { name, lower, upper } = it.big!;
     let s: string;
     if (name === "diff") s = upper && upper !== "1" ? `diff(${b}, ${lower}, ${upper})` : `diff(${b}, ${lower})`;
-    else if (name === "int") s = lower !== null && upper !== null ? `int(${b}, ${dx ?? "x"}, ${lower}, ${upper})` : `int(${b}, ${dx ?? "x"})`;
+    else if (name === "int")
+      s = lower !== null && upper !== null ? `int(${b}, ${dx ?? "x"}, ${lower}, ${upper})` : `int(${b}, ${dx ?? "x"})`;
     else if (name === "lim") {
       const [v, to] = (lower ?? "x→0").split("→");
       s = `lim(${b}, ${v.trim()}, ${(to ?? "0").trim()})`;
@@ -760,7 +883,8 @@ function join(input: Item[]): Operand {
       if (op === "\n") s = `${s.trimEnd()}\n`;
       else if (op === "," || op === ";") s += `${op} `;
       else if (op === "*" || op === "/" || op === "^") s += op;
-      else if ((op === "-" || op === "+") && (!prev || prev.op !== undefined)) s += op; // unary
+      else if ((op === "-" || op === "+") && (!prev || prev.op !== undefined))
+        s += op; // unary
       else s += ` ${op} `;
       p = Math.min(p, PREC[op] ?? 0);
       if ((op === "-" || op === "+") && !prev) p = Math.min(p, 1);
@@ -779,7 +903,9 @@ function join(input: Item[]): Operand {
     prev = it;
   }
   s = s.replace(/ {2,}/g, " ").trim();
-  return operands === 1 && items.length === 1 ? (items[0] as Operand) : { s, p, kind: operands === 1 && p === 3 ? kind : "group" };
+  return operands === 1 && items.length === 1
+    ? (items[0] as Operand)
+    : { s, p, kind: operands === 1 && p === 3 ? kind : "group" };
 }
 
 /**

@@ -20,7 +20,9 @@ describe("programs as rows", () => {
   });
 
   it("draws an if with assignments as if, indented body, else, indented body", () => {
-    const html = mathml(call("if", { t: "Compare", c: [id("path"), [["Eq", num("0")]]] }, define("p", num("1")), define("p", num("2"))));
+    const html = mathml(
+      call("if", { t: "Compare", c: [id("path"), [["Eq", num("0")]]] }, define("p", num("1")), define("p", num("2"))),
+    );
     expect(html).toContain('class="q-stack"');
     expect(html.indexOf(">if<")).toBeGreaterThan(-1);
     expect(html.indexOf(">if<")).toBeLessThan(html.indexOf(">else<"));
@@ -55,7 +57,15 @@ describe("programs as rows", () => {
   });
 
   it("draws a C-style for and a while loop", () => {
-    const cFor = mathml(call("for", define("i", num("0")), { t: "Compare", c: [id("i"), [["Lt", num("5")]]] }, define("i", num("1")), define("s", id("i"))));
+    const cFor = mathml(
+      call(
+        "for",
+        define("i", num("0")),
+        { t: "Compare", c: [id("i"), [["Lt", num("5")]]] },
+        define("i", num("1")),
+        define("s", id("i")),
+      ),
+    );
     expect(cFor).toContain(">for<");
     expect(cFor).not.toContain("∈");
     const loop = mathml(call("while", id("go"), define("x", num("1"))));

@@ -97,6 +97,11 @@ function touch() {
   setState({ dirty: true, rev: state.rev + 1 });
 }
 
+/** The document as it was at `rev` is on disk: it is clean unless it changed while being written. */
+export function markSaved(rev: number) {
+  if (state.rev === rev) setState({ dirty: false });
+}
+
 /** Record the document as it was before a change. */
 function record(before: string) {
   if (undoStack[undoStack.length - 1] === before) return; // an earlier step that changed nothing
@@ -155,6 +160,8 @@ export function redo() {
 /** `origin`: where images come from until the first save (a template's file). */
 export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
   importSettle = null;
+  // nothing held back from the last document may show in this one
+  forgetReport();
   undoStack.length = 0;
   redoStack.length = 0;
   undoChars = 0;
@@ -197,14 +204,28 @@ export interface Placed {
   top: number;
 }
 
+/**
+ * The translation that is shown, and so the one an edit changes: the document's language, else
+ * English, else the first one written (SMath worksheets carry several translations and no
+ * document language, often with Russian first); as in Rust.
+ */
+export function langKey(v: Record<string, string>, lang?: string): string | undefined {
+  const keys = Object.keys(v);
+  return keys.find((k) => lang?.startsWith(k)) ?? keys.find((k) => k === "en") ?? keys[0];
+}
+
 export function localized(v: Localized | undefined, lang?: string): string {
   if (v === undefined) return "";
   if (typeof v === "string") return v;
-  // the document's language, else English, else the first one written (SMath worksheets carry
-  // several translations and no document language, often with Russian first); as in Rust
-  const keys = Object.keys(v);
-  const key = keys.find((k) => lang?.startsWith(k)) ?? keys.find((k) => k === "en") ?? keys[0];
+  const key = langKey(v, lang);
   return key ? v[key] : "";
+}
+
+/** `v` with the shown translation replaced by `text`; the other translations are kept. */
+export function withLocalized(v: Localized | undefined, text: string, lang?: string): Localized {
+  if (typeof v !== "object" || v === null) return text;
+  const key = langKey(v, lang);
+  return key ? { ...v, [key]: text } : text;
 }
 
 function headingLevel(text: string): number {
@@ -268,13 +289,16 @@ export function computeLayout(
   }
   const shiftAt = (y: number) => {
     let s = 0;
-    for (const a of collapsed) if (y >= a.y + (a.region.height ?? 0)) s += (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
+    for (const a of collapsed)
+      if (y >= a.y + (a.region.height ?? 0)) s += (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
     return s;
   };
   // inverse: a visible ("effective") y back to a document y
   const effToDoc = (eff: number) => {
     let y = eff;
-    for (const a of collapsed) if (eff >= a.y - a.shift + AREA_COLLAPSED_HEIGHT) y = eff + a.shift + (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
+    for (const a of collapsed)
+      if (eff >= a.y - a.shift + AREA_COLLAPSED_HEIGHT)
+        y = eff + a.shift + (a.region.height ?? 0) - AREA_COLLAPSED_HEIGHT;
     return y;
   };
 
@@ -347,7 +371,16 @@ export function computeLayout(
       p.number = String(r.kind === "table" ? ++tables : ++figures);
     }
   }
-  return { list, byId: new Map(list.map((p) => [p.region.id, p])), pageView, geom, pages, contentPages, toScene, fromScene };
+  return {
+    list,
+    byId: new Map(list.map((p) => [p.region.id, p])),
+    pageView,
+    geom,
+    pages,
+    contentPages,
+    toScene,
+    fromScene,
+  };
 }
 
 export const layout = createRoot(() =>
@@ -361,7 +394,8 @@ export const pagedLayout = createRoot(() =>
 
 export function contentBottom(): number {
   let bottom = 0;
-  for (const p of layout().list) if (!p.hidden) bottom = Math.max(bottom, p.y - p.shift + (heights[p.region.id] ?? DEFAULT_HEIGHT));
+  for (const p of layout().list)
+    if (!p.hidden) bottom = Math.max(bottom, p.y - p.shift + (heights[p.region.id] ?? DEFAULT_HEIGHT));
   return bottom;
 }
 
@@ -376,7 +410,12 @@ export function availableWidth(x: number): number {
  * shares, and within the printable width (`available`), so a long note wraps instead of
  * running into its neighbour.
  */
-export function noteRoom(p: Placed, list: readonly Placed[], measured: Record<string, number>, available: number): number {
+export function noteRoom(
+  p: Placed,
+  list: readonly Placed[],
+  measured: Record<string, number>,
+  available: number,
+): number {
   const height = (q: Placed) => measured[q.region.id] ?? DEFAULT_HEIGHT;
   const bottom = p.top + height(p);
   let room = available;
@@ -653,7 +692,14 @@ export function deleteRegions(ids: string[]) {
   mutate((d) => {
     for (const id of ids) {
       const loc = locate(d.regions, id);
-      if (loc) loc.list.splice(loc.index, 1);
+      if (!loc) continue;
+      const [gone] = loc.list.splice(loc.index, 1);
+      // an area takes its band with it: what is below it at its level moves up by its height,
+      // so it stays where it was seen (below a collapsed area it would otherwise drop far down)
+      if (gone.kind === "area" && gone.height) {
+        const bottom = gone.at[1] + gone.height;
+        for (const r of loc.list) if (r.at[1] >= bottom) r.at = [r.at[0], r.at[1] - gone.height];
+      }
     }
   });
   setState({ selection: [] });
@@ -699,7 +745,53 @@ export function nudge(ids: string[], dx: number, dy: number) {
   if (!origins.size) return;
   checkpoint();
   moveTo(origins, dx, dy);
+  regroup(ids);
   touch();
+}
+
+/**
+ * After a move or an insertion, each region belongs where it now sits, as in SMath: inside the open area
+ * whose band holds its top (the innermost one), otherwise at the top level. Without this a
+ * region dragged out of an area still belonged to it, and collapsing or deleting the area took
+ * it along. Collapsed areas take nothing in: their content is out of sight.
+ */
+export function regroup(ids: string[]) {
+  const l = layout();
+  const moving = movable(ids);
+  const inMoved = (p: Placed): boolean => {
+    for (let q: Region | null = p.region; q; q = l.byId.get(q.id)?.parent ?? null)
+      if (moving.includes(q.id)) return true;
+    return false;
+  };
+  const areas = l.list.filter(
+    (p) => p.region.kind === "area" && !p.hidden && !p.region.collapsed && p.region.height && !inMoved(p),
+  );
+  const moves: { id: string; to: string | null; at: [number, number] }[] = [];
+  for (const id of moving) {
+    const p = l.byId.get(id);
+    if (!p) continue;
+    const holder = areas
+      .filter((a) => a.y <= p.y && p.y < a.y + a.region.height!)
+      .sort((a, b) => a.region.height! - b.region.height!)[0];
+    const to = holder?.region.id ?? null;
+    if (to === (p.parent?.id ?? null)) continue;
+    moves.push({ id, to, at: holder ? [p.x - holder.x, p.y - holder.y] : [p.x, p.y] });
+  }
+  if (!moves.length) return;
+  setState(
+    "doc",
+    produce((d) => {
+      for (const m of moves) {
+        const loc = locate(d.regions, m.id);
+        if (!loc) continue;
+        const [r] = loc.list.splice(loc.index, 1);
+        r.at = m.at;
+        const area = m.to ? findDraft(d, m.to) : undefined;
+        if (area) (area.regions ??= []).push(r);
+        else d.regions.push(r);
+      }
+    }),
+  );
 }
 
 /** One blank line, as inserted or removed by Enter / Backspace on empty space. */
@@ -716,7 +808,8 @@ export function shiftBelow(y: number, dy: number): boolean {
   if (dy < 0) {
     const highest = Math.min(...below.map((p) => p.region.at[1]));
     let floor = 0;
-    for (const p of top) if (p.region.at[1] < y) floor = Math.max(floor, p.region.at[1] + (heights[p.region.id] ?? DEFAULT_HEIGHT) + GRID);
+    for (const p of top)
+      if (p.region.at[1] < y) floor = Math.max(floor, p.region.at[1] + (heights[p.region.id] ?? DEFAULT_HEIGHT) + GRID);
     const room = Math.floor((highest - floor) / GRID) * GRID;
     dy = Math.max(dy, -room);
     if (dy >= 0) return false;
@@ -791,6 +884,15 @@ let pauseTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Show an engine report, holding back the errors the edit in progress would cause. */
 export function showReport(report: Report) {
+  // the first report of a document just opened: say once what this version couldn't read
+  if (!state.report && report.warnings?.length) {
+    const n = report.warnings.length;
+    flash(
+      n === 1
+        ? report.warnings[0]
+        : `${n} parts of this document aren't understood by this version of Quire; they are kept as they are`,
+    );
+  }
   latest = report;
   const editing = state.editing;
   let hidden = 0;
@@ -808,6 +910,12 @@ export function showReport(report: Report) {
   });
   setState("report", { ...report, errorCount: Math.max(0, report.errorCount - hidden) });
   setState("views", reconcile(Object.fromEntries(views.map((v) => [v.id, v]))));
+}
+
+function forgetReport() {
+  clearTimeout(pauseTimer);
+  latest = null;
+  typing = false;
 }
 
 /** The edit ended or paused: show what was held back. */
@@ -856,13 +964,7 @@ export function setLive(id: string, text: string) {
         if (!Object.keys(r.display).length) delete r.display;
       }
     } else if (r.kind === "text") {
-      if (typeof r.text === "object" && r.text !== null) {
-        const lang = state.doc.meta?.lang;
-        const key = Object.keys(r.text).find((k) => lang?.startsWith(k)) ?? Object.keys(r.text)[0];
-        if (key) r.text[key] = text;
-      } else {
-        r.text = text;
-      }
+      r.text = withLocalized(r.text, text, state.doc.meta?.lang);
     }
   }, false);
 }
@@ -870,9 +972,19 @@ export function setLive(id: string, text: string) {
 /** The unit typed after `=` in the math being edited, which may not be shown yet. */
 let typedUnit: { id: string; unit: string | undefined } | null = null;
 
+/** Editors that hold typing outside the document until it is committed (a table cell). */
+const drafts = new Set<() => void>();
+
+/** `write` puts such typing into the document; it runs whenever an edit ends through `commitEditing`. */
+export function onCommitEditing(write: () => void) {
+  drafts.add(write);
+}
+
 export function commitEditing() {
   const id = state.editing;
   if (!id) return;
+  // Save, export or a click elsewhere end the edit: what is half typed goes in, not away
+  for (const write of drafts) write();
   if (typedUnit?.id === id) {
     const unit = typedUnit.unit;
     typedUnit = null;
@@ -887,8 +999,7 @@ export function commitEditing() {
       }, false);
   }
   const r = layout().byId.get(id)?.region;
-  const empty =
-    !r || (r.kind === "math" ? !(r.expr ?? "").trim() : r.kind === "text" ? !editText(r).trim() : false);
+  const empty = !r || (r.kind === "math" ? !(r.expr ?? "").trim() : r.kind === "text" ? !editText(r).trim() : false);
   if (r && empty) {
     setState(
       "doc",
@@ -926,7 +1037,8 @@ export function regionGrew(id: string, before: number, after: number) {
   const overlaps = (q: Placed) => q.region.at[0] < x1 && q.region.at[0] + (widths[q.region.id] ?? 40) > x0;
   const hit = top.filter((q) => q.region.at[1] < newBottom + GRID && overlaps(q));
   const caret = state.caret;
-  const caretHit = caret && caret[1] >= oldBottom - 0.5 && caret[1] < newBottom + GRID && caret[0] < x1 && caret[0] >= x0 - GRID;
+  const caretHit =
+    caret && caret[1] >= oldBottom - 0.5 && caret[1] < newBottom + GRID && caret[0] < x1 && caret[0] >= x0 - GRID;
   if (!hit.length && !caretHit) return;
   const highest = Math.min(...hit.map((q) => q.region.at[1]), caretHit ? caret[1] : Infinity);
   const dy = Math.ceil(newBottom / GRID) * GRID + GRID - highest;
@@ -982,6 +1094,7 @@ export function insertAtCaret(kind: "math" | "text", initial = "") {
     region = { id, kind: "text", at: [x, y], text: initial };
   }
   addRegion(region);
+  regroup([id]);
   setState({ editing: id, selection: [id], caret: null, editingFresh: true });
 }
 
@@ -1070,8 +1183,12 @@ export function alignRegions(ids: string[], mode: AlignMode) {
     for (const r of b) {
       const reg = findDraft(d, r.id);
       if (!reg) continue;
-      const dx = { left: left - r.x, right: right - r.w - r.x, hcenter: (left + right) / 2 - r.w / 2 - r.x }[mode as string] ?? 0;
-      const dy = { top: top - r.y, bottom: bottom - r.h - r.y, vcenter: (top + bottom) / 2 - r.h / 2 - r.y }[mode as string] ?? 0;
+      const dx =
+        { left: left - r.x, right: right - r.w - r.x, hcenter: (left + right) / 2 - r.w / 2 - r.x }[mode as string] ??
+        0;
+      const dy =
+        { top: top - r.y, bottom: bottom - r.h - r.y, vcenter: (top + bottom) / 2 - r.h / 2 - r.y }[mode as string] ??
+        0;
       reg.at = [Math.max(0, Math.round(reg.at[0] + dx)), Math.max(0, Math.round(reg.at[1] + dy))];
     }
   });
@@ -1106,10 +1223,17 @@ export type ContentsKind = "headings" | "figures" | "tables" | "checks";
 export function insertContents(of: ContentsKind) {
   commitEditing();
   const [x, y] = state.caret ?? [0, snap(contentBottom() + GRID)];
-  const title = { headings: "Contents", figures: "List of Figures", tables: "List of Tables", checks: "Summary of Checks" }[of];
+  const title = {
+    headings: "Contents",
+    figures: "List of Figures",
+    tables: "List of Tables",
+    checks: "Summary of Checks",
+  }[of];
+  const id = newId();
   mutate((d) => {
-    d.regions.push({ id: newId(), kind: "toc", at: [x, y], of, title });
+    d.regions.push({ id, kind: "toc", at: [x, y], of, title });
   });
+  regroup([id]);
 }
 
 export function insertRegion(region: Omit<Region, "id">) {
@@ -1118,6 +1242,7 @@ export function insertRegion(region: Omit<Region, "id">) {
   mutate((d) => {
     d.regions.push({ ...region, id } as Region);
   });
+  regroup([id]);
   setState({ selection: [id], caret: null });
   return id;
 }
@@ -1142,11 +1267,17 @@ export function updateDoc(fn: (d: Doc) => void) {
 export function insertArea() {
   commitEditing();
   const y = state.caret?.[1] ?? snap(contentBottom() + GRID);
+  const id = newId();
   mutate((d) => {
-    d.regions.push({ id: newId(), kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
+    d.regions.push({ id, kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
   });
+  regroup([id]);
 }
 
 export function selectAll() {
-  setState({ selection: layout().list.filter((p) => !p.hidden && !p.parent).map((p) => p.region.id) });
+  setState({
+    selection: layout()
+      .list.filter((p) => !p.hidden && !p.parent)
+      .map((p) => p.region.id),
+  });
 }

@@ -1,9 +1,44 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
-import type { Doc, Region } from "./types";
+import {
+  AREA_COLLAPSED_HEIGHT,
+  commitEditing,
+  computeLayout,
+  deleteRegions,
+  insertAtCaret,
+  insertRegion,
+  loadDoc,
+  localized,
+  markSaved,
+  moveTo,
+  mutate,
+  noteRoom,
+  nudge,
+  onCommitEditing,
+  originsOf,
+  redo,
+  regroup,
+  releaseErrors,
+  setState,
+  setLive,
+  showReport,
+  settleRegions,
+  startEditing,
+  state,
+  togglePageView,
+  undo,
+  undoDepth,
+  updateRegion,
+  withLocalized,
+} from "./store";
+import type { Doc, Region, RegionView, Report } from "./types";
 
-const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
+const doc = (regions: Region[], page?: Doc["page"]): Doc => ({
+  format: "quire/1",
+  meta: { title: "T" },
+  regions,
+  page,
+});
 const text = (id: string, y: number, t: string): Region => ({ id, kind: "text", at: [0, y], text: t });
 const math = (id: string, y: number, expr: string): Region => ({ id, kind: "math", at: [0, y], expr });
 
@@ -110,6 +145,102 @@ describe("localized", () => {
     expect(localized(undefined)).toBe("");
     expect(localized({})).toBe("");
   });
+
+  it("edits the translation that is shown, keeping the others", () => {
+    // an SMath worksheet: Russian first, English too, no document language; English is shown
+    const ruEn = { ru: "Нагрузка", en: "Load" };
+    expect(localized(ruEn)).toBe("Load");
+    expect(withLocalized(ruEn, "Loads")).toEqual({ ru: "Нагрузка", en: "Loads" });
+    expect(withLocalized(ruEn, "Нагрузки", "ru-RU")).toEqual({ ru: "Нагрузки", en: "Load" });
+    expect(withLocalized({ ru: "Нагрузка", de: "Last" }, "x")).toEqual({ ru: "x", de: "Last" });
+    expect(withLocalized("Load", "Loads", "ru")).toBe("Loads");
+    expect(withLocalized(undefined, "Loads")).toBe("Loads");
+  });
+
+  it("typing into text in several languages changes the one on the page", () => {
+    loadDoc(doc([{ id: "t", kind: "text", at: [0, 0], text: { ru: "Нагрузка", en: "Load" } }]), null);
+    setLive("t", "Loads");
+    expect(state.doc.regions[0].text).toEqual({ ru: "Нагрузка", en: "Loads" });
+    expect(localized(state.doc.regions[0].text)).toBe("Loads");
+  });
+});
+
+describe("saving", () => {
+  beforeEach(() => loadDoc(doc([math("a", 0, "x := 1")]), null));
+
+  it("a save marks the document clean", () => {
+    updateRegion("a", { expr: "x := 2" });
+    markSaved(state.rev);
+    expect(state.dirty).toBe(false);
+  });
+
+  it("an edit made while saving keeps the document Edited", () => {
+    updateRegion("a", { expr: "x := 2" });
+    const rev = state.rev; // the save starts
+    updateRegion("a", { expr: "x := 3" }); // typed before it finished
+    markSaved(rev);
+    expect(state.dirty).toBe(true);
+  });
+});
+
+describe("ending an edit", () => {
+  it("lets an editor put what is half typed into the document first", () => {
+    loadDoc(doc([math("a", 0, "x := 1")]), null);
+    let pending: string | null = null;
+    onCommitEditing(() => {
+      if (pending !== null && state.editing === "a") updateRegion("a", { expr: pending });
+      pending = null;
+    });
+    startEditing("a");
+    pending = "x := 42";
+    commitEditing();
+    expect(state.editing).toBe(null);
+    expect(state.doc.regions[0].expr).toBe("x := 42");
+  });
+});
+
+describe("opening another document", () => {
+  const view = (id: string, error: string | null): RegionView => ({
+    id,
+    input: null,
+    result: null,
+    resultText: null,
+    error,
+    syntaxError: false,
+    units: [],
+    constants: [],
+    shadowing: [],
+    defines: null,
+  });
+  const report = (...regions: RegionView[]): Report => ({
+    regions,
+    html: {},
+    elapsedMs: 0,
+    errorCount: regions.filter((v) => v.error).length,
+    documentErrors: [],
+    warnings: [],
+    glossary: {},
+  });
+
+  it("never shows the last document's results or held-back errors", () => {
+    loadDoc(doc([math("a", 0, "x := 1")]), null);
+    startEditing("a");
+    setLive("a", "x := y");
+    // the error on the line being typed waits for a pause
+    showReport(report(view("a", "y is not defined")));
+    expect(state.views.a.error).toBe(null);
+
+    loadDoc(doc([math("b", 0, "z := 2")]), null);
+    expect(state.report).toBe(null);
+    // the pause or the end of the edit comes after the switch: nothing of the old note shows
+    releaseErrors();
+    expect(state.report).toBe(null);
+    expect(state.views).toEqual({});
+
+    // and the new document's own errors are not held back as if still typing
+    showReport(report(view("b", "z is wrong")));
+    expect(state.views.b.error).toBe("z is wrong");
+  });
 });
 
 describe("computeLayout numbering", () => {
@@ -152,7 +283,12 @@ describe("computeLayout pages", () => {
   const H = pageGeom(doc([])).contentH;
 
   it("keeps a region whole by starting it on the next page", () => {
-    const l = computeLayout(doc([math("a", 0, "1"), math("b", H - 10, "2"), math("c", H + 40, "3")]), { b: 30 }, true, false);
+    const l = computeLayout(
+      doc([math("a", 0, "1"), math("b", H - 10, "2"), math("c", H + 40, "3")]),
+      { b: 30 },
+      true,
+      false,
+    );
     const b = l.byId.get("b")!;
     expect(b.page).toBe(1);
     expect(b.top).toBeCloseTo(l.geom.margins.top);
@@ -169,7 +305,11 @@ describe("computeLayout pages", () => {
 
   it("maps document points to the scene and back", () => {
     const l = computeLayout(doc([math("a", 0, "1"), math("b", H * 2 + 50, "2")]), {}, true, false);
-    for (const [x, y] of [[10, 5], [40, H + 100], [0, H * 2 + 50]] as [number, number][]) {
+    for (const [x, y] of [
+      [10, 5],
+      [40, H + 100],
+      [0, H * 2 + 50],
+    ] as [number, number][]) {
       const [sx, sy] = l.toScene(x, y);
       const [dx, dy] = l.fromScene(sx, sy);
       expect(dx).toBeCloseTo(x);
@@ -178,17 +318,157 @@ describe("computeLayout pages", () => {
   });
 
   it("moves what is below a collapsed area up and hides its content", () => {
-    const area: Region = { id: "ar", kind: "area", at: [0, 100], height: 200, collapsed: true, regions: [math("in", 20, "x")] };
+    const area: Region = {
+      id: "ar",
+      kind: "area",
+      at: [0, 100],
+      height: 200,
+      collapsed: true,
+      regions: [math("in", 20, "x")],
+    };
     const l = computeLayout(doc([area, math("below", 400, "y")]), {}, false, false);
     expect(l.byId.get("in")!.hidden).toBe(true);
     expect(l.byId.get("below")!.top).toBe(400 - (200 - AREA_COLLAPSED_HEIGHT));
   });
 });
 
+describe("regroup: a moved region belongs where it lands", () => {
+  const area = (extra: Partial<Region> = {}): Region => ({
+    id: "ar",
+    kind: "area",
+    at: [0, 100],
+    height: 200,
+    regions: [math("in", 20, "x")],
+    ...extra,
+  });
+  const parentOf = (id: string) => state.doc.regions.find((r) => r.regions?.some((c) => c.id === id))?.id ?? null;
+
+  it("leaves the area when dragged below it, keeping its place on the page", () => {
+    loadDoc(doc([area()]), null);
+    moveTo(originsOf(["in"]), 0, 250); // from 120 to 370, past the area's bottom at 300
+    regroup(["in"]);
+    expect(parentOf("in")).toBe(null);
+    expect(state.doc.regions.find((r) => r.id === "in")!.at).toEqual([0, 370]);
+  });
+
+  it("joins an open area when dropped in its band, at the same place on the page", () => {
+    loadDoc(doc([area(), math("out", 400, "y")]), null);
+    moveTo(originsOf(["out"]), 36, -250); // to (36, 150), inside the band 100…300
+    regroup(["out"]);
+    expect(parentOf("out")).toBe("ar");
+    expect(state.doc.regions[0].regions!.find((r) => r.id === "out")!.at).toEqual([36, 50]);
+  });
+
+  it("stays put when moved within its area, and takes the innermost of nested areas", () => {
+    const inner: Region = { id: "inner", kind: "area", at: [0, 100], height: 60, regions: [] };
+    loadDoc(doc([area({ regions: [math("in", 20, "x"), inner] })]), null);
+    nudge(["in"], 0, 18);
+    expect(parentOf("in")).toBe("ar");
+    nudge(["in"], 0, 80); // to 218 on the page, inside the inner area's band 200…260
+    expect(state.doc.regions[0].regions!.find((r) => r.id === "inner")!.regions!.map((r) => r.id)).toEqual(["in"]);
+  });
+
+  it("puts a region typed or inserted in an area's band into the area, as one undo step", () => {
+    loadDoc(doc([area(), math("out", 400, "y")]), null);
+    setState({ caret: [36, 180] });
+    insertAtCaret("math", "z");
+    const typed = state.editing!;
+    commitEditing();
+    expect(parentOf(typed)).toBe("ar");
+    expect(state.doc.regions[0].regions!.find((r) => r.id === typed)!.at).toEqual([36, 80]);
+    setState({ caret: [36, 500] });
+    insertAtCaret("math", "w");
+    const below = state.editing!;
+    commitEditing();
+    expect(parentOf(below)).toBe(null);
+    const plot = insertRegion({ kind: "plot2d", at: [36, 260] });
+    expect(parentOf(plot)).toBe("ar");
+    undo();
+    expect(JSON.stringify(state.doc).includes(`"${plot}"`)).toBe(false);
+  });
+
+  it("never drops a region into a collapsed area, and undoes as one step with the move", () => {
+    loadDoc(doc([area({ collapsed: true }), math("out", 400, "y")]), null);
+    nudge(["out"], 0, -295); // onto the collapsed area's place
+    expect(state.doc.regions.map((r) => r.id)).toEqual(["ar", "out"]);
+    loadDoc(doc([area()]), null);
+    nudge(["in"], 0, 250);
+    expect(parentOf("in")).toBe(null);
+    undo();
+    expect(parentOf("in")).toBe("ar");
+    expect(state.doc.regions[0].regions![0].at).toEqual([0, 20]);
+  });
+});
+
+describe("deleteRegions", () => {
+  const area = (collapsed?: true): Region => ({
+    id: "ar",
+    kind: "area",
+    at: [0, 100],
+    height: 200,
+    collapsed,
+    regions: [math("in", 20, "x")],
+  });
+
+  it("deletes a collapsed area and its content, and keeps what is below where it was seen (#8)", () => {
+    loadDoc(doc([math("above", 0, "a"), area(true), text("below", 400, "Conclusion"), math("end", 500, "b")]), null);
+    const seen = computeLayout(state.doc, {}, false, false).byId.get("below")!.top;
+    deleteRegions(["ar"]);
+    expect(state.doc.regions.map((r) => r.id)).toEqual(["above", "below", "end"]);
+    expect(state.doc.regions.map((r) => r.at[1])).toEqual([0, 200, 300]);
+    // it moves up by the bar the collapsed area showed, not down by the band it hid
+    expect(computeLayout(state.doc, {}, false, false).byId.get("below")!.top).toBe(seen - AREA_COLLAPSED_HEIGHT);
+    undo();
+    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([
+      ["above", 0],
+      ["ar", 100],
+      ["below", 400],
+      ["end", 500],
+    ]);
+  });
+
+  it("closes an open area's band too, and leaves what is above or beside it", () => {
+    loadDoc(doc([area(), { ...math("beside", 150, "c"), at: [400, 150] }, math("below", 300, "y")]), null);
+    deleteRegions(["ar"]);
+    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([
+      ["beside", 150],
+      ["below", 100],
+    ]);
+  });
+
+  it("keeps a region dragged out of the area when the area goes", () => {
+    loadDoc(doc([area(), math("below", 400, "y")]), null);
+    moveTo(originsOf(["in"]), 0, 200);
+    regroup(["in"]);
+    deleteRegions(["ar"]);
+    expect(state.doc.regions.map((r) => r.id).sort()).toEqual(["below", "in"]);
+  });
+
+  it("moves only the area's own level", () => {
+    const outer: Region = {
+      id: "out",
+      kind: "area",
+      at: [0, 0],
+      height: 600,
+      regions: [area(), math("inner", 350, "z")],
+    };
+    loadDoc(doc([outer, math("top", 700, "t")]), null);
+    deleteRegions(["ar"]);
+    const out = state.doc.regions[0];
+    expect(out.regions!.map((r) => [r.id, r.at[1]])).toEqual([["inner", 150]]);
+    expect(state.doc.regions[1].at[1]).toBe(700);
+  });
+});
+
 describe("noteRoom", () => {
   const at = (id: string, x: number, y: number): Region => ({ id, kind: "math", at: [x, y], expr: "1" });
   const measured = { a: 40 };
-  const l = computeLayout(doc([at("a", 0, 0), at("b", 300, 0), at("c", 200, 100), at("d", 500, 9)]), measured, false, false);
+  const l = computeLayout(
+    doc([at("a", 0, 0), at("b", 300, 0), at("c", 200, 100), at("d", 500, 9)]),
+    measured,
+    false,
+    false,
+  );
   const room = (id: string) => noteRoom(l.byId.get(id)!, l.list, measured, 640);
   it("stops at the nearest region to the right on the same rows", () => {
     expect(room("a")).toBe(300 - 12);
@@ -204,8 +484,21 @@ describe("noteRoom", () => {
 });
 
 describe("settleRegions (imported SMath positions)", () => {
-  const box = (id: string, x: number, y: number, extra: Partial<Region> = {}): Region => ({ id, kind: "text", at: [x, y], text: "t", ...extra });
-  const area = (id: string, x: number, y: number, height: number, regions: Region[], extra: Partial<Region> = {}): Region => ({
+  const box = (id: string, x: number, y: number, extra: Partial<Region> = {}): Region => ({
+    id,
+    kind: "text",
+    at: [x, y],
+    text: "t",
+    ...extra,
+  });
+  const area = (
+    id: string,
+    x: number,
+    y: number,
+    height: number,
+    regions: Region[],
+    extra: Partial<Region> = {},
+  ): Region => ({
     id,
     kind: "area",
     at: [x, y],

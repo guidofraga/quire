@@ -4,7 +4,7 @@
 import { batch, createEffect, createRoot, createSignal, on } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { api, DOC_EXT } from "./api";
-import { flash, loadDoc, revealRegion, setState, state } from "./store";
+import { commitEditing, flash, loadDoc, markSaved, revealRegion, setState, state } from "./store";
 import type { Doc } from "./types";
 
 export interface NbNode {
@@ -46,7 +46,14 @@ interface NbState {
   hits: Hit[] | null;
 }
 
-export const [nb, setNb] = createStore<NbState>({ book: null, current: null, expanded: {}, renaming: null, query: "", hits: null });
+export const [nb, setNb] = createStore<NbState>({
+  book: null,
+  current: null,
+  expanded: {},
+  renaming: null,
+  query: "",
+  hits: null,
+});
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -109,8 +116,13 @@ function write(key: string, value: unknown) {
 }
 
 export const recentNotebooks = (): string[] => read<string[]>(RECENT, []).filter((p) => typeof p === "string");
-const rememberNotebook = (path: string) => write(RECENT, [path, ...recentNotebooks().filter((p) => p !== path)].slice(0, 8));
-export const forgetNotebook = (path: string) => write(RECENT, recentNotebooks().filter((p) => p !== path));
+const rememberNotebook = (path: string) =>
+  write(RECENT, [path, ...recentNotebooks().filter((p) => p !== path)].slice(0, 8));
+export const forgetNotebook = (path: string) =>
+  write(
+    RECENT,
+    recentNotebooks().filter((p) => p !== path),
+  );
 export const lastNotebook = () => read<string | null>("quire.notebook.last", null);
 
 const lastNoteKey = () => `quire.notebook.note:${nb.book?.path}`;
@@ -172,7 +184,7 @@ export function flushSave(): Promise<void> {
   saving = saving
     .then(() => api.save(path, doc, path))
     .then(() => {
-      if (state.path === path && state.rev === rev) setState({ dirty: false });
+      if (state.path === path) markSaved(rev);
     })
     .catch((e) => flash(`Could not save ${titleOf(rel)}: ${(e as Error).message}`));
   return saving;
@@ -245,6 +257,8 @@ export async function closeNotebook() {
 /** Open a note of the notebook; `region` scrolls to and selects that region. */
 export async function openNote(rel: string, region?: string | null) {
   if (rel !== nb.current) {
+    // a table cell being typed is not in the document until the edit ends
+    commitEditing();
     await flushSave();
     const path = absPath(rel);
     let doc: Doc;
@@ -350,13 +364,21 @@ export async function rename(rel: string, name: string) {
   const current = find(rel);
   if (!current || name.trim() === current.name) return;
   if (nb.current === rel || nb.current?.startsWith(`${rel}/`)) await flushSave();
-  await run("rename it", () => call<string>("rename", { rel, name }), (to) => follow(rel, to));
+  await run(
+    "rename it",
+    () => call<string>("rename", { rel, name }),
+    (to) => follow(rel, to),
+  );
 }
 
 /** Move into section `to` (`""` is the notebook itself) at `index` there. */
 export async function moveTo(rel: string, to: string, index?: number) {
   if (nb.current === rel || nb.current?.startsWith(`${rel}/`)) await flushSave();
-  const moved = await run("move it", () => call<string>("move", { rel, to, index }), (m) => follow(rel, m));
+  const moved = await run(
+    "move it",
+    () => call<string>("move", { rel, to, index }),
+    (m) => follow(rel, m),
+  );
   if (moved && to) setExpanded(to, true);
 }
 
@@ -369,7 +391,11 @@ export async function duplicate(rel: string) {
 export async function setStyle(rel: string, style: { color?: string | null; icon?: string | null }) {
   const node = find(rel);
   await run("change it", () =>
-    call("set_style", { rel, color: style.color === undefined ? node?.color : style.color, icon: style.icon === undefined ? node?.icon : style.icon }),
+    call("set_style", {
+      rel,
+      color: style.color === undefined ? node?.color : style.color,
+      icon: style.icon === undefined ? node?.icon : style.icon,
+    }),
   );
 }
 
@@ -381,13 +407,28 @@ export async function trashItem(rel: string) {
   const list = notes().map((n) => n.rel);
   const gone = (r: string) => r === rel || r.startsWith(`${rel}/`);
   const at = list.findIndex(gone);
-  const next = list.slice(at).find((r) => !gone(r)) ?? list.slice(0, Math.max(0, at)).reverse().find((r) => !gone(r));
+  const next =
+    list.slice(at).find((r) => !gone(r)) ??
+    list
+      .slice(0, Math.max(0, at))
+      .reverse()
+      .find((r) => !gone(r));
+  // edits to what is being trashed must not be saved back while it goes (that would make the
+  // file again), but they stay marked if it stays
+  const unsaved = holdsCurrent && state.dirty;
   if (holdsCurrent) {
     clearTimeout(saveTimer);
+    await saving;
     setState({ dirty: false });
   }
   const ok = await run("move it to the Trash", () => call("trash", { rel }).then(() => true));
-  if (!ok) return;
+  if (!ok) {
+    if (unsaved && nb.current) {
+      setState({ dirty: true });
+      void flushSave();
+    }
+    return;
+  }
   flash(`Moved ${node.name} to the Trash`);
   if (holdsCurrent) {
     setNb("current", null);
