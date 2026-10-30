@@ -21,6 +21,22 @@ fn check(v: f64, what: &str) -> Result<f64> {
     Ok(v)
 }
 
+/// The largest magnitude a result can have, for messages.
+const LIMIT: &str = "about 1.8e308";
+
+/// `v`, the result of an operation on `inputs`, when it is a number. Finite inputs never give
+/// ∞ (overflow is an error, as division by zero is); ∞ given as an input (the constant ∞) may
+/// carry through, but never to an undefined ∞ − ∞ or 0·∞.
+fn finite(v: f64, inputs: [f64; 2], what: &str) -> Result<f64> {
+    if v.is_nan() {
+        bail!("{what} is undefined (as ∞ − ∞, 0·∞ and ∞/∞ are)");
+    }
+    if v.is_infinite() && inputs.iter().all(|x| x.is_finite()) {
+        bail!("{what} is too large: results go up to {LIMIT}");
+    }
+    Ok(v)
+}
+
 pub fn pow(x: Quantity, y: Quantity) -> Result<Quantity> {
     if !y.dim.is_dimensionless() {
         bail!("an exponent must be a plain number, but this one is {}", describe_dim(y.dim));
@@ -33,33 +49,40 @@ pub fn pow(x: Quantity, y: Quantity) -> Result<Quantity> {
             None => bail!("cannot raise {} to the power {}", describe_dim(x.dim), y.v),
         }
     };
+    // 0^-1 is 1/0
+    if x.v == 0.0 && y.v < 0.0 {
+        bail!("division by zero (0 to a negative power)");
+    }
     let v = if y.v.fract() == 0.0 && y.v.abs() < 1e9 { x.v.powi(y.v as i32) } else { x.v.powf(y.v) };
-    Ok(Quantity::new(check(v, "this power")?, dim))
+    Ok(Quantity::new(finite(check(v, "this power")?, [x.v, y.v], "this power")?, dim))
 }
 
 fn num_op(op: BinaryOp, x: Quantity, y: Quantity) -> Result<Quantity> {
+    let inputs = [x.v, y.v];
     Ok(match op {
         BinaryOp::Add => {
             same_dim(x.dim, y.dim, "add")?;
-            Quantity::new(x.v + y.v, x.dim)
+            Quantity::new(finite(x.v + y.v, inputs, "this sum")?, x.dim)
         }
         BinaryOp::Sub => {
             same_dim(x.dim, y.dim, "subtract")?;
-            Quantity::new(x.v - y.v, x.dim)
+            Quantity::new(finite(x.v - y.v, inputs, "this difference")?, x.dim)
         }
-        BinaryOp::Mul | BinaryOp::Juxt => Quantity::new(x.v * y.v, x.dim * y.dim),
+        BinaryOp::Mul | BinaryOp::Juxt => {
+            Quantity::new(finite(x.v * y.v, inputs, "this product")?, x.dim * y.dim)
+        }
         BinaryOp::Div => {
             if y.v == 0.0 {
                 bail!("division by zero");
             }
-            Quantity::new(x.v / y.v, x.dim / y.dim)
+            Quantity::new(finite(x.v / y.v, inputs, "this quotient")?, x.dim / y.dim)
         }
         BinaryOp::Mod => {
             same_dim(x.dim, y.dim, "take the remainder of")?;
             if y.v == 0.0 {
                 bail!("remainder by zero");
             }
-            Quantity::new(x.v % y.v, x.dim)
+            Quantity::new(finite(x.v % y.v, inputs, "this remainder")?, x.dim)
         }
         BinaryOp::Pow => pow(x, y)?,
         BinaryOp::PlusMinus => bail!("± gives two results; this is not supported yet"),
@@ -117,7 +140,10 @@ pub fn compare(op: CmpOp, a: &Value, b: &Value) -> Result<bool> {
     match (a, b) {
         (Value::Num(x), Value::Num(y)) => {
             same_dim(x.dim, y.dim, "compare")?;
-            let eq = x.v == y.v || (x.v - y.v).abs() <= 1e-12 * x.v.abs().max(y.v.abs());
+            // the tolerance is relative, so it must not make every number equal to ∞
+            let close =
+                x.v.is_finite() && y.v.is_finite() && (x.v - y.v).abs() <= 1e-12 * x.v.abs().max(y.v.abs());
+            let eq = x.v == y.v || close;
             Ok(match op {
                 CmpOp::Eq => eq,
                 CmpOp::Ne => !eq,

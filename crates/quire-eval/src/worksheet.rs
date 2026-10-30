@@ -1624,6 +1624,128 @@ mod tests {
         Ok(())
     }
 
+    /// Each line shown in `unit`, as when the result's unit is set to °C.
+    fn shown_in(unit: &str, lines: &[&str]) -> Vec<String> {
+        let regions: Vec<MathInput> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| MathInput {
+                id: i.to_string(),
+                expr: l.to_string(),
+                show: true,
+                display: DisplaySpec { unit: Some(unit.into()), decimals: None },
+                table: None,
+                plot: None,
+                symbolic: false,
+            })
+            .collect();
+        let out = Worksheet::new(DisplaySettings::default()).run(&regions);
+        out.into_iter().map(|o| o.shown.or(o.error).unwrap_or_default()).collect()
+    }
+
+    #[test]
+    fn negative_temperatures_are_below_zero_on_their_scale() {
+        assert_eq!(
+            shown(&["-5 '°C", "-5 degC", "-5*'°C", "+5 '°C"]),
+            ["268.15 'K", "268.15 'K", "268.15 'K", "278.15 'K"]
+        );
+        assert_eq!(shown_in("°C", &["-40 '°F", "-5 '°C", "(-20) '°C"]), ["-40 '°C", "-5 '°C", "-20 '°C"]);
+        assert_eq!(shown_in("°F", &["-40 '°C"]), ["-40 '°F"]);
+    }
+
+    #[test]
+    fn a_temperature_scale_applies_to_variables_and_matrices() {
+        assert_eq!(
+            shown(&["t := -20", "t '°C", "t*'°C", "[10; 20] '°C", "x := [0, -10]", "x '°C"]),
+            ["-20", "253.15 'K", "253.15 'K", "[283.15 'K; 293.15 'K]", "[0, -10]", "[273.15 'K, 263.15 'K]"]
+        );
+    }
+
+    #[test]
+    fn a_temperature_scale_in_a_compound_unit_is_its_degree() {
+        assert_eq!(
+            shown_in("W/(m*K)", &["k := 0.6 'W/('m*'°C)", "0.6 'W/'m/'°C"]),
+            ["0.6 'W/('m*'K)", "0.6 'W/('m*'K)"]
+        );
+    }
+
+    #[test]
+    fn ranges_with_units_step_by_the_unit_written() {
+        assert_eq!(shown(&["length(0 'mm..10 'mm)", "length(1 'kN..3 'kN)"]), ["11", "3"]);
+        assert_eq!(shown_in("kN", &["3 'kN..1 'kN"]), ["[3 'kN; 2 'kN; 1 'kN]"]);
+        assert_eq!(shown_in("mm", &["(-2 'mm)..0 'mm"]), ["[-2 'mm; -1 'mm; 0 'mm]"]);
+        assert_eq!(shown(&["length(0 'km/'h..100 'km/'h)"])[0], "101");
+        let out = shown(&["L := 3 'm", "0 'm..L", "1..3", "range(0 'mm, 2 'mm, 1 'mm)"]);
+        assert_eq!(out[1], "[0 'm; 1 'm; 2 'm; 3 'm]");
+        assert_eq!(out[2], "[1; 2; 3]");
+        assert_eq!(out[3], "[0 'm; 0.001 'm; 0.002 'm]");
+    }
+
+    #[test]
+    fn a_range_with_units_and_no_unit_written_asks_for_a_step() {
+        let out = shown(&["a := 1 'm", "b := 3 'm", "a..b", "range(a, b)", "0 'mm..1 'm"]);
+        assert!(out[2].starts_with("a range of a length (m) needs a step"), "{}", out[2]);
+        assert!(out[3].starts_with("a range of a length (m) needs a step"), "{}", out[3]);
+        assert!(out[4].contains("different units"), "{}", out[4]);
+    }
+
+    #[test]
+    fn root_in_a_range_rejects_poles_and_jumps() {
+        let out =
+            shown(&["root(tan(x), x, 1, 2)", "root(floor(x) - 1.5, x, 1, 3)", "root(1/(x^2 - 2), x, 0, 3)"]);
+        assert!(out[0].contains("pole") && out[0].contains("x = 1.5708"), "{}", out[0]);
+        assert!(out[1].contains("jumps across zero at x = 2"), "{}", out[1]);
+        assert!(out[2].contains("pole"), "{}", out[2]);
+        assert!(shown(&["solve(tan(x) == 0, x, 1, 2)"])[0].contains("pole"));
+    }
+
+    #[test]
+    fn root_in_a_range_still_finds_true_roots() {
+        assert_eq!(
+            shown(&["root(x^2 - 2, x, 0, 2)", "root(cos(x), x, 1, 2)", "root(exp(x) - 2, x, 0, 100)"]),
+            ["1.4142", "1.5708", "0.6931"]
+        );
+        // steep but continuous, and a root found by scanning past a sign that doesn't change
+        assert_eq!(
+            shown(&["root(atan(1e6*(x - 1.3)), x, 0, 2)", "root((x - 1)^2 - 0.25, x, 1.2, 3)"]),
+            ["1.3", "1.5"]
+        );
+        assert_eq!(shown_in("mm", &["solve(2 'kN/'mm*x == 3 'kN, x, 0 'mm, 10 'mm)"]), ["1.5 'mm"]);
+    }
+
+    #[test]
+    fn infinite_and_undefined_results_are_errors() {
+        let out = shown(&["1e999", "2^1024", "exp(1000)", "1e308*10", "0^-1", "1/0", "cot(0)", "ln(0)"]);
+        assert!(out[0].starts_with("1e999 is too large"), "{}", out[0]);
+        assert!(out[1].starts_with("this power is too large"), "{}", out[1]);
+        assert!(out[2].starts_with("exp(1000) is too large"), "{}", out[2]);
+        assert!(out[3].starts_with("this product is too large"), "{}", out[3]);
+        assert!(out[4].starts_with("division by zero"), "{}", out[4]);
+        assert_eq!(out[5], "division by zero");
+        assert_eq!(out[6], "cot(0) is infinite");
+        assert_eq!(out[7], "ln(0) is infinite");
+        assert!(shown(&["∞ - ∞"])[0].contains("undefined"));
+    }
+
+    #[test]
+    fn the_constant_infinity_still_works() {
+        assert_eq!(
+            shown(&["∞", "-∞", "1/∞", "∞ + 1", "2 < ∞", "exp(-∞)", "m := ∞", "min([3, 1, 2], m)"]),
+            ["∞", "-∞", "0", "∞", "1", "0", "∞", "1"]
+        );
+        assert_eq!(shown(&["int(exp(-x), x, 0, ∞) →"])[0], "1");
+    }
+
+    #[test]
+    fn round_bounds_its_decimals() {
+        let out =
+            shown(&["round(2.5, 400)", "round(2.5, -400)", "round(1234.5678, 2)", "round(1234.5678, -2)"]);
+        assert!(out[0].contains("between -308 and 308"), "{}", out[0]);
+        assert!(out[1].contains("between -308 and 308"), "{}", out[1]);
+        assert_eq!(out[2..], ["1234.57", "1200"]);
+        assert_eq!(shown(&["round(1e300, 300)", "round(2.5 'm, 20)"]), ["1*10^300", "2.5 'm"]);
+    }
+
     #[test]
     fn table_cells_in_the_units_they_are_typed_in() {
         let rows: &[&[&str]] =
