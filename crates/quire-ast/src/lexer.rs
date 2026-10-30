@@ -61,7 +61,8 @@ fn is_ident_start(c: char) -> bool {
 }
 
 fn is_ident_continue(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
+    // primes end a name, as in SMath (σ′, f″)
+    c.is_alphanumeric() || c == '_' || matches!(c, '′' | '″' | '‴')
 }
 
 fn is_unit_char(c: char) -> bool {

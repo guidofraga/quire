@@ -267,6 +267,14 @@ mod tests {
     }
 
     #[test]
+    fn primes_end_a_name() -> TestResult {
+        assert_eq!(print(&parse("σ′ := τ′.xy^2 + f″(x)")?), "σ′ := τ′.xy^2 + f″(x)");
+        assert_eq!(parse("σ′")?, Expr::Ident("σ′".into()));
+        assert_eq!(print(&parse("2 'm")?), "2 'm");
+        Ok(())
+    }
+
+    #[test]
     fn errors_point_at_the_problem() -> TestResult {
         let err = parse("x = 2").err().ok_or("expected a parse error")?;
         assert!(err.message.contains(":="), "{err}");

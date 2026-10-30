@@ -247,8 +247,9 @@ fn is_quantity(n: &Node) -> bool {
         && n.args.get(1).is_some_and(is_unit_expr)
 }
 
-fn fmt_id(name: &str) -> &str {
-    name
+/// SMath names may have primes (σ', τ'.xy, f''); in Quire ' starts a unit, so they are ′.
+fn fmt_id(name: &str) -> String {
+    name.replace('\'', "′")
 }
 
 /// Python `json.dumps(s, ensure_ascii=False)`.
@@ -307,7 +308,7 @@ pub(crate) fn statement_to_linear(n: &Node, units_bare: bool) -> Result<String> 
 pub(crate) fn to_linear(n: &Node, units_bare: bool) -> Result<String> {
     Ok(match n.kind {
         Kind::Num => n.value.clone(),
-        Kind::Id => fmt_id(&n.value).to_string(),
+        Kind::Id => fmt_id(&n.value),
         Kind::Str => fmt_str(&n.value),
         Kind::Unit if units_bare => n.value.clone(),
         Kind::Unit => format!("'{}", n.value),
@@ -415,7 +416,7 @@ fn call_to_linear(n: &Node, units_bare: bool) -> Result<String> {
     }
 
     let parts = args.iter().map(|a| to_linear(a, units_bare)).collect::<Result<Vec<_>>>()?;
-    Ok(format!("{}({})", rename(name), parts.join(", ")))
+    Ok(format!("{}({})", fmt_id(rename(name)), parts.join(", ")))
 }
 
 /// SMath `range(a, b, s)` runs from `a` through `b` with `s` as the second element, so the
@@ -501,6 +502,14 @@ mod tests {
         let toks = [operand("L"), operand("3"), unit("m"), op("*", 2), op(":", 2)];
         assert_eq!(render(&toks)?, "L := 3 'm");
         assert_eq!(to_linear(&rpn_to_ast(&toks)?, true)?, "L := 3 m");
+        Ok(())
+    }
+
+    #[test]
+    fn primes_in_names_are_kept() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        // σ' := τ'.xy + f''(x)
+        let toks = [operand("σ'"), operand("τ'.xy"), operand("x"), func("f''", 1), op("+", 2), op(":", 2)];
+        assert_eq!(render(&toks)?, "σ′ := τ′.xy + f′′(x)");
         Ok(())
     }
 
