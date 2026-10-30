@@ -653,7 +653,14 @@ export function deleteRegions(ids: string[]) {
   mutate((d) => {
     for (const id of ids) {
       const loc = locate(d.regions, id);
-      if (loc) loc.list.splice(loc.index, 1);
+      if (!loc) continue;
+      const [gone] = loc.list.splice(loc.index, 1);
+      // an area takes its band with it: what is below it at its level moves up by its height,
+      // so it stays where it was seen (below a collapsed area it would otherwise drop far down)
+      if (gone.kind === "area" && gone.height) {
+        const bottom = gone.at[1] + gone.height;
+        for (const r of loc.list) if (r.at[1] >= bottom) r.at = [r.at[0], r.at[1] - gone.height];
+      }
     }
   });
   setState({ selection: [] });
