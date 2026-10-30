@@ -1595,6 +1595,15 @@ mod tests {
     }
 
     #[test]
+    fn smath_units_with_a_dot_and_percent() {
+        // SMath files write the weight of a mass as m*'g.e, and percentages as '%
+        let r = shown(&["W := 10 'kg*'g.e", "u := 15 '%", "W/'g.e"]);
+        assert_eq!(r[0], "98.0665 'N", "g.e is standard gravity");
+        assert_eq!(r[1], "0.15");
+        assert_eq!(r[2], "10 'kg");
+    }
+
+    #[test]
     fn temperature_and_custom_units() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let mut ws = Worksheet::new(DisplaySettings::default());
         ws.define_unit("tf", "1000 'kgf")?;

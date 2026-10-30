@@ -164,7 +164,7 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 | Definition / global definition | `x := 2`, `g ≡ 9.81 'm/'s^2` (`::=` is the ASCII alias for `≡`) | x := 2 |
 | Function | `f(x, y) := x^2 + y` | |
 | Literal subscript | `A.net`, `L.span.max` | A with subscript ÁREA |
-| Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it | 5.1 m |
+| Units | plain names: `5.1 m`, `64 kgf*m`, `9.81 m/s^2`. A name means a unit unless a variable of that name is defined at that point (Mathcad's rule), except right after a number or another unit: there a unit name is always the unit (`10 m` with `m := 25 kg` is 10 metres; `10*m` multiplies by the variable). A function's own parameters are never read as units (`v(t) := 9.81 t`). The `'` prefix (`'m`) always means the unit, and the importer writes it. A quoted name may contain a dot, for SMath's `'g.e` (standard gravity); `'%` is a hundredth | 5.1 m |
 | Constants | built in: `π` `e` `∞` `g` `c` `G` `h` `ħ` `k.B` `N.A` `R` `q.e` `m.e` `m.p` `ε.0` `μ.0` `σ.SB` `ρ.w` `p.atm` (SI values, CODATA 2018) | purple |
 | Implicit multiplication | a number followed by a name, unit or call: `25.5 m^2`, `2 x`, `2 sin(x)`. It binds tighter than `*` `/` and looser than `^` | |
 | Strings | `"OK"` | |
