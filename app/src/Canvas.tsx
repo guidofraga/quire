@@ -426,10 +426,20 @@ export function Canvas() {
     else setState("view", { x: state.view.x - e.deltaX, y: state.view.y - e.deltaY });
   }
 
+  /**
+   * Whether a key is aimed at the page: typed into the hidden field, on the page itself,
+   * or with nothing focused (a click on the page leaves focus on the body). Keys from
+   * anywhere else (the sidebar tree, the inspector, a toolbar) belong to what has focus,
+   * and must not delete or move regions the user isn't looking at.
+   */
+  function aimedAtPage(target: EventTarget | null) {
+    if (target === sink || target === document.body || target === document.documentElement) return true;
+    if (!(target instanceof Element) || !viewportEl!.contains(target)) return false;
+    return !target.closest("input, textarea, button, select, [role=dialog], [role=menu]");
+  }
+
   function onKeyDown(e: KeyboardEvent) {
-    if (state.editing) return;
-    const target = e.target as HTMLElement;
-    if (target !== sink && target.closest?.("input, textarea, button, select, [role=dialog], [role=menu]")) return;
+    if (state.editing || !aimedAtPage(e.target)) return;
     const sel = state.selection;
     if (e.key === " " && !e.repeat) {
       spaceDown = true;
