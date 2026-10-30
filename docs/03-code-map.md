@@ -103,6 +103,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `engine.ts` | Loads `quire_web.wasm` and calls it, in the web version. |
 | `types.ts` | TypeScript mirrors of the document JSON and of `quire-service`'s report. |
 | `settings.ts`, `recent.ts` | App preferences and Open Recent, in `localStorage`. |
+| `recovery.ts` | Crash recovery: a copy of unsaved changes, kept by the backend a few seconds after the last edit. |
 | `notebook.ts` | Notebook state and logic (open, autosave, rename, move, search), path helpers. |
 
 **The page**

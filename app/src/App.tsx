@@ -56,6 +56,7 @@ import {
   adoptPath,
   flushSave,
   installAutosave,
+  refresh as refreshNotebook,
   lastNotebook,
   nb,
   newNote,
@@ -72,6 +73,7 @@ import {
   Sidebar,
   SidebarToggle,
 } from "./Sidebar";
+import { keepRecovery } from "./recovery";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
 import { setTemplates, TemplatesDialog } from "./TemplatesDialog";
@@ -97,6 +99,7 @@ import {
   layout,
   loadDoc,
   localized,
+  markSaved,
   redo,
   releaseErrors,
   selectAll,
@@ -167,24 +170,6 @@ function loadAssets() {
 // File commands
 // ---------------------------------------------------------------------------
 
-/**
- * While there are unsaved changes, keep a copy for crash recovery (a few seconds after
- * the last edit); once the document is saved or replaced, drop it.
- */
-function keepRecovery() {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  // started after the awaits in onMount, so it needs its own reactive root
-  createRoot(() =>
-    createEffect(
-      on([() => state.doc, () => state.dirty], ([doc, dirty]) => {
-        clearTimeout(timer);
-        if (!dirty) return void api.clearRecovery().catch(() => {});
-        timer = setTimeout(() => void api.saveRecovery(unwrap(doc), state.path).catch(() => {}), 3000);
-      }),
-    ),
-  );
-}
-
 async function guardUnsaved(): Promise<boolean> {
   // a note in a notebook saves itself: finish that, nothing to ask
   if (nb.current) return flushSave().then(() => true);
@@ -240,9 +225,19 @@ async function save(as = false) {
     path = await pickSavePath(fileName(state.path));
     if (!path) return;
   }
+  // Save As from a note: the note itself keeps what was typed up to now
+  if (nb.current) await flushSave();
+  const rev = state.rev;
   try {
     await api.save(path, unwrap(state.doc), state.path ?? state.origin);
-    setState({ path, origin: null, dirty: false });
+    setState({ path, origin: null });
+    markSaved(rev);
+    // the copy is the document now: autosave stops writing to the note, and the sidebar
+    // shows the copy when it is a note of the notebook
+    if (nb.book) {
+      await refreshNotebook();
+      adoptPath(path);
+    }
     addRecent(path);
     flash(`Saved ${fileName(path)}`);
   } catch (e) {
@@ -300,6 +295,7 @@ async function openLinked(encoded: string) {
 
 /** Save in a browser: download the document as one .quirez file, images included. */
 async function download() {
+  const rev = state.rev;
   try {
     const bytes = Uint8Array.from(atob(await api.saveBytes(unwrap(state.doc))), (c) => c.charCodeAt(0));
     const a = document.createElement("a");
@@ -307,7 +303,7 @@ async function download() {
     a.download = `${fileName(null).replace(/[\\/:*?"<>|]/g, "-")}.quirez`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    setState({ dirty: false });
+    markSaved(rev);
     flash(`Downloaded ${a.download}`);
   } catch (e) {
     flash(`Could not save: ${(e as Error).message}`);

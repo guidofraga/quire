@@ -48,6 +48,7 @@ import {
   updateDoc,
   updateRegion,
   widths,
+  withLocalized,
 } from "./store";
 import type { Expr, Fix, Region } from "./types";
 
@@ -142,14 +143,7 @@ function Caption(props: { p: Placed }) {
     const caption = r().caption;
     if (!caption || text === localized(caption.text, lang())) return;
     // a caption in several languages keeps the others
-    const next =
-      typeof caption.text === "object" && caption.text !== null
-        ? {
-            ...caption.text,
-            [Object.keys(caption.text).find((k) => lang()?.startsWith(k)) ?? Object.keys(caption.text)[0]]: text,
-          }
-        : text;
-    updateRegion(r().id, { caption: { ...caption, text: next } });
+    updateRegion(r().id, { caption: { ...caption, text: withLocalized(caption.text, text, lang()) } });
   };
   return (
     <Show when={r().caption}>

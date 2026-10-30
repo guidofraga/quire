@@ -97,6 +97,11 @@ function touch() {
   setState({ dirty: true, rev: state.rev + 1 });
 }
 
+/** The document as it was at `rev` is on disk: it is clean unless it changed while being written. */
+export function markSaved(rev: number) {
+  if (state.rev === rev) setState({ dirty: false });
+}
+
 /** Record the document as it was before a change. */
 function record(before: string) {
   if (undoStack[undoStack.length - 1] === before) return; // an earlier step that changed nothing
@@ -197,14 +202,28 @@ export interface Placed {
   top: number;
 }
 
+/**
+ * The translation that is shown, and so the one an edit changes: the document's language, else
+ * English, else the first one written (SMath worksheets carry several translations and no
+ * document language, often with Russian first); as in Rust.
+ */
+export function langKey(v: Record<string, string>, lang?: string): string | undefined {
+  const keys = Object.keys(v);
+  return keys.find((k) => lang?.startsWith(k)) ?? keys.find((k) => k === "en") ?? keys[0];
+}
+
 export function localized(v: Localized | undefined, lang?: string): string {
   if (v === undefined) return "";
   if (typeof v === "string") return v;
-  // the document's language, else English, else the first one written (SMath worksheets carry
-  // several translations and no document language, often with Russian first); as in Rust
-  const keys = Object.keys(v);
-  const key = keys.find((k) => lang?.startsWith(k)) ?? keys.find((k) => k === "en") ?? keys[0];
+  const key = langKey(v, lang);
   return key ? v[key] : "";
+}
+
+/** `v` with the shown translation replaced by `text`; the other translations are kept. */
+export function withLocalized(v: Localized | undefined, text: string, lang?: string): Localized {
+  if (typeof v !== "object" || v === null) return text;
+  const key = langKey(v, lang);
+  return key ? { ...v, [key]: text } : text;
 }
 
 function headingLevel(text: string): number {
@@ -928,13 +947,7 @@ export function setLive(id: string, text: string) {
         if (!Object.keys(r.display).length) delete r.display;
       }
     } else if (r.kind === "text") {
-      if (typeof r.text === "object" && r.text !== null) {
-        const lang = state.doc.meta?.lang;
-        const key = Object.keys(r.text).find((k) => lang?.startsWith(k)) ?? Object.keys(r.text)[0];
-        if (key) r.text[key] = text;
-      } else {
-        r.text = text;
-      }
+      r.text = withLocalized(r.text, text, state.doc.meta?.lang);
     }
   }, false);
 }
@@ -942,9 +955,19 @@ export function setLive(id: string, text: string) {
 /** The unit typed after `=` in the math being edited, which may not be shown yet. */
 let typedUnit: { id: string; unit: string | undefined } | null = null;
 
+/** Editors that hold typing outside the document until it is committed (a table cell). */
+const drafts = new Set<() => void>();
+
+/** `write` puts such typing into the document; it runs whenever an edit ends through `commitEditing`. */
+export function onCommitEditing(write: () => void) {
+  drafts.add(write);
+}
+
 export function commitEditing() {
   const id = state.editing;
   if (!id) return;
+  // Save, export or a click elsewhere end the edit: what is half typed goes in, not away
+  for (const write of drafts) write();
   if (typedUnit?.id === id) {
     const unit = typedUnit.unit;
     typedUnit = null;

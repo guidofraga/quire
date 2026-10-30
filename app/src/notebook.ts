@@ -4,7 +4,7 @@
 import { batch, createEffect, createRoot, createSignal, on } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { api, DOC_EXT } from "./api";
-import { flash, loadDoc, revealRegion, setState, state } from "./store";
+import { commitEditing, flash, loadDoc, markSaved, revealRegion, setState, state } from "./store";
 import type { Doc } from "./types";
 
 export interface NbNode {
@@ -184,7 +184,7 @@ export function flushSave(): Promise<void> {
   saving = saving
     .then(() => api.save(path, doc, path))
     .then(() => {
-      if (state.path === path && state.rev === rev) setState({ dirty: false });
+      if (state.path === path) markSaved(rev);
     })
     .catch((e) => flash(`Could not save ${titleOf(rel)}: ${(e as Error).message}`));
   return saving;
@@ -257,6 +257,8 @@ export async function closeNotebook() {
 /** Open a note of the notebook; `region` scrolls to and selects that region. */
 export async function openNote(rel: string, region?: string | null) {
   if (rel !== nb.current) {
+    // a table cell being typed is not in the document until the edit ends
+    commitEditing();
     await flushSave();
     const path = absPath(rel);
     let doc: Doc;
@@ -411,12 +413,22 @@ export async function trashItem(rel: string) {
       .slice(0, Math.max(0, at))
       .reverse()
       .find((r) => !gone(r));
+  // edits to what is being trashed must not be saved back while it goes (that would make the
+  // file again), but they stay marked if it stays
+  const unsaved = holdsCurrent && state.dirty;
   if (holdsCurrent) {
     clearTimeout(saveTimer);
+    await saving;
     setState({ dirty: false });
   }
   const ok = await run("move it to the Trash", () => call("trash", { rel }).then(() => true));
-  if (!ok) return;
+  if (!ok) {
+    if (unsaved && nb.current) {
+      setState({ dirty: true });
+      void flushSave();
+    }
+    return;
+  }
   flash(`Moved ${node.name} to the Trash`);
   if (holdsCurrent) {
     setNb("current", null);
