@@ -48,7 +48,17 @@ test("typing in a text region with a link keeps the link and everything else", a
   const editor = page.locator(".rich-editor");
   // the table can't be edited in place: it is shown as it renders, and kept
   await expect(editor.locator(".djot-kept table")).toBeVisible();
-  await page.keyboard.press("ControlOrMeta+ArrowUp");
+  // to the start of the text: the editing keys are the platform's (CI is Linux), whatever the
+  // browser reports itself as
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const s = getSelection()!;
+        return [s.anchorOffset, s.anchorNode?.textContent?.slice(0, 3)];
+      }),
+    )
+    .toEqual([0, "See"]);
   await page.keyboard.type("Please ");
   await page.keyboard.press("Escape");
   await expect(page.locator(".rich-editor")).toHaveCount(0);
