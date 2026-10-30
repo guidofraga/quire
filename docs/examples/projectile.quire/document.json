@@ -1,0 +1,25 @@
+{
+  "format": "quire/1",
+  "meta": { "title": "Projectile Motion", "authors": ["Physics 101"] },
+  "settings": { "display": { "decimals": 2, "resultUnits": "working" } },
+  "styles": { "numbering": { "headings": "1.1" } },
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
+    "footer": { "left": "{title}", "right": "{page} / {pages}", "color": "#8a8f98" }
+  },
+  "regions": [
+    { "id": "p00", "kind": "text", "at": [0, 0], "text": "{.title}\n# Projectile motion" },
+    { "id": "p01", "kind": "text", "at": [0, 54], "width": 640, "text": "A ball is kicked at an angle above the ground. Ignoring air resistance, how long does it fly, how far does it go, and how high does it get? Change the speed or the angle and every answer below follows." },
+    { "id": "p02", "kind": "text", "at": [0, 126], "text": "# Data" },
+    { "id": "p03", "kind": "math", "at": [0, 162], "expr": "v.0:=25 m/s", "note": "launch speed" },
+    { "id": "p04", "kind": "math", "at": [234, 162], "expr": "θ:=40 deg", "note": "launch angle" },
+    { "id": "p05", "kind": "text", "at": [0, 216], "text": "# Results" },
+    { "id": "p06", "kind": "math", "at": [0, 252], "expr": "t.f:=2*v.0*sin(θ)/g", "show": "value", "note": "time of flight" },
+    { "id": "p07", "kind": "math", "at": [0, 306], "expr": "R:=v.0^2*sin(2*θ)/g", "show": "value", "note": "range" },
+    { "id": "p08", "kind": "math", "at": [0, 360], "expr": "h:=v.0^2*sin(θ)^2/(2*g)", "show": "value", "note": "highest point" },
+    { "id": "p09", "kind": "math", "at": [0, 423], "expr": "y(x):=x*tan(θ)-g*x^2/(2*v.0^2*cos(θ)^2)", "note": "the path" },
+    { "id": "p10", "kind": "plot2d", "at": [0, 477], "size": [520, 240], "series": [{ "y": "y(x)", "x": "x", "range": "0 m..R", "label": "Height" }], "axes": { "x": { "label": "Distance" }, "y": { "label": "Height" } }, "grid": true, "extrema": true, "caption": { "text": "The ball's path" } }
+  ]
+}
