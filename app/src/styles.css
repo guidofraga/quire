@@ -571,7 +571,10 @@ ms.str {
 
 .text-body h1,
 .text-body h2,
-.text-body h3 {
+.text-body h3,
+.text-body h4,
+.text-body h5,
+.text-body h6 {
   margin: 0;
   font-size: 1em;
   font-weight: 700;
@@ -581,6 +584,16 @@ ms.str {
 .text-body h2::before,
 .text-body h3::before {
   content: var(--num, "");
+}
+
+.text-body blockquote {
+  margin: 0 0 0.3em;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--grid);
+}
+
+.text-body code {
+  font: 0.92em var(--mono);
 }
 
 .text-body .center {
@@ -1088,8 +1101,37 @@ ms.str {
   font-weight: 600;
 }
 
-.fb-item.style-h3 {
+.fb-item.style-h3,
+.fb-item.style-h4,
+.fb-item.style-h5,
+.fb-item.style-h6 {
   font-weight: 600;
+}
+
+.fb-link {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.fb-link input {
+  width: 240px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 5px;
+  background: var(--field);
+  color: var(--field-ink);
+  font:
+    12.5px -apple-system,
+    system-ui,
+    sans-serif;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.fb-link .fb-item {
+  white-space: nowrap;
 }
 
 .fb-swatch {
@@ -1135,8 +1177,35 @@ ms.str {
 
 .rich-editor h1,
 .rich-editor h2,
-.rich-editor h3 {
+.rich-editor h3,
+.rich-editor h4,
+.rich-editor h5,
+.rich-editor h6 {
   margin: 0 0 0.2em;
+}
+
+.rich-editor a {
+  color: var(--accent);
+}
+
+/* Djot the editor shows but can't change (a table, code, a footnote): kept as written */
+.rich-editor .djot-kept {
+  margin: 0 0 0.3em;
+  border-radius: 3px;
+  outline: 1px dashed var(--grid);
+  outline-offset: 2px;
+  cursor: default;
+}
+
+.rich-editor .djot-kept.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+.rich-editor .djot-kept pre {
+  margin: 0;
+  color: var(--muted);
+  font: 0.85em var(--mono);
+  white-space: pre-wrap;
 }
 
 .text-body h1.title,

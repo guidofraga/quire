@@ -8,6 +8,12 @@ use jotdown::{Container, Event};
 /// Earlier versions wrote text colours unquoted (`[x]{color=#c00}`), which Djot does not
 /// accept as an attribute value; quote them so those documents keep their colours.
 fn quote_colors(src: &str) -> Cow<'_, str> {
+    quote_colors_at(src, &mut Vec::new())
+}
+
+/// [`quote_colors`], noting where each added quote landed in the result, so that offsets
+/// into it can be mapped back to the source.
+fn quote_colors_at<'a>(src: &'a str, added: &mut Vec<usize>) -> Cow<'a, str> {
     if !src.contains("color=#") {
         return Cow::Borrowed(src);
     }
@@ -22,8 +28,10 @@ fn quote_colors(src: &str) -> Cow<'_, str> {
         out.push_str(head);
         match value.split_at_checked(1 + hex) {
             Some((color, tail)) if (3..=8).contains(&hex) && ends => {
+                added.push(out.len());
                 out.push('"');
                 out.push_str(color);
+                added.push(out.len());
                 out.push('"');
                 rest = tail;
             }
@@ -66,11 +74,33 @@ pub fn render_djot(src: &str) -> String {
     render(src, None)
 }
 
-/// HTML for the rich-text editor: inline math keeps its source as
+/// HTML for the rich-text editor (`app/src/richtext.ts`). Each top-level block comes in a
+/// `<div data-djot="…">` that holds its exact source, blank lines after it included, so the
+/// editor writes untouched blocks back byte for byte. Blocks the editor cannot represent
+/// (tables, code, footnotes, attributes it does not know…) are also marked `data-keep`: the
+/// editor shows them as rendered and keeps their source. Inline math keeps its source as
 /// `<span class="qmath" data-expr="…">` so the editor can show and edit it.
 pub fn render_djot_editable(src: &str) -> String {
-    let exprs = inline_math(src);
-    let html = render(src, Some(""));
+    let src = without_nul(src);
+    let mut added = Vec::new();
+    let prepared = quote_colors_at(&src, &mut added);
+    // an offset into `prepared`, in `src`: without the quotes added to legacy colours
+    let original = |at: usize| at - added.partition_point(|&q| q < at);
+    let blocks = top_level_blocks(&prepared);
+    let mut neutral = Neutralize::new(true);
+    let mut html = String::with_capacity(prepared.len() * 2);
+    for (i, block) in blocks.iter().enumerate() {
+        let from = if i == 0 { 0 } else { original(block.start) };
+        let to = blocks.get(i + 1).map_or(src.len(), |next| original(next.start));
+        html.push_str("<div data-djot=\"");
+        push_attr(&mut html, src.get(from..to).unwrap_or_default());
+        html.push_str(if editable(&block.events) { "\">" } else { "\" data-keep=\"\">" });
+        let events = block.events.iter().cloned().filter_map(|e| neutral.apply(e));
+        html.push_str(&jotdown::html::render_to_string(events));
+        html.push_str("</div>\n");
+    }
+    let exprs = inline_math(&src);
+    let html = replace_sentinels(&html, "");
     let mut out = String::with_capacity(html.len());
     let mut rest = html.as_str();
     let marker = "<span class=\"qmath\" data-math=\":m";
@@ -78,14 +108,165 @@ pub fn render_djot_editable(src: &str) -> String {
         out.push_str(head);
         let end = after.find('"').unwrap_or(0);
         let n: usize = after.get(..end).and_then(|d| d.parse().ok()).unwrap_or(0);
-        let expr = exprs.get(n).map(String::as_str).unwrap_or_default();
-        let escaped =
-            expr.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;");
-        out.push_str(&format!("<span class=\"qmath\" data-expr=\"{escaped}\""));
+        out.push_str("<span class=\"qmath\" data-expr=\"");
+        push_attr(&mut out, exprs.get(n).map(String::as_str).unwrap_or_default());
+        out.push('"');
         rest = after.get(end + 1..).unwrap_or_default();
     }
     out.push_str(rest);
     out
+}
+
+/// Escape text for a double-quoted HTML attribute. Carriage returns become references, since
+/// an HTML parser would otherwise turn `\r\n` into `\n` and the source would change.
+fn push_attr(out: &mut String, text: &str) {
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\r' => out.push_str("&#13;"),
+            c => out.push(c),
+        }
+    }
+}
+
+/// A top-level block of a Djot document, and where its source starts.
+struct Block<'s> {
+    start: usize,
+    events: Vec<Event<'s>>,
+}
+
+/// The top-level blocks of a document. Sections are not blocks: a heading carries the section
+/// it opens (which holds its attributes), and the rest of that section follows as blocks.
+fn top_level_blocks(src: &str) -> Vec<Block<'_>> {
+    let mut blocks = Vec::new();
+    let mut section = None;
+    let mut current: Option<Block<'_>> = None;
+    let mut depth = 0usize;
+    for (e, range) in jotdown::Parser::new(src).into_offset_iter() {
+        if depth == 0 {
+            match &e {
+                Event::Start(Container::Document, _)
+                | Event::End(Container::Document | Container::Section { .. })
+                | Event::Blankline => continue,
+                Event::Start(Container::Section { .. }, _) => {
+                    section = Some((e, range.start));
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        let block = current.get_or_insert_with(|| match (&e, section.take()) {
+            (Event::Start(Container::Heading { .. }, _), Some((open, start))) => {
+                Block { start, events: vec![open] }
+            }
+            _ => Block { start: range.start, events: Vec::new() },
+        });
+        match &e {
+            Event::Start(..) => depth += 1,
+            Event::End(..) => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        block.events.push(e);
+        if depth == 0
+            && let Some(mut done) = current.take()
+        {
+            // the section ends further down the document; here it closes around the heading
+            if let Some(Event::Start(open @ Container::Section { .. }, _)) = done.events.first() {
+                let close = Event::End(open.clone());
+                done.events.push(close);
+            }
+            blocks.push(done);
+        }
+    }
+    blocks
+}
+
+/// Whether the rich-text editor can represent a block exactly. It writes back what it holds,
+/// so a block it would change must be kept as written instead.
+fn editable(events: &[Event]) -> bool {
+    let mut events = events.iter().peekable();
+    while let Some(e) = events.next() {
+        let ok = match e {
+            // a cross-reference is an empty link; one with text would lose it
+            Event::Start(Container::Link(url, _), _) if url.starts_with("#ref:") => {
+                container_editable(e) && matches!(events.peek(), Some(Event::End(_)))
+            }
+            Event::Start(..) => container_editable(e),
+            Event::FootnoteReference(_) | Event::ThematicBreak(_) | Event::Attributes(_) => false,
+            _ => true,
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+fn container_editable(e: &Event) -> bool {
+    use jotdown::{LinkType, ListKind, OrderedListNumbering, OrderedListStyle, SpanLinkType};
+    let Event::Start(container, attrs) = e else { return false };
+    match container {
+        Container::Section { .. } => {
+            attrs_within(attrs, &["title", "center", "right", "justify"], &["size", "font"])
+        }
+        Container::Paragraph => attrs_within(attrs, &["center", "right", "justify"], &["size", "font"]),
+        Container::Span => attrs_within(attrs, &["underline", "strike"], &["color", "size"]),
+        Container::Link(url, kind) => {
+            let classes: &[&str] = if url.starts_with("#ref:") { &["num", "page", "title"] } else { &[] };
+            matches!(
+                kind,
+                LinkType::AutoLink | LinkType::Span(SpanLinkType::Inline | SpanLinkType::Reference)
+            ) && safe_link(url)
+                && attrs_within(attrs, classes, &[])
+        }
+        Container::List { kind: ListKind::Unordered(_), .. }
+        | Container::List {
+            kind:
+                ListKind::Ordered {
+                    numbering: OrderedListNumbering::Decimal,
+                    style: OrderedListStyle::Period,
+                    ..
+                },
+            ..
+        } => attrs.is_empty(),
+        Container::Math { display } => !display && attrs.is_empty(),
+        Container::Heading { .. }
+        | Container::ListItem
+        | Container::Blockquote
+        | Container::Strong
+        | Container::Emphasis
+        | Container::Delete
+        | Container::Insert
+        | Container::Mark
+        | Container::Superscript
+        | Container::Subscript
+        | Container::Verbatim => attrs.is_empty(),
+        _ => false,
+    }
+}
+
+/// Attributes made only of these classes and of these keys, with values the editor reads.
+fn attrs_within(attrs: &jotdown::Attributes, classes: &[&str], keys: &[&str]) -> bool {
+    attrs.iter().all(|(kind, value)| {
+        let value = value.to_string();
+        match kind {
+            jotdown::AttributeKind::Class => value.split_whitespace().all(|c| classes.contains(&c)),
+            jotdown::AttributeKind::Pair { key } if keys.contains(&key.as_ref()) => match key.as_ref() {
+                "size" => {
+                    value.bytes().all(|b| b.is_ascii_digit() || b == b'.') && value.parse::<f64>().is_ok()
+                }
+                "color" => {
+                    let hex = value.strip_prefix('#').unwrap_or_default();
+                    (3..=8).contains(&hex.len()) && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                }
+                _ => !value.contains('"'),
+            },
+            _ => false,
+        }
+    })
 }
 
 /// Like [`render_djot`], but inline math becomes `<span class="qmath" data-math="<id>:m<n>">`
@@ -94,41 +275,60 @@ pub fn render_djot_with_math(src: &str, region_id: &str) -> String {
     render(src, Some(region_id))
 }
 
+fn without_nul(src: &str) -> Cow<'_, str> {
+    if src.contains('\u{0}') { Cow::Owned(src.replace('\u{0}', "")) } else { Cow::Borrowed(src) }
+}
+
 fn render(src: &str, math_prefix: Option<&str>) -> String {
-    let cleaned;
-    let src = if src.contains('\u{0}') {
-        cleaned = src.replace('\u{0}', "");
-        cleaned.as_str()
-    } else {
-        src
-    };
-    let src = quote_colors(src);
-    let mut raw_depth = 0usize;
-    let mut math_index = 0usize;
-    let mut in_math = false;
-    let events = jotdown::Parser::new(&src).filter_map(|e| {
+    let src = without_nul(src);
+    let src = quote_colors(&src);
+    let mut neutral = Neutralize::new(math_prefix.is_some());
+    let events = jotdown::Parser::new(&src).filter_map(|e| neutral.apply(e));
+    let html = jotdown::html::render_to_string(events);
+    match math_prefix {
+        Some(id) => replace_sentinels(&html, id),
+        None => html,
+    }
+}
+
+/// Makes untrusted events safe to render: raw HTML is dropped and unsafe links lead nowhere.
+/// With `math`, inline math becomes numbered sentinels that [`replace_sentinels`] swaps for
+/// placeholders.
+struct Neutralize {
+    math: bool,
+    raw_depth: usize,
+    in_math: bool,
+    math_index: usize,
+}
+
+impl Neutralize {
+    fn new(math: bool) -> Self {
+        Neutralize { math, raw_depth: 0, in_math: false, math_index: 0 }
+    }
+
+    fn apply<'s>(&mut self, e: Event<'s>) -> Option<Event<'s>> {
         match &e {
             Event::Start(Container::RawBlock { .. } | Container::RawInline { .. }, _) => {
-                raw_depth += 1;
+                self.raw_depth += 1;
                 return None;
             }
             Event::End(Container::RawBlock { .. } | Container::RawInline { .. }) => {
-                raw_depth -= 1;
+                self.raw_depth = self.raw_depth.saturating_sub(1);
                 return None;
             }
-            _ if raw_depth > 0 => return None,
-            Event::Start(Container::Math { .. }, _) if math_prefix.is_some() => {
-                // a sentinel survives HTML escaping; it is swapped for the placeholder below
-                in_math = true;
-                let sentinel = format!("\u{0}{math_index}\u{0}");
-                math_index += 1;
+            _ if self.raw_depth > 0 => return None,
+            Event::Start(Container::Math { .. }, _) if self.math => {
+                // a sentinel survives HTML escaping; it is swapped for the placeholder later
+                self.in_math = true;
+                let sentinel = format!("\u{0}{}\u{0}", self.math_index);
+                self.math_index += 1;
                 return Some(Event::Str(sentinel.into()));
             }
-            Event::End(Container::Math { .. }) if math_prefix.is_some() => {
-                in_math = false;
+            Event::End(Container::Math { .. }) if self.math => {
+                self.in_math = false;
                 return None;
             }
-            Event::Str(_) if in_math => return None,
+            Event::Str(_) if self.in_math => return None,
             Event::Start(Container::Link(url, ty), attrs) if !safe_link(url) => {
                 return Some(Event::Start(Container::Link("#".into(), *ty), attrs.clone()));
             }
@@ -138,11 +338,6 @@ fn render(src: &str, math_prefix: Option<&str>) -> String {
             _ => {}
         }
         Some(e)
-    });
-    let html = jotdown::html::render_to_string(events);
-    match math_prefix {
-        Some(id) => replace_sentinels(&html, id),
-        None => html,
     }
 }
 
@@ -159,7 +354,61 @@ fn replace_sentinels(html: &str, id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_djot;
+    use super::{render_djot, render_djot_editable};
+
+    /// Shared with `app/src/richtext.test.ts`: Djot, the editor HTML for it, and what the
+    /// editor writes when it rewrites those blocks (the same Djot, for blocks it keeps).
+    #[derive(serde::Deserialize)]
+    struct Case {
+        djot: String,
+        html: String,
+        written: String,
+    }
+
+    #[test]
+    fn editor_cases_render_as_the_app_expects() -> serde_json::Result<()> {
+        let cases: Vec<Case> = serde_json::from_str(include_str!("../../../app/src/richtext.cases.json"))?;
+        assert!(cases.len() > 40);
+        for c in cases {
+            assert_eq!(render_djot_editable(&c.djot), c.html, "{:?}", c.djot);
+            // what the editor writes reads the same as what it was given (a soft line break
+            // becomes a space)
+            let words = |s: &str| render_djot(s).split_whitespace().collect::<Vec<_>>().join(" ");
+            assert_eq!(words(&c.written), words(&c.djot), "{:?} → {:?}", c.djot, c.written);
+            if c.html.matches("data-keep").count() == c.html.matches("<div data-djot").count() {
+                assert_eq!(c.written, c.djot.trim_end(), "kept blocks are written as they were");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn editor_blocks_hold_their_exact_source() {
+        let src = "{.title}\n# Report\r\n\r\nText [x]{color=#c00} with a [link](https://a.b).\n\n\n\
+                   | a | b |\n|---|---|\n\n- one\n- two\n\n> quote\n\n``` rust\ncode\n```\n";
+        let html = render_djot_editable(src);
+        let doc = sources(&html);
+        assert_eq!(doc.concat(), src);
+        assert_eq!(doc.len(), 6, "{doc:?}");
+        // the legacy unquoted colour is shown quoted but kept as written
+        assert!(html.contains(r##"<span color="#c00">x</span>"##), "{html}");
+        assert_eq!(html.matches("data-keep").count(), 2, "the table and the code: {html}");
+    }
+
+    /// The `data-djot` sources in editor HTML, unescaped.
+    fn sources(html: &str) -> Vec<String> {
+        html.split("<div data-djot=\"")
+            .skip(1)
+            .filter_map(|s| s.split_once('"'))
+            .map(|(src, _)| {
+                src.replace("&#13;", "\r")
+                    .replace("&quot;", "\"")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&")
+            })
+            .collect()
+    }
 
     #[test]
     fn formatting() {

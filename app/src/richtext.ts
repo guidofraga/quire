@@ -1,12 +1,15 @@
 // Rich-text editing for text regions: ProseMirror in the editor, Djot in the document.
 //
 // Djot → HTML (Rust, `djot_html`) → ProseMirror; ProseMirror → Djot (`toDjot` below).
-// Anything the schema can express round-trips; the format bar drives the commands here.
+// Each top-level block keeps its source: unchanged blocks are written back byte for byte,
+// and blocks the schema can't express (tables, code…) are kept as uneditable `djot_block`s.
+// The format bar drives the commands here.
 import { baseKeymap, setBlockType, toggleMark } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import {
   type Attrs,
+  type Mark,
   type MarkType,
   type Node as PMNode,
   DOMParser as PMParser,
@@ -56,6 +59,31 @@ function blockDom(attrs: Attrs, cls = "") {
   return { ...(style ? { style } : {}), ...(cls ? { class: cls } : {}) };
 }
 
+/** A tight list's items hold their text directly; a loose one's are paragraphs. */
+const isTight = (list: HTMLElement) =>
+  ![...list.children].some((li) => [...li.children].some((c) => c.tagName === "P"));
+
+/** A block the editor shows but cannot change: rendered HTML, Djot source written back as is. */
+function keptDom(n: PMNode): HTMLElement {
+  const dom = document.createElement("div");
+  dom.className = "djot-kept";
+  dom.title = "This part can't be edited here; it is kept as written";
+  const html = String(n.attrs.html);
+  if (html.trim()) {
+    dom.innerHTML = html;
+    // inline math shows its expression; it is evaluated once editing ends
+    for (const m of dom.querySelectorAll<HTMLElement>("span.qmath")) m.textContent = m.dataset.expr ?? "";
+  } else {
+    // a link definition or a comment renders nothing; show its source so it isn't invisible
+    const pre = document.createElement("pre");
+    pre.textContent = String(n.attrs.src).trim();
+    dom.appendChild(pre);
+  }
+  dom.dataset.djot = String(n.attrs.src);
+  dom.dataset.keep = "";
+  return dom;
+}
+
 export const schema = new Schema({
   nodes: {
     doc: { content: "block+" },
@@ -71,15 +99,60 @@ export const schema = new Schema({
       content: "inline*",
       defining: true,
       attrs: { ...blockAttrSpec, level: { default: 1 }, title: { default: false } },
-      parseDOM: [1, 2, 3, 4, 5, 6].map((l) => ({
-        tag: `h${l}`,
-        getAttrs: (d: HTMLElement) => ({ ...readBlockAttrs(d), level: Math.min(l, 3) }),
+      parseDOM: [1, 2, 3, 4, 5, 6].map((level) => ({
+        tag: `h${level}`,
+        getAttrs: (d: HTMLElement) => ({ ...readBlockAttrs(d), level }),
       })),
       toDOM: (n) => [`h${n.attrs.level}`, blockDom(n.attrs, n.attrs.title ? "title" : ""), 0],
     },
-    bullet_list: { group: "block", content: "list_item+", parseDOM: [{ tag: "ul" }], toDOM: () => ["ul", 0] },
-    ordered_list: { group: "block", content: "list_item+", parseDOM: [{ tag: "ol" }], toDOM: () => ["ol", 0] },
+    blockquote: {
+      group: "block",
+      content: "block+",
+      defining: true,
+      parseDOM: [{ tag: "blockquote" }],
+      toDOM: () => ["blockquote", 0],
+    },
+    bullet_list: {
+      group: "block",
+      content: "list_item+",
+      attrs: { tight: { default: true } },
+      parseDOM: [{ tag: "ul", getAttrs: (d) => ({ tight: isTight(d as HTMLElement) }) }],
+      toDOM: () => ["ul", 0],
+    },
+    ordered_list: {
+      group: "block",
+      content: "list_item+",
+      attrs: { start: { default: 1 }, tight: { default: true } },
+      parseDOM: [
+        {
+          tag: "ol",
+          getAttrs: (d) => {
+            const el = d as HTMLElement;
+            const start = Number(el.getAttribute("start") ?? 1);
+            return { start: Number.isInteger(start) && start >= 0 ? start : 1, tight: isTight(el) };
+          },
+        },
+      ],
+      toDOM: (n) => ["ol", n.attrs.start === 1 ? {} : { start: String(n.attrs.start) }, 0],
+    },
     list_item: { content: "paragraph block*", defining: true, parseDOM: [{ tag: "li" }], toDOM: () => ["li", 0] },
+    /** Djot the editor can't represent (a table, code, a footnote…), kept as its source. */
+    djot_block: {
+      group: "block",
+      atom: true,
+      selectable: true,
+      attrs: { src: { default: "" }, html: { default: "" } },
+      parseDOM: [
+        {
+          tag: "div[data-keep]",
+          getAttrs: (d) => {
+            const el = d as HTMLElement;
+            return { src: el.dataset.djot ?? "", html: el.innerHTML };
+          },
+        },
+      ],
+      toDOM: keptDom,
+    },
     text: { group: "inline" },
     hard_break: { inline: true, group: "inline", selectable: false, parseDOM: [{ tag: "br" }], toDOM: () => ["br"] },
     math: {
@@ -98,6 +171,8 @@ export const schema = new Schema({
       parseDOM: [
         {
           tag: 'a[href^="#ref:"]',
+          // before the link mark, which would otherwise take the <a>
+          priority: 60,
           getAttrs: (d) => {
             const a = d as HTMLElement;
             return { id: a.getAttribute("href")!.slice(5), style: refStyleOf(a) };
@@ -108,6 +183,21 @@ export const schema = new Schema({
     },
   },
   marks: {
+    // first, so that it is the outermost mark: a link wraps the formatting inside it
+    link: {
+      attrs: { href: {} },
+      inclusive: false,
+      parseDOM: [
+        {
+          tag: "a[href]",
+          getAttrs: (d) => {
+            const href = (d as HTMLElement).getAttribute("href") ?? "";
+            return href.startsWith("#ref:") ? false : { href };
+          },
+        },
+      ],
+      toDOM: (m) => ["a", { href: m.attrs.href, title: m.attrs.href }, 0],
+    },
     strong: { parseDOM: [{ tag: "strong" }, { tag: "b" }], toDOM: () => ["strong", 0] },
     em: { parseDOM: [{ tag: "em" }, { tag: "i" }], toDOM: () => ["em", 0] },
     underline: {
@@ -118,6 +208,8 @@ export const schema = new Schema({
       parseDOM: [{ tag: "del" }, { tag: "s" }, { tag: "span.strike", consuming: false }],
       toDOM: () => ["s", 0],
     },
+    highlight: { parseDOM: [{ tag: "mark" }], toDOM: () => ["mark", 0] },
+    insert: { parseDOM: [{ tag: "ins" }], toDOM: () => ["ins", 0] },
     sup: { excludes: "sub", parseDOM: [{ tag: "sup" }], toDOM: () => ["sup", 0] },
     sub: { excludes: "sup", parseDOM: [{ tag: "sub" }], toDOM: () => ["sub", 0] },
     color: {
@@ -148,6 +240,8 @@ export const schema = new Schema({
       ],
       toDOM: (m) => ["span", { style: `font-size:${m.attrs.size}pt` }, 0],
     },
+    // verbatim: its text is written as is, so it is innermost
+    code: { parseDOM: [{ tag: "code" }], toDOM: () => ["code", 0] },
   },
 });
 
@@ -164,12 +258,21 @@ export function escapeText(t: string): string {
   return t.replace(DJOT_SPECIAL, "\\$&");
 }
 
-const MARK_ORDER = ["strong", "em", "strike", "sup", "sub", "underline", "color", "size"];
+const MARK_ORDER = ["strong", "em", "strike", "highlight", "insert", "sup", "sub", "underline", "color", "size"];
+
+/** Inline code: a fence longer than any run of backticks inside, padded if it touches one. */
+function verbatim(text: string): string {
+  const fence = "`".repeat(Math.max(0, ...(text.match(/`+/g) ?? []).map((r) => r.length)) + 1);
+  const pad = /^`|`$/.test(text) ? " " : "";
+  return fence + pad + text + pad + fence;
+}
 
 function wrapMarks(text: string, node: PMNode): string {
+  // Djot markers can't sit next to a space, so spaces at either end go outside them
   const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!;
-  let core = m[2];
-  if (!core) return text;
+  const code = M.code.isInSet(node.marks);
+  if (!code && !m[2]) return text;
+  let core = code ? verbatim(text) : escapeText(m[2]);
   const spanAttrs: string[] = [];
   const marks = [...node.marks].sort((a, b) => MARK_ORDER.indexOf(a.type.name) - MARK_ORDER.indexOf(b.type.name));
   for (const mark of marks) {
@@ -182,6 +285,12 @@ function wrapMarks(text: string, node: PMNode): string {
         break;
       case "strike":
         core = `{-${core}-}`;
+        break;
+      case "highlight":
+        core = `{=${core}=}`;
+        break;
+      case "insert":
+        core = `{+${core}+}`;
         break;
       case "sup":
         core = `^${core}^`;
@@ -201,23 +310,55 @@ function wrapMarks(text: string, node: PMNode): string {
     }
   }
   if (spanAttrs.length) core = `[${core}]{${spanAttrs.join(" ")}}`;
-  return m[1] + core + m[3];
+  return code ? core : m[1] + core + m[3];
+}
+
+/** A link destination Djot reads back unchanged: it ends at the first `)`, so encode those. */
+function linkDest(href: string): string {
+  return href.replace(/[()\\\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+}
+
+function inlineNode(child: PMNode): string {
+  if (child.type === N.hard_break) return "\\\n";
+  if (child.type === N.math) {
+    const expr = String(child.attrs.expr);
+    const fence = expr.includes("`") ? "``" : "`";
+    return `$${fence}${expr}${fence}`;
+  }
+  if (child.type === N.xref) return `[](#ref:${child.attrs.id})${child.attrs.style ? `{.${child.attrs.style}}` : ""}`;
+  return child.isText ? wrapMarks(child.text ?? "", child) : "";
+}
+
+/** Make literal what Djot would read as the start of another block (a list, a div, a rule). */
+function literalStart(text: string): string {
+  return text
+    .replace(
+      /^(\(?)(\d+|[a-zA-Z]|[ivxlcdmIVXLCDM]+)([.)])(?=\s|$)/,
+      (_, open, n, delim) => `${open ? "\\(" : ""}${n}\\${delim}`,
+    )
+    .replace(/^([-+])(?=\s|$)/, "\\$1")
+    .replace(/^:(?=:*(\s|$))/, "\\:")
+    .replace(/^-(?=(\s*-){2,}\s*(\n|$))/, "\\-");
 }
 
 function inline(node: PMNode): string {
   let out = "";
+  let link: Mark | null = null;
+  let text = "";
+  const flush = () => {
+    out += link ? `[${text}](${linkDest(String(link.attrs.href))})` : text;
+    text = "";
+  };
   node.forEach((child) => {
-    if (child.type === N.hard_break) out += "\\\n";
-    else if (child.type === N.math) {
-      const expr = String(child.attrs.expr);
-      const fence = expr.includes("`") ? "``" : "`";
-      out += `$${fence}${expr}${fence}`;
-    } else if (child.type === N.xref) {
-      out += `[](#ref:${child.attrs.id})${child.attrs.style ? `{.${child.attrs.style}}` : ""}`;
-    } else if (child.isText) out += wrapMarks(escapeText(child.text ?? ""), child);
+    const l = M.link.isInSet(child.marks) ?? null;
+    if (l !== link && !(l && link?.eq(l))) {
+      flush();
+      link = l;
+    }
+    text += inlineNode(child);
   });
-  // a block must not start with something Djot reads as list/heading syntax
-  return out.replace(/^(\d+)\.(\s)/, "$1\\.$2").replace(/^([-+])(\s)/, "\\$1$2");
+  flush();
+  return literalStart(out);
 }
 
 function blockAttrLine(attrs: Attrs, extra: string[] = []): string {
@@ -228,10 +369,27 @@ function blockAttrLine(attrs: Attrs, extra: string[] = []): string {
   return parts.length ? `{${parts.join(" ")}}\n` : "";
 }
 
-function block(node: PMNode, indent = ""): string {
+/** Prefix the lines of a block: the first with `first`, the others with `rest` (blank lines stay blank). */
+function prefixLines(text: string, first: string, rest: string): string {
+  return text
+    .split("\n")
+    .map((line, i) => (i === 0 ? first + line : line ? rest + line : rest.trimEnd()))
+    .join("\n");
+}
+
+function blocks(node: PMNode): string {
+  const parts: string[] = [];
+  node.forEach((child) => {
+    const text = block(child);
+    if (text.trim()) parts.push(text);
+  });
+  return parts.join("\n\n");
+}
+
+function block(node: PMNode): string {
   switch (node.type) {
     case N.paragraph:
-      return indent + blockAttrLine(node.attrs) + inline(node);
+      return blockAttrLine(node.attrs) + inline(node);
     case N.heading:
       return (
         blockAttrLine(node.attrs, node.attrs.title ? [".title"] : []) +
@@ -239,38 +397,89 @@ function block(node: PMNode, indent = ""): string {
         " " +
         inline(node)
       );
+    case N.blockquote:
+      return prefixLines(blocks(node), "> ", "> ");
     case N.bullet_list:
     case N.ordered_list: {
       const items: string[] = [];
       node.forEach((li, _, i) => {
-        const marker = node.type === N.bullet_list ? "- " : `${i + 1}. `;
+        const marker = node.type === N.bullet_list ? "- " : `${node.attrs.start + i}. `;
         const parts: string[] = [];
-        li.forEach((child, __, j) => {
-          if (j === 0 && child.type === N.paragraph) parts.push(indent + marker + inline(child));
-          else parts.push(block(child, indent + " ".repeat(marker.length)));
-        });
-        items.push(parts.join("\n\n"));
+        li.forEach((child) => parts.push(block(child)));
+        items.push(prefixLines(parts.join("\n\n"), marker, " ".repeat(marker.length)));
       });
-      return items.join("\n");
+      return items.join(node.attrs.tight ? "\n" : "\n\n");
     }
+    case N.djot_block:
+      return String(node.attrs.src).trimEnd();
     default:
       return "";
   }
 }
 
-export function toDjot(doc: PMNode): string {
-  const blocks: string[] = [];
-  doc.forEach((b) => {
-    const text = block(b);
-    if (text.trim()) blocks.push(text);
+/** A top-level block as it was loaded, with its source (blank lines after it included). */
+export interface Loaded {
+  node: PMNode;
+  src: string;
+}
+
+/**
+ * The document as Djot. Blocks still as they were loaded (`loaded`, in order) are written
+ * back exactly as their source, so editing one paragraph never rewrites the others.
+ */
+export function toDjot(doc: PMNode, loaded: readonly Loaded[] = []): string {
+  const tail = (src: string) => src.slice(src.trimEnd().length);
+  const used = new Set<number>();
+  // structural equality, so a block typed in and then undone is still written as it was
+  const match = (node: PMNode, from: number) => {
+    for (let i = from; i < loaded.length; i++) if (!used.has(i) && loaded[i].node.eq(node)) return i;
+    for (let i = 0; i < from; i++) if (!used.has(i) && loaded[i].node.eq(node)) return i;
+    return -1;
+  };
+  let out = "";
+  let prev = -1; // the loaded block written last, if the last one written was loaded
+  doc.forEach((node) => {
+    const found = match(node, prev + 1);
+    const text = found >= 0 ? loaded[found].src.trimEnd() : block(node);
+    if (found < 0 && !text.trim()) return;
+    if (found >= 0) used.add(found);
+    // between blocks that were neighbours, the blank lines that were there
+    if (out) out += prev >= 0 && found === prev + 1 ? tail(loaded[prev].src) : "\n\n";
+    out += text;
+    prev = found;
   });
-  return blocks.join("\n\n");
+  // the source ended with its last block, and whatever followed it
+  if (prev >= 0 && prev === loaded.length - 1) out += tail(loaded[prev].src);
+  return out;
+}
+
+/** Editor content from the HTML of `djot_html`: one node per top-level block of the source. */
+export function parseEditable(html: string): { doc: PMNode; loaded: Loaded[] } {
+  const parser = PMParser.fromSchema(schema);
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  const wrappers = [...div.children].filter((el): el is HTMLElement => el.hasAttribute("data-djot"));
+  if (!wrappers.length) return { doc: parser.parse(div), loaded: [] };
+  const loaded = wrappers.map((el) => {
+    const src = el.dataset.djot ?? "";
+    const nodes: PMNode[] = [];
+    if (!el.hasAttribute("data-keep")) parser.parse(el).forEach((n) => nodes.push(n));
+    // anything that isn't exactly one block is kept as written rather than guessed at
+    const node = nodes.length === 1 ? nodes[0] : N.djot_block.create({ src, html: el.innerHTML });
+    return { node, src };
+  });
+  return {
+    doc: schema.node(
+      "doc",
+      null,
+      loaded.map((l) => l.node),
+    ),
+    loaded,
+  };
 }
 
 export function fromHtml(html: string): PMNode {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return PMParser.fromSchema(schema).parse(div);
+  return parseEditable(html).doc;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,7 +518,7 @@ function setBlockAttr(name: string, value: unknown): Command {
   };
 }
 
-export type BlockStyle = "body" | "title" | "h1" | "h2" | "h3";
+export type BlockStyle = "body" | "title" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 
 /** The paragraph or heading the selection starts in (also for Select All). */
 function currentBlock(state: EditorState): PMNode {
@@ -340,6 +549,57 @@ export function setStyle(style: BlockStyle): Command {
   };
 }
 
+/** The link the selection is in or covers: its whole extent in the textblock, and where it leads. */
+export function linkAt(state: EditorState): { from: number; to: number; href: string } | null {
+  const { $from, from, to, empty } = state.selection;
+  if (!empty) {
+    let href: string | null = null;
+    state.doc.nodesBetween(from, to, (n) => {
+      href ??= (M.link.isInSet(n.marks)?.attrs.href as string | undefined) ?? null;
+    });
+    return href === null ? null : { from, to, href };
+  }
+  const start = $from.start();
+  type Run = { from: number; to: number; mark: Mark };
+  let run: Run | null = null;
+  let found: Run | null = null;
+  $from.parent.forEach((child, offset) => {
+    const mark = M.link.isInSet(child.marks);
+    const at = start + offset;
+    if (mark && run && run.to === at && run.mark.eq(mark)) run.to += child.nodeSize;
+    else run = mark ? { from: at, to: at + child.nodeSize, mark } : null;
+    if (run && run.from <= $from.pos && $from.pos <= run.to) found = { ...run };
+  });
+  const link = found as Run | null;
+  return link ? { from: link.from, to: link.to, href: String(link.mark.attrs.href) } : null;
+}
+
+/** What a typed address means: a web address unless it says otherwise. */
+export function normalizeHref(text: string): string {
+  const t = text.trim();
+  if (!t || /^(https?:|mailto:|#)/i.test(t)) return t;
+  if (/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(t)) return `mailto:${t}`;
+  return `https://${t}`;
+}
+
+/** Link the selection, or change the link around the caret; `null` removes it. */
+function setLink(href: string | null): Command {
+  return (state, dispatch) => {
+    const link = linkAt(state);
+    const { from, to, empty } = state.selection;
+    const tr = state.tr;
+    if (link) tr.removeMark(link.from, link.to, M.link);
+    if (href) {
+      if (link) tr.addMark(link.from, link.to, M.link.create({ href }));
+      else if (!empty) tr.addMark(from, to, M.link.create({ href }));
+      // nothing selected: the address itself becomes the linked text
+      else tr.insert(from, schema.text(href, [M.link.create({ href })]));
+    } else if (!link) return false;
+    dispatch?.(tr.scrollIntoView());
+    return true;
+  };
+}
+
 function inList(state: EditorState, type: NodeType): boolean {
   const { $from } = state.selection;
   for (let d = $from.depth; d > 0; d--) if ($from.node(d).type === type) return true;
@@ -360,6 +620,8 @@ export const commands = {
   strike: toggleMark(M.strike),
   sup: toggleMark(M.sup),
   sub: toggleMark(M.sub),
+  code: toggleMark(M.code),
+  link: setLink,
   color: (c: string | null) => setMarkAttr(M.color, c ? { color: c } : null),
   size: (s: number | null) => setMarkAttr(M.size, s ? { size: s } : null),
   align: (a: Align) => setBlockAttr("align", a === "left" ? null : a),
@@ -409,6 +671,12 @@ export function markActive(name: keyof typeof M): boolean {
   const { from, to, empty, $from } = state.selection;
   if (empty) return !!type.isInSet(state.storedMarks ?? $from.marks());
   return state.doc.rangeHasMark(from, to, type);
+}
+
+/** Where the link at the selection leads, or null. */
+export function currentLink(): string | null {
+  const state = editorState();
+  return state ? (linkAt(state)?.href ?? null) : null;
 }
 
 export function currentMarkAttr(name: "color" | "size"): unknown {
@@ -627,6 +895,15 @@ export interface EditorHooks {
   onKey?(view: EditorView, e: KeyboardEvent): boolean;
 }
 
+function literalDoc(text: string): PMNode {
+  return schema.node("doc", null, [N.paragraph.create(null, text ? schema.text(text) : null)]);
+}
+
+/** Whether Djot can be edited as the literal text it is, since writing it back changes nothing. */
+export function isLiteral(src: string): boolean {
+  return toDjot(literalDoc(src)) === src;
+}
+
 /** `content` is editor HTML, or plain text taken literally (spaces included). */
 export function createEditor(host: HTMLElement, content: string | { text: string }, hooks: EditorHooks): EditorView {
   const exit =
@@ -635,11 +912,10 @@ export function createEditor(host: HTMLElement, content: string | { text: string
       hooks.onExit(below);
       return true;
     };
+  const { doc, loaded } =
+    typeof content === "string" ? parseEditable(content || "<p></p>") : { doc: literalDoc(content.text), loaded: [] };
   const state = EditorState.create({
-    doc:
-      typeof content === "string"
-        ? fromHtml(content || "<p></p>")
-        : schema.node("doc", null, [N.paragraph.create(null, content.text ? schema.text(content.text) : null)]),
+    doc,
     plugins: [
       history(),
       keymap({
@@ -692,7 +968,7 @@ export function createEditor(host: HTMLElement, content: string | { text: string
       view.updateState(next);
       setRevision((r) => r + 1);
       if (tr.docChanged) {
-        hooks.onChange(toDjot(next.doc));
+        hooks.onChange(toDjot(next.doc, loaded));
         updateCompletion(view);
       } else if (tr.selectionSet) hideCompletions();
     },

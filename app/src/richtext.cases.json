@@ -1,0 +1,227 @@
+[
+  {
+    "djot": "*bold* _it_ [u]{.underline} {-gone-} x^2^ H~2~O",
+    "html": "<div data-djot=\"*bold* _it_ [u]{.underline} {-gone-} x^2^ H~2~O\"><p><strong>bold</strong> <em>it</em> <span class=\"underline\">u</span> <del>gone</del> x<sup>2</sup> H<sub>2</sub>O</p></div>\n",
+    "written": "*bold* _it_ [u]{.underline} {-gone-} x^2^ H~2~O"
+  },
+  {
+    "djot": "[red]{color=\"#c00\" size=9}",
+    "html": "<div data-djot=\"[red]{color=&quot;#c00&quot; size=9}\"><p><span color=\"#c00\" size=\"9\">red</span></p></div>\n",
+    "written": "[red]{color=\"#c00\" size=9}"
+  },
+  {
+    "djot": "[*red bold*]{color=\"#c00\"}",
+    "html": "<div data-djot=\"[*red bold*]{color=&quot;#c00&quot;}\"><p><span color=\"#c00\"><strong>red bold</strong></span></p></div>\n",
+    "written": "[*red bold*]{color=\"#c00\"}"
+  },
+  {
+    "djot": "{.center size=14}\nCentred",
+    "html": "<div data-djot=\"{.center size=14}\nCentred\"><p class=\"center\" size=\"14\">Centred</p></div>\n",
+    "written": "{.center size=14}\nCentred"
+  },
+  {
+    "djot": "{font=\"Times New Roman\"}\nSerif",
+    "html": "<div data-djot=\"{font=&quot;Times New Roman&quot;}\nSerif\"><p font=\"Times New Roman\">Serif</p></div>\n",
+    "written": "{font=\"Times New Roman\"}\nSerif"
+  },
+  {
+    "djot": "{.title}\n# Report",
+    "html": "<div data-djot=\"{.title}\n# Report\"><section class=\"title\" id=\"Report\">\n<h1>Report</h1>\n</section></div>\n",
+    "written": "{.title}\n# Report"
+  },
+  {
+    "djot": "## Loads",
+    "html": "<div data-djot=\"## Loads\"><section id=\"Loads\">\n<h2>Loads</h2>\n</section></div>\n",
+    "written": "## Loads"
+  },
+  {
+    "djot": "#### Four\n\n##### Five\n\n###### Six",
+    "html": "<div data-djot=\"#### Four\n\n\"><section id=\"Four\">\n<h4>Four</h4>\n</section></div>\n<div data-djot=\"##### Five\n\n\"><section id=\"Five\">\n<h5>Five</h5>\n</section></div>\n<div data-djot=\"###### Six\"><section id=\"Six\">\n<h6>Six</h6>\n</section></div>\n",
+    "written": "#### Four\n\n##### Five\n\n###### Six"
+  },
+  {
+    "djot": "- one\n- two\n\n1. a\n2. b",
+    "html": "<div data-djot=\"- one\n- two\n\n\"><ul>\n<li>\none\n</li>\n<li>\ntwo\n</li>\n</ul></div>\n<div data-djot=\"1. a\n2. b\"><ol>\n<li>\na\n</li>\n<li>\nb\n</li>\n</ol></div>\n",
+    "written": "- one\n- two\n\n1. a\n2. b"
+  },
+  {
+    "djot": "3. three\n4. four",
+    "html": "<div data-djot=\"3. three\n4. four\"><ol start=\"3\">\n<li>\nthree\n</li>\n<li>\nfour\n</li>\n</ol></div>\n",
+    "written": "3. three\n4. four"
+  },
+  {
+    "djot": "- loose\n\n- list",
+    "html": "<div data-djot=\"- loose\n\n- list\"><ul>\n<li>\n<p>loose</p>\n</li>\n<li>\n<p>list</p>\n</li>\n</ul></div>\n",
+    "written": "- loose\n\n- list"
+  },
+  {
+    "djot": "- a\n\n  - nested\n- b",
+    "html": "<div data-djot=\"- a\n\n  - nested\n- b\"><ul>\n<li>\na\n<ul>\n<li>\nnested\n</li>\n</ul>\n</li>\n<li>\nb\n</li>\n</ul></div>\n",
+    "written": "- a\n\n  - nested\n- b"
+  },
+  {
+    "djot": "> A quote\n> over lines\n>\n> - with a list",
+    "html": "<div data-djot=\"&gt; A quote\n&gt; over lines\n&gt;\n&gt; - with a list\"><blockquote>\n<p>A quote\nover lines</p>\n<ul>\n<li>\nwith a list\n</li>\n</ul>\n</blockquote></div>\n",
+    "written": "> A quote over lines\n>\n> - with a list"
+  },
+  {
+    "djot": "See [](#ref:fig1){.page} and $`q*L^2/8`.",
+    "html": "<div data-djot=\"See [](#ref:fig1){.page} and $`q*L^2/8`.\"><p>See <a href=\"#ref:fig1\" class=\"page\"></a> and <span class=\"qmath\" data-expr=\"q*L^2/8\"></span>.</p></div>\n",
+    "written": "See [](#ref:fig1){.page} and $`q*L^2/8`."
+  },
+  {
+    "djot": "Line\\\nbreak",
+    "html": "<div data-djot=\"Line\\\nbreak\"><p>Line<br>\nbreak</p></div>\n",
+    "written": "Line\\\nbreak"
+  },
+  {
+    "djot": "Price \\*not\\* bold",
+    "html": "<div data-djot=\"Price \\*not\\* bold\"><p>Price *not* bold</p></div>\n",
+    "written": "Price \\*not\\* bold"
+  },
+  {
+    "djot": "1\\. not a list",
+    "html": "<div data-djot=\"1\\. not a list\"><p>1. not a list</p></div>\n",
+    "written": "1\\. not a list"
+  },
+  {
+    "djot": "A\\) not a list either",
+    "html": "<div data-djot=\"A\\) not a list either\"><p>A) not a list either</p></div>\n",
+    "written": "A\\) not a list either"
+  },
+  {
+    "djot": "See [the docs](https://example.com/a) and [*bold* link](#Loads).",
+    "html": "<div data-djot=\"See [the docs](https://example.com/a) and [*bold* link](#Loads).\"><p>See <a href=\"https://example.com/a\">the docs</a> and <a href=\"#Loads\"><strong>bold</strong> link</a>.</p></div>\n",
+    "written": "See [the docs](https://example.com/a) and [*bold* link](#Loads)."
+  },
+  {
+    "djot": "[ref link][r]",
+    "html": "<div data-djot=\"[ref link][r]\" data-keep=\"\"><p><a>ref link</a></p></div>\n",
+    "written": "[ref link][r]"
+  },
+  {
+    "djot": "[ref link][r] in a sentence\n\n[r]: https://x.y",
+    "html": "<div data-djot=\"[ref link][r] in a sentence\n\n\"><p><a href=\"https://x.y\">ref link</a> in a sentence</p></div>\n<div data-djot=\"[r]: https://x.y\" data-keep=\"\"></div>\n",
+    "written": "[ref link](https://x.y) in a sentence\n\n[r]: https://x.y"
+  },
+  {
+    "djot": "<https://auto.link>",
+    "html": "<div data-djot=\"&lt;https://auto.link&gt;\"><p><a href=\"https://auto.link\">https://auto.link</a></p></div>\n",
+    "written": "[https://auto.link](https://auto.link)"
+  },
+  {
+    "djot": "[mail me](mailto:a@b.c)",
+    "html": "<div data-djot=\"[mail me](mailto:a@b.c)\"><p><a href=\"mailto:a@b.c\">mail me</a></p></div>\n",
+    "written": "[mail me](mailto:a@b.c)"
+  },
+  {
+    "djot": "Use `x := 2` or ``a`b`` here.",
+    "html": "<div data-djot=\"Use `x := 2` or ``a`b`` here.\"><p>Use <code>x := 2</code> or <code>a`b</code> here.</p></div>\n",
+    "written": "Use `x := 2` or ``a`b`` here."
+  },
+  {
+    "djot": "{=marked=} and {+added+}",
+    "html": "<div data-djot=\"{=marked=} and {+added+}\"><p><mark>marked</mark> and <ins>added</ins></p></div>\n",
+    "written": "{=marked=} and {+added+}"
+  },
+  {
+    "djot": "\"Smart\" quotes -- and dots...",
+    "html": "<div data-djot=\"&quot;Smart&quot; quotes -- and dots...\"><p>“Smart” quotes – and dots…</p></div>\n",
+    "written": "“Smart” quotes – and dots…"
+  },
+  {
+    "djot": "| a | b |\n|---|---|\n| 1 | 2 |",
+    "html": "<div data-djot=\"| a | b |\n|---|---|\n| 1 | 2 |\" data-keep=\"\"><table>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</table></div>\n",
+    "written": "| a | b |\n|---|---|\n| 1 | 2 |"
+  },
+  {
+    "djot": "``` rust\ncode\n```",
+    "html": "<div data-djot=\"``` rust\ncode\n```\" data-keep=\"\"><pre><code class=\"language-rust\">code\n</code></pre></div>\n",
+    "written": "``` rust\ncode\n```"
+  },
+  {
+    "djot": "a) one\nb) two",
+    "html": "<div data-djot=\"a) one\nb) two\" data-keep=\"\"><ol type=\"a\">\n<li>\none\n</li>\n<li>\ntwo\n</li>\n</ol></div>\n",
+    "written": "a) one\nb) two"
+  },
+  {
+    "djot": "- [ ] task",
+    "html": "<div data-djot=\"- [ ] task\" data-keep=\"\"><ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\ntask\n</li>\n</ul></div>\n",
+    "written": "- [ ] task"
+  },
+  {
+    "djot": "::: warning\ndiv\n:::",
+    "html": "<div data-djot=\"::: warning\ndiv\n:::\" data-keep=\"\"><div class=\"warning\">\n<p>div</p>\n</div></div>\n",
+    "written": "::: warning\ndiv\n:::"
+  },
+  {
+    "djot": "Note[^n].",
+    "html": "<div data-djot=\"Note[^n].\" data-keep=\"\"><p>Note<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p></div>\n",
+    "written": "Note[^n]."
+  },
+  {
+    "djot": "[^n]: The note.",
+    "html": "<div data-djot=\"[^n]: The note.\" data-keep=\"\"></div>\n",
+    "written": "[^n]: The note."
+  },
+  {
+    "djot": "[r]: https://x.y",
+    "html": "<div data-djot=\"[r]: https://x.y\" data-keep=\"\"></div>\n",
+    "written": "[r]: https://x.y"
+  },
+  {
+    "djot": "***",
+    "html": "<div data-djot=\"***\" data-keep=\"\"><hr></div>\n",
+    "written": "***"
+  },
+  {
+    "djot": "```=html\n<b>raw</b>\n```",
+    "html": "<div data-djot=\"```=html\n&lt;b&gt;raw&lt;/b&gt;\n```\" data-keep=\"\"></div>\n",
+    "written": "```=html\n<b>raw</b>\n```"
+  },
+  {
+    "djot": "![alt](i.png)",
+    "html": "<div data-djot=\"![alt](i.png)\" data-keep=\"\"><p><img alt=\"alt\" src=\"i.png\"></p></div>\n",
+    "written": "![alt](i.png)"
+  },
+  {
+    "djot": "{#custom}\n# Head",
+    "html": "<div data-djot=\"{#custom}\n# Head\" data-keep=\"\"><section id=\"custom\">\n<h1>Head</h1>\n</section></div>\n",
+    "written": "{#custom}\n# Head"
+  },
+  {
+    "djot": "Display $$`x^2`",
+    "html": "<div data-djot=\"Display $$`x^2`\" data-keep=\"\"><p>Display <span class=\"qmath\" data-expr=\"x^2\"></span></p></div>\n",
+    "written": "Display $$`x^2`"
+  },
+  {
+    "djot": "[x](javascript:alert(1))",
+    "html": "<div data-djot=\"[x](javascript:alert(1))\" data-keep=\"\"><p><a href=\"#\">x</a>)</p></div>\n",
+    "written": "[x](javascript:alert(1))"
+  },
+  {
+    "djot": "[x]{.other}",
+    "html": "<div data-djot=\"[x]{.other}\" data-keep=\"\"><p><span class=\"other\">x</span></p></div>\n",
+    "written": "[x]{.other}"
+  },
+  {
+    "djot": "*bold*{.other}",
+    "html": "<div data-djot=\"*bold*{.other}\" data-keep=\"\"><p><strong class=\"other\">bold</strong></p></div>\n",
+    "written": "*bold*{.other}"
+  },
+  {
+    "djot": "text {% comment %}",
+    "html": "<div data-djot=\"text {% comment %}\" data-keep=\"\"><p>text </p></div>\n",
+    "written": "text {% comment %}"
+  },
+  {
+    "djot": "[text](#ref:fig1)",
+    "html": "<div data-djot=\"[text](#ref:fig1)\" data-keep=\"\"><p><a href=\"#ref:fig1\">text</a></p></div>\n",
+    "written": "[text](#ref:fig1)"
+  },
+  {
+    "djot": "# Loads\n\nSee [the docs](https://example.com) for *q*.\n\n\n| a |\n|---|\n\n* one\n* two\n",
+    "html": "<div data-djot=\"# Loads\n\n\"><section id=\"Loads\">\n<h1>Loads</h1>\n</section></div>\n<div data-djot=\"See [the docs](https://example.com) for *q*.\n\n\n\"><p>See <a href=\"https://example.com\">the docs</a> for <strong>q</strong>.</p></div>\n<div data-djot=\"| a |\n|---|\n\n\" data-keep=\"\"><table>\n<tr>\n<th>a</th>\n</tr>\n</table></div>\n<div data-djot=\"* one\n* two\n\"><ul>\n<li>\none\n</li>\n<li>\ntwo\n</li>\n</ul></div>\n",
+    "written": "# Loads\n\nSee [the docs](https://example.com) for *q*.\n\n| a |\n|---|\n\n- one\n- two"
+  }
+]

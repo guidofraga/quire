@@ -11,7 +11,9 @@ const apiPort = Number(process.env.QUIRE_API_PORT ?? 7878);
 // WebAssembly from web-public/ (`npm run wasm` builds it), and paths relative to the page so
 // it works wherever it is served (GitHub Pages puts it under /quire/).
 export default defineConfig(({ mode }) => ({
-  plugins: [solid()],
+  // no hot reloading under Vitest: its `/@solid-refresh` import fails to load on some Node 22
+  // releases, which kept the tests of modules that import components from running
+  plugins: [solid({ hot: !process.env.VITEST })],
   base: mode === "web" ? "./" : "/",
   publicDir: mode === "web" ? "web-public" : "public",
   clearScreen: false,
