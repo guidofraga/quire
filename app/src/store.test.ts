@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom } from "./pages";
-import { AREA_COLLAPSED_HEIGHT, computeLayout, loadDoc, localized, mutate, noteRoom, redo, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
+import { AREA_COLLAPSED_HEIGHT, computeLayout, deleteRegions, loadDoc, localized, mutate, noteRoom, redo, settleRegions, state, togglePageView, undo, undoDepth, updateRegion } from "./store";
 import type { Doc, Region } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions, page });
@@ -182,6 +182,37 @@ describe("computeLayout pages", () => {
     const l = computeLayout(doc([area, math("below", 400, "y")]), {}, false, false);
     expect(l.byId.get("in")!.hidden).toBe(true);
     expect(l.byId.get("below")!.top).toBe(400 - (200 - AREA_COLLAPSED_HEIGHT));
+  });
+});
+
+describe("deleteRegions", () => {
+  const area = (collapsed?: true): Region => ({ id: "ar", kind: "area", at: [0, 100], height: 200, collapsed, regions: [math("in", 20, "x")] });
+
+  it("deletes a collapsed area and its content, and keeps what is below where it was seen (#8)", () => {
+    loadDoc(doc([math("above", 0, "a"), area(true), text("below", 400, "Conclusion"), math("end", 500, "b")]), null);
+    const seen = computeLayout(state.doc, {}, false, false).byId.get("below")!.top;
+    deleteRegions(["ar"]);
+    expect(state.doc.regions.map((r) => r.id)).toEqual(["above", "below", "end"]);
+    expect(state.doc.regions.map((r) => r.at[1])).toEqual([0, 200, 300]);
+    // it moves up by the bar the collapsed area showed, not down by the band it hid
+    expect(computeLayout(state.doc, {}, false, false).byId.get("below")!.top).toBe(seen - AREA_COLLAPSED_HEIGHT);
+    undo();
+    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([["above", 0], ["ar", 100], ["below", 400], ["end", 500]]);
+  });
+
+  it("closes an open area's band too, and leaves what is above or beside it", () => {
+    loadDoc(doc([area(), { ...math("beside", 150, "c"), at: [400, 150] }, math("below", 300, "y")]), null);
+    deleteRegions(["ar"]);
+    expect(state.doc.regions.map((r) => [r.id, r.at[1]])).toEqual([["beside", 150], ["below", 100]]);
+  });
+
+  it("moves only the area's own level", () => {
+    const outer: Region = { id: "out", kind: "area", at: [0, 0], height: 600, regions: [area(), math("inner", 350, "z")] };
+    loadDoc(doc([outer, math("top", 700, "t")]), null);
+    deleteRegions(["ar"]);
+    const out = state.doc.regions[0];
+    expect(out.regions!.map((r) => [r.id, r.at[1]])).toEqual([["inner", 150]]);
+    expect(state.doc.regions[1].at[1]).toBe(700);
   });
 });
 
