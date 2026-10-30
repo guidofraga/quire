@@ -7,6 +7,7 @@
 
 mod builtins;
 mod constants;
+mod data;
 mod error;
 mod format;
 mod interp;
@@ -22,6 +23,7 @@ mod value;
 mod worksheet;
 
 pub use constants::{CONSTANTS, Constant, constant};
+pub use data::{Cell, DataFiles, Sheet};
 pub use error::{EvalError, Result};
 pub use format::{
     DisplaySettings, DisplaySpec, Notation, WorkingUnit, format_number, format_shown, format_value,

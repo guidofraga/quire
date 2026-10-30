@@ -54,6 +54,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | `quire-eval` | `value.rs`, `ops.rs` | Values (SI magnitude + dimension, matrices, strings) and arithmetic with dimension checks. |
 | | `interp.rs` | Evaluating one expression in a scope; the lazy constructs (`if`, `for`, `sum`, `int`, `diff`, …) and user functions. |
 | | `builtins.rs`, `stats.rs`, `solvers.rs`, `numeric.rs`, `linalg.rs` | Built-in functions whose arguments are evaluated first; statistics and fitting; ODE solvers, `linfit` and nonlinear `solve`; plain linear algebra; SMath's matrix functions (`col`, `csort`, `tr`, `polyroots`…). |
+| | `data.rs` | `importData`, `importData.XLSX` and the like: cells and ranges of the spreadsheets carried in the document's `data`. |
 | | `constants.rs` | Built-in constants and the name-resolution order (your variable, then constant, then unit). |
 | | `worksheet.rs` | Worksheet semantics: definitions in reading order, global `≡`, "defined further down", working units. |
 | | `format.rs` | Result display: rounding, notation, which unit a result is shown in. |
@@ -72,6 +73,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `convert.rs` | The importer proper: settings, metadata, page model, and every region kind. |
 | | `math.rs` | SMath's RPN math tokens → AST → Quire's linear syntax. |
 | | `text.rs` | SMath's XHTML-like paragraphs → Djot. |
+| | `sheets.rs` | Reading `.xlsx` sheets for `attach_data` (`importData`'s spreadsheets, native builds only). |
 | `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`), `quire import <file.sm> [out.quire]`. |
 | | `serve.rs` | `quire serve`: the service over `127.0.0.1` for UI work. Development only; it checks the Host header and a custom request header. |
 | | `tests/` | Fixtures with independently known results; see [05-testing.md](05-testing.md). |

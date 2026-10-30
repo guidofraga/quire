@@ -107,6 +107,8 @@ pub struct Interp<'u> {
     /// SMath documents (`settings.units.marked`): a bare name is never a unit or a constant,
     /// so only the predefined constants (π, e, ∞) resolve without a definition.
     pub marked_units: bool,
+    /// Spreadsheets carried in the document, for `importData`.
+    pub data: Rc<crate::data::DataFiles>,
 }
 
 /// `2 m`, `9.81 m/s`, `64 kgf*m`: an expression that reads as a number with units.
@@ -140,6 +142,7 @@ impl<'u> Interp<'u> {
             shadowing: BTreeSet::new(),
             units_over_variables: BTreeSet::new(),
             marked_units: false,
+            data: Rc::default(),
         }
     }
 
@@ -375,6 +378,14 @@ impl<'u> Interp<'u> {
     /// Constructs that control evaluation of their own arguments. `None` = not lazy.
     fn lazy(&mut self, s: &mut Scope, name: &str, args: &[Expr]) -> Option<Result<Value>> {
         Some(match (name, args.len()) {
+            // SMath's importData (and importData.XLSX, .CSV…): tables carried in the document
+            (n, _) if n == "importData" || n.starts_with("importData.") => {
+                let data = Rc::clone(&self.data);
+                args.iter()
+                    .map(|a| self.eval(s, a))
+                    .collect::<Result<Vec<_>>>()
+                    .and_then(|v| data.import(n, &v))
+            }
             ("if", 3) => self.if_(s, args),
             ("block", _) => self.block(s, args),
             ("for", 3) => self.for_in(s, args),

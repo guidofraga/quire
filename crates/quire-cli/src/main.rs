@@ -256,8 +256,10 @@ fn cmd_import(args: &[String]) -> CmdResult {
         None => src.with_file_name(format!("{stem}.quire")),
     };
     let bytes = std::fs::read(&src).map_err(|e| format!("{}: {e}", src.display()))?;
-    let imported = quire_service::import_smath(&bytes, src.file_name().and_then(|n| n.to_str()))
+    let mut imported = quire_service::import_smath(&bytes, src.file_name().and_then(|n| n.to_str()))
         .map_err(|e| format!("{}: {e}", src.display()))?;
+    // the spreadsheets importData reads come along, found next to the worksheet
+    quire_smath::attach_data(&mut imported, src.parent().unwrap_or(Path::new(".")));
     let skipped = write_import(&imported, &out)?;
     let summary: Vec<String> = imported.stats.iter().map(|(k, v)| format!("{k}={v}")).collect();
     let results = imported.results.as_object().map_or(0, |m| m.len());

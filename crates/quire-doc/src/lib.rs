@@ -37,6 +37,10 @@ pub struct Document {
     /// Custom units: name → linear-syntax definition.
     #[serde(default)]
     pub units: BTreeMap<String, String>,
+    /// Spreadsheets carried with the document (read by `importData`): file name → sheet
+    /// name → rows from A1, each cell a number, a string or null.
+    #[serde(default)]
+    pub data: BTreeMap<String, BTreeMap<String, Vec<Vec<Json>>>>,
     #[serde(default)]
     pub regions: Vec<Region>,
     #[serde(flatten)]

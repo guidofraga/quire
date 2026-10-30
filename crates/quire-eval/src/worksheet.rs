@@ -239,6 +239,8 @@ pub struct Worksheet {
     units: UnitRegistry,
     settings: DisplaySettings,
     globals: Rc<Env>,
+    /// Spreadsheets carried in the document, read by `importData`.
+    data: Rc<crate::data::DataFiles>,
 }
 
 impl Worksheet {
@@ -251,7 +253,14 @@ impl Worksheet {
             units: UnitRegistry::new(),
             settings,
             globals: Rc::new(Env::new()),
+            data: Rc::default(),
         }
+    }
+
+    /// Spreadsheets carried in the document, read by `importData`.
+    pub fn with_data(mut self, data: crate::data::DataFiles) -> Self {
+        self.data = Rc::new(data);
+        self
     }
 
     pub fn units(&self) -> &UnitRegistry {
@@ -480,6 +489,7 @@ impl Worksheet {
     /// `block`) persist into the worksheet's globals, as in SMath, but only when it succeeds.
     fn eval(&mut self, e: &Expr) -> Result<Value> {
         let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        interp.data = Rc::clone(&self.data);
         let (r, writes) = {
             let mut scope = Scope::new(&self.globals);
             let r = interp.eval(&mut scope, e);
@@ -507,6 +517,7 @@ impl Worksheet {
         let mut out = Outcome::new(&r.id);
         let globals = Rc::clone(&self.globals);
         let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        interp.data = Rc::clone(&self.data);
         let mut scope = Scope::new(&globals);
         let (cells, value, written) = crate::sheet::evaluate(t, &mut interp, &mut scope, &self.settings);
         // in the order they are written: the first units in a table are its working units
@@ -552,6 +563,7 @@ impl Worksheet {
         let mut out = Outcome::new(&r.id);
         let globals = Rc::clone(&self.globals);
         let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        interp.data = Rc::clone(&self.data);
         out.samples = match &p.animate {
             Some(a) => match crate::plot::animate(p, a, &mut interp, &globals) {
                 Ok(frames) => frames,
