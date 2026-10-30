@@ -181,6 +181,40 @@ test("the Insert menu adds tables, plots and contents, from the mouse or the key
   await expect(page.locator(".region.toc")).toHaveCount(1);
 });
 
+test("contents and checks lists keep their rows through an edit elsewhere", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Simply supported beam/ }).click();
+  for (const item of ["Contents", "Summary of Checks"]) {
+    await page.getByRole("button", { name: "Insert" }).click();
+    await page.getByRole("menuitem", { name: item }).click();
+  }
+  const rows = page.locator(".region.toc .contents-row");
+  await expect(rows.filter({ hasText: "Calculations" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: /[✓✗]/ }).first()).toBeVisible();
+  const count = await rows.count();
+  // count every row the lists take out of the page from here on
+  await page.evaluate(() => {
+    const w = window as unknown as { replacedRows: number };
+    w.replacedRows = 0;
+    new MutationObserver((records) => {
+      for (const r of records)
+        for (const n of r.removedNodes)
+          if (n instanceof Element && (n.matches(".contents-row") || n.querySelector(".contents-row")))
+            w.replacedRows++;
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  // typing a paragraph elsewhere changes the document, its layout and the report many times over
+  const paragraph = page.locator('[data-region="b01"]');
+  await paragraph.dblclick();
+  await expect(paragraph.locator(".ProseMirror")).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" It carries a uniform load along its whole length, from end to end.");
+  await page.keyboard.press("Escape");
+  await expect(paragraph).toContainText("from end to end.");
+  await expect(rows).toHaveCount(count);
+  expect(await page.evaluate(() => (window as unknown as { replacedRows: number }).replacedRows)).toBe(0);
+});
+
 test("a region this version can't read shows as a placeholder and is saved back as it was", async ({ page }) => {
   // a fixture shared with the engine's tests (crates/quire-cli/tests/check.rs), copied so saving can't change it
   const fixture = fileURLToPath(

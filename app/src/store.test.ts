@@ -18,8 +18,10 @@ import {
   originsOf,
   redo,
   regroup,
+  releaseErrors,
   setState,
   setLive,
+  showReport,
   settleRegions,
   startEditing,
   state,
@@ -29,7 +31,7 @@ import {
   updateRegion,
   withLocalized,
 } from "./store";
-import type { Doc, Region } from "./types";
+import type { Doc, Region, RegionView, Report } from "./types";
 
 const doc = (regions: Region[], page?: Doc["page"]): Doc => ({
   format: "quire/1",
@@ -194,6 +196,50 @@ describe("ending an edit", () => {
     commitEditing();
     expect(state.editing).toBe(null);
     expect(state.doc.regions[0].expr).toBe("x := 42");
+  });
+});
+
+describe("opening another document", () => {
+  const view = (id: string, error: string | null): RegionView => ({
+    id,
+    input: null,
+    result: null,
+    resultText: null,
+    error,
+    syntaxError: false,
+    units: [],
+    constants: [],
+    shadowing: [],
+    defines: null,
+  });
+  const report = (...regions: RegionView[]): Report => ({
+    regions,
+    html: {},
+    elapsedMs: 0,
+    errorCount: regions.filter((v) => v.error).length,
+    documentErrors: [],
+    warnings: [],
+    glossary: {},
+  });
+
+  it("never shows the last document's results or held-back errors", () => {
+    loadDoc(doc([math("a", 0, "x := 1")]), null);
+    startEditing("a");
+    setLive("a", "x := y");
+    // the error on the line being typed waits for a pause
+    showReport(report(view("a", "y is not defined")));
+    expect(state.views.a.error).toBe(null);
+
+    loadDoc(doc([math("b", 0, "z := 2")]), null);
+    expect(state.report).toBe(null);
+    // the pause or the end of the edit comes after the switch: nothing of the old note shows
+    releaseErrors();
+    expect(state.report).toBe(null);
+    expect(state.views).toEqual({});
+
+    // and the new document's own errors are not held back as if still typing
+    showReport(report(view("b", "z is wrong")));
+    expect(state.views.b.error).toBe("z is wrong");
   });
 });
 

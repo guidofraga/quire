@@ -1215,7 +1215,8 @@ export async function copyPlotImage(id: string) {
   });
   copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   const [w, h] = [svg.width.baseVal.value, svg.height.baseVal.value];
-  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
+  // a data: URL, not blob:, which the desktop app's content security policy doesn't allow for images
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
   // drawn inside the clipboard item, so the write starts while the click still counts
   const png = (async () => {
     const img = new Image();
@@ -1238,7 +1239,5 @@ export async function copyPlotImage(id: string) {
     flash("Copied the plot as an image");
   } catch (e) {
     flash(`Could not copy the plot: ${(e as Error).message}`);
-  } finally {
-    URL.revokeObjectURL(url);
   }
 }

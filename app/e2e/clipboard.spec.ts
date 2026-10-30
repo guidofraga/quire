@@ -1,4 +1,5 @@
 // End to end: copy and paste between documents, to other apps and from them.
+import { readFileSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 
 const regions = (page: Page) => page.locator(".region");
@@ -138,4 +139,55 @@ test("the context menu pastes", async ({ page }) => {
   await expect(item).toBeEnabled();
   await item.click();
   await expect(regions(page)).toHaveCount(2);
+});
+
+/**
+ * Serve the page with the desktop app's content security policy, read from tauri.conf.json so
+ * the two can't drift apart (the dev server sends none).
+ */
+async function withAppCsp(page: Page) {
+  const conf = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
+  const csp: string = conf.app.security.csp;
+  await page.route(
+    (url) => url.pathname === "/",
+    async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, headers: { ...response.headers(), "content-security-policy": csp } });
+    },
+  );
+}
+
+test("copies a plot as an image under the desktop app's content security policy", async ({ page }) => {
+  await withAppCsp(page);
+  // what reaches the clipboard: the PNG's first bytes
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.clipboard, "write", {
+      value: async (items: ClipboardItem[]) => {
+        const png = await items[0].getType("image/png");
+        (window as unknown as { copied: number[] }).copied = [...new Uint8Array(await png.slice(0, 4).arrayBuffer())];
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Simply supported beam/ }).click();
+  const plot = page.locator(".region.plot2d");
+  await expect(plot.locator(".plot svg")).toBeVisible();
+  // the policy is in force: an image from a blob: URL can't load
+  const blobLoads = await page.evaluate(async () => {
+    const img = new Image();
+    img.src = URL.createObjectURL(new Blob(["<svg xmlns='http://www.w3.org/2000/svg'/>"], { type: "image/svg+xml" }));
+    return img.decode().then(
+      () => true,
+      () => false,
+    );
+  });
+  expect(blobLoads).toBe(false);
+
+  await plot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy as Image" }).click();
+  await expect(page.locator(".toast")).toContainText("Copied the plot as an image");
+  // ‰PNG
+  expect(await page.evaluate(() => (window as unknown as { copied?: number[] }).copied)).toEqual([
+    0x89, 0x50, 0x4e, 0x47,
+  ]);
 });
