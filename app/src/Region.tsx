@@ -645,6 +645,8 @@ const KIND_LABEL: Record<string, string> = {
   plot3d: "3D plot (not supported in this version yet)",
   data: "Data import (not supported in this version yet)",
   legacy: "Unconverted SMath region",
+  // held by the engine when it can't read a region (a newer Quire's); saved back as it was
+  unreadable: "A region this version of Quire can't read, kept as it is",
   pagebreak: "Page break",
 };
 

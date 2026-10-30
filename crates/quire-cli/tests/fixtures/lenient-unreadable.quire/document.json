@@ -1,0 +1,28 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Regions of a shape this version doesn't know"
+  },
+  "regions": [
+    {
+      "id": "a",
+      "kind": "math",
+      "at": [0, 0],
+      "expr": "a := 2"
+    },
+    {
+      "id": "odd",
+      "kind": "math",
+      "at": { "x": 0, "y": 18 },
+      "expr": "a := 100"
+    },
+    { "type": "sketch", "strokes": [[0, 0], [10, 10]] },
+    {
+      "id": "b",
+      "kind": "math",
+      "at": [0, 36],
+      "expr": "b := 3*a",
+      "show": "value"
+    }
+  ]
+}

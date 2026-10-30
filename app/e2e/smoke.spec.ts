@@ -1,4 +1,8 @@
 // End to end: the UI in WebKit against `quire serve`, typing as a user would.
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 
 const regions = (page: Page) => page.locator(".region");
@@ -175,4 +179,29 @@ test("the Insert menu adds tables, plots and contents, from the mouse or the key
   await expect(page.getByRole("menuitem").first()).toBeFocused();
   await page.getByRole("menuitem", { name: "Contents" }).click();
   await expect(page.locator(".region.toc")).toHaveCount(1);
+});
+
+test("a region this version can't read shows as a placeholder and is saved back as it was", async ({ page }) => {
+  // a fixture shared with the engine's tests (crates/quire-cli/tests/check.rs), copied so saving can't change it
+  const fixture = fileURLToPath(
+    new URL("../../crates/quire-cli/tests/fixtures/lenient-unreadable.quire", import.meta.url),
+  );
+  const dir = mkdtempSync(join(tmpdir(), "quire-unreadable-e2e-"));
+  const bundle = join(dir, "Odd.quire");
+  cpSync(fixture, bundle, { recursive: true });
+  const original = readFileSync(join(bundle, "document.json"), "utf8");
+  try {
+    await page.goto(`/?open=${encodeURIComponent(bundle)}`);
+    await expect(page.locator(".toast")).toContainText("2 parts of this document aren't understood");
+    const placeholders = page.locator(".region.unreadable");
+    await expect(placeholders).toHaveCount(2);
+    await expect(placeholders.first()).toContainText("can't read");
+    // the other regions still evaluate, and the placeholder's own `a := 100` doesn't count
+    await expect(regions(page).last()).toContainText(/=6$/);
+    await page.keyboard.press("ControlOrMeta+s");
+    await expect(page.locator(".toast")).toHaveText("Saved Odd");
+    expect(readFileSync(join(bundle, "document.json"), "utf8")).toBe(original);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

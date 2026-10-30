@@ -1,0 +1,26 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Counts written with a decimal point"
+  },
+  "settings": {
+    "display": { "decimals": 3.0 }
+  },
+  "regions": [
+    {
+      "id": "a",
+      "kind": "math",
+      "at": [0, 0],
+      "expr": "a := 2/3",
+      "show": "value",
+      "display": { "decimals": 2.0 }
+    },
+    {
+      "id": "c",
+      "kind": "math",
+      "at": [0, 27],
+      "expr": "c := 1/3",
+      "show": "value"
+    }
+  ]
+}
