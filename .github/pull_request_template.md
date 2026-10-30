@@ -8,5 +8,5 @@
 
 <!-- Commands run, what you tried by hand, screenshots for anything that looks different. -->
 
-- [ ] `cargo fmt`, `cargo clippy`, `cargo test` and `npx tsc --noEmit` pass
+- [ ] `cargo fmt`, `cargo clippy`, `cargo test`, `npm run format:check` and `npx tsc --noEmit` pass
 - [ ] File-format changes update `docs/02-file-format.md` and the schema, and older documents still open
