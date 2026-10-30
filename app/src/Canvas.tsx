@@ -24,6 +24,7 @@ import {
   moveTo,
   nudge,
   originsOf,
+  regroup,
   heights,
   setRevealHandler,
   widths,
@@ -397,7 +398,10 @@ export function Canvas() {
       if (!moved && wasOnlySelection && ["text", "math"].includes(layout().byId.get(id)?.region.kind ?? "")) {
         startEditing(id, [ev.clientX, ev.clientY]);
       }
-      if (moved) setState({ dirty: true, rev: state.rev + 1 });
+      if (moved) {
+        regroup([...origins.keys()]);
+        setState({ dirty: true, rev: state.rev + 1 });
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
