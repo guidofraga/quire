@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use jotdown::{Container, Event};
+use jotdown::{AttributeKind, Attributes, Container, Event};
 
 /// Earlier versions wrote text colours unquoted (`[x]{color=#c00}`), which Djot does not
 /// accept as an attribute value; quote them so those documents keep their colours.
@@ -32,6 +32,20 @@ fn quote_colors(src: &str) -> Cow<'_, str> {
     }
     out.push_str(rest);
     Cow::Owned(out)
+}
+
+/// Djot copies any `{key=value}` onto the element, so a document could add `style`, `id` or an
+/// event handler. Only what the editor and the SMath importer write is kept: classes (`.center`,
+/// `.underline`) and the `color`, `size` and `font` that `applyDjotAttributes` turns into styles.
+fn safe_attrs(attrs: Attributes<'_>) -> Attributes<'_> {
+    attrs
+        .into_iter()
+        .filter(|(k, _)| match k {
+            AttributeKind::Class => true,
+            AttributeKind::Pair { key } => matches!(key.as_ref(), "color" | "size" | "font"),
+            AttributeKind::Id | AttributeKind::Comment => false,
+        })
+        .collect()
 }
 
 fn safe_link(url: &str) -> bool {
@@ -130,14 +144,17 @@ fn render(src: &str, math_prefix: Option<&str>) -> String {
             }
             Event::Str(_) if in_math => return None,
             Event::Start(Container::Link(url, ty), attrs) if !safe_link(url) => {
-                return Some(Event::Start(Container::Link("#".into(), *ty), attrs.clone()));
+                return Some(Event::Start(Container::Link("#".into(), *ty), safe_attrs(attrs.clone())));
             }
             Event::End(Container::Link(url, ty)) if !safe_link(url) => {
                 return Some(Event::End(Container::Link("#".into(), *ty)));
             }
             _ => {}
         }
-        Some(e)
+        Some(match e {
+            Event::Start(c, attrs) => Event::Start(c, safe_attrs(attrs)),
+            e => e,
+        })
     });
     let html = jotdown::html::render_to_string(events);
     match math_prefix {
@@ -214,5 +231,20 @@ mod tests {
         let l = render_djot("[x](javascript:alert(1))");
         assert!(!l.contains("javascript"), "{l}");
         assert!(render_djot("<b>hi</b>").contains("&lt;b&gt;"));
+    }
+
+    #[test]
+    fn only_formatting_attributes_reach_the_html() {
+        let h = render_djot(
+            "[x]{onmouseover=\"alert(1)\" style=\"position:fixed\" #login .u color=\"#c00\"}\n\n\
+             {onclick=\"alert(1)\" .center size=12 font=\"Arial\"}\npara\n\n\
+             [y](javascript:void0){onfocus=\"alert(1)\" .page}",
+        );
+        for bad in ["onmouseover", "style", "login", "onclick", "onfocus", "alert"] {
+            assert!(!h.contains(bad), "{bad} in {h}");
+        }
+        assert!(h.contains(r##"<span class="u" color="#c00">x</span>"##), "{h}");
+        assert!(h.contains(r#"<p class="center" size="12" font="Arial">para</p>"#), "{h}");
+        assert!(h.contains(r##"<a href="#" class="page">y</a>"##), "{h}");
     }
 }
