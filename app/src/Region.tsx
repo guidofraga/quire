@@ -3,14 +3,26 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
 import { fillRefs } from "./xref";
-import { type Check, checks, failing, isComparison, mathCheck, tableName } from "./checks";
+import { type Check, checks, failing, isComparison, mathCheck, regionOf, tableName } from "./checks";
 import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
 import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
-import { createEffect, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { produce } from "solid-js/store";
 import { api } from "./api";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
@@ -457,26 +469,16 @@ const headingOf = (html: string | undefined) => {
   return (doc.querySelector("h1, h2, h3, h4, h5, h6") ?? doc.body).textContent?.trim() ?? "";
 };
 
-/** Table of contents / list of figures / list of tables — always current. */
 /** Insert ▸ Summary of Checks: every check, ✓ or ✗, kept current. */
 function ChecksBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const start = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
-  const label = (c: Check) => {
-    const v = state.views[c.id];
-    const region = layout().byId.get(c.id)?.region;
-    if (c.cell && region) return esc(`${tableName(region)} · ${c.row || `row ${c.cell[0] + 1}`}`);
-    // the comparison itself, typeset, and its note if it has one
-    const input = v?.input?.t === "Define" ? v.input.c.rhs : v?.input;
-    const math = input ? mathml(input, null, v!.units, v!.constants) : esc(region?.expr ?? "");
-    const note = region?.note ? ` <span class="checks-note">${esc(String(region.note))}</span>` : "";
-    return math + note;
-  };
   const summary = () => {
     const f = failing().length;
     const n = checks().length;
     return f ? `${f} of ${n} failing` : n === 1 ? "1 check, passing" : `All ${n} checks pass`;
   };
+  // rows stay in place as the layout changes; each one updates only what changed in it
   return (
     <div class="contents checks-summary" style={{ width: `${Math.min(availableWidth(props.p.x), 640)}px` }}>
       <div class="contents-title">{String(r().title ?? "Summary of Checks")}</div>
@@ -487,80 +489,132 @@ function ChecksBody(props: { p: Placed }) {
         <div class="checks-total" classList={{ failing: failing().length > 0 }}>
           {summary()}
         </div>
-        <For each={checks()}>
-          {(c) => (
-            <div
-              class="contents-row"
-              data-ref={c.id}
-              onPointerDown={(ev) => ev.stopPropagation()}
-              onClick={() => revealRegion(c.id)}
-              title="Go to"
-            >
-              <span class="checks-mark" classList={{ pass: c.pass, fail: !c.pass }}>
-                {c.pass ? "✓" : "✗"}
-              </span>
-              <span class="contents-label" innerHTML={label(c)} />
-              <span class="contents-dots" />
-              <Show when={layout().pageView}>
-                <span class="contents-page">{c.page + start()}</span>
-              </Show>
-            </div>
-          )}
-        </For>
+        <Index each={checks()}>{(c) => <CheckRow c={c()} start={start()} />}</Index>
       </Show>
     </div>
   );
 }
 
+function CheckRow(props: { c: Check; start: number }) {
+  // regions keep their identity across layouts, so this changes only when the row shows another region
+  const region = createMemo(() => regionOf(props.c.id));
+  const label = createMemo(() => {
+    const c = props.c;
+    const v = state.views[c.id];
+    const r = region();
+    if (c.cell && r) return esc(`${tableName(r)} · ${c.row || `row ${c.cell[0] + 1}`}`);
+    // the comparison itself, typeset, and its note if it has one
+    const input = v?.input?.t === "Define" ? v.input.c.rhs : v?.input;
+    const math = input ? mathml(input, null, v!.units, v!.constants) : esc(r?.expr ?? "");
+    const note = r?.note ? ` <span class="checks-note">${esc(String(r.note))}</span>` : "";
+    return math + note;
+  });
+  return (
+    <div
+      class="contents-row"
+      data-ref={props.c.id}
+      onPointerDown={(ev) => ev.stopPropagation()}
+      onClick={() => revealRegion(props.c.id)}
+      title="Go to"
+    >
+      <span class="checks-mark" classList={{ pass: props.c.pass, fail: !props.c.pass }}>
+        {props.c.pass ? "✓" : "✗"}
+      </span>
+      <span class="contents-label" innerHTML={label()} />
+      <span class="contents-dots" />
+      <Show when={layout().pageView}>
+        <span class="contents-page">{props.c.page + props.start}</span>
+      </Show>
+    </div>
+  );
+}
+
+interface ContentsEntry {
+  id: string;
+  number: string;
+  label: string;
+  level: number;
+  page: number;
+}
+
+const sameEntries = (a: ContentsEntry[], b: ContentsEntry[]) =>
+  a.length === b.length &&
+  a.every(
+    (e, i) =>
+      e.id === b[i].id &&
+      e.number === b[i].number &&
+      e.label === b[i].label &&
+      e.level === b[i].level &&
+      e.page === b[i].page,
+  );
+
+/** Table of contents / list of figures / list of tables — always current. */
 function ContentsBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const of = () => (r().of as string | undefined) ?? "headings";
   const start = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
-  const entries = () =>
-    layout()
-      .list.filter((q) => !q.hidden && q.number)
-      .filter((q) =>
-        of() === "headings"
-          ? q.region.kind === "text"
-          : of() === "tables"
-            ? q.region.kind === "table" && !!q.region.caption
-            : q.region.kind !== "table" && q.region.kind !== "text" && !!q.region.caption,
-      )
-      .map((q) => {
-        const headings = of() === "headings";
-        const html = state.report?.html[headings ? q.region.id : `${q.region.id}:caption`];
-        return {
-          id: q.region.id,
-          number: headings ? q.number! : "",
-          label: headings ? headingOf(html) : `${captionPrefix(q.region, q.number)}${textOf(html)}`,
-          level: headings ? q.number!.split(".").length : 1,
-          page: q.page,
-        };
-      });
+  // the layout changes with every height measured: parse a heading's HTML only when it changes
+  let parsed = new Map<string, string>();
+  const entries = createMemo(
+    (): ContentsEntry[] => {
+      const headings = of() === "headings";
+      const seen = new Map<string, string>();
+      const text = (html: string | undefined) => {
+        const key = `${headings ? "h" : "c"}:${html ?? ""}`;
+        const t = parsed.get(key) ?? (headings ? headingOf(html) : textOf(html));
+        seen.set(key, t);
+        return t;
+      };
+      const out = layout()
+        .list.filter((q) => !q.hidden && q.number)
+        .filter((q) =>
+          headings
+            ? q.region.kind === "text"
+            : of() === "tables"
+              ? q.region.kind === "table" && !!q.region.caption
+              : q.region.kind !== "table" && q.region.kind !== "text" && !!q.region.caption,
+        )
+        .map((q) => {
+          const html = state.report?.html[headings ? q.region.id : `${q.region.id}:caption`];
+          return {
+            id: q.region.id,
+            number: headings ? q.number! : "",
+            label: headings ? text(html) : `${captionPrefix(q.region, q.number)}${text(html)}`,
+            level: headings ? q.number!.split(".").length : 1,
+            page: q.page,
+          };
+        });
+      parsed = seen;
+      return out;
+    },
+    [],
+    { equals: sameEntries },
+  );
+  // rows stay in place as the layout changes; each one updates only what changed in it
   return (
     <div class="contents" style={{ width: `${Math.min(availableWidth(props.p.x), 640)}px` }}>
       <div class="contents-title">{String(r().title ?? "Contents")}</div>
       <Show when={entries().length} fallback={<div class="contents-empty">Nothing to list yet.</div>}>
-        <For each={entries()}>
+        <Index each={entries()}>
           {(e) => (
             <div
-              class={`contents-row lvl-${e.level}`}
-              data-ref={e.id}
+              class={`contents-row lvl-${e().level}`}
+              data-ref={e().id}
               onPointerDown={(ev) => ev.stopPropagation()}
-              onClick={() => revealRegion(e.id)}
+              onClick={() => revealRegion(e().id)}
               title="Go to"
             >
-              <Show when={e.number}>
-                <span class="contents-num">{e.number}</span>
+              <Show when={e().number}>
+                <span class="contents-num">{e().number}</span>
               </Show>
-              <span class="contents-label">{e.label}</span>
+              <span class="contents-label">{e().label}</span>
               <span class="contents-dots" />
               <Show when={layout().pageView}>
-                <span class="contents-page">{e.page + start()}</span>
+                <span class="contents-page">{e().page + start()}</span>
               </Show>
             </div>
           )}
-        </For>
+        </Index>
       </Show>
     </div>
   );

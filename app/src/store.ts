@@ -160,6 +160,8 @@ export function redo() {
 /** `origin`: where images come from until the first save (a template's file). */
 export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
   importSettle = null;
+  // nothing held back from the last document may show in this one
+  forgetReport();
   undoStack.length = 0;
   redoStack.length = 0;
   undoChars = 0;
@@ -908,6 +910,12 @@ export function showReport(report: Report) {
   });
   setState("report", { ...report, errorCount: Math.max(0, report.errorCount - hidden) });
   setState("views", reconcile(Object.fromEntries(views.map((v) => [v.id, v]))));
+}
+
+function forgetReport() {
+  clearTimeout(pauseTimer);
+  latest = null;
+  typing = false;
 }
 
 /** The edit ended or paused: show what was held back. */

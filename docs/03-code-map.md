@@ -35,7 +35,7 @@ Three rules hold the layers apart:
 
 1. A keystroke reaches an editor component (`MathEditor.tsx`, the ProseMirror view in `richtext.ts`, `TableEditor.tsx`) or a command (`App.tsx` `runCommand`).
 2. The change goes through `mutate()` in `store.ts`, which records an undo step (bounded by size, see `History` there) and marks the document dirty.
-3. An effect in `App.tsx` (`scheduleReport`) sends the whole document to `api.report`. Requests are numbered so a slow answer never overwrites a newer one.
+3. An effect in `App.tsx` (`liveReport`) sends the whole document to `api.report`. Requests are numbered when they are scheduled (`latest.ts`), so a slow answer never overwrites a newer edit or another document.
 4. `api.ts` calls the Tauri command `report` in the desktop app, the WebAssembly engine in the web version (`engine.ts`), or `POST /api/report` against `quire serve` while developing in a browser.
 5. `quire_service::report` parses the JSON into a `quire_doc::Document`, turns its regions into `MathInput`s in reading order (`math_inputs`), runs `quire_eval::Worksheet` and returns a `Report`: per region the parsed AST, the result, errors, fixes, unit choices, table cells and plot samples.
 6. `showReport` in `store.ts` stores it. Errors on the line being typed wait until the line is finished ("errors wait while you type").
@@ -86,7 +86,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | `print.rs` | Printing and PDF export through WebKit's print engine, at the exact paper size: AppKit's save job on macOS, GTK's "Print to File" backend on Linux (the printer is named in the user's language). Windows only prints, through the dialog. |
 | `pdf.rs` | Finishing the exported PDF with `lopdf` (macOS and Linux): details, bookmarks, links, page labels, smaller photos. |
 | `tauri.conf.json`, `capabilities/` | Window, bundle, updater and permission configuration. |
-| `tests/` | The headless PDF export test (macOS and Linux, run by hand). |
+| `tests/` | The headless PDF export test (macOS and Linux; CI runs it on Linux, see [05-testing.md](05-testing.md)). |
 
 ## 5. The UI (`app/src`)
 
@@ -101,6 +101,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `store.ts` | The editor state: document, report, selection, editing, viewport, undo history, layout of regions (`computeLayout`), region operations. |
 | `api.ts` | The bridge to Rust: `call(cmd, args)` invokes a Tauri command, the WebAssembly engine (`isWeb`) or posts to `/api`. Also file dialogs, menus, window close. |
 | `engine.ts` | Loads `quire_web.wasm` and calls it, in the web version. |
+| `latest.ts` | Live evaluation's requests: debounced, and only the newest answer is shown. |
 | `types.ts` | TypeScript mirrors of the document JSON and of `quire-service`'s report. |
 | `settings.ts`, `recent.ts` | App preferences and Open Recent, in `localStorage`. |
 | `recovery.ts` | Crash recovery: a copy of unsaved changes, kept by the backend a few seconds after the last edit. |

@@ -73,6 +73,7 @@ import {
   Sidebar,
   SidebarToggle,
 } from "./Sidebar";
+import { latestOnly } from "./latest";
 import { keepRecovery } from "./recovery";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
@@ -124,26 +125,12 @@ function fileName(path: string | null): string {
 // Live evaluation: every document change re-runs the worksheet (≈0.3 ms in Rust).
 // ---------------------------------------------------------------------------
 
-let requestSeq = 0;
-let reportPending = false;
-let timer: ReturnType<typeof setTimeout> | undefined;
-
-function scheduleReport() {
-  clearTimeout(timer);
-  reportPending = true;
-  timer = setTimeout(async () => {
-    const seq = ++requestSeq;
-    try {
-      const report = await api.report(unwrap(state.doc));
-      if (seq !== requestSeq) return;
-      showReport(report);
-    } catch (e) {
-      flash(String(e));
-    } finally {
-      if (seq === requestSeq) reportPending = false;
-    }
-  }, 30);
-}
+const liveReport = latestOnly(
+  () => api.report(unwrap(state.doc)),
+  showReport,
+  (e) => flash(String(e)),
+  30,
+);
 
 // whatever an edit held back shows as soon as it ends
 createRoot(() => createEffect(on(() => state.editing, releaseErrors, { defer: true })));
@@ -348,7 +335,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Wait until evaluation, images, fonts and pagination have settled. */
 async function settle() {
   await document.fonts.ready;
-  for (let i = 0; i < 100 && (reportPending || loadingAssets.size > 0); i++) await sleep(50);
+  for (let i = 0; i < 100 && (liveReport.pending() || loadingAssets.size > 0); i++) await sleep(50);
   // pagination reacts to measured heights; give it a few rounds to converge
   let last = "";
   for (let i = 0; i < 20; i++) {
@@ -758,7 +745,7 @@ function speakChanges() {
 }
 
 export function App() {
-  createEffect(on(() => state.rev, scheduleReport));
+  createEffect(on(() => state.rev, liveReport.schedule));
   speakChanges();
   createEffect(on(() => [state.path, state.origin, layout()] as const, loadAssets));
   createEffect(() => {

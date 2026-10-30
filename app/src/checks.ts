@@ -36,26 +36,33 @@ export interface Check {
   page: number;
 }
 
-/** Every check in reading order. */
+const sameCheck = (a: Check, b: Check) =>
+  a.id === b.id && a.pass === b.pass && a.page === b.page && a.row === b.row && a.cell?.join() === b.cell?.join();
+
+/** Every check in reading order; unchanged by a layout change that moves no check. */
 export const checks = createRoot(() =>
-  createMemo((): Check[] => {
-    const out: Check[] = [];
-    for (const p of layout().list) {
-      if (p.hidden) continue;
-      const r = p.region;
-      const v = state.views[r.id];
-      const m = mathCheck(r, v);
-      if (m !== null) out.push({ id: r.id, pass: m, page: p.page });
-      v?.cells?.forEach((row, i) =>
-        row.forEach((cell, j) => {
-          const c = cell.error ? null : verdictOf(cell.text);
-          const rows = Array.isArray(r.rows) ? (r.rows as string[][]) : [];
-          if (c !== null) out.push({ id: r.id, pass: c, cell: [i, j], row: rows[i]?.[0] ?? "", page: p.page });
-        }),
-      );
-    }
-    return out;
-  }),
+  createMemo(
+    (): Check[] => {
+      const out: Check[] = [];
+      for (const p of layout().list) {
+        if (p.hidden) continue;
+        const r = p.region;
+        const v = state.views[r.id];
+        const m = mathCheck(r, v);
+        if (m !== null) out.push({ id: r.id, pass: m, page: p.page });
+        v?.cells?.forEach((row, i) =>
+          row.forEach((cell, j) => {
+            const c = cell.error ? null : verdictOf(cell.text);
+            const rows = Array.isArray(r.rows) ? (r.rows as string[][]) : [];
+            if (c !== null) out.push({ id: r.id, pass: c, cell: [i, j], row: rows[i]?.[0] ?? "", page: p.page });
+          }),
+        );
+      }
+      return out;
+    },
+    [],
+    { equals: (a, b) => a.length === b.length && a.every((c, i) => sameCheck(c, b[i])) },
+  ),
 );
 
 export const failing = () => checks().filter((c) => !c.pass);
