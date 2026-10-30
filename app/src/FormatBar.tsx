@@ -11,10 +11,12 @@ import {
   type BlockStyle,
   commands,
   currentAlign,
+  currentLink,
   currentMarkAttr,
   currentStyle,
   listActive,
   markActive,
+  normalizeHref,
   run,
 } from "./richtext";
 import {
@@ -29,7 +31,10 @@ import {
 } from "./store";
 import { STRUCTURES, SYMBOLS, type Sym } from "./symbols";
 
-const keep = (e: MouseEvent) => e.preventDefault(); // never steal focus from the editor
+// never steal focus from the editor, except to type into a field (the link address)
+const keep = (e: MouseEvent) => {
+  if (!(e.target as Element).closest("input")) e.preventDefault();
+};
 
 /** The name a screen reader gives a button: its tooltip without the shortcut. */
 const nameOf = (title: string) => title.split("  ")[0];
@@ -256,6 +261,9 @@ const STYLES: [BlockStyle, string][] = [
   ["h1", "Heading 1"],
   ["h2", "Heading 2"],
   ["h3", "Heading 3"],
+  ["h4", "Heading 4"],
+  ["h5", "Heading 5"],
+  ["h6", "Heading 6"],
 ];
 const COLORS = [
   "#1b1d22",
@@ -388,6 +396,10 @@ function TextGroup() {
           x<sub>2</sub>
         </span>
       </Btn>
+      <Btn title="Code" disabled={!textEnabled()} active={markActive("code")} onClick={() => applyText(commands.code)}>
+        {icon("M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5")}
+      </Btn>
+      <LinkButton />
       <Dropdown
         title="Text colour"
         name="Text colour"
@@ -456,6 +468,63 @@ function TextGroup() {
         )}
       </Dropdown>
     </div>
+  );
+}
+
+/** Add, change or remove the link at the selection. */
+function LinkButton() {
+  const [href, setHref] = createSignal("");
+  return (
+    <Dropdown
+      title="Link"
+      name={currentLink() ? "Edit link" : "Link"}
+      class="fb-link-pop"
+      disabled={!activeView()}
+      label={icon(
+        "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 013.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 01-3.7-3.7L5.3 7.8",
+      )}
+      onOpen={() => setHref(currentLink() ?? "")}
+    >
+      {(close) => (
+        <form
+          class="fb-link"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const to = normalizeHref(href());
+            close();
+            run(commands.link(to || null));
+          }}
+        >
+          <input
+            type="text"
+            aria-label="Link address"
+            placeholder="https://… or #heading"
+            spellcheck={false}
+            value={href()}
+            ref={(el) => requestAnimationFrame(() => el.select())}
+            onInput={(e) => setHref(e.currentTarget.value)}
+            // the arrows move the caret here, not between the popover's controls
+            onKeyDown={(e) =>
+              ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key) && e.stopPropagation()
+            }
+          />
+          <button type="submit" class="fb-item" disabled={!href().trim()}>
+            {currentLink() ? "Change" : "Link"}
+          </button>
+          <button
+            type="button"
+            class="fb-item"
+            disabled={!currentLink()}
+            onClick={() => {
+              close();
+              run(commands.link(null));
+            }}
+          >
+            Remove link
+          </button>
+        </form>
+      )}
+    </Dropdown>
   );
 }
 

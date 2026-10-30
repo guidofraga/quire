@@ -17,7 +17,7 @@ import { cellHtml, esc, mathml, prettyValue } from "./math";
 import { mathWords } from "./describe";
 import { spokenMath } from "./speech";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
-import { createEditor, placeCaret, plainText, releaseEditor } from "./richtext";
+import { createEditor, isLiteral, placeCaret, plainText, releaseEditor } from "./richtext";
 import {
   AREA_COLLAPSED_HEIGHT,
   availableWidth,
@@ -208,7 +208,7 @@ function RichTextEditor(props: { p: Placed; style: Record<string, string | undef
   onMount(async () => {
     const src = untrack(() => editText(props.p.region));
     // plain text (e.g. just switched from math) opens instantly; markup goes through the parser
-    const plain = !/[\\*_[\]{}`~^$<>#|-]|^\s*\d+\./.test(src);
+    const plain = !/[\\*_[\]{}`~^$<>#|-]|^\s*\d+\./.test(src) && isLiteral(src);
     const html = plain ? null : await api.djotHtml(src).catch(() => "");
     if (state.editing !== id) return;
     view = createEditor(host, html ?? { text: src }, {
