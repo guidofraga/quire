@@ -24,6 +24,7 @@
 
 <p align="center">
   <a href="https://guidofraga.github.io/quire/"><img alt="Try Quire in your browser" src="https://img.shields.io/badge/Try%20Quire%20in%20your%20browser-3a5f9f?style=for-the-badge" height="40"></a>
+  <a href="https://buymeacoffee.com/guidofraga"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" height="40"></a>
 </p>
 
 <p align="center">
@@ -33,6 +34,7 @@
   <a href="#download">Download</a> ·
   <a href="#build-from-source">Build from source</a> ·
   <a href="#contributing">Contributing</a> ·
+  <a href="#support">Support</a> ·
   <a href="#license">License</a>
 </p>
 
@@ -133,6 +135,10 @@ How it all fits together: [docs/03-code-map.md](docs/03-code-map.md).
 ## Contributing
 
 Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the checks to run and how pull requests work, and [docs/](docs/README.md) has the architecture, file format, guidelines, testing and releasing.
+
+## Support
+
+Quire is free and stays free. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/guidofraga). Support goes first to code signing, so Windows and macOS stop warning on install, and then to time for new features and fixes.
 
 ## License
 
