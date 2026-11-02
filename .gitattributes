@@ -1,0 +1,4 @@
+# Test fixtures are compared byte for byte with what Quire writes, so Git must not turn their
+# line endings into CRLF on Windows (core.autocrlf).
+crates/quire-cli/tests/fixtures/** -text
+app/src-tauri/tests/fixtures/** -text
