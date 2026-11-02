@@ -2741,7 +2741,7 @@ dependencies = [
  "quire-units",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "trash",
 ]
 
@@ -2754,7 +2754,7 @@ dependencies = [
  "roxmltree",
  "serde_json",
  "sha1",
- "sha2 0.10.9",
+ "sha2 0.11.1",
 ]
 
 [[package]]
