@@ -8,6 +8,7 @@ import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
 import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
+import { DEFAULT_SIZE_3D, editPlot3d, Plot3DBody } from "./Plot3D";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { prefs } from "./settings";
 import {
@@ -366,15 +367,21 @@ function ImageBody(props: { p: Placed }) {
 }
 
 /** A plot as a figure: captioned like an image, with its error below. */
-function PlotFigure(props: { p: Placed }) {
+function PlotFigure(props: { p: Placed; selected: boolean }) {
   const r = () => props.p.region;
   const error = () => state.views[r().id]?.error;
+  const three = () => r().kind === "plot3d";
   return (
-    <figure class="figure plot-figure" style={{ width: `${(r().size ?? DEFAULT_SIZE)[0]}px` }}>
+    <figure
+      class="figure plot-figure"
+      style={{ width: `${(r().size ?? (three() ? DEFAULT_SIZE_3D : DEFAULT_SIZE))[0]}px` }}
+    >
       <Show when={r().caption?.position === "above"}>
         <Caption p={props.p} />
       </Show>
-      <PlotBody r={r()} />
+      <Show when={three()} fallback={<PlotBody r={r()} />}>
+        <Plot3DBody r={r()} selected={props.selected} />
+      </Show>
       <Show when={error()}>
         <div class="err" title={error()!}>
           <span class="err-text">{error()}</span>
@@ -620,14 +627,14 @@ function ContentsBody(props: { p: Placed }) {
   );
 }
 
-/** Drag handle that sets a text region's width or an image's size (Shift: free aspect). */
 /** The size an image or plot is shown at, `size` or the default its body falls back to. */
 function shownSize(r: Region): [number, number] {
-  return r.size ?? (r.kind === "plot2d" ? DEFAULT_SIZE : [200, 150]);
+  if (r.size) return r.size;
+  return r.kind === "plot2d" ? DEFAULT_SIZE : r.kind === "plot3d" ? DEFAULT_SIZE_3D : [200, 150];
 }
 
-/** Whether a region is resized as a box (image, plot) rather than by its width (text). */
-export const resizable = (r: Region | undefined) => r?.kind === "image" || r?.kind === "plot2d";
+/** Whether a region is resized as a box (image, 2D or 3D plot) rather than by its width (text). */
+export const resizable = (r: Region | undefined) => r?.kind === "image" || isPlot(r?.kind ?? "");
 
 /**
  * Resize an image or plot from the keyboard by `dw` and `dh`, one undo step. An image
@@ -646,6 +653,7 @@ export function resizeBy(id: string, dw: number, dh: number): [number, number] |
   return size;
 }
 
+/** Drag handle that sets a text region's width or an image's size (Shift: free aspect). */
 function ResizeHandle(props: { p: Placed }) {
   const r = () => props.p.region;
   const onDown = (e: PointerEvent) => {
@@ -675,7 +683,7 @@ function ResizeHandle(props: { p: Placed }) {
           const reg = findDraft(d, id);
           if (!reg) return;
           if (reg.kind === "image") reg.size = [w, ev.shiftKey ? free : Math.round(w * ratio)];
-          else if (reg.kind === "plot2d") reg.size = [Math.max(160, w), Math.max(120, free)];
+          else if (isPlot(reg.kind)) reg.size = [Math.max(160, w), Math.max(120, free)];
           else reg.width = w;
         }),
       );
@@ -700,6 +708,8 @@ function ResizeHandle(props: { p: Placed }) {
     />
   );
 }
+
+const isPlot = (kind: string) => kind === "plot2d" || kind === "plot3d";
 
 /** The units a result can be shown in, as a menu at the clicked unit. */
 function openUnitMenu(e: MouseEvent, r: Region) {
@@ -731,7 +741,6 @@ function openUnitMenu(e: MouseEvent, r: Region) {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  plot3d: "3D plot (not supported in this version yet)",
   data: "Data import (not supported in this version yet)",
   legacy: "Unconverted SMath region",
   // held by the engine when it can't read a region (a newer Quire's); saved back as it was
@@ -814,7 +823,9 @@ export function RegionBox(props: RegionProps) {
           ? editTableAt(r().id, [e.clientX, e.clientY])
           : r().kind === "plot2d"
             ? editPlot(r().id)
-            : startEditing(r().id, [e.clientX, e.clientY])
+            : r().kind === "plot3d"
+              ? editPlot3d(r().id)
+              : startEditing(r().id, [e.clientX, e.clientY])
       }
       onContextMenu={(e) => {
         e.preventDefault();
@@ -854,8 +865,8 @@ export function RegionBox(props: RegionProps) {
         <Match when={r().kind === "toc"}>
           <ContentsBody p={placed()} />
         </Match>
-        <Match when={r().kind === "plot2d"}>
-          <PlotFigure p={placed()} />
+        <Match when={isPlot(r().kind)}>
+          <PlotFigure p={placed()} selected={selected()} />
         </Match>
       </Switch>
       <Show
@@ -864,7 +875,7 @@ export function RegionBox(props: RegionProps) {
           state.selection.length === 1 &&
           !editing() &&
           !state.printing &&
-          ["text", "image", "plot2d"].includes(r().kind)
+          ["text", "image", "plot2d", "plot3d"].includes(r().kind)
         }
       >
         <ResizeHandle p={placed()} />

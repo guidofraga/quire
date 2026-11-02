@@ -56,6 +56,8 @@ pub struct Outcome {
     pub plot: Option<PlotOutcome>,
     /// A plot's samples in SI, one frame per step of an animation, kept until its axis units are chosen.
     samples: Vec<crate::plot::Frame>,
+    /// A 3D plot's samples in SI, kept until its axis units are chosen.
+    samples3: Vec<std::result::Result<crate::plot3d::Raw, String>>,
 }
 
 /// A one-click repair for an error.
@@ -83,6 +85,7 @@ impl Outcome {
             fix: None,
             plot: None,
             samples: Vec::new(),
+            samples3: Vec::new(),
         }
     }
 }
@@ -374,12 +377,17 @@ impl Worksheet {
             if let Some(t) = &r.table {
                 n = crate::sheet::reads(t, &self.units);
             } else if let Some(p) = &r.plot {
-                for s in &p.series {
-                    for part in [Some(&s.y), s.range.as_ref()].into_iter().flatten() {
-                        if let Ok(e) = parse(part) {
-                            explicit_units(&e, &mut u);
-                            names(&e, &mut n);
-                        }
+                let two = p.series.iter().flat_map(|s| [Some(&s.y), s.range.as_ref()].into_iter().flatten());
+                let three = p.three.iter().flat_map(|t| &t.series).flat_map(|s| {
+                    [&s.surface, &s.xrange, &s.yrange, &s.range, &s.urange, &s.vrange]
+                        .into_iter()
+                        .flatten()
+                        .chain(s.parametric.iter().flatten())
+                });
+                for part in two.chain(three) {
+                    if let Ok(e) = parse(part) {
+                        explicit_units(&e, &mut u);
+                        names(&e, &mut n);
                     }
                 }
             } else if let Ok(e) = e {
@@ -463,6 +471,16 @@ impl Worksheet {
                 let pick = |dim: quire_units::Dim| {
                     crate::format::working_unit(dim, &vocab).map(|(_, text)| text.replace('\'', ""))
                 };
+                if let Some(t) = &p.three {
+                    let ([ux, uy, uz], [dx, dy, dz]) = (t.units.clone(), crate::plot3d::dims(&o.samples3));
+                    let units = [
+                        ux.or_else(|| dx.and_then(pick)),
+                        uy.or_else(|| dy.and_then(pick)),
+                        uz.or_else(|| dz.and_then(pick)),
+                    ];
+                    self.finish_plot3(o, units);
+                    continue;
+                }
                 let x = p.x_unit.clone().or_else(|| o.plot.as_ref().and_then(|q| pick(q.x.dim)));
                 let y = p.y_unit.clone().or_else(|| o.plot.as_ref().and_then(|q| pick(q.y.dim)));
                 self.finish_plot(o, p, x, y);
@@ -552,6 +570,18 @@ impl Worksheet {
         let mut out = Outcome::new(&r.id);
         let globals = Rc::clone(&self.globals);
         let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        if let Some(t) = &p.three {
+            let mut scope = Scope::new(&globals);
+            out.samples3 = t
+                .series
+                .iter()
+                .map(|s| crate::plot3d::sample(s, &mut interp, &mut scope).map_err(|e| e.message))
+                .collect();
+            out.units = std::mem::take(&mut interp.unit_idents).into_iter().collect();
+            out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
+            self.finish_plot3(&mut out, t.units.clone());
+            return out;
+        }
         out.samples = match &p.animate {
             Some(a) => match crate::plot::animate(p, a, &mut interp, &globals) {
                 Ok(frames) => frames,
@@ -629,7 +659,28 @@ impl Worksheet {
             axes: p.axes,
             grid: p.grid,
             equal: p.equal,
+            three: None,
         });
+    }
+
+    /// Put a 3D plot's samples in its axis units: the ones given, or SI.
+    fn finish_plot3(&self, out: &mut Outcome, units: [Option<String>; 3]) {
+        let axis = |unit: Option<String>, dim: Option<quire_units::Dim>| {
+            unit.map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty())
+                .unwrap_or_else(|| dim.filter(|d| !d.is_dimensionless()).map(si_text).unwrap_or_default())
+        };
+        let ([ux, uy, uz], [dx, dy, dz]) = (units, crate::plot3d::dims(&out.samples3));
+        let units = [axis(ux, dx), axis(uy, dy), axis(uz, dz)];
+        let three = crate::plot3d::finish(&out.samples3, units, &self.units);
+        let errors: Vec<(usize, &String)> =
+            three.series.iter().enumerate().filter_map(|(i, s)| s.error.as_ref().map(|e| (i, e))).collect();
+        out.error = match errors.as_slice() {
+            [] => None,
+            [(_, e)] if three.series.len() == 1 => Some((*e).clone()),
+            [(i, e), ..] => Some(format!("series {}: {e}", i + 1)),
+        };
+        out.plot = Some(PlotOutcome { three: Some(three), ..Default::default() });
     }
 
     fn bind(&mut self, key: String, b: Binding) {

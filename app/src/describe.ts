@@ -43,7 +43,10 @@ export function describeRegion(id: string): string {
       return withCaption(`Table${name ? ` ${name}` : ""}, ${rows.length} rows, ${rows[0]?.length ?? 0} columns`);
     }
     case "plot2d":
-      return withCaption(`Plot${state.views[id]?.error ? `. Error: ${state.views[id]!.error}` : ""}`);
+    case "plot3d":
+      return withCaption(
+        `${r.kind === "plot3d" ? "3D plot" : "Plot"}${state.views[id]?.error ? `. Error: ${state.views[id]!.error}` : ""}`,
+      );
     case "image":
       return withCaption("Image");
     case "area":

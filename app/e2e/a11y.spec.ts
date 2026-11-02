@@ -236,6 +236,18 @@ test.describe("keyboard", () => {
     await expect.poll(width).toBe(before);
   });
 
+  test("a 3D plot resizes with ⌘ and the arrows too", async ({ page }) => {
+    await page.getByRole("button", { name: "Insert" }).click();
+    await page.getByRole("menuitem", { name: "3D Plot" }).click();
+    const plot = page.locator(".region.plot3d");
+    await expect(plot).toHaveClass(/\bselected\b/);
+    await page.keyboard.press("Escape");
+    await plot.click();
+    await page.keyboard.press("Meta+ArrowRight");
+    await expect(page.getByRole("status")).toHaveText("429 by 340");
+    await expect.poll(async () => (await plot.boundingBox())!.width).toBeGreaterThan(429);
+  });
+
   test("a table being edited is a grid with named cells", async ({ page }) => {
     await page.keyboard.press("ControlOrMeta+Alt+t");
     const grid = page.getByRole("grid");

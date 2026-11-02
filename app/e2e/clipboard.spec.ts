@@ -214,3 +214,27 @@ test("copies a plot as an image under the desktop app's content security policy"
     0x89, 0x50, 0x4e, 0x47,
   ]);
 });
+
+test("copies a 3D plot as an image under the desktop app's content security policy", async ({ page }) => {
+  await withAppCsp(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.clipboard, "write", {
+      value: async (items: ClipboardItem[]) => {
+        const png = await items[0].getType("image/png");
+        (window as unknown as { copied: number[] }).copied = [...new Uint8Array(await png.slice(0, 4).arrayBuffer())];
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.getByRole("button", { name: "Insert" }).click();
+  await page.getByRole("menuitem", { name: "3D Plot" }).click();
+  const plot = page.locator(".region.plot3d");
+  await expect(plot.getByRole("img", { name: "3D plot of sin(x)*cos(y)" })).toBeVisible();
+  await plot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy as Image" }).click();
+  await expect(page.locator(".toast")).toContainText("Copied the plot as an image");
+  expect(await page.evaluate(() => (window as unknown as { copied?: number[] }).copied)).toEqual([
+    0x89, 0x50, 0x4e, 0x47,
+  ]);
+});

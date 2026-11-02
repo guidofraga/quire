@@ -46,6 +46,8 @@ pub struct PlotInput {
     pub equal: bool,
     /// Draw the plot once per value of a list, as an animation.
     pub animate: Option<Animate>,
+    /// A 3D plot (`plot3d`) instead: surfaces and curves in x, y and z.
+    pub three: Option<crate::plot3d::Plot3Input>,
 }
 
 impl Default for PlotInput {
@@ -58,6 +60,7 @@ impl Default for PlotInput {
             grid: true,
             equal: false,
             animate: None,
+            three: None,
         }
     }
 }
@@ -129,6 +132,8 @@ pub struct PlotOutcome {
     pub axes: bool,
     pub grid: bool,
     pub equal: bool,
+    /// A 3D plot's series, in its axis units (the fields above are then unused).
+    pub three: Option<crate::plot3d::Plot3Outcome>,
 }
 
 /// Raw samples in SI, before the axes are chosen.

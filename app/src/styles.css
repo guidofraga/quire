@@ -2818,6 +2818,27 @@ ms.str {
   overflow: visible;
 }
 
+/* 3D plots (Plot3D.tsx): a canvas, turned by dragging when selected */
+.plot3d canvas {
+  display: block;
+  touch-action: none;
+}
+
+.plot3d-reset {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  border: none;
+  background: transparent;
+  color: #6b6a65;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.plot3d-reset:hover {
+  color: #3d3d3a;
+}
+
 .plot-grid line {
   stroke: #e6e5e1;
   stroke-width: 1;

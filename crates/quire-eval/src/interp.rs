@@ -230,6 +230,11 @@ impl<'u> Interp<'u> {
         budget::tick(1, self.limit)
     }
 
+    /// Takes `n` steps at once, for work done outside [`Interp::eval`] (a plot's data points).
+    pub(crate) fn tick_n(&mut self, n: u64) -> Result<()> {
+        budget::tick(n, self.limit)
+    }
+
     pub fn unit(&self, name: &str) -> Result<Unit> {
         self.units.lookup(name).ok_or_else(|| EvalError::new(format!("unknown unit '{name}")))
     }
