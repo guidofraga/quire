@@ -118,3 +118,7 @@ jobs:
       # the PDF export needs a desktop session, so only the unit tests run here
       - name: Test the desktop app
         run: cargo test -p quire-app --locked
+      # the engine on Windows: paths, line endings (fixtures compared byte for byte)
+      - name: Engine tests (Windows)
+        if: runner.os == 'Windows'
+        run: cargo test --workspace --exclude quire-app --locked
