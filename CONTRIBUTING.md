@@ -71,7 +71,7 @@ And:
 - **File-format changes** update `docs/02-file-format.md` and `schema/quire-1.schema.json` in the same change. Documents written by earlier versions must keep opening unchanged.
 - **Results must not change by accident.** If a change alters what an existing worksheet shows, say so and why.
 - **The desktop app only touches files the user chose.** A command that takes a path checks it against the scope (`app/src-tauri/src/scope.rs`), and file dialogs run in Rust (`pick`), not in the webview.
-- **Workflows pin actions by commit**, with the version in a comment (`uses: actions/checkout@<sha> # v7.0.1`). Dependabot keeps them current.
+- **Workflows pin actions by commit**, with the version in a comment (`uses: actions/checkout@<sha> # v7.0.1`). Dependabot proposes updates monthly; maintainers apply them in their own commits rather than merging its pull requests (`docs/06-releasing.md`).
 - **Docs stay true.** If you move code or change a convention, update the page in `docs/` that describes it.
 
 ## Commits
