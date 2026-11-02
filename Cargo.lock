@@ -2732,7 +2732,7 @@ dependencies = [
 name = "quire-service"
 version = "0.2.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "jotdown",
  "quire-ast",
  "quire-doc",
@@ -2749,7 +2749,7 @@ dependencies = [
 name = "quire-smath"
 version = "0.2.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "regex",
  "roxmltree",
  "serde_json",
@@ -2765,7 +2765,7 @@ version = "0.2.1"
 name = "quire-web"
 version = "0.2.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "quire-service",
  "serde_json",
 ]
