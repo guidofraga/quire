@@ -279,6 +279,20 @@ mod tests {
     }
 
     #[test]
+    fn quoted_unit_names() -> TestResult {
+        // SMath's names: symbols, a dot between letters, Greek and Δ
+        for src in ["9.81 'g.e", "15 '%", "2 '‰", "3 'Δ°C", "1 'μ.0", "4 'lb.m*'ft"] {
+            roundtrip(src)?;
+        }
+        // a run of name characters is one unit: an unknown one is reported by name
+        let Expr::Binary(_, _, unit) = parse("1 '%m")? else { return Err("not a quantity".into()) };
+        assert_eq!(*unit, Expr::Unit("%m".into()));
+        // the remainder operator, written with spaces, is not part of the name
+        assert_eq!(print(&parse("5 'm % 3")?), "5 'm % 3");
+        Ok(())
+    }
+
+    #[test]
     fn errors_point_at_the_problem() -> TestResult {
         let err = parse("x = 2").err().ok_or("expected a parse error")?;
         assert!(err.message.contains(":="), "{err}");
