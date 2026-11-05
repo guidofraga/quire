@@ -10,6 +10,7 @@ import {
   project,
   stepFor,
   ticks3,
+  type Vec3,
   zoomOf,
 } from "./geom3d";
 
@@ -34,6 +35,15 @@ describe("3D plots", () => {
     // seen from above, the top of the box is nearer than its bottom
     const above = { ...DEFAULT_CAMERA, elevation: 60 };
     expect(project([0, 0, 1], above)[2]).toBeLessThan(project([0, 0, -1], above)[2]);
+  });
+
+  it("turns the front of the box to the right as the azimuth grows, as a drag to the right does", () => {
+    // the front edge's middle, nearest the viewer at azimuth 0
+    const front: Vec3 = [0, -1, 0];
+    const at = (azimuth: number) => project(front, { azimuth, elevation: 0, distance: 3 })[0];
+    expect(at(0)).toBeCloseTo(0);
+    expect(at(20)).toBeGreaterThan(0);
+    expect(at(-20)).toBeLessThan(0);
   });
 
   it("reads a saved camera, keeping what is missing or wrong at the defaults", () => {

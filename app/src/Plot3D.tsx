@@ -291,8 +291,10 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
   };
   const onMove = (e: PointerEvent) => {
     if (!from) return;
+    // the surface follows the pointer as if grabbed: drag right and its front turns right,
+    // drag down and its top tilts towards you
     const elevation = Math.max(-89, Math.min(89, from.c.elevation + (e.clientY - from.y) * 0.5));
-    setLive({ ...from.c, azimuth: ((from.c.azimuth - (e.clientX - from.x) * 0.5 + 540) % 360) - 180, elevation });
+    setLive({ ...from.c, azimuth: ((from.c.azimuth + (e.clientX - from.x) * 0.5 + 540) % 360) - 180, elevation });
   };
   // the live view goes into the document once, so a turn or a zoom is one step to undo
   const save = () => {
