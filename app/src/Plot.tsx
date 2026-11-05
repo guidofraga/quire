@@ -6,6 +6,7 @@ import { prettyValue } from "./math";
 import { advance, equalSpans, markerDiameter, markerPath } from "./plotGeometry";
 import { Check, Field, Num, Select, Text } from "./Inspector";
 import { closePopover, openPopover } from "./Popover";
+import { insertPlot3d } from "./Plot3D";
 import {
   contentBottom,
   flash,
@@ -857,7 +858,7 @@ export function PlotBody(props: { r: Region }) {
  * A starting range for a function: up to a length it uses (`L := 6 m` gives `0 m..L`,
  * the span of a beam), else 0..10.
  */
-function guessRange(definition: string, param: string): string {
+export function guessRange(definition: string, param: string): string {
   const body = definition.replace(/^[^=≔]*(?::=|≔)/, "");
   const names = new Set(body.match(/[\p{L}][\p{L}\p{N}_.]*/gu) ?? []);
   names.delete(param);
@@ -872,7 +873,9 @@ function guessRange(definition: string, param: string): string {
 }
 
 /** Insert ▸ Plot: below the selected function (plotting it), or at the insertion point. */
-const FUNCTION = /^\s*([\p{L}][\p{L}\p{N}_.]*)\(\s*([\p{L}][\p{L}\p{N}_.]*)\s*\)\s*(?::=|≔)/u;
+/** `f(x) :=` or `f(x, y) :=`: the function's name, and its one or two parameters. */
+const FUNCTION =
+  /^\s*([\p{L}][\p{L}\p{N}_.]*)\(\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?:,\s*([\p{L}][\p{L}\p{N}_.]*)\s*)?\)\s*(?::=|≔)/u;
 
 /** The function defined nearest above a point, for Insert ▸ Plot with nothing selected. */
 function functionAbove(y: number): Placed | undefined {
@@ -882,21 +885,34 @@ function functionAbove(y: number): Placed | undefined {
     .at(-1);
 }
 
-export function insertPlot() {
+/**
+ * The function a new plot shows: the selected line if it defines one; otherwise (nothing
+ * selected, another region, or the empty line `\plot` was typed on) the nearest one above.
+ */
+export function functionToPlot(): { name: string; params: string[]; expr: string } | null {
   const selected = state.selection.length === 1 ? layout().byId.get(state.selection[0]) : undefined;
-  // the selected line if it defines a function; otherwise (nothing selected, another
-  // region, or the empty line `\plot` was typed on) the nearest function above
   const isFunction = (q: Placed | undefined) => q?.region.kind === "math" && FUNCTION.test(q.region.expr ?? "");
   const below = selected ? selected.y + (heights[selected.region.id] ?? 0) : (state.caret?.[1] ?? contentBottom());
   const p = isFunction(selected) ? selected : functionAbove(below);
-  const fn = p ? FUNCTION.exec(p.region.expr ?? "") : null;
+  const expr = p?.region.expr ?? "";
+  const m = p ? FUNCTION.exec(expr) : null;
+  return m ? { name: m[1], params: m[3] ? [m[2], m[3]] : [m[2]], expr } : null;
+}
+
+export function insertPlot() {
+  const fn = functionToPlot();
+  // a function of two variables is a surface: a 3D plot shows it
+  if (fn && fn.params.length === 2) return insertPlot3d();
+  const selected = state.selection.length === 1 ? layout().byId.get(state.selection[0]) : undefined;
+  const below = selected ? selected.y + (heights[selected.region.id] ?? 0) : (state.caret?.[1] ?? contentBottom());
+  const p = selected?.region.kind === "math" ? selected : functionAbove(below);
   // a vector (`d := [0; 4; 15] m`) is plotted as data
   const vector =
     p?.region.kind === "math"
       ? /^\s*([\p{L}][\p{L}\p{N}_.]*)\s*(?::=|≔)\s*(?:\[|range\()/u.exec(p.region.expr ?? "")
       : null;
   const series: Series[] = fn
-    ? [{ y: `${fn[1]}(${fn[2]})`, x: fn[2], range: guessRange(p!.region.expr ?? "", fn[2]) }]
+    ? [{ y: `${fn.name}(${fn.params[0]})`, x: fn.params[0], range: guessRange(fn.expr, fn.params[0]) }]
     : vector
       ? [{ y: vector[1] }]
       : [{ y: "sin(x)", x: "x", range: "0..2*π" }];

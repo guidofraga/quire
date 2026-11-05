@@ -365,3 +365,23 @@ test("a large 3D surface stays responsive: a lighter grid while it turns, the fu
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("plotting a function of two variables makes a 3D surface of it", async ({ page }) => {
+  await blank(page);
+  await typeLines(page, "f(x,y):=sin(x)*cos(y)");
+  // the ∿ Plot button on the line
+  const line = page.locator(".region.math").first();
+  await line.hover();
+  await line.getByRole("button", { name: "Plot this function" }).click();
+  const plot = page.locator(".region.plot3d");
+  await expect(plot).toHaveCount(1);
+  await expect(page.locator(".region.plot2d")).toHaveCount(0);
+  await expect(plot.getByRole("img", { name: "3D plot of f(x, y)" })).toBeVisible();
+  await expect(plot.locator(".err")).toHaveCount(0);
+  // Insert ▸ 3D Plot with the function selected starts from it too
+  await line.click();
+  await page.getByRole("button", { name: "Insert" }).click();
+  await page.getByRole("menuitem", { name: "3D Plot" }).click();
+  await expect(page.locator(".region.plot3d")).toHaveCount(2);
+  await expect(page.getByRole("img", { name: "3D plot of f(x, y)" })).toHaveCount(2);
+});
