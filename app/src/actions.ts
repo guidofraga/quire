@@ -570,7 +570,7 @@ export function installContextMenus(run: (command: string) => void) {
     else if (!many && r?.kind === "plot2d")
       items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r?.kind === "plot3d")
-      items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot3d(id)) });
+      items.push({ label: "Edit Plot", run: () => (closeMenu(), editPlot3d(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({
         label: isSheet(r) ? "Edit Table" : "Edit",

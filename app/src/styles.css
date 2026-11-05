@@ -2824,6 +2824,12 @@ ms.str {
   touch-action: none;
 }
 
+/* the plot has the keyboard: the arrows turn it (Enter on the selected plot) */
+.plot3d canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .plot3d-reset {
   position: absolute;
   top: 4px;
