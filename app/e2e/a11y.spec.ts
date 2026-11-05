@@ -256,9 +256,14 @@ test.describe("keyboard", () => {
     const reset = plot.getByRole("button", { name: "Back to the standard view" });
     const status = page.getByRole("status");
     await expect(plot).toHaveClass(/\bselected\b/);
-    // Enter gives the plot the keyboard
-    await page.keyboard.press("Escape");
-    await plot.click();
+    // from the page (an empty spot below the plot), Tab selects the plot and Enter gives it the
+    // keyboard; a click on the menu leaves focus on the Insert button where WebKit focuses
+    // clicked buttons (Linux), so the page is clicked first
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + 20, box.y + box.height + 80);
+    await expect(plot).not.toHaveClass(/\bselected\b/);
+    await page.keyboard.press("Tab");
+    await expect(plot).toHaveClass(/\bselected\b/);
     await page.keyboard.press("Enter");
     await expect(canvas).toBeFocused();
     // → turns it as a drag to the right does, ↓ tilts it; each says the new view
