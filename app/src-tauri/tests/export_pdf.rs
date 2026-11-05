@@ -72,7 +72,7 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
         if let Some(status) = child.try_wait()? {
             break Some(status);
         }
-        // longer than the app's own limits (30 s to start, 140 s in all), so a stuck export
+        // longer than the app's own limits (60 s to start, 140 s in all), so a stuck export
         // ends itself and says where it stopped before it is killed here
         if start.elapsed() > Duration::from_secs(170) {
             child.kill().ok();
@@ -84,9 +84,10 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     let said = said.join().unwrap_or_default();
     match status {
         None => {
-            return Err(
-                format!("the export did not end, and the app's own watchdog did not stop it\n{said}").into()
-            );
+            return Err(format!(
+                "the export did not end, and the app's own watchdog did not stop it\n{said}"
+            )
+            .into());
         }
         Some(status) if !status.success() => {
             return Err(format!("quire-app exited with {status}\n{said}").into());

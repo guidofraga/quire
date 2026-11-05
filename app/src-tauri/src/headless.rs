@@ -8,34 +8,44 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-/// How long the page may take to report its first step: it only has to load and start.
-const START: Duration = Duration::from_secs(30);
+/// How long the page may take to report its first step: it only has to load and start, which
+/// takes a few seconds, but WebKitGTK on a busy CI machine is slow.
+const START: Duration = Duration::from_secs(60);
 /// How long the whole export may take, start to finish (the print job itself allows 120 s).
 const WHOLE: Duration = Duration::from_secs(140);
 
-/// The step the page reported last, and when.
-pub struct Progress(Mutex<Option<String>>);
+/// When the export started, and the step the page reported last.
+pub struct Progress {
+    started: Instant,
+    step: Mutex<Option<String>>,
+}
 
 /// Called by the page as the export moves on ("opening the document", "printing the PDF"…).
+/// Each step goes to stderr with its time, so a slow or stuck export shows where it spent it.
 #[tauri::command]
 pub fn export_step(progress: tauri::State<'_, Progress>, step: String) {
-    *progress.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(step);
+    eprintln!("quire: {:.1} s: {step}", progress.started.elapsed().as_secs_f64());
+    *progress.step.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(step);
 }
 
 /// Start watching a headless export. The process exits (with the reason on stderr) when the
 /// page doesn't start within [`START`] or the export doesn't end within [`WHOLE`];
 /// `finish_export` ends it normally before that.
 pub fn watch(app: &AppHandle) {
-    app.manage(Progress(Mutex::new(None)));
+    let started = Instant::now();
+    app.manage(Progress { started, step: Mutex::new(None) });
     #[cfg(target_os = "macos")]
     keep_running();
     let app = app.clone();
-    let started = Instant::now();
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(Duration::from_millis(500));
-            let step =
-                app.state::<Progress>().0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            let step = app
+                .state::<Progress>()
+                .step
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
             let reason = match step {
                 None if started.elapsed() > START => Some(
                     "the page never started. If you built the app yourself, run `npm --prefix app run build`, \

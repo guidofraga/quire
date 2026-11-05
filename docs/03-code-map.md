@@ -86,7 +86,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 |---|---|
 | `main.rs` | Tauri commands (thin wrappers over `quire-service`), the native file dialogs (`pick`), the native menu with its accelerators, Open Recent, crash recovery, files the system asks to open, the window setup. |
 | `scope.rs` | The files and folders the app may touch: only those the user chose in a dialog, opened from the system, dropped on the window, or kept in the recent lists (saved in the app's data folder as `recent.json`). Every command that takes a path checks it here, so a new command that reads or writes a file must too; a new file dialog goes through `pick`, never the dialog plugin in the webview. |
-| `headless.rs` | `quire-app --export-pdf`: keeps the hidden export window running (no App Nap or background throttling on macOS) and ends a run that stops reporting progress, naming the step it stopped at. |
+| `headless.rs` | `quire-app --export-pdf`: keeps the hidden export window running (no App Nap or background throttling on macOS) logs each step with its time, and ends a run that stops reporting progress, naming the step it stopped at. |
 | `print.rs` | Printing and PDF export through WebKit's print engine, at the exact paper size: AppKit's save job on macOS, GTK's "Print to File" backend on Linux (the printer is named in the user's language). Windows only prints, through the dialog. |
 | `pdf.rs` | Finishing the exported PDF with `lopdf` (macOS and Linux): details, bookmarks, links, page labels, smaller photos. |
 | `tauri.conf.json`, `capabilities/` | Window, bundle, updater and permission configuration. |
