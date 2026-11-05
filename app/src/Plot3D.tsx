@@ -1,8 +1,11 @@
 // 3D plots (SMath's 3D graph): surfaces z(x, y), parametric curves and surfaces, and data,
 // sampled by the engine (crates/quire-eval/src/plot3d.rs) and drawn here on a canvas with an
-// orthographic camera (geom3d.ts). Drag a selected plot to turn it, ⌥ + scroll to zoom; the
-// view is saved with the plot.
+// orthographic camera (geom3d.ts). Drag a selected plot to turn it, ⌥ + scroll to zoom; from
+// the keyboard, Enter focuses the plot, the arrows turn it and + / − zoom. The view is saved
+// with the plot.
 import { createEffect, createMemo, createSignal, Index, onCleanup, Show } from "solid-js";
+import { announce } from "./a11y";
+import { focusCanvas } from "./Canvas";
 import { Field, Select, Text } from "./Inspector";
 import { prettyValue } from "./math";
 import { SERIES_COLORS, SMATH_COLORS } from "./Plot";
@@ -283,9 +286,15 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
 
   // drag a selected plot to turn it (an unselected one is selected and moved as any region)
   let from: { x: number; y: number; c: Camera } | null = null;
+  // whether the plot was already selected when the pointer went down: by mousedown, the page
+  // has selected it either way
+  let wasSelected = false;
   const onDown = (e: PointerEvent) => {
+    wasSelected = props.selected;
     if (e.button !== 0 || !props.selected) return;
     e.stopPropagation();
+    // a click on the selected plot also gives it the keyboard
+    canvas.focus({ preventScroll: true });
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     from = { x: e.clientX, y: e.clientY, c: cam() };
   };
@@ -331,6 +340,50 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     }
   });
 
+  // the keyboard, once the plot has focus (Enter on the selected plot, or a click on it): each
+  // key is one change of view, saved at once, so one undo takes it back
+  const turnTo = (c: Camera) => {
+    const camera = { azimuth: Math.round(c.azimuth), elevation: Math.round(c.elevation), distance: c.distance };
+    updateRegion(r().id, { camera });
+    return camera;
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const c = cam();
+    const by = e.shiftKey ? 45 : 15;
+    // the same way a drag goes: → turns the front right, ↓ tilts the top towards you
+    const turn: Record<string, [number, number]> = {
+      ArrowLeft: [-by, 0],
+      ArrowRight: [by, 0],
+      ArrowUp: [0, -by],
+      ArrowDown: [0, by],
+    };
+    if (turn[e.key]) {
+      const [da, de] = turn[e.key];
+      const v = turnTo({
+        ...c,
+        azimuth: ((c.azimuth + da + 540) % 360) - 180,
+        elevation: Math.max(-89, Math.min(89, c.elevation + de)),
+      });
+      announce(`Turned to ${v.azimuth}°, tilted ${v.elevation}°`);
+    } else if (e.key === "+" || e.key === "=" || e.key === "-") {
+      const factor = e.key === "-" ? 1.25 : 0.8;
+      const v = turnTo({ ...c, distance: Math.max(0.75, Math.min(10, Number((c.distance * factor).toFixed(3)))) });
+      announce(`Zoom ${Math.round(zoomOf(v) * 100)}%`);
+    } else if (e.key === "0") {
+      updateRegion(r().id, { camera: undefined });
+      announce("Standard view");
+    } else if (e.key === "Enter") editPlot3d(r().id);
+    else if (e.key === "Escape") focusCanvas();
+    else {
+      // Tab and the rest: back to the page, which takes the key from there
+      if (e.key === "Tab") focusCanvas();
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   const what = () =>
     series3Of(r())
       .map((s) => s.label || s.surface || s.parametric?.join(", "))
@@ -342,8 +395,18 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
         ref={canvas}
         role="img"
         aria-label={`3D plot of ${what() || "nothing yet"}`}
+        tabIndex={-1}
+        onKeyDown={onKey}
+        onFocus={() => announce("Arrows turn the plot, + and − zoom, Esc returns to the page")}
         style={{ width: `${size()[0]}px`, height: `${size()[1]}px`, cursor: props.selected ? "grab" : undefined }}
         onPointerDown={onDown}
+        // a click on a plot that isn't selected yet only selects it, and the page keeps the
+        // keyboard, as for any region; the plot takes it once selected (a click on it, or Enter)
+        onMouseDown={(e) => {
+          if (wasSelected) return;
+          e.preventDefault();
+          focusCanvas();
+        }}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
@@ -362,6 +425,13 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
       </Show>
     </div>
   );
+}
+
+/** Enter on a selected 3D plot: the keyboard turns and zooms it until Esc. */
+export function focusPlot3d(id: string) {
+  document
+    .querySelector<HTMLCanvasElement>(`[data-region="${CSS.escape(id)}"] .plot3d canvas`)
+    ?.focus({ preventScroll: true });
 }
 
 /** Insert ▸ 3D Plot: a surface to start from, under the selection or at the insertion point. */

@@ -248,6 +248,52 @@ test.describe("keyboard", () => {
     await expect.poll(async () => (await plot.boundingBox())!.width).toBeGreaterThan(429);
   });
 
+  test("a 3D plot turns and zooms from the keyboard, and Esc gives the arrows back to the page", async ({ page }) => {
+    await page.getByRole("button", { name: "Insert" }).click();
+    await page.getByRole("menuitem", { name: "3D Plot" }).click();
+    const plot = page.locator(".region.plot3d");
+    const canvas = plot.getByRole("img", { name: /^3D plot of/ });
+    const reset = plot.getByRole("button", { name: "Back to the standard view" });
+    const status = page.getByRole("status");
+    await expect(plot).toHaveClass(/\bselected\b/);
+    // from the page (an empty spot below the plot), Tab selects the plot and Enter gives it the
+    // keyboard; a click on the menu leaves focus on the Insert button where WebKit focuses
+    // clicked buttons (Linux), so the page is clicked first
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + 20, box.y + box.height + 80);
+    await expect(plot).not.toHaveClass(/\bselected\b/);
+    await page.keyboard.press("Tab");
+    await expect(plot).toHaveClass(/\bselected\b/);
+    await page.keyboard.press("Enter");
+    await expect(canvas).toBeFocused();
+    // → turns it as a drag to the right does, ↓ tilts it; each says the new view
+    await page.keyboard.press("ArrowRight");
+    await expect(status).toHaveText("Turned to -35°, tilted 25°");
+    await page.keyboard.press("ArrowDown");
+    await expect(status).toHaveText("Turned to -35°, tilted 40°");
+    await expect(reset).toBeVisible();
+    await page.keyboard.press("+");
+    await expect(status).toHaveText("Zoom 125%");
+    // each key is one step to undo
+    await page.keyboard.press("ControlOrMeta+z");
+    await page.keyboard.press("ControlOrMeta+z");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(reset).toHaveCount(0);
+    await page.keyboard.press("ArrowLeft");
+    await expect(status).toHaveText("Turned to -65°, tilted 25°");
+    await page.keyboard.press("0");
+    await expect(status).toHaveText("Standard view");
+    await expect(reset).toHaveCount(0);
+    // Esc: back to the page, where the arrows move the selected plot again
+    await page.keyboard.press("Escape");
+    await expect(canvas).not.toBeFocused();
+    await expect(plot).toHaveClass(/\bselected\b/);
+    const x = (await plot.boundingBox())!.x;
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(async () => (await plot.boundingBox())!.x).toBeGreaterThan(x);
+    await expect(reset).toHaveCount(0);
+  });
+
   test("a table being edited is a grid with named cells", async ({ page }) => {
     await page.keyboard.press("ControlOrMeta+Alt+t");
     const grid = page.getByRole("grid");
