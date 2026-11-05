@@ -1,6 +1,7 @@
 // 3D plots without the DOM, for Plot3D.tsx: the data's box, an orthographic camera turned by
 // azimuth and tilted by elevation, a colour scale for heights and round tick values. No WebGL:
-// a few thousand faces draw fast enough on a canvas, and print the same.
+// a canvas draws a few tens of thousands of faces fast enough, and prints the same; a larger
+// surface is drawn with every few rows and columns (`stepFor`), finer once it stops moving.
 
 export type Vec3 = [number, number, number];
 
@@ -96,13 +97,44 @@ export function ticks3(lo: number, hi: number, count = 4): number[] {
   return out;
 }
 
-/** The faces of a grid of points (`cols` to a row) whose four corners were all computed. */
-export function faces(s: {
-  cols: number;
-  xs: (number | null)[];
-  ys: (number | null)[];
-  zs: (number | null)[];
-}): Vec3[][] {
+/** How many faces a surface of `cols` to a row would have at a given `step` (see `faces`). */
+function faceCount(cols: number, points: number, step: number): number {
+  const rows = Math.floor(points / Math.max(1, cols));
+  const across = (n: number) => Math.max(0, Math.ceil((n - 1) / step));
+  return across(cols) * across(rows);
+}
+
+/**
+ * The smallest step through a surface's rows and columns that keeps it to about `max` faces:
+ * 1 draws every face; 3 draws every third row and column (a ninth of the faces).
+ */
+export function stepFor(s: { cols: number; zs: unknown[] }, max: number): number {
+  let step = Math.max(1, Math.ceil(Math.sqrt(faceCount(s.cols, s.zs.length, 1) / Math.max(1, max))));
+  while (faceCount(s.cols, s.zs.length, step) > max) step++;
+  return step;
+}
+
+/** Every `step`-th index of 0…n−1, always ending at n − 1, so a thinned grid keeps its edges. */
+export function every(n: number, step: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < n - 1; i += step) out.push(i);
+  if (n > 0) out.push(n - 1);
+  return out;
+}
+
+/**
+ * The faces of a grid of points (`cols` to a row) whose four corners were all computed.
+ * With a `step`, every `step`-th row and column: the same surface with fewer, larger faces.
+ */
+export function faces(
+  s: {
+    cols: number;
+    xs: (number | null)[];
+    ys: (number | null)[];
+    zs: (number | null)[];
+  },
+  step = 1,
+): Vec3[][] {
   const out: Vec3[][] = [];
   const n = s.cols;
   if (n < 2) return out;
@@ -111,9 +143,12 @@ export function faces(s: {
     const p = [s.xs[k], s.ys[k], s.zs[k]];
     return p.every((v) => typeof v === "number" && Number.isFinite(v)) ? (p as Vec3) : null;
   };
-  for (let j = 0; j + 1 < rows; j++)
-    for (let i = 0; i + 1 < n; i++) {
-      const quad = [j * n + i, j * n + i + 1, (j + 1) * n + i + 1, (j + 1) * n + i].map(at);
+  const js = every(rows, step);
+  const is = every(n, step);
+  for (let a = 0; a + 1 < js.length; a++)
+    for (let b = 0; b + 1 < is.length; b++) {
+      const [j0, j1, i0, i1] = [js[a], js[a + 1], is[b], is[b + 1]];
+      const quad = [j0 * n + i0, j0 * n + i1, j1 * n + i1, j1 * n + i0].map(at);
       if (quad.every((p) => p !== null)) out.push(quad as Vec3[]);
     }
   return out;

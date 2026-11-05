@@ -2,11 +2,23 @@
 // sampled by the engine (crates/quire-eval/src/plot3d.rs) and drawn here on a canvas with an
 // orthographic camera (geom3d.ts). Drag a selected plot to turn it, ⌥ + scroll to zoom; the
 // view is saved with the plot.
-import { createEffect, createSignal, Index, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Index, onCleanup, Show } from "solid-js";
 import { Field, Select, Text } from "./Inspector";
 import { prettyValue } from "./math";
 import { SERIES_COLORS, SMATH_COLORS } from "./Plot";
-import { bounds, type Camera, cameraOf, faces, heat, normalize, project, ticks3, type Vec3, zoomOf } from "./geom3d";
+import {
+  bounds,
+  type Camera,
+  cameraOf,
+  faces,
+  heat,
+  normalize,
+  project,
+  stepFor,
+  ticks3,
+  type Vec3,
+  zoomOf,
+} from "./geom3d";
 import {
   contentBottom,
   flash,
@@ -19,9 +31,42 @@ import {
   state,
   updateRegion,
 } from "./store";
-import type { Plot3View, Region } from "./types";
+import type { Plot3SeriesView, Plot3View, Region } from "./types";
 
 export const DEFAULT_SIZE_3D: [number, number] = [420, 340];
+
+/**
+ * Faces drawn at rest, and while the plot turns or zooms. A plot a few hundred pixels across
+ * can't show more than tens of thousands of faces, and drawing them all on every frame of a
+ * turn would freeze the app (issue #63): a larger surface is drawn with every few rows and
+ * columns, the finer grid once it stops moving. The data itself is never thinned.
+ */
+export const RESTING_FACES = 80_000;
+export const MOVING_FACES = 12_000;
+/** Points of a curve drawn while the plot moves. */
+const MOVING_POINTS = 20_000;
+
+/** A surface's faces, scaled into the box and coloured by height, ready to project. */
+interface Faces {
+  /** Four corners of each face, x y z after x y z, in the cube −1…1. */
+  corners: Float64Array;
+  colours: string[];
+}
+
+/** The faces of every surface, sharing `max` between them. */
+function prepareFaces(surfaces: Plot3SeriesView[], box: [Vec3, Vec3], max: number): Faces {
+  const corners: number[] = [];
+  const colours: string[] = [];
+  const share = Math.max(1, Math.floor(max / Math.max(1, surfaces.length)));
+  for (const s of surfaces) {
+    const [lo, hi] = bounds([s]).map((b) => b[2]);
+    for (const f of faces(s, stepFor(s, share))) {
+      for (const p of f) corners.push(...normalize(p, box));
+      colours.push(heat((f.reduce((acc, p) => acc + p[2], 0) / 4 - lo) / (hi - lo)));
+    }
+  }
+  return { corners: Float64Array.from(corners), colours };
+}
 
 /** One series as saved in the document (docs/02-file-format.md §4.7). */
 export interface Series3 {
@@ -64,6 +109,27 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
   const cam = () => live() ?? cameraOf(r().camera);
   let canvas!: HTMLCanvasElement;
 
+  // the data's box and faces, worked out once per result rather than on every frame
+  const prepared = createMemo(() => {
+    const ok = (view()?.series ?? []).filter((s) => !s.error && s.xs.length);
+    const box = bounds(ok);
+    const surfaces = ok.filter((s) => s.shape === "surface");
+    // a lighter grid while turning, worked out the first time the plot moves
+    let light: Faces | undefined;
+    return {
+      ok,
+      box,
+      resting: prepareFaces(surfaces, box, RESTING_FACES),
+      moving: () => (light ??= prepareFaces(surfaces, box, MOVING_FACES)),
+    };
+  });
+  // ready before the first turn: worked out just after a new result arrives, not on the first drag
+  createEffect(() => {
+    const { moving } = prepared();
+    const soon = setTimeout(moving, 50);
+    onCleanup(() => clearTimeout(soon));
+  });
+
   const draw = () => {
     const v = view();
     const [w, h] = size();
@@ -74,8 +140,8 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     if (!g) return;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
-    const ok = (v?.series ?? []).filter((s) => !s.error && s.xs.length);
-    const box = bounds(ok);
+    const { ok, box, resting, moving: movingSet } = prepared();
+    const moving = live() !== null;
     const c = cam();
     const scale = (Math.min(w, h) / 3.4) * zoomOf(c);
     const screen = (p: Vec3): Vec3 => {
@@ -100,31 +166,37 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
       }
 
     // surfaces: faces coloured by height over each surface's own heights, the farthest drawn first
-    const quads = ok
-      .filter((s) => s.shape === "surface")
-      .flatMap((s) => {
-        const [lo, hi] = bounds([s]).map((b) => b[2]);
-        return faces(s).map((f) => {
-          const pts = f.map(at);
-          return {
-            pts,
-            depth: pts.reduce((acc, p) => acc + p[2], 0) / 4,
-            t: (f.reduce((acc, p) => acc + p[2], 0) / 4 - lo) / (hi - lo),
-          };
-        });
-      })
-      .sort((a, b) => b.depth - a.depth);
+    const set = moving ? movingSet() : resting;
+    const n = set.colours.length;
+    const xy = new Float64Array(n * 8);
+    const depth = new Float64Array(n);
+    for (let f = 0; f < n; f++) {
+      let d = 0;
+      for (let k = 0; k < 4; k++) {
+        const o = f * 12 + k * 3;
+        const [sx, sy, sd] = screen([set.corners[o], set.corners[o + 1], set.corners[o + 2]]);
+        xy[f * 8 + k * 2] = sx;
+        xy[f * 8 + k * 2 + 1] = sy;
+        d += sd;
+      }
+      depth[f] = d;
+    }
+    const order = Uint32Array.from({ length: n }, (_, f) => f).sort((a, b) => depth[b] - depth[a]);
     g.lineWidth = 0.5;
     g.strokeStyle = "rgba(40, 40, 40, 0.28)";
-    for (const q of quads) {
+    for (const f of order) {
+      const o = f * 8;
       g.beginPath();
-      g.moveTo(q.pts[0][0], q.pts[0][1]);
-      for (const p of q.pts.slice(1)) g.lineTo(p[0], p[1]);
+      g.moveTo(xy[o], xy[o + 1]);
+      g.lineTo(xy[o + 2], xy[o + 3]);
+      g.lineTo(xy[o + 4], xy[o + 5]);
+      g.lineTo(xy[o + 6], xy[o + 7]);
       g.closePath();
-      g.fillStyle = heat(q.t);
+      g.fillStyle = set.colours[f];
       g.fill();
       g.stroke();
     }
+    canvas.dataset.faces = String(n);
 
     // curves and lines through points, on top
     const palette = r().palette === "smath" ? SMATH_COLORS : SERIES_COLORS;
@@ -134,7 +206,10 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
       g.lineWidth = 2;
       g.beginPath();
       let pen = false;
+      // a long curve keeps its shape with every few points while it moves
+      const stride = moving ? Math.max(1, Math.ceil(s.xs.length / MOVING_POINTS)) : 1;
       s.xs.forEach((x, k) => {
+        if (k % stride !== 0 && k !== s.xs.length - 1) return;
         const p = [x, s.ys[k], s.zs[k]];
         if (!p.every((q) => typeof q === "number" && Number.isFinite(q))) {
           pen = false;
@@ -188,13 +263,23 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     }
   };
 
+  // at most one drawing per screen frame, however fast the pointer moves; printing draws at once
+  let frame = 0;
   createEffect(() => {
-    view();
+    prepared();
     cam();
     size();
-    void state.printing;
-    draw();
+    if (state.printing) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      draw();
+    } else if (!frame)
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        draw();
+      });
   });
+  onCleanup(() => cancelAnimationFrame(frame));
 
   // drag a selected plot to turn it (an unselected one is selected and moved as any region)
   let from: { x: number; y: number; c: Camera } | null = null;
@@ -206,8 +291,10 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
   };
   const onMove = (e: PointerEvent) => {
     if (!from) return;
+    // the surface follows the pointer as if grabbed: drag right and its front turns right,
+    // drag down and its top tilts towards you
     const elevation = Math.max(-89, Math.min(89, from.c.elevation + (e.clientY - from.y) * 0.5));
-    setLive({ ...from.c, azimuth: ((from.c.azimuth - (e.clientX - from.x) * 0.5 + 540) % 360) - 180, elevation });
+    setLive({ ...from.c, azimuth: ((from.c.azimuth + (e.clientX - from.x) * 0.5 + 540) % 360) - 180, elevation });
   };
   // the live view goes into the document once, so a turn or a zoom is one step to undo
   const save = () => {

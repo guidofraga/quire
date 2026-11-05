@@ -1,5 +1,5 @@
 // End to end: the UI in WebKit against `quire serve`, typing as a user would.
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -326,4 +326,42 @@ test("Insert ▸ 3D Plot draws a surface the engine sampled, and the Inspector e
   await page.keyboard.press("ControlOrMeta+z");
   await expect(reset).toHaveCount(0);
   await expect(plot).toHaveClass(/selected/);
+});
+
+test("a large 3D surface stays responsive: a lighter grid while it turns, the full one at rest", async ({ page }) => {
+  // 500 × 500 heights, a quarter of a million faces: drawing them all on every frame froze the app
+  const dir = mkdtempSync(join(tmpdir(), "quire-3d-e2e-"));
+  const doc = join(dir, "big.quire");
+  mkdirSync(doc);
+  writeFileSync(
+    join(doc, "document.json"),
+    JSON.stringify({
+      format: "quire/1",
+      page: { view: "canvas" },
+      regions: [
+        { id: "a", kind: "math", at: [0, 0], expr: "v:=range(1, 500)/100-2.5" },
+        { id: "b", kind: "math", at: [0, 36], expr: "M:=v*transpose(v)" },
+        { id: "p", kind: "plot3d", at: [0, 90], size: [420, 340], series: [{ surface: "M" }] },
+      ],
+    }),
+  );
+  try {
+    await page.goto(`/?open=${encodeURIComponent(doc)}`);
+    const canvas = page.locator(".region.plot3d canvas");
+    const drawn = async () => Number(await canvas.getAttribute("data-faces"));
+    // a quarter of a million points to compute, send and draw: slower in CI's Linux WebKit
+    await expect.poll(drawn, { timeout: 30_000 }).toBeGreaterThan(12_000);
+    expect(await drawn()).toBeLessThanOrEqual(80_000);
+    const box = (await canvas.boundingBox())!;
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    await canvas.click();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 40, y + 10, { steps: 5 });
+    await expect.poll(drawn).toBeLessThanOrEqual(12_000);
+    await page.mouse.up();
+    await expect.poll(drawn).toBeGreaterThan(12_000);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
