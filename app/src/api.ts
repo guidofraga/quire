@@ -50,6 +50,8 @@ export const api = {
   exportPdf: (path: string, paper: Paper, title: string, compress: boolean, info: PdfInfo) =>
     call<null>("export_pdf", { path, paper, title, compress, info }),
   finishExport: (error: string | null) => call<null>("finish_export", { error }),
+  /** A headless export's progress, for the app's watchdog (it ends a run that stops moving). */
+  exportStep: (step: string) => call<null>("export_step", { step }),
   exportCsv: (path: string, contents: string) => call<null>("export_csv", { path, contents }),
   /** The web version's files, which travel as base64: a `.quirez` (or `document.json`) in, a `.quirez` out. */
   openBytes: (data: string) => call<Doc>("open_bytes", { data }),

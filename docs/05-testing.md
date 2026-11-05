@@ -50,7 +50,8 @@ A test that fails sometimes is a bug, in the test or in the app. Reproduce it wi
 - typing before a field has focus (wait for `toBeFocused()` first, as the `name()` helper in `notebook.spec.ts` does);
 - checking results, or a copy that carries them, before the evaluation of the last edit is in (wait for what the engine renders, as the clipboard tests wait for the text's paragraph; a copy made before then carries what was typed, without results);
 - measuring colours mid-animation (the axe tests emulate `reducedMotion: "reduce"`);
-- CI's Linux WebKit reporting text colours mid-update right after a document opens (the `audit()` helper in `e2e/axe.ts` re-measures before failing, so only problems that persist fail).
+- CI's Linux WebKit reporting text colours mid-update right after a document opens (the `audit()` helper in `e2e/axe.ts` re-measures before failing, so only problems that persist fail);
+- a desktop app compiled before its front end was rebuilt, carrying a stale or empty page: the PDF export then never started (issue #59). `app/src-tauri/build.rs` now makes Cargo rebuild the app when `app/dist` changes, and a headless export that never starts fails after 60 s with a message saying so, and every export logs its steps with their times to stderr (`headless.rs`); the test prints what the app said.
 
 ## 5. Results that must not change
 
