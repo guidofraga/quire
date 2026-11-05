@@ -8,7 +8,7 @@ import { announce } from "./a11y";
 import { focusCanvas } from "./Canvas";
 import { Field, Select, Text } from "./Inspector";
 import { prettyValue } from "./math";
-import { SERIES_COLORS, SMATH_COLORS } from "./Plot";
+import { functionToPlot, guessRange, SERIES_COLORS, SMATH_COLORS } from "./Plot";
 import {
   bounds,
   type Camera,
@@ -430,7 +430,10 @@ export function focusPlot3d(id: string) {
     ?.focus({ preventScroll: true });
 }
 
-/** Insert ▸ 3D Plot: a surface to start from, under the selection or at the insertion point. */
+/**
+ * Insert ▸ 3D Plot, under the selection or at the insertion point: the surface of the selected
+ * function of two variables (or the nearest one above), else one to start from.
+ */
 export function insertPlot3d() {
   const selected = state.selection.length === 1 ? layout().byId.get(state.selection[0]) : undefined;
   const at: [number, number] = selected
@@ -440,8 +443,20 @@ export function insertPlot3d() {
     kind: "plot3d",
     at,
     size: [...DEFAULT_SIZE_3D],
-    series: [{ surface: "sin(x)*cos(y)", xrange: "-π..π", yrange: "-π..π" }],
+    series: [surfaceToStart()],
   });
+}
+
+/** A function `f(x, y) :=` to plot as `f(x, y)` over ranges for its parameters, or sin(x)·cos(y). */
+function surfaceToStart(): Series3 {
+  const fn = functionToPlot();
+  if (!fn || fn.params.length !== 2) return { surface: "sin(x)*cos(y)", xrange: "-π..π", yrange: "-π..π" };
+  // the surface's own variables are x and y, whatever the function calls its parameters
+  return {
+    surface: `${fn.name}(x, y)`,
+    xrange: guessRange(fn.expr, fn.params[0]),
+    yrange: guessRange(fn.expr, fn.params[1]),
+  };
 }
 
 /** Double-click or Enter on a 3D plot: its series, ready to type in. */
