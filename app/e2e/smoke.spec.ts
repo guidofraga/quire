@@ -349,7 +349,8 @@ test("a large 3D surface stays responsive: a lighter grid while it turns, the fu
     await page.goto(`/?open=${encodeURIComponent(doc)}`);
     const canvas = page.locator(".region.plot3d canvas");
     const drawn = async () => Number(await canvas.getAttribute("data-faces"));
-    await expect.poll(drawn).toBeGreaterThan(12_000);
+    // a quarter of a million points to compute, send and draw: slower in CI's Linux WebKit
+    await expect.poll(drawn, { timeout: 30_000 }).toBeGreaterThan(12_000);
     expect(await drawn()).toBeLessThanOrEqual(80_000);
     const box = (await canvas.boundingBox())!;
     const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
