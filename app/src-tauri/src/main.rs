@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
+mod headless;
 mod pdf;
 mod print;
 mod scope;
@@ -742,8 +743,13 @@ fn main() {
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some((input, output)) = &job {
                 let job = json!({ "open": input, "pdf": output });
-                window =
-                    window.visible(false).initialization_script(format!("window.__QUIRE_EXPORT__ = {job};"));
+                window = window
+                    .visible(false)
+                    // a hidden page must keep running: macOS 14 and later would otherwise
+                    // throttle its timers and rendering (issue #59)
+                    .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+                    .initialization_script(format!("window.__QUIRE_EXPORT__ = {job};"));
+                headless::watch(app.handle());
             }
             window.build()?;
             Ok(())
@@ -765,6 +771,7 @@ fn main() {
             print_document,
             export_pdf,
             finish_export,
+            headless::export_step,
             export_csv,
             notebook,
             take_open_requests,

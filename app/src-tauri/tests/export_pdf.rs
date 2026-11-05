@@ -9,8 +9,9 @@
 //! ```
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use lopdf::{Dictionary, Document, Object, ObjectId, decode_text_string};
@@ -53,24 +54,45 @@ fn bookmarks(
 fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     let input = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/report.quire");
     let out = std::env::temp_dir().join(format!("quire-export-{}.pdf", std::process::id()));
-    let mut child =
-        Command::new(env!("CARGO_BIN_EXE_quire-app")).arg("--export-pdf").arg(&input).arg(&out).spawn()?;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_quire-app"))
+        .arg("--export-pdf")
+        .arg(&input)
+        .arg(&out)
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // what the app says on stderr, read as it comes so a full pipe can't stall it
+    let mut stderr = child.stderr.take().ok_or("no stderr")?;
+    let said = std::thread::spawn(move || {
+        let mut text = String::new();
+        stderr.read_to_string(&mut text).ok();
+        text
+    });
     let start = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait()? {
-            break status;
+            break Some(status);
         }
-        // longer than the app's own limits (100 s in the front end, 120 s for the print job),
-        // so a stuck export reports where it stopped before it is killed here
-        if start.elapsed() > Duration::from_secs(150) {
+        // longer than the app's own limits (30 s to start, 140 s in all), so a stuck export
+        // ends itself and says where it stopped before it is killed here
+        if start.elapsed() > Duration::from_secs(170) {
             child.kill().ok();
-            return Err(
-                "the export did not finish; was the app built with --features tauri/custom-protocol?".into(),
-            );
+            child.wait().ok();
+            break None;
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    assert!(status.success(), "quire-app exited with {status}");
+    let said = said.join().unwrap_or_default();
+    match status {
+        None => {
+            return Err(
+                format!("the export did not end, and the app's own watchdog did not stop it\n{said}").into()
+            );
+        }
+        Some(status) if !status.success() => {
+            return Err(format!("quire-app exited with {status}\n{said}").into());
+        }
+        Some(_) => {}
+    }
     let doc = Document::load(&out)?;
     std::fs::remove_file(&out).ok();
 
