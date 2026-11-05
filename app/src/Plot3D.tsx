@@ -400,9 +400,13 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
         onFocus={() => announce("Arrows turn the plot, + and − zoom, Esc returns to the page")}
         style={{ width: `${size()[0]}px`, height: `${size()[1]}px`, cursor: props.selected ? "grab" : undefined }}
         onPointerDown={onDown}
-        // a click on a plot that isn't selected yet only selects it, as for any region; it
-        // takes the keyboard once selected (a click on it, or Enter)
-        onMouseDown={(e) => !wasSelected && e.preventDefault()}
+        // a click on a plot that isn't selected yet only selects it, and the page keeps the
+        // keyboard, as for any region; the plot takes it once selected (a click on it, or Enter)
+        onMouseDown={(e) => {
+          if (wasSelected) return;
+          e.preventDefault();
+          focusCanvas();
+        }}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
