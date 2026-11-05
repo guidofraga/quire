@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { bounds, cameraOf, DEFAULT_CAMERA, faces, heat, normalize, project, ticks3, zoomOf } from "./geom3d";
+import {
+  bounds,
+  cameraOf,
+  DEFAULT_CAMERA,
+  every,
+  faces,
+  heat,
+  normalize,
+  project,
+  stepFor,
+  ticks3,
+  zoomOf,
+} from "./geom3d";
 
 describe("3D plots", () => {
   it("boxes the data, giving a flat axis some room", () => {
@@ -61,5 +73,28 @@ describe("3D plots", () => {
     expect(heat(NaN)).toBe(heat(0));
     expect(ticks3(-2, 2)).toEqual([-2, -1, 0, 1, 2]);
     expect(ticks3(0, 37)).toEqual([0, 10, 20, 30]);
+  });
+
+  it("thins a large surface to every few rows and columns, keeping its edges", () => {
+    expect(every(10, 3)).toEqual([0, 3, 6, 9]);
+    expect(every(11, 3)).toEqual([0, 3, 6, 9, 10]);
+    expect(every(1, 4)).toEqual([0]);
+    // 1000 × 1000 heights: about a million faces, drawn as at most 12 000 while turning
+    const n = 1000;
+    const big = {
+      cols: n,
+      xs: Array.from({ length: n * n }, (_, k) => k % n),
+      ys: Array.from({ length: n * n }, (_, k) => Math.floor(k / n)),
+      zs: Array.from({ length: n * n }, (_, k) => Math.sin(k)),
+    };
+    const step = stepFor(big, 12_000);
+    const thin = faces(big, step);
+    expect(thin.length).toBeLessThanOrEqual(12_000);
+    expect(thin.length).toBeGreaterThan(6_000);
+    // the corners of the whole surface are still corners of the thinned one
+    const corners = thin.flat().map((p) => `${p[0]},${p[1]}`);
+    for (const c of ["0,0", `${n - 1},0`, `0,${n - 1}`, `${n - 1},${n - 1}`]) expect(corners).toContain(c);
+    // a small surface is drawn whole
+    expect(stepFor({ cols: 41, zs: new Array(41 * 41) }, 12_000)).toBe(1);
   });
 });
