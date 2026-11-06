@@ -170,13 +170,16 @@ function expandTo(rel: string) {
 const SAVE_DELAY = 600;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> = Promise.resolve();
+/** The note or section being moved to the Trash right now; nothing may write it back meanwhile. */
+let leaving: string | null = null;
+const isLeaving = (rel: string | null) => !!leaving && !!rel && (rel === leaving || rel.startsWith(`${leaving}/`));
 
 /** Save the current note now if it has changes; resolves once it is on disk. */
 export function flushSave(): Promise<void> {
   clearTimeout(saveTimer);
   const rel = nb.current;
   const path = state.path;
-  if (!rel || !path || !state.dirty) return saving;
+  if (!rel || !path || !state.dirty || isLeaving(rel)) return saving;
   const rev = state.rev;
   // the title lives in the file name; the document carries it for headers and PDFs
   const doc: Doc = { ...structuredClone(unwrap(state.doc)) };
@@ -197,7 +200,7 @@ export function installAutosave() {
       on(
         () => state.rev,
         () => {
-          if (!nb.current || !state.dirty) return;
+          if (!nb.current || !state.dirty || isLeaving(nb.current)) return;
           clearTimeout(saveTimer);
           saveTimer = setTimeout(() => void flushSave(), SAVE_DELAY);
         },
@@ -415,15 +418,19 @@ export async function trashItem(rel: string) {
       .find((r) => !gone(r));
   // edits to what is being trashed must not be saved back while it goes (that would make the
   // file again), but they stay marked if it stays
-  const unsaved = holdsCurrent && state.dirty;
+  leaving = rel;
+  let unsaved = false;
   if (holdsCurrent) {
     clearTimeout(saveTimer);
     await saving;
+    unsaved = state.dirty;
     setState({ dirty: false });
   }
   const ok = await run("move it to the Trash", () => call("trash", { rel }).then(() => true));
+  leaving = null;
   if (!ok) {
-    if (unsaved && nb.current) {
+    // edits made while it was going are still in the note, so they are saved after all
+    if (holdsCurrent && nb.current && (unsaved || state.dirty)) {
       setState({ dirty: true });
       void flushSave();
     }

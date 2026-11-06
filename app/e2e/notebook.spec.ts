@@ -195,3 +195,30 @@ for (const scheme of ["light", "dark"] as const)
     await expect(page.getByRole("option", { name: /Kinematics/ })).toBeVisible();
     await audit("search results");
   });
+
+test("typing while a note goes to the Trash does not write it back", async ({ page }) => {
+  await openBook(page);
+  await name(page, "Scrap");
+  await page.mouse.click(900, 300);
+  await page.keyboard.type("Not needed ");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => doc("Scrap.quire"), { timeout: 5000 }).toMatch(/Not needed/);
+  // the system's Trash is stubbed (the real call hangs in this environment): the folder goes
+  // away at once, and the answer comes back late, as on a slow disk
+  await page.route("**/api/notebook", async (route) => {
+    const body = JSON.parse(route.request().postData() ?? "{}");
+    if (body.op !== "trash") return route.continue();
+    rmSync(join(dir, body.args.rel), { recursive: true, force: true });
+    await new Promise((done) => setTimeout(done, 800));
+    await route.fulfill({ status: 200, contentType: "application/json", body: "null" });
+  });
+  await row(page, "Scrap").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Move to Trash" }).click();
+  await page.mouse.click(900, 300);
+  await page.keyboard.type(" and more");
+  await expect(row(page, "Scrap")).toHaveCount(0);
+  // nothing to wait for: the bug is a write that should never come, so give the autosave
+  // (600 ms after the last key) time to do it if it were going to
+  await page.waitForTimeout(1500);
+  expect(existsSync(join(dir, "Scrap.quire"))).toBe(false);
+});
