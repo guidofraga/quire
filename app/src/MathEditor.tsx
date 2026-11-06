@@ -234,6 +234,9 @@ export function MathEditor(props: { r: Region }) {
   );
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // only the key right after `:` may be the `=` of `:=`; any other key ends that
+    const typedAssign = assignJustTyped;
+    assignJustTyped = false;
     if (completionKey(e)) {
       e.preventDefault();
       return;
@@ -264,8 +267,6 @@ export function MathEditor(props: { r: Region }) {
       else editNext(props.r.id, e.shiftKey ? -1 : 1);
       return;
     }
-    const typedAssign = assignJustTyped;
-    assignJustTyped = false;
     if (e.metaKey || e.altKey) return;
     if (e.key === ":" && !e.ctrlKey) {
       e.preventDefault();
@@ -302,8 +303,11 @@ export function MathEditor(props: { r: Region }) {
       // done editing; the region stays selected for the keyboard
       e.preventDefault();
       const id = props.r.id;
+      const at = layout().byId.get(id)?.region.at;
       commitEditing();
       if (layout().byId.has(id)) setState({ selection: [id], caret: null });
+      // an empty line goes away: the insertion point returns to where it was, so typing still works
+      else if (at) setState({ caret: [at[0], at[1]] });
     }
   };
   return (
