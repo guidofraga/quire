@@ -2,12 +2,13 @@
 // notes by dragging, as in OneNote, Notion and Obsidian.
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { announce } from "./a11y";
-import { api, DOC_EXT, isMac, pickNewNotebookPath, pickNotebookFolder } from "./api";
+import { api, confirmDiscard, DOC_EXT, isMac, pickNewNotebookPath, pickNotebookFolder } from "./api";
 import { closeMenu, type MenuItems, setMenu } from "./menu";
 import {
   closeNotebook,
   duplicate,
   find,
+  flushSave,
   forgetNotebook,
   type Hit,
   moveTo,
@@ -32,7 +33,7 @@ import {
   trashItem,
   walk,
 } from "./notebook";
-import { flash } from "./store";
+import { flash, state } from "./store";
 
 const mod = isMac ? "⌘" : "Ctrl+";
 
@@ -59,11 +60,24 @@ const folderName = (path: string) =>
 // Opening and making notebooks
 // ---------------------------------------------------------------------------
 
+/**
+ * Before a document is replaced: a note in a notebook saves itself, so there is nothing to ask;
+ * an unsaved plain document asks first. Welcome, App and this sidebar all use it, so it lives here.
+ */
+export async function guardUnsaved(): Promise<boolean> {
+  // a note in a notebook saves itself: finish that, nothing to ask
+  if (nb.current) return flushSave().then(() => true);
+  return !state.dirty || (await confirmDiscard());
+}
+
+// The dialogs ask before they show a picker, so a cancelled discard never opens one.
 export async function openNotebookDialog() {
+  if (!(await guardUnsaved())) return;
   const path = await pickNotebookFolder();
   if (path) await openNotebookAt(path);
 }
 
+/** Startup opens the last notebook without asking; a notebook the user picks asks first. */
 export async function openNotebookAt(path: string) {
   try {
     await openNotebook(path);
@@ -73,7 +87,12 @@ export async function openNotebookAt(path: string) {
   }
 }
 
+export async function openRecentNotebook(path: string) {
+  if (await guardUnsaved()) await openNotebookAt(path);
+}
+
 export async function newNotebookDialog() {
+  if (!(await guardUnsaved())) return;
   const path = await pickNewNotebookPath();
   if (!path) return;
   try {
@@ -88,7 +107,7 @@ function openSwitcher(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const others = recentNotebooks().filter((p) => p !== nb.book?.path);
   const items: MenuItems = [
-    ...others.map((p) => ({ label: folderName(p), run: () => (closeMenu(), void openNotebookAt(p)) })),
+    ...others.map((p) => ({ label: folderName(p), run: () => (closeMenu(), void openRecentNotebook(p)) })),
     ...(others.length ? [null] : []),
     { label: "New Notebook…", run: () => (closeMenu(), void newNotebookDialog()) },
     { label: "Open Notebook…", shortcut: `⇧${mod}O`, run: () => (closeMenu(), void openNotebookDialog()) },
@@ -559,7 +578,7 @@ function NoNotebook() {
           <For each={recent}>
             {(p) => (
               <li>
-                <button class="nb-hit" title={p} onClick={() => void openNotebookAt(p)}>
+                <button class="nb-hit" title={p} onClick={() => void openRecentNotebook(p)}>
                   <span class="nb-hit-title">{folderName(p)}</span>
                 </button>
               </li>

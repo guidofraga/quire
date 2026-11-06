@@ -256,14 +256,51 @@ fn folded(s: &str) -> String {
 // Meta
 // ---------------------------------------------------------------------------
 
+/// What the settings file holds on disk.
+enum OnDisk {
+    Missing,
+    Good(Meta),
+    /// The file is there but can't be read or parsed.
+    Damaged,
+}
+
+fn meta_on_disk(root: &Path) -> OnDisk {
+    let path = root.join(META_FILE);
+    if !path.exists() {
+        return OnDisk::Missing;
+    }
+    match std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()) {
+        Some(meta) => OnDisk::Good(meta),
+        None => OnDisk::Damaged,
+    }
+}
+
+/// The settings for listing. A damaged file is read as no settings, so the notebook still lists.
 fn read_meta(root: &Path) -> Meta {
-    std::fs::read_to_string(root.join(META_FILE))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    match meta_on_disk(root) {
+        OnDisk::Good(meta) => meta,
+        OnDisk::Missing | OnDisk::Damaged => Meta::default(),
+    }
+}
+
+/// Move a damaged settings file aside as `.quire-notebook.json.damaged` (or a numbered
+/// name if that is taken), so the user's order, colours and keys are kept.
+fn set_damaged_meta_aside(root: &Path) -> Result<()> {
+    let aside = (0..)
+        .map(|n| {
+            let suffix = if n == 0 { String::new() } else { format!("-{n}") };
+            root.join(format!("{META_FILE}.damaged{suffix}"))
+        })
+        .find(|p| !p.exists())
+        .ok_or_else(|| err("no free name to keep the damaged settings file under"))?;
+    std::fs::rename(root.join(META_FILE), aside)?;
+    Ok(())
 }
 
 fn write_meta(root: &Path, meta: &Meta) -> Result<()> {
+    if matches!(meta_on_disk(root), OnDisk::Damaged) {
+        set_damaged_meta_aside(root)?;
+    }
     let path = root.join(META_FILE);
     if meta.order.is_empty() && meta.style.is_empty() && meta.rest.is_empty() {
         // nothing to keep: no file, so a plain folder stays a plain folder
@@ -408,7 +445,7 @@ pub fn create_note(root: &Path, dir: &str, title: &str, ext: &str, index: Option
         return Err(err(format!("there is no section {dir}")));
     }
     let path = unique(&folder, &title, Some(ext));
-    let mut doc = crate::new_document();
+    let mut doc = crate::blank_document();
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(title);
     set_title(&mut doc, stem)?;
     crate::save(&path, &doc, None)?;
@@ -883,6 +920,40 @@ mod tests {
     }
 
     #[test]
+    fn a_damaged_settings_file_is_kept_aside_before_a_change() -> TestResult {
+        let b = Book::new("damaged")?;
+        create_note(&b.0, "", "A", "quire", None)?;
+        create_note(&b.0, "", "B", "quire", None)?;
+        let garbage = b"{ \"order\": [ not json";
+        std::fs::write(b.0.join(META_FILE), garbage)?;
+        // listing still works, in the default order
+        assert_eq!(b.top()?, ["A", "B"]);
+        // a change keeps the damaged bytes beside the new settings file
+        set_style(&b.0, "A.quire", Style { color: Some("#3b82f6".into()), icon: None })?;
+        assert_eq!(std::fs::read(b.0.join(format!("{META_FILE}.damaged")))?, garbage);
+        assert!(std::fs::read_to_string(b.0.join(META_FILE))?.contains("3b82f6"));
+        // a second damaged file never overwrites the first one kept aside
+        let again = b"{ \"style\": 7";
+        std::fs::write(b.0.join(META_FILE), again)?;
+        create_section(&b.0, "", "Sec", Some(0))?;
+        assert_eq!(std::fs::read(b.0.join(format!("{META_FILE}.damaged")))?, garbage);
+        assert_eq!(std::fs::read(b.0.join(format!("{META_FILE}.damaged-1")))?, again);
+        Ok(())
+    }
+
+    #[test]
+    fn a_damaged_settings_file_is_not_touched_by_a_read() -> TestResult {
+        let b = Book::new("damaged-read")?;
+        create_note(&b.0, "", "A", "quire", None)?;
+        let garbage = b"not json at all";
+        std::fs::write(b.0.join(META_FILE), garbage)?;
+        assert_eq!(b.top()?, ["A"]);
+        assert!(!b.0.join(format!("{META_FILE}.damaged")).exists());
+        assert_eq!(std::fs::read(b.0.join(META_FILE))?, garbage);
+        Ok(())
+    }
+
+    #[test]
     fn keeps_a_manual_order_and_new_items_go_where_asked() -> TestResult {
         let b = Book::new("order")?;
         for n in ["A", "B", "C"] {
@@ -896,7 +967,7 @@ mod tests {
         create_note(&b.0, "", "0 first by name", "quire", None)?;
         assert_eq!(b.top()?.last().ok_or("empty listing")?, "0 first by name");
         // a file added outside Quire shows after the ordered ones
-        crate::save(&b.0.join("Z.quire"), &crate::new_document(), None)?;
+        crate::save(&b.0.join("Z.quire"), &crate::blank_document(), None)?;
         assert_eq!(b.top()?.last().ok_or("empty listing")?, "Z");
         Ok(())
     }

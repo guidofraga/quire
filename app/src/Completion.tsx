@@ -50,6 +50,11 @@ export function completionKey(e: KeyboardEvent): boolean {
     announce(`${item.label ?? item.insert}, ${item.note ?? item.name}`);
     return true;
   }
+  if (e.key === "Tab" && p.soft && !p.touched) {
+    // a suggestion the user never looked at: Tab keeps its usual job, nothing is inserted
+    hideCompletions();
+    return false;
+  }
   if (e.key === "Enter" && p.soft) {
     // Enter still finishes the line; if a suggestion was chosen with the arrows, it goes in first
     if (p.touched) p.pick(p.items[p.index]);

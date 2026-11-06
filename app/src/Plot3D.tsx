@@ -326,6 +326,8 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     const c = cam();
     const distance = Math.max(0.75, Math.min(10, Number((c.distance * (e.deltaY > 0 ? 1.1 : 0.9)).toFixed(3))));
     setLive({ ...c, distance });
+    // a drag rebuilds the view from where it started, so it keeps the zoom too
+    if (from) from.c = { ...from.c, distance };
     clearTimeout(zooming);
     zooming = setTimeout(() => {
       zooming = undefined;

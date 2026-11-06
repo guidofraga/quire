@@ -30,12 +30,14 @@ export function FindBar() {
     } else if (e.key === "Enter" && e.target === findInput) {
       e.preventDefault();
       findStep(e.shiftKey ? -1 : 1);
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && e.target === replaceInput) {
       e.preventDefault();
       replaceOne();
     }
+    // Enter on the buttons keeps its own action (Close closes, Replace replaces)
   };
   let findInput!: HTMLInputElement;
+  let replaceInput!: HTMLInputElement;
   const status = () => {
     if (!query()) return "";
     const n = hits().length;
@@ -125,6 +127,7 @@ export function FindBar() {
           <div class="find-row">
             <span class="find-toggle" />
             <input
+              ref={replaceInput}
               aria-label="Replace with"
               value={replacement()}
               onInput={(e) => setReplacement(e.currentTarget.value)}

@@ -2,7 +2,6 @@ import { createEffect, createRoot, on, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import {
   api,
-  confirmDiscard,
   confirmRestore,
   documentPath,
   exportJob,
@@ -68,6 +67,7 @@ import {
 } from "./notebook";
 import {
   focusNotebookSearch,
+  guardUnsaved,
   newNotebookDialog,
   NoteTitle,
   openNotebookDialog,
@@ -130,18 +130,24 @@ function fileName(path: string | null): string {
 /** Waiting for a report of the document as it is now (see `afterEvaluation`). */
 let waiting: (() => void)[] = [];
 
+/** Run the callbacks that were waiting. After an error they still run: the screen keeps the last good results. */
+function releaseWaiting() {
+  const run = waiting;
+  waiting = [];
+  for (const fn of run) fn();
+}
+
 const liveReport = latestOnly(
   () => api.report(unwrap(state.doc)),
   (report) => {
     showReport(report);
     // only the newest request's answer arrives here: the results are now current
-    const run = waiting;
-    waiting = [];
-    for (const fn of run) fn();
+    releaseWaiting();
   },
   (e) => {
-    waiting = [];
     flash(String(e));
+    // a screen reader waiting for this line's result must not wait forever
+    releaseWaiting();
   },
   30,
 );
@@ -176,12 +182,6 @@ function loadAssets() {
 // ---------------------------------------------------------------------------
 // File commands
 // ---------------------------------------------------------------------------
-
-async function guardUnsaved(): Promise<boolean> {
-  // a note in a notebook saves itself: finish that, nothing to ask
-  if (nb.current) return flushSave().then(() => true);
-  return !state.dirty || (await confirmDiscard());
-}
 
 export async function newDocument() {
   if (!(await guardUnsaved())) return;

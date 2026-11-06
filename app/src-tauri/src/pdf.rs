@@ -15,7 +15,7 @@
 //! lopdf (already here for the images) rewrites the file once, after all of these.
 
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
 use jpeg_encoder::{ColorType, Encoder};
@@ -90,16 +90,33 @@ fn compress_images(doc: &mut Document) {
     }
 }
 
+/// The hidden file name an export is written to before it replaces the real one. It sits in
+/// the same folder, so the final rename stays on one filesystem and is atomic.
+pub fn temp_path(path: &Path) -> PathBuf {
+    let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+    path.with_file_name(format!(".{name}.quire-export.pdf"))
+}
+
 /// Add the details, bookmarks and links to the PDF at `path`, and shrink its photos when
 /// `compress` is set.
+///
+/// The result is saved beside `path` and renamed over it, so a failure leaves `path` as it
+/// was: the caller can still use the complete PDF WebKit wrote.
 pub fn finish(path: &Path, info: &PdfInfo, compress: bool) -> Result<(), String> {
     let mut doc = Document::load(path).map_err(|e| e.to_string())?;
     if compress {
         compress_images(&mut doc);
     }
     annotate(&mut doc, info)?;
-    doc.save(path).map_err(|e| e.to_string())?;
-    Ok(())
+    let saved = path.with_extension("quire-save.pdf");
+    if let Err(e) = doc.save(&saved) {
+        let _ = std::fs::remove_file(&saved);
+        return Err(e.to_string());
+    }
+    std::fs::rename(&saved, path).map_err(|e| {
+        let _ = std::fs::remove_file(&saved);
+        e.to_string()
+    })
 }
 
 /// Everything but the images.
@@ -561,6 +578,16 @@ mod tests {
         assert_eq!(rect, vec![72.0, HEIGHT - 212.0, 472.0, HEIGHT - 200.0]);
         assert_eq!(target(&doc, row.get(b"Dest")?)?, (0, HEIGHT - 100.0));
         Ok(())
+    }
+
+    #[test]
+    fn the_export_temp_file_is_a_hidden_sibling() {
+        let target = Path::new("/Users/me/Reports/beam.pdf");
+        let temp = temp_path(target);
+        assert_eq!(temp, Path::new("/Users/me/Reports/.beam.pdf.quire-export.pdf"));
+        assert_eq!(temp.parent(), target.parent());
+        assert_ne!(temp, target);
+        assert!(temp.extension().is_some_and(|e| e == "pdf"));
     }
 
     #[test]

@@ -60,9 +60,14 @@ export function UpdateBanner(props: { beforeRestart: () => Promise<boolean> }) {
   const update = async () => {
     const a = available();
     if (!a || busy()) return;
-    // installing restarts Quire: unsaved work is saved or deliberately discarded first
-    if (!(await props.beforeRestart())) return;
+    // busy from the first click, so a second click can't start a second install while the user is asked
+    setBusy("Preparing…");
     try {
+      // installing restarts Quire: unsaved work is saved or deliberately discarded first
+      if (!(await props.beforeRestart())) {
+        setBusy(null);
+        return;
+      }
       setBusy("Downloading…");
       await a.install((done, total) =>
         setBusy(total ? `Downloading… ${Math.round((done / total) * 100)}%` : "Downloading…"),

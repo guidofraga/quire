@@ -40,6 +40,8 @@ async function blank(page: Page) {
 async function typeInNewTable(page: Page, text: string) {
   await page.keyboard.press("ControlOrMeta+Alt+t");
   await expect(page.getByRole("grid")).toBeVisible();
+  // the table takes the keys once it has focus: a key typed before that is lost
+  await expect(page.locator(".region.editing .sheet-wrap")).toBeFocused();
   await page.keyboard.type(text);
   await expect(page.getByRole("textbox", { name: "Cell A1" })).toHaveValue(text);
 }

@@ -6,7 +6,7 @@
 //! backend) write the PDF directly, with no dialog; Windows still goes through Print.
 
 use std::collections::HashMap;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::Path;
 use std::path::PathBuf;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -296,6 +296,21 @@ fn run_gtk(window: &WebviewWindow, paper: Paper, path: PathBuf) -> Result<(), St
     rx.recv_timeout(EXPORT_TIMEOUT).map_err(|_| "timed out writing the PDF".to_string())?
 }
 
+/// Write the PDF of the page view to `path`, waiting until WebKit has finished the file.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn write_pdf(window: &WebviewWindow, paper: Paper, title: String, path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        run(window, paper, Some(path.to_path_buf()), title)?;
+        wait_for_file(path, EXPORT_TIMEOUT)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = title;
+        run_gtk(window, paper, path.to_path_buf())
+    }
+}
+
 pub fn export_pdf(
     window: &WebviewWindow,
     path: PathBuf,
@@ -304,30 +319,29 @@ pub fn export_pdf(
     compress: bool,
     info: PdfInfo,
 ) -> Result<(), String> {
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("cannot replace {}: {e}", path.display()))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        run(window, paper, Some(path.clone()), title)?;
-        wait_for_file(&path, EXPORT_TIMEOUT)?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = title;
-        run_gtk(window, paper, path.clone())?;
-    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
+        // Write beside the target and move it into place only once it is complete, so a
+        // failed or timed-out export leaves the previous PDF untouched.
+        let temp = crate::pdf::temp_path(&path);
+        // a leftover from an export that was interrupted
+        let _ = std::fs::remove_file(&temp);
+        if let Err(e) = write_pdf(window, paper, title, &temp) {
+            let _ = std::fs::remove_file(&temp);
+            return Err(e);
+        }
         // bookmarks, links and smaller images are a bonus; the PDF is already complete without them
-        if let Err(e) = crate::pdf::finish(&path, &info, compress) {
+        if let Err(e) = crate::pdf::finish(&temp, &info, compress) {
             eprintln!("quire: could not finish {}: {e}", path.display());
         }
-        Ok(())
+        std::fs::rename(&temp, &path).map_err(|e| {
+            let _ = std::fs::remove_file(&temp);
+            format!("cannot replace {}: {e}", path.display())
+        })
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = (window, paper, title, compress, info);
+        let _ = (window, path, paper, title, compress, info);
         Err("direct PDF export is macOS and Linux only; use Print and choose a PDF printer".into())
     }
 }

@@ -1,5 +1,5 @@
 // The welcome screen at launch: a blank document, recent documents and templates.
-import { newNotebookDialog, openNotebookDialog } from "./Sidebar";
+import { guardUnsaved, newNotebookDialog, openNotebookDialog } from "./Sidebar";
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useModal } from "./a11y";
 import { api, isWeb, type TemplateInfo } from "./api";
@@ -55,6 +55,11 @@ function Screen(props: Props) {
   const run = async (fn: () => Promise<unknown> | unknown) => {
     close();
     await fn();
+  };
+  // asks before a recent document replaces unsaved work; the screen stays up if the user says no
+  const openRecent = async (path: string) => {
+    if (!(await guardUnsaved())) return;
+    await run(() => props.openPath(path));
   };
   const openTemplate = async (t: TemplateInfo) => {
     try {
@@ -118,7 +123,7 @@ function Screen(props: Props) {
               <Show when={recent.length} fallback={<p class="welcome-empty">No recent documents</p>}>
                 <For each={recent}>
                   {(path) => (
-                    <button class="welcome-item" title={path} onClick={() => void run(() => props.openPath(path))}>
+                    <button class="welcome-item" title={path} onClick={() => void openRecent(path)}>
                       <span class="welcome-icon doc" aria-hidden="true">
                         ▤
                       </span>

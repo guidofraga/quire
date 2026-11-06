@@ -1279,5 +1279,6 @@ export function selectAll() {
     selection: layout()
       .list.filter((p) => !p.hidden && !p.parent)
       .map((p) => p.region.id),
+    caret: null,
   });
 }

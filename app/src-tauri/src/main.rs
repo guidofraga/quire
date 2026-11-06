@@ -151,7 +151,7 @@ fn report(doc: Json) -> CmdResult<quire_service::Report> {
 #[tauri::command]
 fn open_document(chosen: State<'_, Chosen>, path: PathBuf) -> CmdResult<Json> {
     allowed(&chosen, &path)?;
-    quire_service::open(&path).map_err(err)
+    quire_service::open_for_editor(&path).map_err(err)
 }
 
 /// `from` is the document's previous home, whose images a Save As copies: it is read, so it
@@ -729,6 +729,13 @@ fn main() {
         .on_webview_event(|webview, event| {
             if let tauri::WebviewEvent::DragDrop(drop) = event {
                 grant_dropped(webview.app_handle(), drop);
+            }
+        })
+        .on_page_load(|webview, payload| {
+            // a reloaded page must ask for its documents again, so requests that arrive
+            // before it does are queued instead of sent to no listener
+            if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
+                requests_lock(&webview.app_handle().state::<Requests>()).ready = false;
             }
         })
         .setup(move |app| {

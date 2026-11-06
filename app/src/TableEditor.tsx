@@ -913,7 +913,10 @@ export function SheetGrid(props: { p: Placed }) {
                         beginEdit(null, false);
                       }}
                       onContextMenu={() => {
-                        if (editing() && !inSel(i, j)) select(i, j);
+                        if (!editing() || inSel(i, j)) return;
+                        // the cell being typed goes into its own cell before the selection moves
+                        if (draft() !== null) commitDraft();
+                        select(i, j);
                       }}
                     >
                       <Show when={editing()}>
