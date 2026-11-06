@@ -83,9 +83,10 @@ jobs:
       - name: Lint the desktop app
         run: cargo clippy -p quire-app --all-targets --locked -- -D warnings
       # the unit tests (scope.rs, pdf.rs), and the PDF export, which WebKitGTK lays out and
-      # prints in a virtual display
+      # prints in a virtual display. With no session bus, GTK and WebKit wait for D-Bus calls
+      # to time out (30 s per launch), and the export sometimes outran its watchdog (#59)
       - name: Test the desktop app and export a PDF (Linux)
-        run: xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored
+        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
         run: |

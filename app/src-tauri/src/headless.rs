@@ -14,10 +14,22 @@ const START: Duration = Duration::from_secs(60);
 /// How long the whole export may take, start to finish (the print job itself allows 120 s).
 const WHOLE: Duration = Duration::from_secs(140);
 
-/// When the export started, and the step the page reported last.
+/// When the export started, the step the page reported last, and how far the page itself
+/// got loading before it ran any script.
 pub struct Progress {
     started: Instant,
     step: Mutex<Option<String>>,
+    load: Mutex<&'static str>,
+}
+
+/// Called as the window's page starts and finishes loading, so an export that never starts
+/// says whether its page never loaded or loaded but never ran.
+pub fn page_load(app: &AppHandle, finished: bool) {
+    if let Some(progress) = app.try_state::<Progress>() {
+        let load = if finished { "loaded" } else { "started loading" };
+        eprintln!("quire: {:.1} s: the page {load}", progress.started.elapsed().as_secs_f64());
+        *progress.load.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = load;
+    }
 }
 
 /// Called by the page as the export moves on ("opening the document", "printing the PDF"…).
@@ -33,25 +45,23 @@ pub fn export_step(progress: tauri::State<'_, Progress>, step: String) {
 /// `finish_export` ends it normally before that.
 pub fn watch(app: &AppHandle) {
     let started = Instant::now();
-    app.manage(Progress { started, step: Mutex::new(None) });
+    app.manage(Progress { started, step: Mutex::new(None), load: Mutex::new("never started loading") });
     #[cfg(target_os = "macos")]
     keep_running();
     let app = app.clone();
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(Duration::from_millis(500));
-            let step = app
-                .state::<Progress>()
-                .step
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
+            let progress = app.state::<Progress>();
+            let step = progress.step.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
             let reason = match step {
-                None if started.elapsed() > START => Some(
-                    "the page never started. If you built the app yourself, run `npm --prefix app run build`, \
-                     then build the app again"
-                        .to_string(),
-                ),
+                None if started.elapsed() > START => {
+                    let load = *progress.load.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    Some(format!(
+                        "the page {load} but never started. If you built the app yourself, run \
+                         `npm --prefix app run build`, then build the app again"
+                    ))
+                }
                 Some(step) if started.elapsed() > WHOLE => {
                     Some(format!("gave up after {} s while {step}", WHOLE.as_secs()))
                 }

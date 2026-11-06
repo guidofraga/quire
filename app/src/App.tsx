@@ -789,6 +789,9 @@ export function App() {
     setAppCommand(runCommand);
     installTrace();
     installRefs(reveal);
+    // a headless export needs none of what follows (menus, drops, recent files, the close
+    // guard), and each of those waits on the app: it starts now, so none can hold it up
+    if (exportJob) return runExportJob(exportJob);
     // ⌘K from anywhere, the math being edited included (it keeps its keys to itself)
     window.addEventListener(
       "keydown",
@@ -852,7 +855,6 @@ export function App() {
     await guardClose(() => state.dirty && !nb.current, api.clearRecovery, flushSave);
     installAutosave();
     window.addEventListener("keydown", browserShortcuts);
-    if (exportJob) return runExportJob(exportJob);
     // another document's link pasted into the address bar
     window.addEventListener("hashchange", () => {
       const linked = docInHash(location.hash);

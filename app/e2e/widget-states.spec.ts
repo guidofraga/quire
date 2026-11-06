@@ -20,8 +20,11 @@ test("right-clicking another cell while typing keeps the text in its own cell", 
   await expect(page.getByRole("textbox", { name: "Cell A1" })).toHaveValue("hello");
   // the cell being typed is A1; a right-click on B2 must not move the text there
   await page.locator('td[data-r="1"][data-c="1"]').click({ button: "right" });
+  // the cell's menu opens: close it, or the Enter below would choose its first item
   const menu = page.getByRole("menu");
-  if (await menu.isVisible()) await page.keyboard.press("Escape");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
   await page.keyboard.press("Enter");
   await expect(page.locator('td[data-r="0"][data-c="0"]')).toContainText("hello");
   await expect(page.locator('td[data-r="1"][data-c="1"]')).not.toContainText("hello");
