@@ -14,7 +14,10 @@ test("right-clicking another cell while typing keeps the text in its own cell", 
   await blank(page);
   await page.keyboard.press("ControlOrMeta+Alt+t");
   await expect(page.getByRole("grid")).toBeVisible();
+  // the table takes the keys once it has focus: a key typed before that is lost
+  await expect(page.locator(".region.editing .sheet-wrap")).toBeFocused();
   await page.keyboard.type("hello");
+  await expect(page.getByRole("textbox", { name: "Cell A1" })).toHaveValue("hello");
   // the cell being typed is A1; a right-click on B2 must not move the text there
   await page.locator('td[data-r="1"][data-c="1"]').click({ button: "right" });
   const menu = page.getByRole("menu");
