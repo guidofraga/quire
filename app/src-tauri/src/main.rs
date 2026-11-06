@@ -732,6 +732,10 @@ fn main() {
             }
         })
         .on_page_load(|webview, payload| {
+            if webview.label() == "main" {
+                let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
+                headless::page_load(webview.app_handle(), finished);
+            }
             // a reloaded page must ask for its documents again, so requests that arrive
             // before it does are queued instead of sent to no listener
             if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
