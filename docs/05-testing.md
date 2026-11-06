@@ -14,7 +14,7 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 | SMath robustness | `crates/quire-cli/tests/smath_robustness.rs` | the same `cargo test` | The importer never panics on hostile input, corpus prefixes or mutations |
 | Accessibility | `app/e2e/a11y.spec.ts`, plus axe in `notebook.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
 | Desktop app | `#[cfg(test)]` in `app/src-tauri/src` (`scope.rs`, `pdf.rs`) | `npm --prefix app run build`, then `cargo test -p quire-app` | Which paths the app may touch; finishing exported PDFs |
-| PDF export | `app/src-tauri/tests/` (macOS and Linux; CI runs it on Linux under `xvfb-run`) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --include-ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
+| PDF export | `app/src-tauri/tests/` (macOS and Linux; CI runs it on Linux under `dbus-run-session` and `xvfb-run`) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --include-ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
 
 CI runs the PDF test on Linux only. When you change printing, `export.ts`, `print.rs` or `pdf.rs`, run it on a Mac too: macOS writes the PDF through AppKit, which CI doesn't cover.
 
@@ -52,6 +52,7 @@ A test that fails sometimes is a bug, in the test or in the app. Reproduce it wi
 - measuring colours mid-animation (the axe tests emulate `reducedMotion: "reduce"`);
 - CI's Linux WebKit reporting text colours mid-update right after a document opens (the `audit()` helper in `e2e/axe.ts` re-measures before failing, so only problems that persist fail);
 - a desktop app compiled before its front end was rebuilt, carrying a stale or empty page: the PDF export then never started (issue #59). `app/src-tauri/build.rs` now makes Cargo rebuild the app when `app/dist` changes, and a headless export that never starts fails after 60 s with a message saying so, and every export logs its steps with their times to stderr (`headless.rs`); the test prints what the app said.
+- on Linux with no D-Bus session bus (a bare `xvfb-run`), GTK and WebKit wait for D-Bus calls to time out: 25 s before the app starts and 5 s more while it opens its window, so a slow machine could pass the 60 s limit (issue #59). Run the export under `dbus-run-session -- xvfb-run -a …`, as CI does; it then takes about 2 s.
 
 ## 5. Results that must not change
 
