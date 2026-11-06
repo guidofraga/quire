@@ -42,7 +42,8 @@ async function dirtyBlank(page: Page) {
 
 /** The Welcome screen again, from the command palette. */
 async function openWelcome(page: Page) {
-  await page.keyboard.press("ControlOrMeta+k");
+  // ⌘K: the test browser reports itself as a Mac, so Ctrl+K (what ControlOrMeta is on Linux) does nothing
+  await page.keyboard.press("Meta+k");
   await page.keyboard.type("Welcome Screen");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "Welcome to Quire" })).toBeVisible();
