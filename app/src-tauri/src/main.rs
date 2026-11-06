@@ -731,6 +731,13 @@ fn main() {
                 grant_dropped(webview.app_handle(), drop);
             }
         })
+        .on_page_load(|webview, payload| {
+            // a reloaded page must ask for its documents again, so requests that arrive
+            // before it does are queued instead of sent to no listener
+            if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
+                requests_lock(&webview.app_handle().state::<Requests>()).ready = false;
+            }
+        })
         .setup(move |app| {
             {
                 let remembered = load_remembered(app.handle());
