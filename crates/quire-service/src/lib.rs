@@ -865,6 +865,15 @@ pub fn bundle_dir(path: &Path) -> PathBuf {
     }
 }
 
+/// Open a document for the editor to show: as [`open`], and images staged for the document it
+/// replaces are released unless this one uses them (search and the template list open
+/// documents too, without replacing the editor's, so they call [`open`]).
+pub fn open_for_editor(path: &Path) -> Result<Json> {
+    let doc = open(path)?;
+    assets::release_unreferenced(&assets::referenced(&doc));
+    Ok(doc)
+}
+
 /// Load a bundle's document as JSON (validated against the model first). An SMath
 /// Studio worksheet (`.sm`) is converted; see [`open_smath`]. Regions this version can't
 /// read are held as placeholders (`quire_doc::hold_unreadable`); saving puts them back.
@@ -959,8 +968,15 @@ fn canonical_text(doc: &Json) -> String {
 }
 
 /// A document held in memory, for the browser build: a `.quirez` (its images are staged, so
-/// `read_asset` finds them) or a bare `document.json`.
+/// `read_asset` finds them) or a bare `document.json`. The editor now shows it, so images
+/// staged for the document it replaces are released unless this one uses them.
 pub fn open_bytes(bytes: &[u8]) -> Result<Json> {
+    let doc = load_bytes(bytes)?;
+    assets::release_unreferenced(&assets::referenced(&doc));
+    Ok(doc)
+}
+
+fn load_bytes(bytes: &[u8]) -> Result<Json> {
     if is_smath(bytes) {
         return open_smath(bytes, None);
     }
@@ -1037,7 +1053,14 @@ pub fn save_bytes(doc: &Json) -> Result<Vec<u8>> {
     Ok(quire_doc::write_bytes(entries)?)
 }
 
+/// A blank document for the editor. The editor now shows it, so every staged image is released.
 pub fn new_document() -> Json {
+    assets::release_unreferenced(&std::collections::BTreeSet::new());
+    blank_document()
+}
+
+/// A blank document, without touching the staging area (saving a new note to disk uses it).
+pub(crate) fn blank_document() -> Json {
     json!({
         "format": quire_doc::FORMAT_MAJOR,
         "meta": { "title": "Untitled" },
@@ -1097,6 +1120,7 @@ mod tests {
 
     #[test]
     fn an_smath_worksheet_opens_as_a_document() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let xml = concat!(
             r#"<regions xmlns="http://smath.info/schemas/worksheet/1.0"><settings/>"#,
             r#"<region left="0" top="0" width="200" height="20"><text><p>Hello</p></text></region>"#,
@@ -1195,8 +1219,9 @@ mod tests {
     #[test]
     fn documents_round_trip_in_memory_with_their_images()
     -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let src = assets::stage(vec![0x89, b'P', b'N', b'G', 1], "png")?;
-        let mut doc = new_document();
+        let mut doc = blank_document();
         doc["regions"] = json!([{ "id": "a", "kind": "image", "at": [0, 0], "src": src }]);
         let saved = quire_doc::read_bytes(&save_bytes(&doc)?)?;
         assert_eq!(
@@ -1220,7 +1245,25 @@ mod tests {
     }
 
     #[test]
+    fn switching_documents_releases_only_the_images_they_do_not_use()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
+        let kept = assets::stage(b"\x89PNG\r\n\x1a\nused-by-the-new".to_vec(), "png")?;
+        let dropped = assets::stage(b"\x89PNG\r\n\x1a\nused-by-the-old".to_vec(), "png")?;
+        let mut doc = blank_document();
+        doc["regions"] = json!([{ "id": "a", "kind": "image", "at": [0, 0], "src": kept }]);
+        open_bytes(canonical::to_string(&doc).as_bytes())?;
+        assert!(assets::is_staged(&kept));
+        assert!(!assets::is_staged(&dropped));
+        // a new blank document uses no images
+        let _ = new_document();
+        assert!(!assets::is_staged(&kept));
+        Ok(())
+    }
+
+    #[test]
     fn report_for_a_document() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let dir = fixture("report")?;
         let doc = open(&dir)?;
         std::fs::remove_dir_all(&dir)?;
@@ -1287,6 +1330,7 @@ mod tests {
     #[test]
     fn staged_images_are_written_and_save_as_copies_assets()
     -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let png = b"\x89PNG\r\n\x1a\nfake".to_vec();
         let src = assets::stage(png.clone(), "PNG")?;
         assert!(src.starts_with("assets/") && src.ends_with(".png"));
@@ -1328,6 +1372,7 @@ mod tests {
 
     #[test]
     fn assets_cannot_escape_the_bundle() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let dir = fixture("assets")?;
         let src = open(&dir)?["regions"][4]["src"].as_str().ok_or("no image")?.to_string();
         assert!(read_asset(&dir, "../../Cargo.toml").is_err());
@@ -1339,6 +1384,7 @@ mod tests {
 
     #[test]
     fn single_file_documents_round_trip() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let dir = fixture("single")?;
         let doc = open(&dir)?;
         let src = doc["regions"][4]["src"].as_str().ok_or("no image")?.to_string();
@@ -1364,6 +1410,7 @@ mod tests {
 
     #[test]
     fn save_then_open_is_identical() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
         let first = fixture("save-a")?;
         let doc = open(&first)?;
         let dir = std::env::temp_dir().join(format!("quire-save-test-{}.quire", std::process::id()));

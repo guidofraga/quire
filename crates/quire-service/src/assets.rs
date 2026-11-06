@@ -81,6 +81,12 @@ pub fn is_staged(src: &str) -> bool {
     staging().contains_key(src)
 }
 
+/// Forget the staged images not named in `keep` (the assets the document now shown uses).
+/// Called when the editor switches to another document.
+pub fn release_unreferenced(keep: &BTreeSet<String>) {
+    staging().retain(|name, _| keep.contains(name));
+}
+
 /// Whether a file on disk is an image a document can hold, by its extension.
 pub fn is_image(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| mime(&format!("x.{e}")).is_some())
@@ -128,6 +134,14 @@ pub(crate) fn write_into(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<
     Ok(())
 }
 
+/// Tests share the staging area, and releasing clears it, so each test that stages images or
+/// opens or makes documents holds this guard for its whole run.
+#[cfg(test)]
+pub(crate) fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static TESTS: Mutex<()> = Mutex::new(());
+    TESTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,9 +156,24 @@ mod tests {
 
     #[test]
     fn only_staged_images_count_as_staged() -> Result<()> {
+        let _guard = test_guard();
         let src = stage(b"\x89PNG\r\n\x1a\nstaged-check".to_vec(), "png")?;
         assert!(is_staged(&src));
         assert!(!is_staged("assets/0000000000000000.png"));
+        Ok(())
+    }
+
+    #[test]
+    fn releasing_keeps_only_the_images_named() -> Result<()> {
+        let _guard = test_guard();
+        let kept = stage(b"\x89PNG\r\n\x1a\nkept-by-document".to_vec(), "png")?;
+        let dropped = stage(b"\x89PNG\r\n\x1a\nused-by-old-document".to_vec(), "png")?;
+        release_unreferenced(&BTreeSet::from([kept.clone()]));
+        assert!(is_staged(&kept));
+        assert!(!is_staged(&dropped));
+        // leave the area empty for the next test
+        release_unreferenced(&BTreeSet::new());
+        assert!(!is_staged(&kept));
         Ok(())
     }
 }

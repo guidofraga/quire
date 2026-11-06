@@ -151,7 +151,7 @@ fn report(doc: Json) -> CmdResult<quire_service::Report> {
 #[tauri::command]
 fn open_document(chosen: State<'_, Chosen>, path: PathBuf) -> CmdResult<Json> {
     allowed(&chosen, &path)?;
-    quire_service::open(&path).map_err(err)
+    quire_service::open_for_editor(&path).map_err(err)
 }
 
 /// `from` is the document's previous home, whose images a Save As copies: it is read, so it
