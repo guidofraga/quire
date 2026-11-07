@@ -98,6 +98,7 @@ import {
   setAppCommand,
   flash,
   insertArea,
+  insertPageBreak,
   insertAtCaret,
   insertContents,
   layout,
@@ -450,6 +451,7 @@ function openInsertMenu(e: MouseEvent) {
       item("Plot", "insert_plot", "⌥⌘P"),
       item("3D Plot", "insert_plot3d"),
       item("Area", "insert_area"),
+      item("Page Break", "insert_pagebreak", "⌘↩"),
       null,
       item("Contents", "insert_toc"),
       item("List of Figures", "insert_figures"),
@@ -667,6 +669,8 @@ function runCommand(id: string) {
     }
     case "insert_area":
       return insertArea();
+    case "insert_pagebreak":
+      return insertPageBreak();
     case "zoom_in":
       return zoomCenter(1.2);
     case "zoom_out":

@@ -546,6 +546,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Plot", run: go("insert_plot") },
         { label: "Insert 3D Plot", run: go("insert_plot3d") },
         { label: "Insert Area", run: go("insert_area") },
+        { label: "Insert Page Break", shortcut: "⌘↩", run: go("insert_pagebreak") },
         null,
         { label: "Table of Contents", run: go("insert_toc") },
         { label: "List of Figures", run: go("insert_figures") },

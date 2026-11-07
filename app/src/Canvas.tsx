@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { openRegionMenu, openRegionMenuAt } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping } from "./MathEditor";
@@ -18,9 +18,14 @@ import {
   deleteRegions,
   GRID,
   insertAtCaret,
+  insertPageBreak,
   LINE,
   pagedLayout,
   shiftBelow,
+  atPageTop,
+  pullToPreviousPage,
+  removeBlankPage,
+  keptPages,
   returnToLeftBox,
   type Placed,
   layout,
@@ -490,6 +495,12 @@ export function Canvas() {
       if (next) selectInView(next);
       return;
     }
+    // ⌘↩ on the page: a page break (not a menu accelerator: in text, ⌘↩ continues below the box)
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.altKey) {
+      e.preventDefault();
+      insertPageBreak();
+      return;
+    }
     if (e.key === "Enter" && sel.length === 1) {
       e.preventDefault();
       if (layout().byId.get(sel[0])?.region.kind === "plot2d") editPlot(sel[0]);
@@ -521,7 +532,11 @@ export function Canvas() {
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
-        shiftBelow(y, -LINE * (e.shiftKey ? 5 : 1));
+        // at the top of a page, what starts it comes back onto the previous one if there is room
+        // and a blank page added at the end, with nothing on it, goes
+        if (removeBlankPage(y)) return;
+        if (atPageTop(y)) pullToPreviousPage(y);
+        else shiftBelow(y, -LINE * (e.shiftKey ? 5 : 1));
         return;
       }
     }
@@ -656,16 +671,30 @@ export function Canvas() {
   /** + New page: a blank page after the last one, with the insertion point at its top. */
   function addPage() {
     const k = layout().pages;
-    setState({ pagesWanted: k + 1, selection: [] });
+    // the page first, then the insertion point on it: a blank page without it would go at once
+    setState({ pagesWanted: k + 1 });
     const l = layout();
     const { margins } = l.geom;
     const stride = l.geom.paperH + SHEET_GAP;
     const [x, y] = l.fromScene(margins.left, k * stride + margins.top);
-    setState({ caret: [Math.max(0, snap(x)), Math.max(0, snap(y))] });
+    setState({ caret: [Math.max(0, snap(x)), Math.max(0, snap(y))], selection: [] });
     // the new page's top in view
     setState("view", { y: PAGE_PAD - (k * stride - 16) * state.view.zoom });
     sink.focus({ preventScroll: true });
   }
+
+  // a blank page added with + New page goes when the insertion point leaves it with nothing on it
+  createEffect(
+    on(
+      () => [state.caret, state.selection, state.editing],
+      () => {
+        if (!state.pagesWanted) return;
+        const keep = keptPages(untrack(layout), state.caret?.[1] ?? null);
+        if (keep < state.pagesWanted) setState("pagesWanted", keep);
+      },
+      { defer: true },
+    ),
+  );
 
   const caretScene = () => (state.caret ? layout().toScene(state.caret[0], state.caret[1]) : null);
 

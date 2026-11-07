@@ -660,6 +660,37 @@ ms.str {
   background: #f5f7fa;
 }
 
+/* a manual page break: a quiet line across the column, never printed */
+.pagebreak-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  /* a dashed rule through the middle */
+  background: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent) 45%, transparent) 0 4px,
+      transparent 4px 8px
+    )
+    center / 100% 1px no-repeat;
+}
+
+.pagebreak-mark span {
+  padding: 0 6px;
+  border-radius: 8px;
+  /* the paper stays white in dark mode, so dark text there too */
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
+  color: color-mix(in srgb, var(--accent) 60%, #000);
+  font:
+    10px -apple-system,
+    system-ui,
+    sans-serif;
+}
+
+.app.printing .pagebreak-mark {
+  visibility: hidden;
+}
+
 .placeholder-box {
   display: flex;
   flex-direction: column;

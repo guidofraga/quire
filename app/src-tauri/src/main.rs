@@ -513,6 +513,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "insert_plot", "Plot", Some("CmdOrCtrl+Alt+P"))?,
             &item(app, "insert_plot3d", "3D Plot", None)?,
             &item(app, "insert_area", "Area", None)?,
+            // ⌘↩ (on the page only, Canvas.tsx): as a menu accelerator it would take ⌘↩ from text
+            &item(app, "insert_pagebreak", "Page Break", None)?,
             &sep()?,
             &item(app, "insert_toc", "Table of Contents", None)?,
             &item(app, "insert_figures", "List of Figures", None)?,
