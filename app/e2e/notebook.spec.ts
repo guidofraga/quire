@@ -222,3 +222,45 @@ test("typing while a note goes to the Trash does not write it back", async ({ pa
   await page.waitForTimeout(1500);
   expect(existsSync(join(dir, "Scrap.quire"))).toBe(false);
 });
+
+test("Select All in the search field selects its text, not the page's regions", async ({ page }) => {
+  await openBook(page);
+  await name(page, "Selecting");
+  await page.mouse.click(900, 300);
+  await page.keyboard.type("a:=1");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("b:=2");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".region.math")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  const search = page.getByRole("searchbox", { name: "Search notes" });
+  await search.fill("bending");
+  const selection = () => search.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd]);
+  await search.press("ControlOrMeta+a");
+  expect(await selection()).toEqual([0, 7]);
+  await expect(page.locator(".region.selected")).toHaveCount(0);
+  // the native menu's Select All arrives as a command, not as a key
+  await search.evaluate((el: HTMLInputElement) => el.setSelectionRange(7, 7));
+  await page.evaluate(() =>
+    (window as unknown as { __quire: { runCommand(id: string): void } }).__quire.runCommand("select_all"),
+  );
+  expect(await selection()).toEqual([0, 7]);
+  await expect(page.locator(".region.selected")).toHaveCount(0);
+});
+
+test("Backspace on a toolbar button is kept from the browser, and still deletes in a field", async ({ page }) => {
+  await openBook(page);
+  await name(page, "Keys");
+  // what the page's own handler left of the key, seen after it ran
+  await page.evaluate(() => {
+    window.addEventListener("keydown", (e) => ((window as unknown as { __kept: boolean }).__kept = e.defaultPrevented));
+  });
+  const kept = () => page.evaluate(() => (window as unknown as { __kept: boolean }).__kept);
+  await page.getByRole("button", { name: "New section" }).focus();
+  await page.keyboard.press("Backspace");
+  expect(await kept()).toBe(true);
+  const search = page.getByRole("searchbox", { name: "Search notes" });
+  await search.fill("abc");
+  await page.keyboard.press("Backspace");
+  await expect(search).toHaveValue("ab");
+});

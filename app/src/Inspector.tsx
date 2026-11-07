@@ -3,7 +3,7 @@ import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEdi
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { arrowFocus } from "./a11y";
 import { type Background, PX_PER_MM, toPx } from "./pages";
-import { commitEditing, layout, localized, state, updateDoc, updateRegion, withLocalized } from "./store";
+import { commitEditing, layout, localized, setDocTitle, state, updateDoc, updateRegion, withLocalized } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import { DEFAULT_SIZE_3D, Plot3DFields } from "./Plot3D";
 import { defaultLabel } from "./labels";
@@ -480,7 +480,7 @@ function DocumentTab() {
     <>
       <Section title="Properties">
         <Field label="Title">
-          <Text value={localized(meta().title)} onCommit={set(["meta", "title"])} />
+          <Text value={localized(meta().title, lang())} onCommit={setDocTitle} />
         </Field>
         <Field label="Authors" hint="Comma-separated">
           <Text
