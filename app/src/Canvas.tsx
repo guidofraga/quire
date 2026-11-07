@@ -794,15 +794,6 @@ export function Canvas() {
             style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }}
           />
         </Show>
-        <Show when={caretScene() && !state.doc.regions.length && !state.printing}>
-          <div
-            class="empty-hint"
-            aria-hidden="true"
-            style={{ left: `${caretScene()![0]}px`, top: `${caretScene()![1]}px` }}
-          >
-            Click anywhere to start typing
-          </div>
-        </Show>
         <textarea
           ref={(el) => (sink = sinkEl = el)}
           class="key-sink"
