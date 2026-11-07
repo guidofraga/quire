@@ -11,6 +11,7 @@ async function blank(page: Page) {
 }
 
 test("right-clicking another cell while typing keeps the text in its own cell", async ({ page }) => {
+  page.on("console", (m) => m.text().startsWith("DBG") && console.log(m.text()));
   await blank(page);
   await page.keyboard.press("ControlOrMeta+Alt+t");
   await expect(page.getByRole("grid")).toBeVisible();

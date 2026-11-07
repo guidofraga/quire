@@ -25,6 +25,36 @@ import {
 } from "./store";
 import type { Region } from "./types";
 
+if (typeof window !== "undefined") {
+  for (const t of [
+    "pointerdown",
+    "mousedown",
+    "contextmenu",
+    "mouseup",
+    "pointerup",
+    "focusin",
+    "focusout",
+    "blur",
+    "keydown",
+  ]) {
+    window.addEventListener(
+      t,
+      (e) => {
+        const el = e.target as Element | null;
+        const td = el && "closest" in el ? (el.closest("td") as HTMLElement | null) : null;
+        const d =
+          el && "tagName" in el
+            ? el.tagName +
+              "." +
+              String((el as HTMLElement).className) +
+              (td ? "@" + td.dataset.r + "," + td.dataset.c : "")
+            : String(el);
+        dbg("EV", t, d, (e as MouseEvent).button ?? (e as KeyboardEvent).key ?? "");
+      },
+      true,
+    );
+  }
+}
 export interface Column {
   width?: number;
   align?: "left" | "center" | "right";
@@ -42,7 +72,12 @@ interface Sel {
 
 const [sel, setSel] = createSignal<Sel>({ r: 0, c: 0, r2: 0, c2: 0 });
 /** Text of the cell being typed into, or null when only navigating. */
-const [draft, setDraft] = createSignal<string | null>(null);
+const [draft, setDraftRaw] = createSignal<string | null>(null);
+const dbg = (...a: unknown[]) => console.log("DBG", Math.round(performance.now()), ...a);
+function setDraft(v: string | null) {
+  if (v === null) dbg("setDraft(null)", new Error().stack?.split("\n").slice(1, 4).join(" | "));
+  setDraftRaw(v);
+}
 /** Typing over a cell (arrows commit and move) rather than editing it in place (F2, Enter). */
 let typedOver = false;
 
@@ -157,6 +192,7 @@ function focusGrid() {
 }
 
 function select(r: number, c: number, extend = false) {
+  dbg("select", r, c, extend);
   const t = editingTable();
   if (!t) return;
   const [h, w] = sizeOf(t);
@@ -183,6 +219,7 @@ function beginEdit(text: string | null, typed: boolean) {
 
 /** Put the cell being typed into the table; false when nothing was being typed. */
 function writeDraft(): boolean {
+  dbg("writeDraft", draft());
   const t = editingTable();
   const text = draft();
   if (!t || text === null) return false;
@@ -206,6 +243,7 @@ function commitDraft(dr = 0, dc = 0) {
 }
 
 function cancelDraft() {
+  dbg("cancelDraft");
   setDraft(null);
   focusGrid();
 }
@@ -564,6 +602,7 @@ export function SheetGrid(props: { p: Placed }) {
   // a new edit starts on the cell that was double-clicked
   createEffect(
     on(editing, (on) => {
+      dbg("editing effect", on);
       if (on) {
         setDraft(null);
         const hit = untrack(() => pendingCell);
@@ -790,7 +829,7 @@ export function SheetGrid(props: { p: Placed }) {
 
   const onCopy = (e: ClipboardEvent) => copyCells(e, false);
   const onCut = (e: ClipboardEvent) => copyCells(e, true);
-  onCleanup(() => setDraft(null));
+  onCleanup(() => (dbg("onCleanup"), setDraft(null)));
 
   return (
     <div
@@ -913,6 +952,17 @@ export function SheetGrid(props: { p: Placed }) {
                         beginEdit(null, false);
                       }}
                       onContextMenu={() => {
+                        dbg(
+                          "cell contextmenu",
+                          i,
+                          j,
+                          "inSel",
+                          inSel(i, j),
+                          "draft",
+                          draft(),
+                          "sel",
+                          JSON.stringify(sel()),
+                        );
                         if (!editing() || inSel(i, j)) return;
                         // the cell being typed goes into its own cell before the selection moves
                         if (draft() !== null) commitDraft();
