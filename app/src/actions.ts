@@ -554,6 +554,12 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Summary of Checks", run: go("insert_checks") },
         null,
         { label: "Page View", checked: layout().pageView, run: go("page_view") },
+        ...(layout().pageView
+          ? [
+              { label: "Edit Header", run: go("edit_header") },
+              { label: "Edit Footer", run: go("edit_footer") },
+            ]
+          : []),
         { label: "Document Settings…", run: go("document_settings") },
       ];
     }

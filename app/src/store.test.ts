@@ -26,6 +26,7 @@ import {
   redo,
   regroup,
   releaseErrors,
+  sectionOn,
   setDocTitle,
   setState,
   setLive,
@@ -323,6 +324,23 @@ describe("computeLayout pages", () => {
     // what follows moves down with it
     expect(l.byId.get("c")!.top).toBeCloseTo(l.geom.margins.top + 50);
     expect(l.contentPages).toBe(2);
+  });
+
+  it("gives {section} the first-level heading a page is in", () => {
+    const l = computeLayout(
+      doc([
+        text("t", 0, "{.title}\n# Report"),
+        text("h1", 40, "# Loads"),
+        text("h11", 80, "## Dead load"),
+        math("a", H + 20, "1"),
+        text("h2", H * 2 + 20, "{#checks}\n# Checks {.x}"),
+      ]),
+      {},
+      true,
+      false,
+    );
+    expect([0, 1, 2].map((k) => sectionOn(l, k))).toEqual(["Loads", "Loads", "Checks"]);
+    expect(sectionOn(computeLayout(doc([math("a", 0, "1")]), {}, true, false), 0)).toBe("");
   });
 
   it("adds blank pages on request, but never prints them", () => {

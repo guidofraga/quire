@@ -40,6 +40,8 @@ interface State {
   /** The region being edited was just created by typing (enables math ⇄ text switching). */
   editingFresh: boolean;
   inspector: boolean;
+  /** The header or footer being edited on the page (HeaderFooterBand.tsx), and on which page. */
+  hfEditing: { band: "header" | "footer"; page: number } | null;
 }
 
 const emptyDoc = (): Doc => ({ format: "quire/1", meta: { title: "Untitled" }, regions: [] });
@@ -62,6 +64,7 @@ export const [state, setState] = createStore<State>({
   pagesWanted: 0,
   editingFresh: false,
   inspector: false,
+  hfEditing: null,
 });
 
 /** A short notice at the bottom of the window that goes away by itself. */
@@ -116,6 +119,19 @@ export function checkpoint() {
   record(snapshot());
 }
 
+/**
+ * Gather many small changes into one undo step (a header typed on the page): make them with
+ * `mutate(fn, false)`, then call what this returns.
+ */
+export function undoSession(): () => void {
+  const before = snapshot();
+  const loaded = loads;
+  return () => {
+    // another document opened meanwhile: the step belongs to the one that was closed
+    if (loaded === loads && before !== snapshot()) record(before);
+  };
+}
+
 /** For tests: how much undo history is kept. */
 export const undoDepth = () => ({ steps: undoStack.length, chars: undoChars });
 
@@ -158,8 +174,12 @@ export function redo() {
 }
 
 /** `origin`: where images come from until the first save (a template's file). */
+/** Documents loaded so far: an undo session ends quietly in a document other than its own. */
+let loads = 0;
+
 export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
   importSettle = null;
+  loads++;
   // nothing held back from the last document may show in this one
   forgetReport();
   undoStack.length = 0;
@@ -179,6 +199,7 @@ export function loadDoc(doc: Doc, path: string | null, origin: string | null = n
     view: { x: 48, y: 24, zoom: state.view.zoom },
     assets: {},
     pagesWanted: 0,
+    hfEditing: null,
   });
 }
 
@@ -233,6 +254,26 @@ function headingLevel(text: string): number {
   if (/^\{[^}\n]*\.title\b[^}\n]*\}\n/.test(text)) return 0;
   const m = /^(#{1,6})\s/.exec(text.replace(/^\{[^}\n]*\}\n/, ""));
   return m ? m[1].length : 0;
+}
+
+/**
+ * What `{section}` shows on page `k` (0-based): the last first-level heading on that page or
+ * before it, as plain words.
+ */
+export function sectionOn(l: Layout, k: number, lang?: string): string {
+  let found = "";
+  for (const p of l.list) {
+    if (p.page > k || p.hidden || p.region.kind !== "text") continue;
+    const text = localized(p.region.text, lang);
+    if (headingLevel(text) !== 1) continue;
+    found = text
+      .replace(/^\{[^}\n]*\}\n/, "")
+      .replace(/^#\s+/, "")
+      .split("\n")[0]
+      .replace(/\{[^}]*\}/g, "")
+      .trim();
+  }
+  return found;
 }
 
 let revealHandler: (id: string) => void = () => {};

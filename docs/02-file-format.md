@@ -111,7 +111,7 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
 }
 ```
 
-Header/footer fields: `{page} {pages} {date} {time} {file} {title} {author} {company} {section}`.
+Header/footer fields: `{page} {pages} {date} {time} {file} {title} {author} {company} {section}` (`{section}` is the last first-level heading on or before the page). Any other `{word}` is kept as typed.
 Lengths: bare numbers are **layout px (1/96 in)**, which is identical to SMath's coordinates so imports are exact. Strings may carry `mm`, `cm`, `in` or `pt`.
 
 ## 4. Regions
