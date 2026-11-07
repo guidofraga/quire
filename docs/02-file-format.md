@@ -359,6 +359,8 @@ This defines the matrix variable `loads` (with per-column units). Small datasets
   "legacy": { "format": "smath:plot", "src": "assets/<sha>.xml" } }   // lossless fallback
 ```
 
+A `pagebreak` is a manual page break. In the page view, in print and in the PDF, every region after it in reading order starts on the next page, as far below the top margin as it is below the break's mark (one line, 18 px, high). The mark shows on screen only and is never printed. A break at the end of the document adds no printed page. SMath's page breaks import as `pagebreak` regions; documents written before this kept them but paginated as if they weren't there.
+
 ## 5. Canonical serialization (what makes it Git-friendly)
 
 Every writer (the app, the CLI, the importer) **must** produce byte-identical output for the same model:

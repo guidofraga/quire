@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { pageGeom } from "./pages";
+import { pageGeom, SHEET_GAP } from "./pages";
 import {
   AREA_COLLAPSED_HEIGHT,
   commitEditing,
@@ -7,12 +7,19 @@ import {
   deleteRegions,
   insertAtCaret,
   insertRegion,
+  layout,
   loadDoc,
   localized,
   markSaved,
   moveTo,
   mutate,
   noteRoom,
+  keptPages,
+  removeBlankPage,
+  PAGE_BREAK_HEIGHT,
+  atPageTop,
+  insertPageBreak,
+  pullToPreviousPage,
   nudge,
   onCommitEditing,
   originsOf,
@@ -338,6 +345,62 @@ describe("computeLayout pages", () => {
     }
   });
 
+  const pagebreak = (id: string, y: number): Region => ({ id, kind: "pagebreak", at: [0, y] });
+
+  it("starts what follows a page break on the next page, keeping its distance from the break", () => {
+    const l = computeLayout(doc([math("a", 0, "1"), pagebreak("br", 100), math("b", 136, "2")]), {}, true, false);
+    expect(l.byId.get("br")!.page).toBe(0);
+    const b = l.byId.get("b")!;
+    expect(b.page).toBe(1);
+    expect(b.top).toBeCloseTo(l.geom.margins.top + 136 - (100 + PAGE_BREAK_HEIGHT));
+    expect(l.contentPages).toBe(2);
+    // the insertion point below the break is on the new page too
+    expect(l.toScene(0, 100 + PAGE_BREAK_HEIGHT)[1]).toBeCloseTo(l.geom.paperH + SHEET_GAP + l.geom.margins.top);
+  });
+
+  it("shows the page a final page break starts, but doesn't print it", () => {
+    const d = doc([math("a", 0, "1"), pagebreak("br", 100)]);
+    expect(computeLayout(d, {}, true, false).pages).toBe(2);
+    expect(computeLayout(d, {}, true, true).pages).toBe(1);
+  });
+
+  it("moves a heading to the next page with the region after it", () => {
+    const l = computeLayout(
+      doc([math("a", 0, "1"), text("h", H - 60, "## Loads"), math("b", H - 20, "2")]),
+      { h: 30, b: 30 },
+      true,
+      false,
+    );
+    expect(l.byId.get("a")!.page).toBe(0);
+    for (const id of ["h", "b"]) expect(l.byId.get(id)!.page).toBe(1);
+    expect(l.byId.get("h")!.top).toBeCloseTo(l.geom.margins.top);
+    expect(l.byId.get("b")!.top).toBeCloseTo(l.geom.margins.top + 40);
+    // the insertion point between them is on the new page too
+    expect(l.toScene(0, H - 25)[1]).toBeGreaterThan(l.geom.paperH);
+  });
+
+  it("moves only the heading, not what is before it", () => {
+    const l = computeLayout(
+      doc([text("p", H - 100, "Intro"), text("h", H - 60, "# Loads"), math("b", H - 20, "2")]),
+      { p: 30, h: 30, b: 30 },
+      true,
+      false,
+    );
+    expect(l.byId.get("p")!.page).toBe(0);
+    expect(l.byId.get("h")!.page).toBe(1);
+  });
+
+  it("leaves a heading where it is when the region after it fits", () => {
+    const l = computeLayout(
+      doc([text("h", H - 100, "# Loads"), math("b", H - 60, "2"), math("c", H + 40, "3")]),
+      { h: 30, b: 30 },
+      true,
+      false,
+    );
+    expect(["h", "b", "c"].map((id) => l.byId.get(id)!.page)).toEqual([0, 0, 1]);
+    expect(l.byId.get("h")!.top).toBeCloseTo(l.geom.margins.top + H - 100);
+  });
+
   it("moves what is below a collapsed area up and hides its content", () => {
     const area: Region = {
       id: "ar",
@@ -350,6 +413,90 @@ describe("computeLayout pages", () => {
     const l = computeLayout(doc([area, math("below", 400, "y")]), {}, false, false);
     expect(l.byId.get("in")!.hidden).toBe(true);
     expect(l.byId.get("below")!.top).toBe(400 - (200 - AREA_COLLAPSED_HEIGHT));
+  });
+});
+
+describe("pulling content back at the top of a page", () => {
+  const H = pageGeom(doc([])).contentH;
+  const at = (id: string) => state.doc.regions.find((r) => r.id === id)!.at;
+  beforeEach(() => {
+    loadDoc(doc([math("a", 0, "1"), math("b", H + 200, "2"), math("c", H + 260, "3")], { view: "pages" }), null);
+  });
+
+  it("knows the top of a page from the rest of it", () => {
+    expect(atPageTop(H + 100)).toBe(true);
+    expect(atPageTop(H + 200)).toBe(true);
+    expect(atPageTop(H + 230)).toBe(false);
+    // the first page has nothing to go back to
+    expect(atPageTop(0)).toBe(false);
+  });
+
+  it("brings what starts the page back onto the previous one, in one undo step", () => {
+    setState({ caret: [0, H + 100], selection: [] });
+    expect(pullToPreviousPage(H + 100)).toBe(true);
+    // up to a grid step below what is above, keeping the spacing below it
+    const top = at("b")[1];
+    expect(top).toBeGreaterThanOrEqual(22 + 9);
+    expect(top).toBeLessThan(22 + 18);
+    expect(at("c")[1] - top).toBe(60);
+    expect(layout().byId.get("b")!.page).toBe(0);
+    expect(state.caret![1]).toBe(top);
+    undo();
+    expect(at("b")).toEqual([0, H + 200]);
+    expect(at("c")).toEqual([0, H + 260]);
+  });
+});
+
+describe("blank pages added with + New page", () => {
+  const H = pageGeom(doc([])).contentH;
+  const stride = () => layout().geom.paperH + SHEET_GAP;
+  /** A document point on page k, below its top margin. */
+  const on = (k: number) => layout().fromScene(100, k * stride() + layout().geom.margins.top + 50)[1];
+  beforeEach(() => {
+    loadDoc(doc([math("a", 0, "1"), math("b", H + 40, "2")], { view: "pages" }), null);
+    setState({ pagesWanted: 4 });
+  });
+
+  it("keep only up to the one with the insertion point", () => {
+    expect(layout().pages).toBe(4);
+    expect(layout().needed).toBe(2);
+    expect(keptPages(layout(), on(3))).toBe(4);
+    expect(keptPages(layout(), on(2))).toBe(3);
+    // on a page with content, or with no insertion point, the blank ones all go
+    expect(keptPages(layout(), on(0))).toBe(0);
+    expect(keptPages(layout(), null)).toBe(0);
+  });
+
+  it("go one at a time with Backspace, never a page with content", () => {
+    expect(removeBlankPage(on(2))).toBe(false); // not the last
+    expect(removeBlankPage(on(3))).toBe(true);
+    expect(layout().pages).toBe(3);
+    expect(removeBlankPage(on(2))).toBe(true);
+    expect(layout().pages).toBe(2);
+    // the insertion point after what ends the page before
+    expect(layout().byId.get("b")!.page).toBe(1);
+    expect(state.caret).toEqual([0, Math.ceil((H + 40 + 22) / 9) * 9 + 9]);
+    expect(removeBlankPage(on(1))).toBe(false);
+    expect(layout().pages).toBe(2);
+    expect(state.dirty).toBe(false);
+  });
+});
+
+describe("inserting a page break", () => {
+  beforeEach(() => loadDoc(doc([math("a", 0, "1"), math("b", 36, "2")], { view: "pages" }), null));
+
+  it("puts it at the insertion point, makes room, and starts the next page", () => {
+    setState({ caret: [0, 27], selection: [] });
+    insertPageBreak();
+    const br = state.doc.regions.find((r) => r.kind === "pagebreak")!;
+    expect(br.at).toEqual([0, 27]);
+    // what was right under it moved down, clear of the mark
+    expect(state.doc.regions.find((r) => r.id === "b")!.at[1]).toBeGreaterThanOrEqual(27 + PAGE_BREAK_HEIGHT);
+    expect(layout().byId.get("b")!.page).toBe(1);
+    expect(state.caret).toEqual([0, 27 + PAGE_BREAK_HEIGHT]);
+    undo();
+    expect(state.doc.regions.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(state.doc.regions[1].at).toEqual([0, 36]);
   });
 });
 

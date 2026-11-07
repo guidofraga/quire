@@ -253,6 +253,8 @@ export interface Layout {
   pages: number;
   /** Pages the content fills: what prints, and what {pages} counts. */
   contentPages: number;
+  /** Pages shown without blank ones added with + New page (a final page break shows one more). */
+  needed: number;
   /** Document point → scene point (where it is drawn). */
   toScene(x: number, y: number): [number, number];
   /** Scene point → document point. */
@@ -260,6 +262,20 @@ export interface Layout {
 }
 
 const DEFAULT_HEIGHT = 22;
+/** A page break's marker: one line, the same in every view so pagination doesn't depend on it. */
+export const PAGE_BREAK_HEIGHT = 2 * GRID;
+
+/** The height a region takes in pagination: a collapsed area's header for an area. */
+function regionHeight(r: Region, measured: Record<string, number>): number {
+  if (r.kind === "area") return AREA_COLLAPSED_HEIGHT;
+  if (r.kind === "pagebreak") return PAGE_BREAK_HEIGHT;
+  return measured[r.id] ?? DEFAULT_HEIGHT;
+}
+
+/** A text region that is a heading (`#`…) or a Title. */
+function isHeading(r: Region, lang?: string): boolean {
+  return r.kind === "text" && /^#{1,6}\s/.test(localized(r.text, lang).replace(/^\{[^}\n]*\}\n/, ""));
+}
 
 export function computeLayout(
   doc: Doc,
@@ -309,31 +325,69 @@ export function computeLayout(
   const pushAt: number[] = [0];
   let push = 0;
   let lastPage = 0;
+  // the page a manual page break sends what follows it to
+  let breakTo = 0;
   if (pageView) {
+    const lang = doc.meta?.lang;
+    // the region placed just before, in reading order: a heading there may move with this one
+    let prev: { p: Placed; y: number } | null = null;
     for (const p of list) {
       if (p.hidden) continue;
-      let y = p.y - p.shift + push;
+      const base = p.y - p.shift;
+      let y = base + push;
       let k = Math.floor(y / H);
       while (pushAt.length <= k) pushAt.push(push);
-      const h = p.region.kind === "area" ? AREA_COLLAPSED_HEIGHT : (measured[p.region.id] ?? DEFAULT_HEIGHT);
+      const h = regionHeight(p.region, measured);
+      // after a page break, everything starts on the next page
+      if (k < breakTo) {
+        push += breakTo * H - y;
+        y = breakTo * H;
+        k = breakTo;
+        while (pushAt.length <= k) pushAt.push(push);
+        pushAt[k] = push;
+      }
       const top = y - k * H;
-      // keep regions whole: one that would cross the bottom margin starts the next page
-      if (top > 0 && top + h > H && h <= H) {
+      const brk = p.region.kind === "pagebreak";
+      // keep regions whole: one that would cross the bottom margin starts the next page (not a
+      // page break's mark, which doesn't print: moved on its own, it would leave a blank page)
+      if (top > 0 && top + h > H && h <= H && !brk) {
         push += (k + 1) * H - y;
         y = (k + 1) * H;
         k += 1;
         pushAt[k] = push;
       }
+      // keep a heading with what follows: when this region starts the page after a heading,
+      // the heading moves to the top of this page too, with this region at its distance below it
+      if (!brk && prev && prev.p.page === k - 1 && prev.y > (k - 1) * H && isHeading(prev.p.region, lang)) {
+        const gap = base - (prev.p.y - prev.p.shift);
+        if (gap >= 0 && gap + h <= H) {
+          push = k * H - (prev.p.y - prev.p.shift);
+          pushAt[k] = push;
+          prev.p.page = k;
+          prev.p.top = geom.margins.top;
+          y = base + push;
+        }
+      }
       p.page = k;
       p.left = geom.margins.left + p.x;
       p.top = geom.margins.top + y - k * H;
       lastPage = Math.max(lastPage, k);
+      prev = { p, y };
+      if (brk) {
+        // what follows starts at the top of the next page, keeping its distance from the break
+        breakTo = k + 1;
+        push = Math.max(push, breakTo * H - (base + h));
+        while (pushAt.length <= breakTo) pushAt.push(push);
+        pushAt[breakTo] = push;
+      }
     }
   } else {
     for (const p of list) p.top = p.y - p.shift;
   }
   const contentPages = lastPage + 1;
-  const pages = pageView && !printing ? Math.max(contentPages, wanted) : contentPages;
+  // a page break at the end shows the page it starts, ready to type on, but doesn't print it
+  const needed = pageView && !printing ? Math.max(contentPages, breakTo + 1) : contentPages;
+  const pages = Math.max(needed, pageView && !printing ? wanted : 0);
   while (pushAt.length < pages) pushAt.push(push);
 
   const pageOfEff = (eff: number) => {
@@ -378,6 +432,7 @@ export function computeLayout(
     geom,
     pages,
     contentPages,
+    needed,
     toScene,
     fromScene,
   };
@@ -800,11 +855,12 @@ export const LINE = 2 * GRID;
 /**
  * SMath-style spacing: move every top-level region starting at or below `y` by `dy`.
  * Pulling up never overlaps what is above: it stops a grid step short of it.
+ * Returns how far they moved (0: nothing moved).
  */
-export function shiftBelow(y: number, dy: number): boolean {
+export function shiftBelow(y: number, dy: number): number {
   const top = layout().list.filter((p) => !p.parent);
   const below = top.filter((p) => p.region.at[1] >= y);
-  if (!below.length) return false;
+  if (!below.length) return 0;
   if (dy < 0) {
     const highest = Math.min(...below.map((p) => p.region.at[1]));
     let floor = 0;
@@ -812,11 +868,82 @@ export function shiftBelow(y: number, dy: number): boolean {
       if (p.region.at[1] < y) floor = Math.max(floor, p.region.at[1] + (heights[p.region.id] ?? DEFAULT_HEIGHT) + GRID);
     const room = Math.floor((highest - floor) / GRID) * GRID;
     dy = Math.max(dy, -room);
-    if (dy >= 0) return false;
+    if (dy >= 0) return 0;
   }
   checkpoint();
   moveTo(new Map(below.map((p) => [p.region.id, [p.region.at[0], p.region.at[1]] as [number, number]])), 0, dy);
   touch();
+  return dy;
+}
+
+/** The page a document point is on, in the page view. */
+export function pageAt(l: Layout, y: number): number {
+  return Math.min(l.pages - 1, Math.max(0, Math.floor(l.toScene(0, y)[1] / (l.geom.paperH + SHEET_GAP))));
+}
+
+/**
+ * How many pages to show (`pagesWanted`) once the insertion point is at `y` (null: none):
+ * blank pages added with + New page last only while the insertion point is on one, so a page
+ * left without anything on it goes. The blank page with the insertion point, and those before
+ * it, stay.
+ */
+export function keptPages(l: Layout, y: number | null): number {
+  if (!l.pageView || l.pages <= l.needed || y === null) return 0;
+  const k = pageAt(l, y);
+  return k >= l.needed ? k + 1 : 0;
+}
+
+/**
+ * Backspace on the blank last page (added with + New page, with nothing on it): remove it,
+ * with the insertion point after the content of the page before (or at its top). Never a page
+ * that holds a region; the document doesn't change, as blank pages aren't saved.
+ */
+export function removeBlankPage(y: number): boolean {
+  const l = layout();
+  if (!l.pageView) return false;
+  const k = pageAt(l, y);
+  if (k < 1 || k !== l.pages - 1 || k < l.needed) return false;
+  const before = l.list.filter((p) => !p.hidden && p.page === k - 1);
+  let caret: [number, number];
+  if (before.length) {
+    const bottom = (p: Placed) => p.y + regionHeight(p.region, heights);
+    const last = before.reduce((a, b) => (bottom(b) > bottom(a) ? b : a));
+    caret = [last.x, Math.ceil(bottom(last) / GRID) * GRID + GRID];
+  } else {
+    const [x, top] = l.fromScene(l.geom.margins.left, (k - 1) * (l.geom.paperH + SHEET_GAP) + l.geom.margins.top);
+    caret = [Math.max(0, snap(x)), Math.max(0, snap(top))];
+  }
+  setState({ pagesWanted: k, caret, selection: [] });
+  return true;
+}
+
+/**
+ * Whether a document point is at the top of a page after the first, in the page view: on
+ * that page, at or above the first region on it. What starts the page may be there only
+ * because it was pushed there, so Backspace pulls it back (`pullToPreviousPage`).
+ */
+export function atPageTop(y: number): boolean {
+  const l = layout();
+  if (!l.pageView) return false;
+  const k = pageAt(l, y);
+  if (k < 1) return false;
+  const on = l.list.filter((p) => !p.hidden && p.page === k);
+  return on.length > 0 && y <= Math.min(...on.map((p) => p.y));
+}
+
+/**
+ * Backspace at the top of a page, as in a word processor: close the whole gap above what
+ * starts at `y`, so it flows back onto the previous page as far as there is room. The
+ * regions move in the document (one undo step), never over what is above, and the insertion
+ * point goes to where they now start.
+ */
+export function pullToPreviousPage(y: number): boolean {
+  const below = layout().list.filter((p) => !p.parent && p.region.at[1] >= y);
+  if (!below.length) return false;
+  const highest = Math.min(...below.map((p) => p.region.at[1]));
+  const dy = shiftBelow(y, -Infinity);
+  if (!dy) return false;
+  if (state.caret) setState("caret", [state.caret[0], Math.max(0, Math.min(y, highest + dy))]);
   return true;
 }
 
@@ -1282,6 +1409,35 @@ export function insertArea() {
     d.regions.push({ id, kind: "area", at: [0, y], height: 90, title: "Area", regions: [] });
   });
   regroup([id]);
+}
+
+/**
+ * A manual page break at the insertion point (else below the selection, else at the end):
+ * what follows starts on the next page. What is right under it moves down to make room for
+ * the marker, and the insertion point goes below the marker, at the top of the new page.
+ */
+export function insertPageBreak() {
+  commitEditing();
+  const l = layout();
+  const sel = state.selection.map((id) => l.byId.get(id)).filter((p): p is Placed => !!p);
+  const y = state.caret
+    ? state.caret[1]
+    : sel.length
+      ? snap(Math.max(...sel.map((p) => p.y + (heights[p.region.id] ?? DEFAULT_HEIGHT))) + GRID)
+      : snap(contentBottom() + GRID);
+  const id = newId();
+  const top = l.list.filter((p) => !p.parent && p.region.at[1] >= y);
+  const highest = top.length ? Math.min(...top.map((p) => p.region.at[1])) : Infinity;
+  const room = Math.max(0, Math.ceil((y + PAGE_BREAK_HEIGHT - highest) / GRID) * GRID);
+  mutate((d) => {
+    if (room)
+      for (const p of top) {
+        const r = findDraft(d, p.region.id);
+        if (r) r.at = [r.at[0], r.at[1] + room];
+      }
+    d.regions.push({ id, kind: "pagebreak", at: [0, y] });
+  });
+  setState({ selection: [], caret: [state.caret?.[0] ?? 0, y + PAGE_BREAK_HEIGHT] });
 }
 
 export function selectAll() {

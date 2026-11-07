@@ -113,7 +113,8 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     let mut marks = Vec::new();
     let outlines = get(&doc, catalog, b"Outlines").ok_or("no outlines")?;
     bookmarks(&doc, get(&doc, outlines, b"First"), 0, &mut marks)?;
-    let expected = [("1 Loads", 1, 0), ("2 Checks", 1, 0), ("2.1 Bending", 2, 1), ("2.2 Deflection", 3, 1)];
+    // "2 Checks" would end page 1 with "2.1 Bending" on page 2: it moves there with it
+    let expected = [("1 Loads", 1, 0), ("2 Checks", 2, 0), ("2.1 Bending", 2, 1), ("2.2 Deflection", 3, 1)];
     let expected: Vec<_> = expected.iter().map(|&(t, p, d)| (t.to_string(), p, d)).collect();
     assert_eq!(marks, expected);
 
@@ -138,7 +139,7 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     // six contents-list rows on page 0, then "Table 1" and "Figure 1", "1" and "Figure 1",
     // "Section 2.1" and the Summary of Checks row for the check above it
     let expected =
-        [(0, 1), (0, 1), (0, 2), (0, 3), (0, 2), (0, 1), (1, 1), (1, 2), (2, 1), (2, 2), (3, 2), (3, 3)];
+        [(0, 1), (0, 2), (0, 2), (0, 3), (0, 2), (0, 1), (1, 1), (1, 2), (2, 1), (2, 2), (3, 2), (3, 3)];
     assert_eq!(internal, expected);
     Ok(())
 }

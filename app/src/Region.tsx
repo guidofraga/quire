@@ -745,7 +745,6 @@ const KIND_LABEL: Record<string, string> = {
   legacy: "Unconverted SMath region",
   // held by the engine when it can't read a region (a newer Quire's); saved back as it was
   unreadable: "A region this version of Quire can't read, kept as it is",
-  pagebreak: "Page break",
 };
 
 export function RegionBox(props: RegionProps) {
@@ -867,6 +866,12 @@ export function RegionBox(props: RegionProps) {
         </Match>
         <Match when={isPlot(r().kind)}>
           <PlotFigure p={placed()} selected={selected()} />
+        </Match>
+        <Match when={r().kind === "pagebreak"}>
+          {/* a mark on screen only: what follows starts on the next page (store.ts computeLayout) */}
+          <div class="pagebreak-mark" style={{ width: `${Math.max(120, layout().geom.contentW - placed().x)}px` }}>
+            <span>Page break</span>
+          </div>
         </Match>
       </Switch>
       <Show
