@@ -326,20 +326,6 @@ body {
   pointer-events: none;
 }
 
-/* an empty document: one quiet line beside the insertion point (on paper in either theme) */
-.empty-hint {
-  position: absolute;
-  margin: -8px 0 0 14px;
-  color: #6b7280;
-  font:
-    13px -apple-system,
-    system-ui,
-    sans-serif;
-  white-space: nowrap;
-  pointer-events: none;
-  animation: caret-in 120ms ease-out;
-}
-
 /* ---------------------------------------------------------------- regions */
 
 .region {
@@ -888,7 +874,6 @@ ms.str {
 
   .toolbar,
   .toast,
-  .empty-hint,
   .marquee {
     display: none !important;
   }

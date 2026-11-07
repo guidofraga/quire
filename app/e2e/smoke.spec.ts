@@ -58,16 +58,10 @@ test("closing a format-bar gallery with Esc goes back to the math being typed", 
   await expect(regions(page).first()).toContainText(/=6$/);
 });
 
-test("an empty page says how to start, until there is content", async ({ page }) => {
+test("an empty page shows the insertion point", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Blank document/ }).click();
-  const hint = page.locator(".empty-hint");
-  await expect(hint).toHaveText(/Click anywhere to start typing/);
-  await page.emulateMedia({ media: "print" });
-  await expect(hint).toBeHidden();
-  await page.emulateMedia({ media: "screen" });
-  await page.keyboard.type("a");
-  await expect(hint).toHaveCount(0);
+  await expect(page.locator(".caret")).toBeVisible();
 });
 
 test("the insert tools stay put as the status changes", async ({ page }) => {
