@@ -585,7 +585,7 @@ function cellValueHtml(linear: string): string {
 
 export function SheetGrid(props: { p: Placed }) {
   const r = () => props.p.region;
-  const editing = () => state.editing === r().id;
+  const editing = createMemo(() => state.editing === r().id);
   dbg("SheetGrid mount", r().id, "editing", editing());
   onCleanup(() => dbg("SheetGrid unmount", r().id));
   const size = createMemo(() => sizeOf(r()));
