@@ -65,8 +65,11 @@ test("typing in a cell survives the table being measured and placed again", asyn
   await page.keyboard.type("hello");
   const cell = page.getByRole("textbox", { name: "Cell A1" });
   await expect(cell).toHaveValue("hello");
-  const ran = await page.evaluate(() => (window as unknown as { release: () => number }).release());
-  expect(ran).toBeGreaterThan(0);
+  // the measurement is waiting; let it through
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { held: unknown[] }).held.length))
+    .toBeGreaterThan(0);
+  await page.evaluate(() => (window as unknown as { release: () => number }).release());
   await expect(cell).toHaveValue("hello");
 });
 
