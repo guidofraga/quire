@@ -496,7 +496,7 @@ export function Canvas() {
       return;
     }
     // ⌘↩ on the page: a page break (not a menu accelerator: in text, ⌘↩ continues below the box)
-    if (e.key === "Enter" && (isMac ? e.metaKey : e.ctrlKey) && !e.altKey) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.altKey) {
       e.preventDefault();
       insertPageBreak();
       return;
