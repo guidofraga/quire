@@ -1264,6 +1264,16 @@ export function updateDoc(fn: (d: Doc) => void) {
   mutate(fn);
 }
 
+/** The document's title, as typed in the Inspector: a title in several languages keeps the others. */
+export function setDocTitle(text: string) {
+  mutate((d) => {
+    const meta = (d.meta ??= {});
+    const title = withLocalized(meta.title, text, meta.lang);
+    if (title === "") delete meta.title;
+    else meta.title = title;
+  });
+}
+
 export function insertArea() {
   commitEditing();
   const y = state.caret?.[1] ?? snap(contentBottom() + GRID);

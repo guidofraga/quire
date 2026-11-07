@@ -64,6 +64,12 @@ fn safe_link(url: &str) -> bool {
         || lower.starts_with('#')
 }
 
+/// Whether a link may be rendered as written. An email autolink (`<name@example.com>`) holds just the
+/// address, and the renderer adds `mailto:` itself.
+fn link_allowed(url: &str, ty: jotdown::LinkType) -> bool {
+    matches!(ty, jotdown::LinkType::Email) || safe_link(url)
+}
+
 /// Inline math in a text region (`` $`expr` ``), in reading order. These are live:
 /// they are evaluated with the worksheet as `<region id>:m<n>`.
 pub fn inline_math(src: &str) -> Vec<String> {
@@ -345,10 +351,10 @@ impl Neutralize {
                 return None;
             }
             Event::Str(_) if self.in_math => return None,
-            Event::Start(Container::Link(url, ty), attrs) if !safe_link(url) => {
+            Event::Start(Container::Link(url, ty), attrs) if !link_allowed(url, *ty) => {
                 return Some(Event::Start(Container::Link("#".into(), *ty), safe_attrs(attrs.clone())));
             }
-            Event::End(Container::Link(url, ty)) if !safe_link(url) => {
+            Event::End(Container::Link(url, ty)) if !link_allowed(url, *ty) => {
                 return Some(Event::End(Container::Link("#".into(), *ty)));
             }
             _ => {}
@@ -456,6 +462,17 @@ mod tests {
             render_djot("on [](#ref:t1){.page}"),
             "<p>on <a href=\"#ref:t1\" class=\"page\"></a></p>\n"
         );
+    }
+
+    #[test]
+    fn email_autolinks_become_mailto_links_and_other_schemes_stay_neutral() {
+        assert_eq!(
+            render_djot("Write <name@example.com>."),
+            "<p>Write <a href=\"mailto:name@example.com\">name@example.com</a>.</p>\n"
+        );
+        let l = render_djot("<javascript:alert(1)> and [x](data:text/html,y)");
+        assert!(!l.contains("href=\"javascript") && !l.contains("href=\"data"), "{l}");
+        assert_eq!(l.matches("href=\"#\"").count(), 2, "{l}");
     }
 
     #[test]

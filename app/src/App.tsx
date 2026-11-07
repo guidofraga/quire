@@ -34,7 +34,7 @@ import { describeRegion } from "./describe";
 import { CompletionPopup } from "./Completion";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
-import { importCsv, insertTable, isSheet, tableCommand } from "./TableEditor";
+import { importCsv, insertTable, isSheet, tableCommand, trackEvaluation } from "./TableEditor";
 import { insertPlot } from "./Plot";
 import { insertPlot3d } from "./Plot3D";
 import { findStep, openFind } from "./find";
@@ -76,6 +76,7 @@ import {
   SidebarToggle,
 } from "./Sidebar";
 import { latestOnly } from "./latest";
+import { focusedTextField, keepBackspaceFromHistory, selectInField } from "./fieldKeys";
 import { keepRecovery } from "./recovery";
 import { installTrace } from "./trace";
 import { installRefs } from "./xref";
@@ -151,6 +152,8 @@ const liveReport = latestOnly(
   },
   30,
 );
+
+trackEvaluation(liveReport.pending);
 
 /** Run `fn` once the results on screen are those of the document as it is now. */
 function afterEvaluation(fn: () => void) {
@@ -645,6 +648,8 @@ function runCommand(id: string) {
       if (activeView()) return runText(commands.redo);
       return editingField ? document.execCommand("redo") : redo();
     case "select_all":
+      // a focused text field (the sidebar's search) takes it before the page does
+      if (selectInField()) return;
       return editingField ? document.execCommand("selectAll") : selectAll();
     case "delete":
       return editingField ? document.execCommand("delete") : deleteRegions(state.selection);
@@ -712,7 +717,7 @@ function browserShortcuts(e: KeyboardEvent) {
     g: e.metaKey ? (e.shiftKey ? "find_prev" : "find_next") : "",
     ",": e.altKey ? "" : "settings",
   };
-  if (key === "a" && state.editing) return;
+  if (key === "a" && (state.editing || focusedTextField())) return;
   const cmd = key === "a" ? "select_all" : map[key];
   if (cmd && !(state.editing && (cmd === "undo" || cmd === "redo" || cmd === "duplicate"))) {
     e.preventDefault();
@@ -720,7 +725,7 @@ function browserShortcuts(e: KeyboardEvent) {
   }
 }
 
-if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__quire = { state, layout };
+if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__quire = { state, layout, runCommand };
 
 /** What a screen reader hears without asking: messages, new errors, regions selected from the keyboard. */
 function speakChanges() {
@@ -855,6 +860,7 @@ export function App() {
     await guardClose(() => state.dirty && !nb.current, api.clearRecovery, flushSave);
     installAutosave();
     window.addEventListener("keydown", browserShortcuts);
+    window.addEventListener("keydown", keepBackspaceFromHistory);
     // another document's link pasted into the address bar
     window.addEventListener("hashchange", () => {
       const linked = docInHash(location.hash);

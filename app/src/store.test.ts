@@ -19,6 +19,7 @@ import {
   redo,
   regroup,
   releaseErrors,
+  setDocTitle,
   setState,
   setLive,
   showReport,
@@ -162,6 +163,26 @@ describe("localized", () => {
     setLive("t", "Loads");
     expect(state.doc.regions[0].text).toEqual({ ru: "Нагрузка", en: "Loads" });
     expect(localized(state.doc.regions[0].text)).toBe("Loads");
+  });
+});
+
+describe("the document title", () => {
+  it("an edit changes the translation that is shown and keeps the others", () => {
+    const d = doc([]);
+    d.meta = { title: { ru: "Расчёт", en: "Calculation" } };
+    loadDoc(d, null);
+    setDocTitle("Beam calculation");
+    expect(state.doc.meta?.title).toEqual({ ru: "Расчёт", en: "Beam calculation" });
+    undo();
+    expect(state.doc.meta?.title).toEqual({ ru: "Расчёт", en: "Calculation" });
+  });
+
+  it("a plain title stays a plain string, and an empty one is removed", () => {
+    loadDoc(doc([]), null);
+    setDocTitle("Beam");
+    expect(state.doc.meta?.title).toBe("Beam");
+    setDocTitle("");
+    expect(state.doc.meta).not.toHaveProperty("title");
   });
 });
 

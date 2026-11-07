@@ -927,9 +927,20 @@ impl<'u> Interp<'u> {
             let mut b = if a == 0.0 { 1e-4 } else { a * (1.0 + 1e-4) };
             let mut fa = self.sample(s, &f, var, at(a), &mut fdim)?;
             let mut fb = self.sample(s, &f, var, at(b), &mut fdim)?;
+            let scale = fa.abs().max(fb.abs());
             for _ in 0..100 {
                 self.tick()?;
                 if fb == 0.0 || (b - a).abs() <= 1e-14 * b.abs().max(1e-300) {
+                    // Steps that stop shrinking are not a root when the expression stays away
+                    // from zero (a jump, as in x - floor(x) - 1): check what is returned, as
+                    // `solve_in` does.
+                    if fb.abs() > scale * 1e-6 {
+                        let at_x = self.show_quantity(at(b));
+                        bail!(
+                            "no root found near {var} = {}: the search stopped at {var} = {at_x}, where the expression is not zero; try a range: solve(…, {var}, a, b)",
+                            x0.v
+                        );
+                    }
                     return Ok(b);
                 }
                 if fb == fa {
