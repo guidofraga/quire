@@ -42,6 +42,17 @@ async function openDoc(page: Page, extra: Record<string, unknown> = {}) {
   await expect(sheet(page, 1).locator('[data-region="b"]')).toBeVisible();
 }
 
+/** The toolbar sits beside its band, never over the content of the page being edited. */
+async function toolbarClearOfContent(page: Page, k: number) {
+  const body = (await sheet(page, k).locator(".content-box").boundingBox())!;
+  await expect
+    .poll(async () => {
+      const bar = (await page.locator(".hf-toolbar").boundingBox())!;
+      return bar.y + bar.height <= body.y || bar.y >= body.y + body.height;
+    })
+    .toBe(true);
+}
+
 /** Double-click a band near its left, middle or right. */
 async function dblclickBand(page: Page, k: number, which: "header" | "footer", where: number) {
   const box = (await band(page, k, which).boundingBox())!;
@@ -60,6 +71,8 @@ test("a header typed on page 1, with a Page field, shows on every page and undoe
   await expect(left).toBeFocused();
   await expect(page.getByRole("group", { name: "Header, all pages" })).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Header tools" })).toContainText("All pages");
+  // page 1 has little room above it: the page moves down to make room for the toolbar
+  await toolbarClearOfContent(page, 0);
   await page.keyboard.type("Page ");
   await page.getByRole("button", { name: "Insert field" }).click();
   await page.getByRole("menuitem", { name: /^Page\W+1$/ }).click();
@@ -111,6 +124,7 @@ test("a field typed with braces becomes a chip, and Backspace deletes it whole",
   const left = page.getByRole("textbox", { name: "Footer left" });
   await expect(left).toBeFocused();
   await expect(page.getByRole("toolbar", { name: "Footer tools" })).toBeVisible();
+  await toolbarClearOfContent(page, 1);
   await page.keyboard.type(" {date}");
   await expect(left.locator(".hf-chip")).toHaveText("Date");
   await page.keyboard.press("Backspace");

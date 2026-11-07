@@ -561,7 +561,10 @@ function Toolbar(props: { anchor: HTMLElement }) {
   const color = () => bandOf(band())?.color;
   const [pos, setPos] = createSignal({ left: 0, top: 0, up: false });
 
-  // follow the band as the page pans and zooms, and stay inside the page's pane
+  // Outside the band, so it never covers the content it frames: above a header (over the gap
+  // between sheets), below a footer. When it starts, the page pans to make room; when the
+  // window's edge later cuts it off, it slides into the band's own margin, and no further.
+  let first = true;
   const place = () => {
     if (!bar || !props.anchor.isConnected) return;
     const a = props.anchor.getBoundingClientRect();
@@ -570,11 +573,21 @@ function Toolbar(props: { anchor: HTMLElement }) {
     const w = bar.offsetWidth;
     const h = bar.offsetHeight;
     const gap = 8;
-    const up = band() === "footer";
-    let top = up ? a.top - h - gap : a.bottom + gap;
-    top = Math.max(pane.top + gap, Math.min(top, pane.bottom - h - gap));
+    const header = band() === "header";
+    const ideal = header ? a.top - h - gap : a.bottom + gap;
+    if (first) {
+      first = false;
+      const short = header ? pane.top + gap - ideal : ideal + h + gap - pane.bottom;
+      if (short > 0) {
+        setState("view", "y", state.view.y + (header ? short : -short));
+        return; // the effect below places it again once the page has moved
+      }
+    }
+    const top = header
+      ? Math.min(Math.max(ideal, pane.top + gap), a.bottom - h - 2)
+      : Math.max(Math.min(ideal, pane.bottom - h - gap), a.top + 2);
     const left = Math.max(pane.left + gap, Math.min(a.left, pane.right - w - gap));
-    setPos({ left, top, up });
+    setPos({ left, top, up: !header });
   };
   createEffect(() => {
     // what moves the band on screen

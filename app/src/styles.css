@@ -1035,7 +1035,7 @@ ms.str {
   }
 }
 
-/* by the footer the toolbar sits above the band, so its menus open upwards */
+/* below a footer the toolbar is near the window's bottom edge, so its menus open upwards */
 .hf-toolbar.up .fb-pop {
   top: auto;
   bottom: 30px;
