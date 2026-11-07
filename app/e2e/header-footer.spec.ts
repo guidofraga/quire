@@ -156,7 +156,8 @@ test("Different first page leaves page 1 blank and is edited there on its own", 
 
 test("Edit Footer from ⌘K edits the footer of the page in view", async ({ page }) => {
   await openDoc(page);
-  await page.keyboard.press("ControlOrMeta+k");
+  // the app takes the test browser for a Mac: ⌘K is Meta, wherever the test runs
+  await page.keyboard.press("Meta+k");
   await page.getByRole("combobox", { name: "Command, variable or symbol" }).fill("Edit Footer");
   await page.keyboard.press("Enter");
   const left = page.getByRole("textbox", { name: "Footer left" });
