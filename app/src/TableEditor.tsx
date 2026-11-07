@@ -547,7 +547,9 @@ function cellValueHtml(linear: string): string {
 
 export function SheetGrid(props: { p: Placed }) {
   const r = () => props.p.region;
-  const editing = () => state.editing === r().id;
+  // a memo: the effect below must run when editing starts or ends, not whenever the table is
+  // placed again (a new height measured, say) while it is being edited
+  const editing = createMemo(() => state.editing === r().id);
   const size = createMemo(() => sizeOf(r()));
   const rowIdx = createMemo(() => Array.from({ length: size()[0] }, (_, i) => i));
   const colIdx = createMemo(() => Array.from({ length: size()[1] }, (_, i) => i));

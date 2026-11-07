@@ -30,6 +30,49 @@ test("right-clicking another cell while typing keeps the text in its own cell", 
   await expect(page.locator('td[data-r="1"][data-c="1"]')).not.toContainText("hello");
 });
 
+test("typing in a cell survives the table being measured and placed again", async ({ page }) => {
+  // The page measures a region once it is drawn and lays the document out again with its height.
+  // Held back here, as a slow machine does, until after the typing below.
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      held: (() => void)[];
+      holding: boolean;
+      release: () => number;
+    };
+    w.held = [];
+    w.holding = false;
+    w.release = () => {
+      w.holding = false;
+      const n = w.held.length;
+      for (const run of w.held.splice(0)) run();
+      return n;
+    };
+    const Real = window.ResizeObserver;
+    window.ResizeObserver = class extends Real {
+      constructor(cb: ResizeObserverCallback) {
+        super((entries, observer) => {
+          if (w.holding) w.held.push(() => cb(entries, observer));
+          else cb(entries, observer);
+        });
+      }
+    };
+  });
+  await blank(page);
+  await page.evaluate(() => ((window as unknown as { holding: boolean }).holding = true));
+  await page.keyboard.press("ControlOrMeta+Alt+t");
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(page.locator(".region.editing .sheet-wrap")).toBeFocused();
+  await page.keyboard.type("hello");
+  const cell = page.getByRole("textbox", { name: "Cell A1" });
+  await expect(cell).toHaveValue("hello");
+  // the measurement is waiting; let it through
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { held: unknown[] }).held.length))
+    .toBeGreaterThan(0);
+  await page.evaluate(() => (window as unknown as { release: () => number }).release());
+  await expect(cell).toHaveValue("hello");
+});
+
 test("Enter on Close closes the find bar and leaves the math alone", async ({ page }) => {
   await blank(page);
   await page.keyboard.type("alpha:=2");
