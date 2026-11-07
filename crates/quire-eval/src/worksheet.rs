@@ -1886,4 +1886,36 @@ mod tests {
             ["30", "[10; 20; 30]", "5", "[10, 0; 20, 5; 30, 0]"]
         );
     }
+
+    #[test]
+    fn a_unit_after_scientific_notation_multiplies_the_power() {
+        let outs = run(&[
+            "W := 2.5*10^-4 m^3",
+            "W/'L",
+            "10^2 m",
+            "2*10^(-4) m^3/'L",
+            "2.5*10^-4 'm^3/'L",
+            "10^-0.5 m",
+            "2^3^2 m",
+            "x := 3",
+            "x^2 m",
+            "5 m^2",
+        ]);
+        assert_eq!(errors(&outs), ["ok"; 10]);
+        let shown: Vec<_> = (1..10).map(|i| shown_at(&outs, i)).collect();
+        assert_eq!(
+            shown,
+            [
+                Some("0.25"),
+                Some("100 'm"),
+                Some("0.2"),
+                Some("0.25"),
+                Some("0.3162 'm"),
+                Some("512 'm"),
+                Some("3"),
+                Some("9 'm"),
+                Some("5 'm^2"),
+            ]
+        );
+    }
 }
