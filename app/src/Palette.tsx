@@ -42,6 +42,8 @@ const COMMANDS: [string, string, string][] = [
   ["print", "Print…", `${mod}P`],
   ["document_settings", "Document Settings…", `${alt}${mod},`],
   ["page_setup", "Page Setup…", ""],
+  ["edit_header", "Edit Header", ""],
+  ["edit_footer", "Edit Footer", ""],
   ["settings", "Settings…", `${mod},`],
   ["undo", "Undo", `${mod}Z`],
   ["redo", "Redo", `${shift}${mod}Z`],

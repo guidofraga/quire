@@ -471,6 +471,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &sep()?,
             &item(app, "document_settings", "Document Settings…", Some("CmdOrCtrl+Alt+,"))?,
             &item(app, "page_setup", "Page Setup…", None)?,
+            &item(app, "edit_header", "Edit Header", None)?,
+            &item(app, "edit_footer", "Edit Footer", None)?,
             &sep()?,
             &PredefinedMenuItem::close_window(app, None)?,
         ],

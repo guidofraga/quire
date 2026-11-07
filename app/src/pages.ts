@@ -92,11 +92,13 @@ export interface FieldContext {
   title: string;
   author: string;
   company: string;
+  /** The first-level heading the page is in. */
+  section?: string;
   lang?: string;
   now: Date;
 }
 
-/** Replace {page} {pages} {date} {time} {file} {title} {author} {company}. */
+/** Replace {page} {pages} {date} {time} {file} {title} {author} {company} {section}. */
 export function fillFields(text: string, c: FieldContext): string {
   const values: Record<string, string> = {
     page: String(c.page),
@@ -107,6 +109,7 @@ export function fillFields(text: string, c: FieldContext): string {
     title: c.title,
     author: c.author,
     company: c.company,
+    section: c.section ?? "",
   };
   return text.replace(/\{(\w+)\}/g, (m, key: string) => values[key] ?? m);
 }

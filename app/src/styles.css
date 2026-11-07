@@ -846,6 +846,280 @@ ms.str {
   text-align: right;
 }
 
+/* ---------------------------------------------------------------- headers and footers on the page */
+/* on screen only (HeaderFooterBand.tsx): print and PDF draw just the filled-in slots above.
+   The paper is white in either theme, so what sits on it has fixed colours. */
+
+.hf-band {
+  position: absolute;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* the band's outline: a little wider than the text, so the slots' boxes sit inside it */
+.hf-band::before {
+  content: "";
+  position: absolute;
+  inset: 4px -8px;
+  border-radius: 6px;
+  pointer-events: none;
+  transition:
+    background-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+/* hovering a margin shows where its band is, and an empty one says how to fill it */
+.viewport:not(.panning) .sheet:not(.hf-active) .hf-band:hover::before {
+  background: rgba(47, 111, 223, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(47, 111, 223, 0.3);
+}
+
+.hf-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font:
+    11px -apple-system,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms var(--ease-out);
+}
+
+.viewport:not(.panning) .sheet:not(.hf-active) .hf-band:hover .hf-hint {
+  opacity: 1;
+}
+
+/* while a band is edited, the rest of every page steps back behind a veil of paper */
+.sheet.hf-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+  animation: hf-veil 200ms var(--ease-out);
+}
+
+@keyframes hf-veil {
+  from {
+    opacity: 0;
+  }
+}
+
+.hf-band.editing {
+  z-index: 4;
+}
+
+.hf-band.editing::before {
+  background: var(--paper);
+  box-shadow:
+    inset 0 0 0 1px rgba(47, 111, 223, 0.55),
+    0 1px 6px rgba(20, 30, 50, 0.08);
+}
+
+.hf-editor {
+  grid-template-columns: 1fr minmax(9em, auto) 1fr;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* the slots sit where their text prints: the padding is taken back by the margin */
+.hf-slot {
+  min-width: 0;
+  min-height: 2em;
+  margin: 0 -5px;
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 2em;
+  white-space: pre;
+  overflow: hidden;
+  outline: none;
+  cursor: text;
+  background: rgba(47, 111, 223, 0.05);
+  transition:
+    background-color 120ms var(--ease-out),
+    box-shadow 120ms var(--ease-out);
+}
+
+.hf-slot:hover {
+  background: rgba(47, 111, 223, 0.09);
+}
+
+.hf-slot:focus {
+  background: rgba(47, 111, 223, 0.07);
+  box-shadow: inset 0 0 0 1.5px #2f6fdf;
+}
+
+.hf-slot:empty::before {
+  content: attr(data-placeholder);
+  color: #a3a8b1;
+  font-style: italic;
+}
+
+/* a field while editing: one piece, named in words */
+.hf-chip {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #e3ecfb;
+  color: #1f56b8;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: default;
+}
+
+.hf-blank {
+  grid-column: 1 / -1;
+  color: #6b7280;
+  font-style: italic;
+  text-align: center;
+}
+
+.hf-toolbar {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius-menu);
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: var(--shadow-menu);
+  font:
+    12px -apple-system,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  animation: hf-toolbar-down 160ms var(--ease-out);
+}
+
+.hf-toolbar.up {
+  animation-name: hf-toolbar-up;
+}
+
+@keyframes hf-toolbar-down {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes hf-toolbar-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* below a footer the toolbar is near the window's bottom edge, so its menus open upwards */
+.hf-toolbar.up .fb-pop {
+  top: auto;
+  bottom: 30px;
+  transform-origin: bottom left;
+}
+
+.hf-scope {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 0 6px;
+  line-height: 1.2;
+}
+
+.hf-scope-band {
+  font-weight: 600;
+}
+
+.hf-scope-pages {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hf-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--chrome-border);
+}
+
+.hf-toolbar .fb-select {
+  gap: 5px;
+}
+
+.hf-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 5px;
+}
+
+.hf-check:hover {
+  background: var(--button-hover);
+}
+
+.hf-check input {
+  margin: 0;
+}
+
+.hf-done {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+}
+
+.hf-done:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+.hf-field-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 28px;
+  min-width: 210px;
+  text-align: left;
+}
+
+.hf-field-value {
+  max-width: 150px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hf-field-item:hover .hf-field-value,
+.hf-field-item:focus-visible .hf-field-value {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.hf-swatches {
+  grid-template-columns: repeat(7, 22px);
+}
+
+/* the colour in use */
+.hf-swatches [aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--chrome),
+    0 0 0 3.5px var(--accent);
+}
+
 /* ---------------------------------------------------------------- printing */
 
 .app.printing .region,

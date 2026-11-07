@@ -71,7 +71,7 @@ let popSeq = 0;
  * From the keyboard, opening it moves focus in, arrows move between its items and Esc
  * closes it and returns to the button; with the mouse, focus stays in the editor.
  */
-function Dropdown(props: {
+export function Dropdown(props: {
   label: JSX.Element;
   title: string;
   /** What a screen reader calls the button (its text by default), and the popover. */

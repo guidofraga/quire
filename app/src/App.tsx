@@ -50,6 +50,7 @@ import type { Doc } from "./types";
 import { closeMenu, setMenu } from "./menu";
 import { checks, failing, tableName } from "./checks";
 import { PagePopover } from "./Popover";
+import { editHeaderFooterInView, HeaderFooterToolbar, headerFooterUndo } from "./HeaderFooterBand";
 import { checkForUpdates, UpdateBanner } from "./Updates";
 import { setWelcomeOpen, Welcome } from "./Welcome";
 import {
@@ -586,7 +587,7 @@ function runCommand(id: string) {
     case "distribute_y":
       return distributeRegions(state.selection, "y");
     case "duplicate":
-      return duplicateSelection();
+      return state.hfEditing ? undefined : duplicateSelection();
     case "insert_image":
       return insertImage().catch((e) => flash(`Could not insert the image: ${e.message ?? e}`));
     case "insert_table":
@@ -621,6 +622,10 @@ function runCommand(id: string) {
       return showInspector("document");
     case "page_setup":
       return showInspector("page");
+    case "edit_header":
+      return editHeaderFooterInView("header");
+    case "edit_footer":
+      return editHeaderFooterInView("footer");
     case "new":
       return nb.book ? newNote() : newDocument();
     case "new_document":
@@ -644,16 +649,20 @@ function runCommand(id: string) {
     case "save_as":
       return save(true);
     case "undo":
+      if (state.hfEditing) return headerFooterUndo();
       if (activeView()) return runText(commands.undo);
       return editingField ? document.execCommand("undo") : undo();
     case "redo":
+      if (state.hfEditing) return headerFooterUndo(true);
       if (activeView()) return runText(commands.redo);
       return editingField ? document.execCommand("redo") : redo();
     case "select_all":
       // a focused text field (the sidebar's search) takes it before the page does
       if (selectInField()) return;
+      if (state.hfEditing) return document.execCommand("selectAll");
       return editingField ? document.execCommand("selectAll") : selectAll();
     case "delete":
+      if (state.hfEditing) return document.execCommand("delete");
       return editingField ? document.execCommand("delete") : deleteRegions(state.selection);
     case "settings":
       commitEditing();
@@ -721,7 +730,7 @@ function browserShortcuts(e: KeyboardEvent) {
     g: e.metaKey ? (e.shiftKey ? "find_prev" : "find_next") : "",
     ",": e.altKey ? "" : "settings",
   };
-  if (key === "a" && (state.editing || focusedTextField())) return;
+  if (key === "a" && (state.editing || state.hfEditing || focusedTextField())) return;
   const cmd = key === "a" ? "select_all" : map[key];
   if (cmd && !(state.editing && (cmd === "undo" || cmd === "redo" || cmd === "duplicate"))) {
     e.preventDefault();
@@ -1073,6 +1082,7 @@ export function App() {
       <RefPicker />
       <ShareDialog />
       <PagePopover />
+      <HeaderFooterToolbar />
       <UpdateBanner beforeRestart={guardUnsaved} />
       <Welcome
         openPath={openPath}

@@ -99,6 +99,11 @@ describe("fillFields", () => {
     expect(fillFields("{time}", c)).toContain("09:05".slice(1));
   });
 
+  it("fills {section} with the page's heading, and with nothing when there is none", () => {
+    expect(fillFields("{section} – {page}", { ...c, section: "Loads" })).toBe("Loads – 2");
+    expect(fillFields("{section}", c)).toBe("");
+  });
+
   it("leaves unknown fields as typed", () => {
     expect(fillFields("{nope} {page}", c)).toBe("{nope} 2");
   });

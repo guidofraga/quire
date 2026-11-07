@@ -283,7 +283,7 @@ export function Canvas() {
   // The welcome screen keeps focus while it is open and hands it back when it closes,
   // so typing starts at the insertion point right after "Blank document".
   createEffect(() => {
-    if (state.caret && !state.editing && !welcomeOpen()) sink.focus({ preventScroll: true });
+    if (state.caret && !state.editing && !state.hfEditing && !welcomeOpen()) sink.focus({ preventScroll: true });
   });
 
   function onSinkInput(e: InputEvent) {
@@ -463,7 +463,8 @@ export function Canvas() {
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    if (state.editing || !aimedAtPage(e.target)) return;
+    // a header or footer being edited keeps its keys (HeaderFooterBand.tsx)
+    if (state.editing || state.hfEditing || !aimedAtPage(e.target)) return;
     const sel = state.selection;
     if (e.key === " " && !e.repeat) {
       spaceDown = true;

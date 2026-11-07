@@ -117,6 +117,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 |---|---|
 | `Canvas.tsx` | Scrolling, zoom, selection frames, dragging, the hidden input that receives typing. |
 | `Sheet.tsx`, `pages.ts` | Paper sheets in the page view; page geometry, headers and footers. |
+| `HeaderFooterBand.tsx`, `headerFooter.ts` | Headers and footers on the page: the band in each margin, editing it in place (double-click, Edit Header / Edit Footer) with its toolbar; fields as chips while editing and as `{page}` text in the document. |
 | `Region.tsx` | One region on the page; dispatches on `kind` (`math`, `text`, `image`, `area`, `table`, `toc`, `plot2d`, `plot3d`). |
 | `MathEditor.tsx` | Typing math: linear editing, Greek, LaTeX shortcuts, prose detection, ambiguity notes. |
 | `richtext.ts` | Text regions: ProseMirror in the editor, Djot in the document (`toDjot`). Unchanged blocks are written back as their source; what the editor can't represent is kept as uneditable blocks. `richtext.cases.json` holds round-trip cases shared with the Rust tests in `text.rs`. |
