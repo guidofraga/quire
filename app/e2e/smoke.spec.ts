@@ -385,3 +385,61 @@ test("plotting a function of two variables makes a 3D surface of it", async ({ p
   await expect(page.locator(".region.plot3d")).toHaveCount(2);
   await expect(page.getByRole("img", { name: "3D plot of f(x, y)" })).toHaveCount(2);
 });
+
+test("a region drag the system cancels keeps where it got to and stops following the pointer", async ({ page }) => {
+  await blank(page);
+  await typeLines(page, "w:=3 m");
+  const region = regions(page).first();
+  const left = async () => (await region.boundingBox())!.x;
+  const box = (await region.boundingBox())!;
+  const [x, y] = [box.x + 8, box.y + box.height / 2];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 90, y, { steps: 5 });
+  const reached = await left();
+  expect(reached).toBeGreaterThan(box.x);
+  await page.evaluate(() => window.dispatchEvent(new PointerEvent("pointercancel")));
+  await page.mouse.move(x + 300, y, { steps: 5 });
+  expect(await left()).toBe(reached);
+  await page.mouse.up();
+  await expect(page.locator(".edited")).toBeVisible();
+});
+
+test("an export right after an edit waits for the computed cells", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.press("Escape");
+  // the engine is slow to answer: the table's results are not in yet
+  const held: (() => void)[] = [];
+  let hold = true;
+  await page.route("**/api/report", (route) => {
+    if (hold) held.push(() => void route.continue().catch(() => {}));
+    else void route.continue();
+  });
+  await page.mouse.click(700, 250, { button: "right" });
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByText("Insert Table from CSV…").click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "loads.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Load,q,twice\nDead,4.5 kN/m,=B2*2\n"),
+  });
+  const table = regions(page).first();
+  await expect(table).toContainText("Dead");
+  await page.keyboard.press("Escape");
+  await table.click({ button: "right" });
+  const download = page.waitForEvent("download");
+  await page.getByText("Export as CSV…").click();
+  // the results arrive while the export waits for them
+  hold = false;
+  for (const release of held) release();
+  const file = await download;
+  const csv = await (await file.createReadStream()).toArray().then((c) => Buffer.concat(c).toString("utf8"));
+  expect(
+    csv
+      .replace(/^\ufeff/, "")
+      .trim()
+      .split("\r\n")[1],
+  ).toMatch(/^Dead,4\.5 kN\/m,9\b/);
+});

@@ -416,21 +416,27 @@ export function Canvas() {
       if (ev.metaKey) setGuides({});
       moveTo(origins, Math.round(s.dx ?? snap(raw[0])), Math.round(s.dy ?? snap(raw[1])));
     };
-    const up = (ev: PointerEvent) => {
+    // a cancelled pointer (the system took it over) keeps the position reached so far, like a release
+    const end = () => {
       setGuides({});
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      // a second click on a selected box edits it, with the caret where it was clicked
-      if (!moved && wasOnlySelection && ["text", "math"].includes(layout().byId.get(id)?.region.kind ?? "")) {
-        startEditing(id, [ev.clientX, ev.clientY]);
-      }
+      window.removeEventListener("pointercancel", end);
       if (moved) {
         regroup([...origins.keys()]);
         setState({ dirty: true, rev: state.rev + 1 });
       }
     };
+    const up = (ev: PointerEvent) => {
+      end();
+      // a second click on a selected box edits it, with the caret where it was clicked
+      if (!moved && wasOnlySelection && ["text", "math"].includes(layout().byId.get(id)?.region.kind ?? "")) {
+        startEditing(id, [ev.clientX, ev.clientY]);
+      }
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", end);
   }
 
   function onWheel(e: WheelEvent) {

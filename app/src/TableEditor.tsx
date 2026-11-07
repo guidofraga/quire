@@ -499,8 +499,17 @@ export async function importCsv() {
   flash(`Imported ${rows.length} rows from ${file.name}${name ? ` as the table ${name}` : ""}`);
 }
 
+/** Whether the results on screen are still to be replaced by those of the document as it is now. */
+let evaluationPending: () => boolean = () => false;
+
+export function trackEvaluation(pending: () => boolean) {
+  evaluationPending = pending;
+}
+
 /** Export as CSV…: the values as shown, in the document language's number format. */
 export async function exportCsv(id: string) {
+  // an export right after an edit would leave out the computed cells: wait for their results
+  for (let i = 0; i < 100 && evaluationPending(); i++) await new Promise((r) => setTimeout(r, 50));
   const t = layout().byId.get(id)?.region;
   if (!t || !isSheet(t)) return;
   const comma = decimalComma(state.doc.meta?.lang);

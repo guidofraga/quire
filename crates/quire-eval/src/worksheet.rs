@@ -1751,6 +1751,15 @@ mod tests {
     }
 
     #[test]
+    fn solve_without_limits_checks_that_what_it_returns_is_a_root() {
+        // frac(x) - 1 is never zero: the steps still settle, on a jump
+        let out = shown(&["solve(x - floor(x) - 1 == 0, x, 5)", "solve(x^2 + 1 == 0, x, 1)"]);
+        assert!(out[0].contains("the search stopped at x") && out[0].contains("not zero"), "{}", out[0]);
+        assert!(out[1].starts_with("no root found near x = 1"), "{}", out[1]);
+        assert_eq!(shown(&["solve(x^2 - 2 == 0, x, 1)", "solve(cos(x) == 0, x, 1)"]), ["1.4142", "1.5708"]);
+    }
+
+    #[test]
     fn root_in_a_range_still_finds_true_roots() {
         assert_eq!(
             shown(&["root(x^2 - 2, x, 0, 2)", "root(cos(x), x, 1, 2)", "root(exp(x) - 2, x, 0, 100)"]),
