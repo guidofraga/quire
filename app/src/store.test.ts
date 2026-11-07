@@ -12,6 +12,7 @@ import {
   localized,
   markSaved,
   moveTo,
+  placeAt,
   mutate,
   noteRoom,
   keptPages,
@@ -764,5 +765,37 @@ describe("settleRegions (imported SMath positions)", () => {
     const regions = [box("r", 0, 0), box("q", 0, 20)];
     settleRegions(regions, { r: 40, q: 30 }, wide(["r", "q"]));
     expect(regions[1].at).toEqual([0, 20]);
+  });
+});
+
+describe("placing at a point on the screen", () => {
+  const geom = () => layout().geom;
+  const stride = () => geom().paperH + SHEET_GAP;
+
+  it("pulls a point outside the content area of a page into it", () => {
+    loadDoc(doc([math("a", 0, "1")], { view: "pages" }), null);
+    const { margins, contentW, contentH } = geom();
+    const [x, y] = placeAt(margins.left + contentW + 300, margins.top + 40);
+    expect(x).toBeLessThanOrEqual(contentW);
+    expect(y).toBe(Math.round(40 / 9) * 9);
+    expect(placeAt(-50, margins.top + 40)[0]).toBe(0);
+    // under the content: above the bottom margin
+    expect(placeAt(margins.left + 10, margins.top + contentH + 30)[1]).toBeLessThan(contentH);
+  });
+
+  it("puts a point in the grey between sheets on the nearer sheet", () => {
+    loadDoc(doc([math("a", 0, "1"), math("b", pageGeom(doc([])).contentH + 40, "2")], { view: "pages" }), null);
+    const { margins, paperH, contentH } = geom();
+    const [, below] = placeAt(100, paperH + 4); // just under sheet 1: stays on it
+    expect(below).toBeGreaterThan(0);
+    expect(below).toBeLessThan(contentH);
+    const [, above] = placeAt(100, stride() - 4); // just above sheet 2: lands on it
+    expect(above).toBeGreaterThanOrEqual(contentH);
+    expect(layout().toScene(0, above)[1]).toBeGreaterThanOrEqual(stride() + margins.top);
+  });
+
+  it("leaves canvas view alone", () => {
+    loadDoc(doc([math("a", 0, "1")], { view: "canvas" }), null);
+    expect(placeAt(5000, 300)).toEqual([5004, 297]);
   });
 });
