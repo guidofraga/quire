@@ -109,7 +109,14 @@ fn write(out: &mut String, e: &Expr) {
             if *op == BinaryOp::Pow {
                 child(out, a, POSTFIX);
                 out.push('^');
-                child(out, b, UNARY);
+                // a unit written after an exponent multiplies the power: `10^(2 m)` keeps its parentheses
+                if ends_in_quantity(b) {
+                    out.push('(');
+                    write(out, b);
+                    out.push(')');
+                } else {
+                    child(out, b, UNARY);
+                }
                 return;
             }
             let p = level(*op);
@@ -170,6 +177,14 @@ fn write(out: &mut String, e: &Expr) {
             out.push_str(if *global { " ≡ " } else { " := " });
             write(out, rhs);
         }
+    }
+}
+
+/// `e` printed without parentheses would end in a unit taken by a value (`2 m`, `-4 'm`).
+fn ends_in_quantity(e: &Expr) -> bool {
+    match e {
+        Expr::Unary(UnaryOp::Neg | UnaryOp::Pos | UnaryOp::PlusMinus, x) => ends_in_quantity(x),
+        _ => e.is_quantity(),
     }
 }
 
@@ -240,6 +255,18 @@ mod tests {
             "[\n  1, 2, 3;\n  4, 5, 6;\n  7, 8, 9\n]",
             "x ≡ ?",
             "[a, …; …, b]",
+            "W := 2.5*10^-4 m^3",
+            "10^2 m",
+            "W := 2*10^(-4) m^3",
+            "W := 2.5*10^-4 'm^3",
+            "10^-0.5 m",
+            "2^3^2 m",
+            "x^2 m",
+            "5 m^2",
+            "e^(-t/(2 s))",
+            "(10^2 m)^2",
+            "1 m/10^2 s",
+            "-10^2 'm",
         ] {
             roundtrip(src)?;
         }
@@ -259,6 +286,18 @@ mod tests {
             Expr::Binary(crate::BinaryOp::Pow, Box::new(parse("5 'm")?), Box::new(Expr::Num("2".into())));
         assert_eq!(print(&squared), "(5 'm)^2");
         assert_eq!(print(&parse("-5 'm")?), "-5 'm");
+        Ok(())
+    }
+
+    #[test]
+    fn a_unit_in_an_exponent_keeps_its_parentheses() -> TestResult {
+        use crate::{BinaryOp, UnaryOp};
+        let quantity = parse("2 m")?;
+        let pow = |x: Expr| Expr::Binary(BinaryOp::Pow, Box::new(Expr::Num("10".into())), Box::new(x));
+        // printed bare, `10^2 m` would read as 10^2 times a metre
+        assert_eq!(print(&pow(quantity.clone())), "10^(2 m)");
+        assert_eq!(print(&pow(Expr::Unary(UnaryOp::Neg, Box::new(quantity)))), "10^(-2 m)");
+        assert_eq!(print(&pow(parse("2")?)), "10^2");
         Ok(())
     }
 
