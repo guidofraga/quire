@@ -37,6 +37,7 @@ import {
   setRevealHandler,
   widths,
   setState,
+  placeAt,
   snap,
   startEditing,
   state,
@@ -127,8 +128,7 @@ export function clientToDoc(cx: number, cy: number): [number, number] {
   const rect = viewportEl.getBoundingClientRect();
   const sx = (cx - rect.left - state.view.x) / state.view.zoom;
   const sy = (cy - rect.top - state.view.y) / state.view.zoom;
-  const [x, y] = layout().fromScene(sx, sy);
-  return [Math.max(0, snap(x)), Math.max(0, snap(y))];
+  return placeAt(sx, sy);
 }
 
 /** Scroll so a region is in view and select it. */
@@ -367,8 +367,7 @@ export function Canvas() {
       const box = marquee();
       setMarquee(null);
       if (!dragging || !box) {
-        const [x, y] = layout().fromScene(...toScene(ev.clientX, ev.clientY));
-        setState({ caret: [Math.max(0, snap(x)), Math.max(0, snap(y))], selection: [] });
+        setState({ caret: placeAt(...toScene(ev.clientX, ev.clientY)), selection: [] });
         // a click on the page starts Tab afresh, from the top
         tabFrom = null;
         return;
@@ -385,6 +384,19 @@ export function Canvas() {
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+  }
+
+  /** How far these regions can move right before one passes the content area (page view). */
+  function rightRoom(ids: Iterable<string>) {
+    const l = layout();
+    if (!l.pageView) return Infinity;
+    let room = Infinity;
+    for (const id of ids) {
+      const p = l.byId.get(id);
+      const w = widths[id];
+      if (p && w !== undefined) room = Math.min(room, l.geom.contentW - p.x - w);
+    }
+    return Math.max(0, room);
   }
 
   function onRegionDown(id: string, e: PointerEvent) {
@@ -408,6 +420,7 @@ export function Canvas() {
     // deltas are measured in document space, so dragging across a page gap works
     const anchor = layout().fromScene(...toScene(e.clientX, e.clientY));
     let moved = false;
+    const dxMax = rightRoom(origins.keys());
     const move = (ev: PointerEvent) => {
       if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 3) return;
       if (!moved) {
@@ -416,6 +429,9 @@ export function Canvas() {
       }
       const [x, y] = layout().fromScene(...toScene(ev.clientX, ev.clientY));
       const raw = [x - anchor[0], y - anchor[1]];
+      // page view: the content area's right edge stops a drag (a region already outside may
+      // still come back in); vertical moves go on across pages
+      raw[0] = Math.min(raw[0], dxMax);
       // edges and centres of other regions win over the grid; ⌘ disables snapping
       const s = ev.metaKey ? { dx: raw[0], dy: raw[1] } : smartSnap(new Set(origins.keys()), origins, raw[0], raw[1]);
       if (ev.metaKey) setGuides({});
@@ -733,8 +749,7 @@ export function Canvas() {
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        const [x, y] = layout().fromScene(...toScene(e.clientX, e.clientY));
-        setState({ caret: [Math.max(0, snap(x)), Math.max(0, snap(y))], selection: [] });
+        setState({ caret: placeAt(...toScene(e.clientX, e.clientY)), selection: [] });
         openRegionMenu(e, null);
       }}
     >

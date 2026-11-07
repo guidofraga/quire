@@ -495,10 +495,42 @@ export function contentBottom(): number {
   return bottom;
 }
 
+/** The narrowest a region may be left with at the right edge of the content area (as `availableWidth`). */
+const MIN_ROOM = 120;
+
+/** In page view, the furthest right a region can start and still sit on the paper; canvas view is free. */
+export function maxContentX(): number {
+  const l = layout();
+  return l.pageView ? Math.max(0, l.geom.contentW - MIN_ROOM) : Infinity;
+}
+
+/**
+ * A scene point as a document point to place something at. In page view the point is pulled to
+ * the nearest spot inside the content area (not the margins, not the grey between sheets), so
+ * nothing is created off the paper; canvas view places it where it is.
+ */
+export function placeAt(sx: number, sy: number): [number, number] {
+  const l = layout();
+  if (l.pageView) {
+    const { margins, paperH, contentW, contentH } = l.geom;
+    const stride = paperH + SHEET_GAP;
+    const k = Math.min(l.pages - 1, Math.max(0, Math.floor(sy / stride)));
+    const top = k * stride + margins.top;
+    const bottom = top + contentH - GRID;
+    // the grey gap under a sheet is nearer the next one's top margin than this one's bottom
+    const next = sy - (k * stride + paperH) > SHEET_GAP / 2 && k + 1 < l.pages ? k + 1 : k;
+    const [lo, hi] = next === k ? [top, bottom] : [top + stride, bottom + stride];
+    sy = Math.min(hi, Math.max(lo, sy));
+    sx = Math.min(margins.left + Math.max(0, contentW - MIN_ROOM), Math.max(margins.left, sx));
+  }
+  const [x, y] = l.fromScene(sx, sy);
+  return [Math.max(0, snap(x)), Math.max(0, snap(y))];
+}
+
 /** Width available to a region starting at x (text wraps here). */
 export function availableWidth(x: number): number {
   const l = layout();
-  return Math.max(120, (l.pageView ? l.geom.contentW : PAGE_WIDTH) - x);
+  return Math.max(MIN_ROOM, (l.pageView ? l.geom.contentW : PAGE_WIDTH) - x);
 }
 
 /**

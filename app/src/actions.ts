@@ -42,6 +42,7 @@ import {
   heights,
   LINE,
   layout,
+  maxContentX,
   localized,
   mutate,
   regroup,
@@ -232,9 +233,11 @@ export function pasteRegions(regions: Region[]) {
   const minX = Math.min(...regions.map((r) => r.at[0]));
   const minY = Math.min(...regions.map((r) => r.at[1]));
   const [tx, ty] = state.caret ?? [minX + GRID * 2, minY + GRID * 2];
+  // page view: the group moves left as a whole until it starts on the paper
+  const shift = Math.min(0, maxContentX() - Math.max(...regions.map((r) => r.at[0] - minX + tx)));
   const pasted = regions.map((r) => {
     const c = cloneWithNewIds(r);
-    c.at = [Math.max(0, snap(c.at[0] - minX + tx)), Math.max(0, snap(c.at[1] - minY + ty))];
+    c.at = [Math.max(0, snap(c.at[0] - minX + tx + shift)), Math.max(0, snap(c.at[1] - minY + ty))];
     return c;
   });
   mutate((d) => {
@@ -436,7 +439,8 @@ async function placeImage(src: string, at?: [number, number]) {
   const url = await api.readAsset(state.path ?? "", src);
   setState("assets", src, url);
   const [nw, nh] = await naturalSize(url);
-  const [x, y] = at ?? state.caret ?? [GRID * 4, GRID * 4];
+  const [ax, y] = at ?? state.caret ?? [GRID * 4, GRID * 4];
+  const x = Math.min(ax, maxContentX()); // page view: on the paper
   const maxW = Math.min(availableWidth(x), 480);
   const w = Math.round(Math.min(nw, maxW));
   const id = newId();
