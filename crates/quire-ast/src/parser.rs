@@ -5,7 +5,8 @@
 //!
 //! A number directly followed by a unit (`25.5 'm^2`) is a single primary, so it
 //! binds tighter than any operator; so is a name or parentheses followed by a quoted
-//! unit (`T '°C`, `(-20) '°C`).
+//! unit (`T '°C`, `(-20) '°C`). Inside an exponent nothing takes a unit: the unit
+//! multiplies the whole power instead, so `10^-4 m^3` is `10^-4 · m^3`, not `10^(-4 m^3)`.
 //!
 //! Trees deeper than [`MAX_DEPTH`] are refused while they are built, so nothing that
 //! walks a parsed tree (evaluation, printing, the symbolic engine, dropping it) can run
@@ -49,7 +50,7 @@ type Result<T> = std::result::Result<T, ParseError>;
 type Tree = (Expr, usize);
 
 pub fn parse(src: &str) -> Result<Expr> {
-    let mut p = Parser { tokens: tokenize(src)?, i: 0, nest: 0 };
+    let mut p = Parser { tokens: tokenize(src)?, i: 0, nest: 0, exponent: false, held: false };
     let (e, _) = p.expr(DEFINE)?;
     match p.peek() {
         Tok::Eof => Ok(e),
@@ -108,6 +109,10 @@ struct Parser {
     /// Calls of [`Parser::expr`] in progress. Each one builds at least one level of the
     /// tree, so this stays within [`MAX_DEPTH`] for any tree that is accepted.
     nest: usize,
+    /// Parsing an exponent, outside any brackets: a value there takes no unit.
+    exponent: bool,
+    /// A unit that a value in the exponent would have taken is next: the power takes it.
+    held: bool,
 }
 
 impl Parser {
@@ -293,10 +298,45 @@ impl Parser {
         let base = self.postfix()?;
         if self.eat("^") {
             // right-associative, and the exponent may have a sign: `2^-1`, `a^b^c`
-            let exponent = self.expr(UNARY)?;
-            return self.bin(BinaryOp::Pow, base, exponent);
+            let (exponent, held) = self.exponent()?;
+            let power = self.bin(BinaryOp::Pow, base, exponent)?;
+            // `10^-4 m^3`, `2^3^2 m`: the unit multiplies the outermost power
+            if held && !self.exponent {
+                let unit = self.unit_term()?;
+                return self.bin(BinaryOp::Juxt, power, unit);
+            }
+            self.held |= held;
+            return Ok(power);
         }
         Ok(base)
+    }
+
+    /// The exponent after a `^`, and whether a unit written after it is waiting to be taken.
+    fn exponent(&mut self) -> Result<(Tree, bool)> {
+        let outer = std::mem::replace(&mut self.exponent, true);
+        self.held = false;
+        let e = self.expr(UNARY);
+        self.exponent = outer;
+        Ok((e?, std::mem::take(&mut self.held)))
+    }
+
+    /// Runs `f` on the inside of brackets, where values take units again even in an exponent:
+    /// `e^(-t/(2 s))`.
+    fn bracketed<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let outer = std::mem::replace(&mut self.exponent, false);
+        let r = f(self);
+        self.exponent = outer;
+        r
+    }
+
+    /// Whether a value may take the unit that follows it. In an exponent it may not, and the
+    /// unit is held for the power to take.
+    fn takes_unit(&mut self) -> bool {
+        if self.exponent {
+            self.held = true;
+            return false;
+        }
+        true
     }
 
     fn postfix(&mut self) -> Result<Tree> {
@@ -305,7 +345,7 @@ impl Parser {
             if self.eat("!") {
                 (e, depth) = self.grow(Expr::Factorial(Box::new(e)), depth)?;
             } else if self.eat("[") {
-                let (idx, d) = self.list("]")?;
+                let (idx, d) = self.bracketed(|p| p.list("]"))?;
                 (e, depth) = self.grow(Expr::Index(Box::new(e), idx), depth.max(d))?;
             } else {
                 return Ok((e, depth));
@@ -332,7 +372,7 @@ impl Parser {
     #[inline(never)]
     fn number(&mut self, n: String) -> Result<Tree> {
         let num = (Expr::Num(n), 1);
-        if matches!(self.peek(), Tok::Unit(_) | Tok::Ident(_)) {
+        if matches!(self.peek(), Tok::Unit(_) | Tok::Ident(_)) && self.takes_unit() {
             let unit = self.unit_term()?;
             return self.bin(BinaryOp::Juxt, num, unit);
         }
@@ -341,25 +381,37 @@ impl Parser {
 
     #[inline(never)]
     fn call(&mut self, name: String) -> Result<Tree> {
-        let (args, d) = self.list(")")?;
+        let (args, d) = self.bracketed(|p| p.list(")"))?;
         self.grow(Expr::Call(name, args), d)
     }
 
     #[inline(never)]
     fn paren(&mut self) -> Result<Tree> {
-        let (e, d) = self.expr(DEFINE)?;
-        self.expect(")")?;
+        let (e, d) = self.bracketed(|p| {
+            let e = p.expr(DEFINE)?;
+            p.expect(")")?;
+            Ok(e)
+        })?;
         let paren = self.grow(Expr::Paren(Box::new(e)), d)?;
+        // `10^(-4) m^3`: a plain name after a bracketed exponent is a unit for the power, as
+        // after a number
+        if self.exponent
+            && matches!(self.peek(), Tok::Ident(_))
+            && !matches!(self.peek2(), Tok::Sym("(" | "["))
+        {
+            self.held = true;
+            return Ok(paren);
+        }
         self.quoted_unit_after(paren)
     }
 
     /// A vector or matrix; `[0; 1; 2] s`: a unit after it applies to every element.
     #[inline(never)]
     fn bracket(&mut self, pos: usize) -> Result<Tree> {
-        let m = self.matrix(pos)?;
+        let m = self.bracketed(|p| p.matrix(pos))?;
         let unit = matches!(self.peek(), Tok::Unit(_) | Tok::Ident(_))
             && !matches!(self.peek2(), Tok::Sym("(" | "["));
-        if unit {
+        if unit && self.takes_unit() {
             let u = self.unit_term()?;
             return self.bin(BinaryOp::Juxt, m, u);
         }
@@ -370,7 +422,7 @@ impl Parser {
     /// number. Only a quoted unit: a plain name there (`x m`) would read as two variables.
     #[inline(never)]
     fn quoted_unit_after(&mut self, e: Tree) -> Result<Tree> {
-        if matches!(self.peek(), Tok::Unit(_)) {
+        if matches!(self.peek(), Tok::Unit(_)) && self.takes_unit() {
             let unit = self.unit_term()?;
             return self.bin(BinaryOp::Juxt, e, unit);
         }
@@ -390,7 +442,9 @@ impl Parser {
             },
         };
         if self.eat("^") {
-            let exponent = self.expr(UNARY)?;
+            // `5 m^2 s` is not a unit power with a unit in its exponent; what follows the
+            // power is left to the caller, which reports it
+            let (exponent, _) = self.exponent()?;
             return self.bin(BinaryOp::Pow, unit, exponent);
         }
         Ok(unit)
@@ -529,6 +583,59 @@ mod tests {
         ] {
             assert_eq!(parse(src)?, parse(grouped).map(strip)?, "{src}");
         }
+        Ok(())
+    }
+
+    fn juxt(a: Expr, b: Expr) -> Expr {
+        Expr::Binary(BinaryOp::Juxt, Box::new(a), Box::new(b))
+    }
+
+    #[test]
+    fn a_unit_after_a_power_multiplies_the_whole_power() -> TestResult {
+        for (src, power, unit) in [
+            ("10^-4 m^3", "10^-4", "m^3"),
+            ("10^2 m", "10^2", "m"),
+            ("10^(-4) m^3", "10^(-4)", "m^3"),
+            ("10^-4 'm^3", "10^-4", "'m^3"),
+            ("10^(-4) 'm^3", "10^(-4)", "'m^3"),
+            ("10^-0.5 m", "10^-0.5", "m"),
+            ("2^3^2 m", "2^3^2", "m"),
+            ("x^2 m", "x^2", "m"),
+            ("x^y 'm", "x^y", "'m"),
+        ] {
+            assert_eq!(parse(src)?, juxt(parse(power)?, parse(unit)?), "{src}");
+        }
+        // the quantity is one operand of `*`: 2.5*(10^-4 m^3)
+        let Expr::Define { rhs, .. } = parse("W := 2.5*10^-4 m^3")? else {
+            return Err("expected a definition".into());
+        };
+        let product = Expr::Binary(BinaryOp::Mul, Box::new(parse("2.5")?), Box::new(parse("10^-4 m^3")?));
+        assert_eq!(*rhs, product);
+        Ok(())
+    }
+
+    #[test]
+    fn values_in_brackets_in_an_exponent_still_take_units() -> TestResult {
+        let Expr::Binary(BinaryOp::Pow, _, exponent) = parse("e^(-t/(2 s))")? else {
+            return Err("expected a power".into());
+        };
+        assert_eq!(*exponent, parse("(-t/(2 s))")?);
+        assert_eq!(
+            parse("2^v[2 'm]")?,
+            Expr::Binary(BinaryOp::Pow, Box::new(parse("2")?), Box::new(parse("v[2 'm]")?))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_unit_power_keeps_its_exponent() -> TestResult {
+        assert_eq!(parse("5 m^2")?, juxt(parse("5")?, parse("m^2")?));
+        assert_eq!(parse("5 'm^-2")?, juxt(parse("5")?, parse("'m^-2")?));
+        // a second unit after a unit power is not taken, as after a plain unit (`5 m s`)
+        assert!(parse("5 m^2 s").is_err());
+        // a plain name after a name is still not a unit, in an exponent or not
+        assert!(parse("x^y m").is_err());
+        assert!(parse("x m").is_err());
         Ok(())
     }
 
