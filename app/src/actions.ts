@@ -491,16 +491,23 @@ export async function insertImage(at?: [number, number]) {
   else if (pick?.file) await insertImageBlob(pick.file, at);
 }
 
-export async function addBackground() {
+/** Ask for an image and add it to the document's assets: its `assets/` path, or null. */
+export async function pickAsset(): Promise<string | null> {
   const pick = await pickImage();
-  if (!pick) return;
+  if (!pick) return null;
   const src = pick.path
     ? await api.importImage(pick.path)
     : await api.stageImage(
         await readAsBase64(pick.file!),
-        (pick.file!.type.split("/")[1] ?? "png").replace("jpeg", "jpg"),
+        (pick.file!.type.split("/")[1] ?? "png").replace("jpeg", "jpg").replace("svg+xml", "svg"),
       );
   setState("assets", src, await api.readAsset(state.path ?? "", src));
+  return src;
+}
+
+export async function addBackground() {
+  const src = await pickAsset();
+  if (!src) return;
   mutate((d) => {
     const page = (d.page ??= {});
     const list = ((page.backgrounds as Background[] | undefined) ?? []).concat([{ pages: "1", src, fit: "margins" }]);

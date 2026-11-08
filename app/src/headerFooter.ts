@@ -111,34 +111,39 @@ export function chipTypedFields(el: HTMLElement): boolean {
   return changed;
 }
 
-/** Undo inside one editing session: snapshots of the three slots, typing coalesced. */
-export class SlotHistory {
-  private past: Record<Slot, string>[] = [];
-  private future: Record<Slot, string>[] = [];
+const copy = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));
+
+/**
+ * Undo inside one editing session: snapshots of the band (its slots, and its image, rule and
+ * type from the toolbar), typing coalesced.
+ */
+export class SlotHistory<T = Record<Slot, string>> {
+  private past: T[] = [];
+  private future: T[] = [];
   private last = 0;
   private lastSlot: Slot | null = null;
 
   /** Call before a change; typing in the same slot within `quiet` ms joins the previous step. */
-  before(state: Record<Slot, string>, slot: Slot, typing: boolean, now = Date.now(), quiet = 1000) {
+  before(state: T, slot: Slot, typing: boolean, now = Date.now(), quiet = 1000) {
     const joins = typing && slot === this.lastSlot && now - this.last < quiet && this.past.length > 0;
-    if (!joins) this.past.push({ ...state });
+    if (!joins) this.past.push(copy(state));
     this.future.length = 0;
     this.last = typing ? now : 0;
     this.lastSlot = slot;
   }
 
-  undo(state: Record<Slot, string>): Record<Slot, string> | null {
-    const prev = this.past.pop();
-    if (!prev) return null;
-    this.future.push({ ...state });
+  undo(state: T): T | null {
+    if (!this.past.length) return null;
+    const prev = this.past.pop()!;
+    this.future.push(copy(state));
     this.last = 0;
     return prev;
   }
 
-  redo(state: Record<Slot, string>): Record<Slot, string> | null {
-    const next = this.future.pop();
-    if (!next) return null;
-    this.past.push({ ...state });
+  redo(state: T): T | null {
+    if (!this.future.length) return null;
+    const next = this.future.pop()!;
+    this.past.push(copy(state));
     this.last = 0;
     return next;
   }

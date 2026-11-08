@@ -39,7 +39,7 @@ const keep = (e: MouseEvent) => {
 /** The name a screen reader gives a button: its tooltip without the shortcut. */
 const nameOf = (title: string) => title.split("  ")[0];
 
-function Btn(props: {
+export function Btn(props: {
   title: string;
   active?: boolean;
   disabled?: boolean;

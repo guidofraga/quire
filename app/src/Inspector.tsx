@@ -2,8 +2,28 @@
 import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEditor";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { arrowFocus } from "./a11y";
-import { type Background, PX_PER_MM, toPx } from "./pages";
-import { commitEditing, layout, localized, setDocTitle, state, updateDoc, updateRegion, withLocalized } from "./store";
+import { pickAsset } from "./actions";
+import {
+  type Background,
+  type BandContent,
+  type HeaderFooter as HeaderFooterModel,
+  type HfSlot,
+  HF_DEFAULT_SIZE,
+  mirrored,
+  PX_PER_MM,
+  toPx,
+} from "./pages";
+import {
+  commitEditing,
+  flash,
+  layout,
+  localized,
+  setDocTitle,
+  state,
+  updateDoc,
+  updateRegion,
+  withLocalized,
+} from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import { DEFAULT_SIZE_3D, Plot3DFields } from "./Plot3D";
 import { defaultLabel } from "./labels";
@@ -610,17 +630,140 @@ function mm(v: string | number | undefined, fallback: number): number {
   return Math.round((toPx(v, fallback * PX_PER_MM) / PX_PER_MM) * 10) / 10;
 }
 
-function HeaderFooter(props: { which: "header" | "footer" }) {
-  const hf = () => (state.doc.page?.[props.which] as Record<string, string> | undefined) ?? {};
+const SLOT_LABEL: [HfSlot, string][] = [
+  ["left", "Left"],
+  ["center", "Centre"],
+  ["right", "Right"],
+];
+
+/** A band's image (the band's own, or its even pages'): where it sits and how high. */
+function BandImageFields(props: { path: string[]; content: BandContent | undefined; label: string }) {
+  const img = () => props.content?.image;
+  const add = async () => {
+    try {
+      const src = await pickAsset();
+      if (src) set([...props.path, "image"])({ src, slot: "left" });
+    } catch (e) {
+      flash(String(e instanceof Error ? e.message : e));
+    }
+  };
+  return (
+    <Show
+      when={img()}
+      fallback={
+        <button class="insp-button insp-hf-add" onClick={() => void add()}>
+          Add {props.label.toLowerCase()}…
+        </button>
+      }
+    >
+      <div class="insp-bg">
+        <Show when={state.assets[img()!.src]}>
+          <img class="insp-hf-image" src={state.assets[img()!.src]} alt="" />
+        </Show>
+        <div class="insp-bg-fields">
+          <div class="insp-row">
+            <Field label="Position">
+              <Select
+                value={img()!.slot ?? "left"}
+                options={SLOT_LABEL}
+                onChange={(v) => set([...props.path, "image", "slot"])(v === "left" ? undefined : v)}
+              />
+            </Field>
+            <Field label="Height mm">
+              <Num
+                value={img()!.height === undefined ? undefined : mm(img()!.height, 0)}
+                placeholder="Fit"
+                step={0.5}
+                onCommit={(v) => set([...props.path, "image", "height"])(v === undefined ? undefined : `${v}mm`)}
+              />
+            </Field>
+          </div>
+          <button class="insp-link" onClick={() => set([...props.path, "image"])(undefined)}>
+            Remove {props.label.toLowerCase()}
+          </button>
+        </div>
+      </div>
+    </Show>
+  );
+}
+
+/** Everything about a header or a footer: slots, even pages, type, line, distance, image. */
+function HeaderFooterFields(props: { which: "header" | "footer" }) {
+  const name = props.which === "header" ? "Header" : "Footer";
+  const hf = () => (state.doc.page?.[props.which] as HeaderFooterModel | undefined) ?? {};
+  const path = ["page", props.which];
+  const first = () => (state.doc.page?.firstPage as { header?: boolean; footer?: boolean } | undefined) ?? {};
+  const slots = (prefix: string, at: string[], c: () => BandContent | undefined) => (
+    <For each={SLOT_LABEL}>
+      {([slot]) => (
+        <Field label={`${prefix} ${slot === "center" ? "center" : slot}`}>
+          <Text value={c()?.[slot]} placeholder={FIELDS} onCommit={set([...at, slot])} />
+        </Field>
+      )}
+    </For>
+  );
   return (
     <>
-      <For each={["left", "center", "right"]}>
-        {(slot) => (
-          <Field label={`${props.which === "header" ? "Header" : "Footer"} ${slot}`}>
-            <Text value={hf()[slot]} placeholder={FIELDS} onCommit={set(["page", props.which, slot])} />
+      {slots(name, path, hf)}
+      <Check
+        checked={first()[props.which] === false}
+        label={`No ${props.which} on the first page`}
+        onChange={(on) => set(["page", "firstPage", props.which])(on ? false : undefined)}
+      />
+      <Check
+        checked={!!hf().even}
+        label="Different odd and even pages"
+        onChange={(on) => updateDoc((d) => setPath(d, [...path, "even"], on ? mirrored(hf()) : undefined))}
+      />
+      <Show when={hf().even}>{slots(`Even ${props.which}`, [...path, "even"], () => hf().even)}</Show>
+      <div class="insp-row">
+        <Field label="Size pt">
+          <Num
+            value={hf().size}
+            placeholder={String(HF_DEFAULT_SIZE)}
+            step={0.5}
+            onCommit={(v) => set([...path, "size"])(v && v > 0 ? v : undefined)}
+          />
+        </Field>
+        <Field label={props.which === "header" ? "From top mm" : "From bottom mm"}>
+          <Num
+            value={hf().distance === undefined ? undefined : mm(hf().distance, 0)}
+            placeholder="Centred"
+            step={0.5}
+            onCommit={(v) => set([...path, "distance"])(v === undefined ? undefined : `${v}mm`)}
+          />
+        </Field>
+      </div>
+      <Check checked={!!hf().bold} label="Bold" onChange={(on) => set([...path, "bold"])(on || undefined)} />
+      <Check
+        checked={!!hf().rule}
+        label={props.which === "header" ? "Line under the header" : "Line over the footer"}
+        onChange={(on) => set([...path, "rule"])(on ? {} : undefined)}
+      />
+      <Show when={hf().rule}>
+        <div class="insp-row">
+          <Field label="Line pt">
+            <Num
+              value={hf().rule?.width === undefined ? undefined : Math.round(toPx(hf().rule!.width, 0) * 75) / 100}
+              placeholder="0.5"
+              step={0.25}
+              onCommit={(v) => set([...path, "rule", "width"])(v && v > 0 ? `${v}pt` : undefined)}
+            />
           </Field>
-        )}
-      </For>
+          <Field label="Line colour">
+            <Text
+              value={hf().rule?.color}
+              placeholder="As the text"
+              mono
+              onCommit={(v) => set([...path, "rule", "color"])(/^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : undefined)}
+            />
+          </Field>
+        </div>
+      </Show>
+      <BandImageFields path={path} content={hf()} label="Image" />
+      <Show when={hf().even}>
+        <BandImageFields path={[...path, "even"]} content={hf().even} label="Even page image" />
+      </Show>
     </>
   );
 }
@@ -629,7 +772,6 @@ function PageTab(props: { onAddBackground: () => void }) {
   const page = () => state.doc.page ?? {};
   const margins = () => (page().margins ?? {}) as Record<string, string | number>;
   const backgrounds = () => (page().backgrounds as Background[] | undefined) ?? [];
-  const first = () => (page().firstPage as { header?: boolean; footer?: boolean } | undefined) ?? {};
   return (
     <>
       <Section title="Paper">
@@ -666,19 +808,13 @@ function PageTab(props: { onAddBackground: () => void }) {
           </For>
         </div>
       </Section>
-      <Section title="Header & footer">
-        <HeaderFooter which="header" />
-        <HeaderFooter which="footer" />
-        <Check
-          checked={first().header === false}
-          label="No header on the first page"
-          onChange={(on) => set(["page", "firstPage", "header"])(on ? false : undefined)}
-        />
-        <Check
-          checked={first().footer === false}
-          label="No footer on the first page"
-          onChange={(on) => set(["page", "firstPage", "footer"])(on ? false : undefined)}
-        />
+      <Section title="Header">
+        <HeaderFooterFields which="header" />
+      </Section>
+      <Section title="Footer">
+        <HeaderFooterFields which="footer" />
+      </Section>
+      <Section title="Page numbers">
         <Field label="First page number">
           <Num
             value={(page().pageNumber as { start?: number } | undefined)?.start}

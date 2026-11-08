@@ -43,12 +43,14 @@ export function Sheet(props: { k: number; regions: Placed[]; onDragStart: (id: s
         band="header"
         k={props.k}
         pages={total()}
+        room={m().top}
         style={{ left: px(m().left), right: px(m().right), top: "0", height: px(m().top) }}
       />
       <HeaderFooterBand
         band="footer"
         k={props.k}
         pages={total()}
+        room={m().bottom}
         style={{ left: px(m().left), right: px(m().right), bottom: "0", height: px(m().bottom) }}
       />
       <Show when={!state.printing}>

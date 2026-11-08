@@ -95,4 +95,18 @@ describe("undo inside one session", () => {
     expect(h.undo(v("ab"))).toEqual(v("a"));
     expect(h.undo(v("a"))).toEqual(v(""));
   });
+
+  it("keeps whole bands, an absent one included, apart from later changes", () => {
+    type Hf = { left?: string; rule?: { width?: string } } | undefined;
+    const h = new SlotHistory<Hf>();
+    h.before(undefined, "left", false, 0);
+    const band: Hf = { left: "a", rule: {} };
+    h.before(band, "left", false, 10);
+    band.rule!.width = "1pt"; // the document changes the object in place
+    expect(h.undo({ left: "b" })).toEqual({ left: "a", rule: {} });
+    // the band did not exist before the first change: undo says so, rather than "nothing left"
+    expect(h.undo({ left: "a", rule: {} })).toBeUndefined();
+    expect(h.undo(undefined)).toBeNull();
+    expect(h.redo(undefined)).toEqual({ left: "a", rule: {} });
+  });
 });

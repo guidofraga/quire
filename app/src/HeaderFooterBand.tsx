@@ -1,12 +1,13 @@
 // Headers and footers on the page. Each sheet has a band in its top and bottom margins that
 // shows the filled-in fields; a double-click (or Edit Header / Edit Footer) edits the band in
 // place: three slots with fields as chips, a small toolbar beside it, one undo step in all.
-// Print and PDF draw only the filled-in slots, as before.
-import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+// Print and PDF draw the same row (text, image and rule) without the editing chrome.
+import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { announce, focusables, toolbarKeys } from "./a11y";
+import { pickAsset } from "./actions";
 import { focusCanvas } from "./Canvas";
-import { Dropdown } from "./FormatBar";
+import { Btn, Dropdown } from "./FormatBar";
 import {
   type Band,
   chip,
@@ -18,9 +19,26 @@ import {
   SlotHistory,
   SLOTS,
 } from "./headerFooter";
-import { type FieldContext, fillFields, type HeaderFooter } from "./pages";
+import {
+  type BandContent,
+  type BandImage,
+  bandLayout,
+  contentOn,
+  evenPage,
+  type FieldContext,
+  fillFields,
+  HF_DEFAULT_RULE,
+  HF_DEFAULT_SIZE,
+  HF_RULE_GAP,
+  type HeaderFooter,
+  mirrored,
+  PX_PER_MM,
+  scopeLabel as scopeWords,
+  toPx,
+} from "./pages";
 import {
   commitEditing,
+  flash,
   layout,
   localized,
   mutate,
@@ -50,11 +68,31 @@ const COLORS: [string | undefined, string][] = [
   ["#1a7f37", "Green"],
 ];
 
+const SIZES = [6, 7, 8, 9, 10, 11, 12, 14];
+/** Rule weights offered, in points. */
+const RULES: [number, string][] = [
+  [0.25, "Hairline"],
+  [0.5, "Thin"],
+  [1, "Medium"],
+  [1.5, "Thick"],
+];
+/** Image heights offered, in mm; "Automatic" is half the band. */
+const IMAGE_HEIGHTS = [6, 9, 12, 15];
+
 const bandOf = (band: Band) => state.doc.page?.[band] as HeaderFooter | undefined;
+const startNumber = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
 const firstPage = () => (state.doc.page?.firstPage as { header?: boolean; footer?: boolean } | undefined) ?? {};
 /** "Different first page": page 1 has its own band, which today's model keeps blank. */
 const firstDiffers = (band: Band) => firstPage()[band] === false;
 const blankOn = (band: Band, k: number) => k === 0 && firstDiffers(band);
+/** "Different odd and even pages": even pages show the band's `even` content. */
+const oddEven = (band: Band) => !!bandOf(band)?.even;
+const evenOn = (band: Band, k: number) => oddEven(band) && evenPage(k, startNumber());
+/** What an edit on page `k` changes: the even pages' own content, or the band's slots. */
+const contentOf = (band: Band, k: number): BandContent | undefined =>
+  evenOn(band, k) ? bandOf(band)?.even : bandOf(band);
+/** What page `k` shows. */
+const shownOn = (band: Band, k: number) => contentOn(bandOf(band), k, startNumber(), firstDiffers(band));
 
 function fileLabel(): string {
   return state.path?.replace(/\/+$/, "").split("/").pop() ?? "Untitled.quire";
@@ -63,9 +101,8 @@ function fileLabel(): string {
 /** The values fields take on page `k` (0-based). */
 function fieldContext(k: number, pages: number): FieldContext {
   const meta = state.doc.meta ?? {};
-  const start = (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
   return {
-    page: start + k,
+    page: startNumber() + k,
     pages,
     file: fileLabel(),
     title: localized(meta.title, meta.lang),
@@ -83,13 +120,96 @@ function fill(text: string | undefined, k: number, pages: number): string {
   return fillFields(text, c);
 }
 
-/** The three slots with their fields filled in: what the page shows, and what prints. */
-function Slots(props: { hf: HeaderFooter; page: number; pages: number; style: Record<string, string> }) {
+const px = (n: number) => `${n}px`;
+
+/**
+ * The row a band's slots sit on, and its rule: where it is in the margin (`room` px high),
+ * its type and colour. Shared by the page, the editor and print, so they all agree.
+ */
+function rowStyle(band: Band, room: number, content: BandContent | undefined): JSX.CSSProperties {
+  const hf = bandOf(band);
+  const l = bandLayout(hf, content, room);
+  return {
+    [band === "header" ? "top" : "bottom"]: px(l.offset),
+    height: px(l.rowH),
+    color: hf?.color ?? DEFAULT_COLOR,
+    "font-size": px(l.fontPx),
+    "font-weight": hf?.bold ? "bold" : undefined,
+  };
+}
+
+/** The line under a header or over a footer, just outside its row. */
+function Rule(props: { band: Band; room: number; content: BandContent | undefined }) {
+  const hf = () => bandOf(props.band);
+  const l = () => bandLayout(hf(), props.content, props.room);
   return (
-    <div class="page-hf" style={{ ...props.style, color: props.hf.color ?? DEFAULT_COLOR }}>
-      <span class="hf-left">{fill(props.hf.left, props.page, props.pages)}</span>
-      <span class="hf-center">{fill(props.hf.center, props.page, props.pages)}</span>
-      <span class="hf-right">{fill(props.hf.right, props.page, props.pages)}</span>
+    <Show when={hf()?.rule}>
+      <div
+        class="hf-rule"
+        aria-hidden="true"
+        style={{
+          [props.band === "header" ? "top" : "bottom"]: px(l().rowH + HF_RULE_GAP),
+          height: px(l().ruleW),
+          background: hf()?.rule?.color ?? hf()?.color ?? DEFAULT_COLOR,
+        }}
+      />
+    </Show>
+  );
+}
+
+function BandPicture(props: { image: BandImage; height: number }) {
+  return (
+    <Show when={state.assets[props.image.src]}>
+      <img
+        class="hf-image"
+        src={state.assets[props.image.src]}
+        alt=""
+        draggable={false}
+        style={{ height: px(props.height) }}
+      />
+    </Show>
+  );
+}
+
+/** A slot's image and what goes beside it: the image on the outer side of a right slot. */
+function Cell(props: {
+  slot: Slot;
+  content: BandContent | undefined;
+  imageH: number;
+  class?: string;
+  children: JSX.Element;
+}) {
+  const image = () => {
+    const img = props.content?.image;
+    return img && (img.slot ?? "left") === props.slot ? img : undefined;
+  };
+  const picture = () => (
+    <Show when={image()}>
+      <BandPicture image={image()!} height={props.imageH} />
+    </Show>
+  );
+  return (
+    <span class={`hf-${props.slot} ${props.class ?? ""}`}>
+      <Show when={props.slot !== "right"}>{picture()}</Show>
+      {props.children}
+      <Show when={props.slot === "right"}>{picture()}</Show>
+    </span>
+  );
+}
+
+/** The three slots with their fields filled in: what the page shows, and what prints. */
+function Slots(props: { band: Band; content: BandContent; page: number; pages: number; room: number }) {
+  const l = () => bandLayout(bandOf(props.band), props.content, props.room);
+  return (
+    <div class="page-hf" style={rowStyle(props.band, props.room, props.content)}>
+      <For each={SLOTS}>
+        {(slot) => (
+          <Cell slot={slot} content={props.content} imageH={l().imageH}>
+            {fill(props.content[slot], props.page, props.pages)}
+          </Cell>
+        )}
+      </For>
+      <Rule band={props.band} room={props.room} content={props.content} />
     </div>
   );
 }
@@ -103,35 +223,71 @@ interface Editor {
   band: Band;
   page: number;
   slots: () => HTMLElement[];
+  /** The slot the caret is in, or was in last. */
+  slot: () => Slot;
   insertField: (key: string) => void;
-  restore: (values: Record<Slot, string>) => void;
+  restore: (values: HeaderFooter | undefined) => void;
 }
 
 let editor: Editor | null = null;
 let endUndo: (() => void) | null = null;
-let history = new SlotHistory();
+let history = new SlotHistory<HeaderFooter | undefined>();
 /** Where the caret goes once the band's editor is on the page. */
 let pendingFocus: { slot: Slot; at?: [number, number] } | null = null;
 
 const [toolbarAnchor, setToolbarAnchor] = createSignal<HTMLElement | null>(null);
 
-function valuesOf(band: Band): Record<Slot, string> {
-  const hf = bandOf(band) ?? {};
-  return { left: hf.left ?? "", center: hf.center ?? "", right: hf.right ?? "" };
+/** The whole band as it is now, for the session's own undo. */
+const valuesOf = (band: Band) => bandOf(band);
+
+/** Drop what is empty, so a band set back to its defaults leaves nothing in the file. */
+function prune(hf: HeaderFooter) {
+  const o = hf as Record<string, unknown>;
+  for (const [k, v] of Object.entries(o)) if (v === undefined || v === "") delete o[k];
+  for (const c of [hf, hf.even]) if (c) for (const s of SLOTS) if (!c[s]) delete c[s];
+  if (hf.even && !hf.even.image) delete hf.even.image;
 }
 
-/** Write one slot (or the colour) into the document, as part of the session's undo step. */
-function writeBand(band: Band, change: Partial<Record<Slot | "color", string | undefined>>) {
+/**
+ * Change a band in the document. While its session is open, the change joins the session's
+ * single undo step; from elsewhere (an image picked after the session ended) it is a step of its own.
+ */
+function writeHf(band: Band, fn: (hf: HeaderFooter) => void) {
   mutate((d) => {
     const page = (d.page ??= {});
-    const hf: Record<string, string> = { ...((page[band] as Record<string, string> | undefined) ?? {}) };
-    for (const [k, v] of Object.entries(change)) {
-      if (v) hf[k] = v;
-      else delete hf[k];
-    }
+    const hf = JSON.parse(JSON.stringify(page[band] ?? {})) as HeaderFooter;
+    fn(hf);
+    prune(hf);
     if (Object.keys(hf).length) page[band] = hf;
     else delete page[band];
-  }, false);
+  }, !state.hfEditing);
+}
+
+/** A change from the toolbar: a step of the session's own undo, then the change. */
+function change(band: Band, fn: (hf: HeaderFooter) => void) {
+  if (state.hfEditing?.band === band) history.before(valuesOf(band), editor?.slot() ?? "left", false);
+  writeHf(band, fn);
+}
+
+/** Write slots of the content page `k` edits (the even pages' own, or the band's). */
+function writeSlots(band: Band, k: number, values: Partial<Record<Slot, string | undefined>>) {
+  const even = evenOn(band, k);
+  writeHf(band, (hf) => {
+    const c = even ? (hf.even ??= {}) : hf;
+    for (const [s, v] of Object.entries(values) as [Slot, string | undefined][]) {
+      if (v) c[s] = v;
+      else delete c[s];
+    }
+  });
+}
+
+function setImage(band: Band, k: number, image: BandImage | undefined) {
+  const even = evenOn(band, k);
+  change(band, (hf) => {
+    const c = even ? (hf.even ??= {}) : hf;
+    if (image) c.image = image;
+    else delete c.image;
+  });
 }
 
 function setFirstPageDiffers(band: Band, on: boolean) {
@@ -142,7 +298,15 @@ function setFirstPageDiffers(band: Band, on: boolean) {
     else delete first[band];
     if (Object.keys(first).length) page.firstPage = first;
     else delete page.firstPage;
-  }, false);
+  }, !state.hfEditing);
+}
+
+/** Different odd and even pages: even pages start as a mirror of the odd ones; off drops them. */
+function setOddEven(band: Band, on: boolean) {
+  change(band, (hf) => {
+    if (on) hf.even = mirrored(hf);
+    else delete hf.even;
+  });
 }
 
 /** Start editing a header or footer on page `page` (0-based), with the caret in `slot`. */
@@ -218,8 +382,9 @@ export function endHeaderFooter(focusPage = true) {
 export function headerFooterUndo(redo = false) {
   if (!state.hfEditing || !editor) return false;
   const band = state.hfEditing.band;
-  const values = redo ? history.redo(valuesOf(band)) : history.undo(valuesOf(band));
-  if (values) editor.restore(values);
+  const now = valuesOf(band);
+  const values = redo ? history.redo(now) : history.undo(now);
+  if (values !== null) editor.restore(values);
   else if (!redo) {
     endHeaderFooter();
     undo();
@@ -290,18 +455,29 @@ function slotAt(band: HTMLElement, x: number): Slot {
   return f < 1 / 3 ? "left" : f > 2 / 3 ? "right" : "center";
 }
 
-/** A header or footer on one sheet. */
-export function HeaderFooterBand(props: { band: Band; k: number; pages: number; style: Record<string, string> }) {
-  const shown = () => (blankOn(props.band, props.k) ? undefined : bandOf(props.band));
-  const empty = () => !SLOTS.some((s) => shown()?.[s]);
+/** A header or footer on one sheet; `room` is the height of its margin. */
+export function HeaderFooterBand(props: {
+  band: Band;
+  k: number;
+  pages: number;
+  room: number;
+  style: Record<string, string>;
+}) {
+  const shown = () => shownOn(props.band, props.k);
+  const empty = () => {
+    const c = shown();
+    return !c?.image && !SLOTS.some((s) => c?.[s]);
+  };
   const editing = () => state.hfEditing?.band === props.band && state.hfEditing.page === props.k;
   let el!: HTMLDivElement;
   return (
     <Show
       when={!state.printing}
       fallback={
-        <Show when={shown()}>
-          <Slots hf={shown()!} page={props.k} pages={props.pages} style={props.style} />
+        <Show when={!empty()}>
+          <div class="hf-print" style={props.style}>
+            <Slots band={props.band} content={shown()!} page={props.k} pages={props.pages} room={props.room} />
+          </div>
         </Show>
       }
     >
@@ -329,8 +505,8 @@ export function HeaderFooterBand(props: { band: Band; k: number; pages: number; 
           when={editing()}
           fallback={
             <>
-              <Show when={shown()}>
-                <Slots hf={shown()!} page={props.k} pages={props.pages} style={{ inset: "0" }} />
+              <Show when={!empty()}>
+                <Slots band={props.band} content={shown()!} page={props.k} pages={props.pages} room={props.room} />
               </Show>
               <Show when={empty()}>
                 <span class="hf-hint" aria-hidden="true">
@@ -340,17 +516,19 @@ export function HeaderFooterBand(props: { band: Band; k: number; pages: number; 
             </>
           }
         >
-          <BandEditor band={props.band} k={props.k} anchor={el} />
+          <BandEditor band={props.band} k={props.k} room={props.room} anchor={el} />
         </Show>
       </div>
     </Show>
   );
 }
 
-function BandEditor(props: { band: Band; k: number; anchor: HTMLElement }) {
+function BandEditor(props: { band: Band; k: number; room: number; anchor: HTMLElement }) {
   const els: HTMLElement[] = [];
   const blank = () => blankOn(props.band, props.k);
-  const value = (slot: Slot) => bandOf(props.band)?.[slot] ?? "";
+  const content = () => contentOf(props.band, props.k);
+  const value = (slot: Slot) => content()?.[slot] ?? "";
+  const l = () => bandLayout(bandOf(props.band), content(), props.room);
   /** Where the caret was last in each slot, for the toolbar's Insert field. */
   let lastSlot: Slot = pendingFocus?.slot ?? "left";
   let lastRange: Range | null = null;
@@ -363,7 +541,7 @@ function BandEditor(props: { band: Band; k: number; anchor: HTMLElement }) {
     // an emptied slot keeps nothing (a stray <br>), so its placeholder shows
     const text = readSlot(el);
     if (!text && el.childNodes.length) el.replaceChildren();
-    if (text !== value(slotOf(el))) writeBand(props.band, { [slotOf(el)]: text });
+    if (text !== value(slotOf(el))) writeSlots(props.band, props.k, { [slotOf(el)]: text });
   }
 
   function insertField(key: string) {
@@ -390,15 +568,27 @@ function BandEditor(props: { band: Band; k: number; anchor: HTMLElement }) {
     announce(`${FIELDS.find(([k]) => k === key)?.[1] ?? key} field inserted`);
   }
 
-  function restore(values: Record<Slot, string>) {
+  function restore(values: HeaderFooter | undefined) {
     // the slot that changes gets the caret, at its end
-    const changed = SLOTS.find((s) => values[s] !== value(s)) ?? lastSlot;
-    writeBand(props.band, values);
+    const before = content();
+    mutate((d) => {
+      const page = (d.page ??= {});
+      if (values) page[props.band] = JSON.parse(JSON.stringify(values));
+      else delete page[props.band];
+    }, false);
+    const changed = SLOTS.find((s) => (before?.[s] ?? "") !== value(s)) ?? lastSlot;
     focusSlot(changed);
   }
 
   onMount(() => {
-    editor = { band: props.band, page: props.k, slots: () => els.filter((e) => e.isConnected), insertField, restore };
+    editor = {
+      band: props.band,
+      page: props.k,
+      slots: () => els.filter((e) => e.isConnected),
+      slot: () => lastSlot,
+      insertField,
+      restore,
+    };
     setToolbarAnchor(props.anchor);
     const want = pendingFocus;
     pendingFocus = null;
@@ -413,7 +603,7 @@ function BandEditor(props: { band: Band; k: number; anchor: HTMLElement }) {
     if (state.hfEditing?.band === props.band && state.hfEditing.page === props.k) endHeaderFooter(false);
   });
 
-  // what changes elsewhere (Inspector ▸ Page, undo) shows here; what was typed here is left alone
+  // what changes elsewhere (Inspector ▸ Page, undo, odd and even) shows here; what was typed here is left alone
   for (const [i, slot] of SLOTS.entries())
     createEffect(() => {
       const v = value(slot);
@@ -502,33 +692,36 @@ function BandEditor(props: { band: Band; k: number; anchor: HTMLElement }) {
       class="page-hf hf-editor"
       role="group"
       aria-label={`${NAME[props.band]}, ${scopeLabel(props.band, props.k).toLowerCase()}`}
-      style={{ inset: "0", color: bandOf(props.band)?.color ?? DEFAULT_COLOR }}
+      style={rowStyle(props.band, props.room, content())}
     >
       <Show when={!blank()} fallback={<span class="hf-blank">No {props.band} on the first page</span>}>
         <For each={SLOTS}>
           {(slot, i) => (
-            <div
-              ref={(el) => {
-                els[i()] = el;
-                renderSlot(el, value(slot));
-              }}
-              class={`hf-slot hf-${slot}`}
-              contentEditable={true}
-              role="textbox"
-              aria-label={`${NAME[props.band]} ${SLOT_NAME[slot]}`}
-              aria-placeholder={PLACEHOLDER[slot]}
-              data-placeholder={PLACEHOLDER[slot]}
-              spellcheck={false}
-              onKeyDown={onKeyDown}
-              onBeforeInput={onBeforeInput}
-              onInput={(e) => sync(e.currentTarget)}
-              onPaste={onPaste}
-              onCopy={(e) => onCopy(e, false)}
-              onCut={(e) => onCopy(e, true)}
-              onFocus={() => (lastSlot = slot)}
-            />
+            <Cell slot={slot} content={content()} imageH={l().imageH} class="hf-cell">
+              <div
+                ref={(el) => {
+                  els[i()] = el;
+                  renderSlot(el, value(slot));
+                }}
+                class="hf-slot"
+                contentEditable={true}
+                role="textbox"
+                aria-label={`${NAME[props.band]} ${SLOT_NAME[slot]}`}
+                aria-placeholder={PLACEHOLDER[slot]}
+                data-placeholder={PLACEHOLDER[slot]}
+                spellcheck={false}
+                onKeyDown={onKeyDown}
+                onBeforeInput={onBeforeInput}
+                onInput={(e) => sync(e.currentTarget)}
+                onPaste={onPaste}
+                onCopy={(e) => onCopy(e, false)}
+                onCut={(e) => onCopy(e, true)}
+                onFocus={() => (lastSlot = slot)}
+              />
+            </Cell>
           )}
         </For>
+        <Rule band={props.band} room={props.room} content={content()} />
       </Show>
     </div>
   );
@@ -536,15 +729,14 @@ function BandEditor(props: { band: Band; k: number; anchor: HTMLElement }) {
 
 /** Which pages an edit reaches, in the toolbar's words. */
 function scopeLabel(band: Band, k: number): string {
-  if (k === 0 && firstDiffers(band)) return "First page";
-  return firstDiffers(band) ? "All pages but the first" : "All pages";
+  return scopeWords(k, { firstBlank: firstDiffers(band), oddEven: oddEven(band), start: startNumber() });
 }
 
 // ---------------------------------------------------------------------------
 // The toolbar
 // ---------------------------------------------------------------------------
 
-/** Beside the band being edited: fields, colour, Different first page, Done. */
+/** Beside the band being edited: fields, image, type, colour, rule, which pages, Done. */
 export function HeaderFooterToolbar() {
   return (
     <Show when={state.hfEditing && toolbarAnchor()}>
@@ -553,13 +745,17 @@ export function HeaderFooterToolbar() {
   );
 }
 
+const ptOf = (w: string | number | undefined) => Math.round((toPx(w ?? HF_DEFAULT_RULE, 0.5) * 72) / 96 / 0.25) * 0.25;
+
 function Toolbar(props: { anchor: HTMLElement }) {
   let bar!: HTMLDivElement;
   const now = () => state.hfEditing!;
   const band = () => now().band;
+  const hf = () => bandOf(band());
   const blank = () => blankOn(band(), now().page);
-  const color = () => bandOf(band())?.color;
-  const [pos, setPos] = createSignal({ left: 0, top: 0, up: false });
+  const color = () => hf()?.color;
+  const image = () => contentOf(band(), now().page)?.image;
+  const [pos, setPos] = createSignal({ left: 0, top: 0, up: false, max: 0 });
 
   // Outside the band, so it never covers the content it frames: above a header (over the gap
   // between sheets), below a footer. When it starts, the page pans to make room; when the
@@ -570,9 +766,12 @@ function Toolbar(props: { anchor: HTMLElement }) {
     const a = props.anchor.getBoundingClientRect();
     const pane =
       document.querySelector(".viewport")?.getBoundingClientRect() ?? new DOMRect(0, 0, innerWidth, innerHeight);
+    const gap = 8;
+    // a narrow window wraps the toolbar rather than cutting it off
+    const max = Math.max(240, pane.width - 2 * gap);
+    if (max !== pos().max) setPos({ ...pos(), max });
     const w = bar.offsetWidth;
     const h = bar.offsetHeight;
-    const gap = 8;
     const header = band() === "header";
     const ideal = header ? a.top - h - gap : a.bottom + gap;
     if (first) {
@@ -587,7 +786,7 @@ function Toolbar(props: { anchor: HTMLElement }) {
       ? Math.min(Math.max(ideal, pane.top + gap), a.bottom - h - 2)
       : Math.max(Math.min(ideal, pane.bottom - h - gap), a.top + 2);
     const left = Math.max(pane.left + gap, Math.min(a.left, pane.right - w - gap));
-    setPos({ left, top, up: !header });
+    setPos({ left, top, up: !header, max });
   };
   createEffect(() => {
     // what moves the band on screen
@@ -607,6 +806,34 @@ function Toolbar(props: { anchor: HTMLElement }) {
   // as the page shows it (a blank page added at the end counts until it prints)
   const preview = (key: string) => fill(`{${key}}`, now().page, layout().pages);
 
+  async function addImage() {
+    const at = now();
+    const slot = editor?.slot() ?? "left";
+    try {
+      const src = await pickAsset();
+      if (!src) return;
+      setImage(at.band, at.page, { src, slot });
+      announce("Image added");
+    } catch (e) {
+      flash(String(e instanceof Error ? e.message : e));
+    }
+  }
+
+  const radio = (on: boolean, label: string, run: () => void, close: () => void) => (
+    <button
+      class="fb-item"
+      classList={{ on }}
+      role="menuitemradio"
+      aria-checked={on}
+      onClick={() => {
+        close();
+        run();
+      }}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <Portal>
       <div
@@ -615,7 +842,11 @@ function Toolbar(props: { anchor: HTMLElement }) {
         classList={{ up: pos().up }}
         role="toolbar"
         aria-label={`${NAME[band()]} tools`}
-        style={{ left: `${pos().left}px`, top: `${pos().top}px` }}
+        style={{
+          left: `${pos().left}px`,
+          top: `${pos().top}px`,
+          "max-width": pos().max ? `${pos().max}px` : undefined,
+        }}
         onKeyDown={(e) => {
           if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as Element).closest(".fb-pop")) {
             e.preventDefault();
@@ -663,6 +894,126 @@ function Toolbar(props: { anchor: HTMLElement }) {
             </For>
           )}
         </Dropdown>
+        <Show
+          when={image()}
+          fallback={
+            <button
+              class="fb-btn hf-text-btn"
+              disabled={blank()}
+              title="Add an image, such as a logo"
+              onClick={addImage}
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+                <rect
+                  x="1.5"
+                  y="2"
+                  width="10"
+                  height="9"
+                  rx="1.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                />
+                <path d="M2.5 10l3-3.2 2 2 1.4-1.4 2 2.2" fill="none" stroke="currentColor" stroke-width="1.2" />
+              </svg>
+              <span>Image…</span>
+            </button>
+          }
+        >
+          <Dropdown
+            title="Image"
+            name="Image"
+            kind="menu"
+            label={
+              <span class="hf-thumb">
+                <Show when={state.assets[image()!.src]}>
+                  <img src={state.assets[image()!.src]} alt="" />
+                </Show>
+              </span>
+            }
+          >
+            {(close) => (
+              <>
+                <For each={SLOTS}>
+                  {(s) =>
+                    radio(
+                      (image()?.slot ?? "left") === s,
+                      `${PLACEHOLDER[s]}`,
+                      () => setImage(band(), now().page, { ...image()!, slot: s }),
+                      close,
+                    )
+                  }
+                </For>
+                <div class="hf-menu-sep" role="separator" />
+                {radio(
+                  image()?.height === undefined,
+                  "Fit the band",
+                  () => setImage(band(), now().page, { src: image()!.src, slot: image()!.slot }),
+                  close,
+                )}
+                <For each={IMAGE_HEIGHTS}>
+                  {(mm) =>
+                    radio(
+                      image()?.height !== undefined && Math.round(toPx(image()!.height, 0) / PX_PER_MM) === mm,
+                      `${mm} mm high`,
+                      () => setImage(band(), now().page, { ...image()!, height: `${mm}mm` }),
+                      close,
+                    )
+                  }
+                </For>
+                <div class="hf-menu-sep" role="separator" />
+                <button
+                  class="fb-item"
+                  role="menuitem"
+                  onClick={() => {
+                    close();
+                    void addImage();
+                  }}
+                >
+                  Replace Image…
+                </button>
+                <button
+                  class="fb-item"
+                  role="menuitem"
+                  onClick={() => {
+                    close();
+                    setImage(band(), now().page, undefined);
+                    announce("Image removed");
+                  }}
+                >
+                  Remove Image
+                </button>
+              </>
+            )}
+          </Dropdown>
+        </Show>
+        <span class="hf-sep" aria-hidden="true" />
+        <Dropdown
+          title={`${NAME[band()]} text size`}
+          name={`Text size ${hf()?.size ?? HF_DEFAULT_SIZE} pt`}
+          kind="menu"
+          label={<span class="fb-num">{hf()?.size ?? HF_DEFAULT_SIZE} pt</span>}
+        >
+          {(close) => (
+            <For each={SIZES}>
+              {(sz) =>
+                radio(
+                  (hf()?.size ?? HF_DEFAULT_SIZE) === sz,
+                  `${sz} pt`,
+                  () => change(band(), (h) => (h.size = sz === HF_DEFAULT_SIZE ? undefined : sz)),
+                  close,
+                )
+              }
+            </For>
+          )}
+        </Dropdown>
+        <Btn
+          title="Bold"
+          active={!!hf()?.bold}
+          onClick={() => change(band(), (h) => (h.bold = h.bold ? undefined : true))}
+        >
+          <b>B</b>
+        </Btn>
         <Dropdown
           title={`${NAME[band()]} colour`}
           name={`${NAME[band()]} colour`}
@@ -682,7 +1033,7 @@ function Toolbar(props: { anchor: HTMLElement }) {
                     aria-checked={color() === c}
                     onClick={() => {
                       close();
-                      writeBand(band(), { color: c });
+                      change(band(), (h) => (h.color = c));
                     }}
                   />
                 )}
@@ -690,19 +1041,90 @@ function Toolbar(props: { anchor: HTMLElement }) {
             </div>
           )}
         </Dropdown>
-        <span class="hf-sep" aria-hidden="true" />
-        <label class="hf-check">
-          <input
-            type="checkbox"
-            checked={firstDiffers(band())}
-            onChange={(e) => setFirstPageDiffers(band(), e.currentTarget.checked)}
-          />
-          Different first page
-        </label>
-        <span class="hf-sep" aria-hidden="true" />
-        <button class="hf-done" onClick={() => endHeaderFooter()}>
-          Done
-        </button>
+        <Dropdown
+          title={band() === "header" ? "Line under the header" : "Line over the footer"}
+          name={band() === "header" ? "Line under the header" : "Line over the footer"}
+          kind="menu"
+          label={
+            <svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
+              <path d="M2 3.5h12" stroke="currentColor" stroke-width="1" opacity="0.45" />
+              <path
+                d={band() === "header" ? "M1 9h14" : "M1 1.5h14"}
+                stroke="currentColor"
+                stroke-width={hf()?.rule ? Math.max(1, ptOf(hf()?.rule?.width) * 1.6) : 1}
+                stroke-dasharray={hf()?.rule ? undefined : "1.5 1.5"}
+              />
+              <path d="M2 6.5h9" stroke="currentColor" stroke-width="1" opacity="0.45" />
+            </svg>
+          }
+        >
+          {(close) => (
+            <>
+              {radio(!hf()?.rule, "No line", () => change(band(), (h) => delete h.rule), close)}
+              <For each={RULES}>
+                {([pt, name]) =>
+                  radio(
+                    !!hf()?.rule && ptOf(hf()?.rule?.width) === pt,
+                    `${name}, ${pt} pt`,
+                    () =>
+                      change(band(), (h) => {
+                        h.rule = { ...h.rule };
+                        if (`${pt}pt` === HF_DEFAULT_RULE) delete h.rule.width;
+                        else h.rule.width = `${pt}pt`;
+                      }),
+                    close,
+                  )
+                }
+              </For>
+              <div class="hf-menu-sep" role="separator" />
+              <div class="fb-swatches hf-swatches" role="group" aria-label="Line colour">
+                <For each={COLORS}>
+                  {([c, name]) => (
+                    <button
+                      class="fb-swatch big"
+                      style={{ background: c ?? color() ?? DEFAULT_COLOR }}
+                      title={c ? name : "Same as the text"}
+                      role="menuitemradio"
+                      aria-label={c ? `Line ${name.toLowerCase()}` : "Line the same colour as the text"}
+                      aria-checked={!!hf()?.rule && hf()?.rule?.color === c}
+                      onClick={() => {
+                        close();
+                        change(band(), (h) => {
+                          h.rule = { ...h.rule };
+                          if (c) h.rule.color = c;
+                          else delete h.rule.color;
+                        });
+                      }}
+                    />
+                  )}
+                </For>
+              </div>
+            </>
+          )}
+        </Dropdown>
+        {/* which pages, and Done: one piece, which moves to a line of its own in a narrow window */}
+        <span class="hf-tail">
+          <label class="hf-check">
+            <input
+              type="checkbox"
+              checked={firstDiffers(band())}
+              onChange={(e) => setFirstPageDiffers(band(), e.currentTarget.checked)}
+            />
+            Different first page
+          </label>
+          <label class="hf-check">
+            <input
+              type="checkbox"
+              checked={oddEven(band())}
+              onChange={(e) => setOddEven(band(), e.currentTarget.checked)}
+            />
+            Different odd and even pages
+          </label>
+          <span class="hf-sep" aria-hidden="true" />
+          <button class="hf-done" onClick={() => endHeaderFooter()}>
+            Done
+          </button>
+        </span>
       </div>
     </Portal>
   );
