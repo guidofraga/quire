@@ -717,10 +717,11 @@ fn main() {
     let pending = launch_docs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
     let mut builder = tauri::Builder::default();
     if job.is_some() && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("ownproto") {
+        static FIRST: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
         builder = builder.register_asynchronous_uri_scheme_protocol("tauri", |ctx, request, responder| {
-            let t = std::time::Instant::now();
+            let first = *FIRST.get_or_init(std::time::Instant::now);
             let path = request.uri().path().to_string();
-            eprintln!("quire: DIAG request {path}");
+            eprintln!("quire: DIAG {:?} request {path}", first.elapsed());
             let app = ctx.app_handle();
             let mut response = tauri::http::Response::builder().header("Access-Control-Allow-Origin", "tauri://localhost");
             let asset = app.asset_resolver().get(path.clone());
@@ -735,9 +736,15 @@ fn main() {
                 None => response.status(404).body(std::borrow::Cow::Owned(Vec::new())),
             };
             if let Ok(response) = response {
-                responder.respond(response);
+                let slow = path.ends_with(".js") && path.contains("index-");
+                std::thread::spawn(move || {
+                    if slow {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                    }
+                    eprintln!("quire: DIAG {:?} answering {path}", first.elapsed());
+                    responder.respond(response);
+                });
             }
-            eprintln!("quire: DIAG answered {path} in {:?}", t.elapsed());
         });
     }
     let built = builder
