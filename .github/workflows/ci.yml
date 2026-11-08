@@ -86,21 +86,41 @@ jobs:
       # prints in a virtual display. With no session bus, GTK and WebKit wait for D-Bus calls
       # to time out (30 s per launch), and the export sometimes outran its watchdog (#59)
       - name: Test the desktop app and export a PDF (Linux)
-        run: |
-          cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
-          fails=0
-          for i in $(seq 1 80); do
-            echo "=== run $i"; sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
-            dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture > run.log 2>&1 && echo "run $i PASS" || { echo "run $i FAIL"; fails=$((fails+1)); grep -E "APPLOG|test result" run.log; }
-          done
-          echo "failures: $fails of 80"
-          [ "$fails" = 0 ]
+        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
         run: |
           msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
           rustup toolchain install "$msrv" --profile minimal
           cargo "+$msrv" check --workspace --all-targets --locked
+
+  app-linux-many:
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb
+      - name: Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Front end
+        run: npm ci && npm run build
+        working-directory: app
+      - name: Lint the desktop app
+        run: cargo clippy -p quire-app --all-targets --locked -- -D warnings
+      - name: Test
+        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
   app-macos-windows:
