@@ -44,6 +44,11 @@
           "properties": {
             "system": { "enum": ["SI", "US", "Imperial", "CGS"] },
             "prefer": { "type": "object", "additionalProperties": { "type": "string" } },
+            "quietNames": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Names whose note \"read as a unit; define it above if you meant a variable\" the reader dismissed in this document."
+            },
             "marked": {
               "type": "boolean",
               "description": "Units are always written with an apostrophe ('m): a bare name is never a unit or a constant, only a variable (π, pi, e and ∞ excepted). Set by the SMath importer."

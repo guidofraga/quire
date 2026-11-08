@@ -51,6 +51,9 @@ pub struct Outcome {
     pub shadowing: Vec<String>,
     /// Your variables read as a unit here because they follow a number (`10 m`).
     pub units_over_variables: Vec<String>,
+    /// Plain names read as units where a variable is more usual (`W` in `M/W` with no `W`
+    /// defined): worth a note, since a forgotten definition gives a wrong number.
+    pub names_read_as_units: Vec<String>,
     /// A table's cells, row-major.
     pub cells: Vec<Vec<CellOutcome>>,
     /// What would fix `error`, when the engine can tell.
@@ -85,6 +88,7 @@ impl Outcome {
             constants: Vec::new(),
             shadowing: Vec::new(),
             units_over_variables: Vec::new(),
+            names_read_as_units: Vec::new(),
             cells: Vec::new(),
             fix: None,
             plot: None,
@@ -754,6 +758,9 @@ impl Worksheet {
         out.constants = std::mem::take(&mut self.used_constants).into_iter().collect();
         out.shadowing = std::mem::take(&mut self.used_shadowing).into_iter().collect();
         out.units_over_variables = std::mem::take(&mut self.used_over_variables).into_iter().collect();
+        let over = &out.units_over_variables;
+        let units: Vec<String> = out.units.iter().filter(|u| !over.contains(u)).cloned().collect();
+        out.names_read_as_units = crate::unit_names::read_as_units(e, &units);
         out
     }
 
@@ -1107,6 +1114,23 @@ mod tests {
         assert_eq!(out[4].error.as_deref(), Some("m is not defined; for the unit, write 'm"));
         // `→` still works with the symbol
         assert_eq!(out[5].shown.as_deref(), Some("2*Fz"));
+    }
+
+    #[test]
+    fn a_name_read_as_a_unit_where_a_variable_is_usual_is_reported() {
+        let out =
+            run(&["M := 40 'N", "z := M/W", "P := 5 W", "q := 2 kN*m", "M/'W", "W := 3", "M/W", "5 W + M/W"]);
+        assert_eq!(out[1].names_read_as_units, ["W"]);
+        assert!(out[2].names_read_as_units.is_empty(), "after a number");
+        assert!(out[3].names_read_as_units.is_empty(), "after a number, and after another unit");
+        assert!(out[4].names_read_as_units.is_empty(), "quoted");
+        // once W is defined it is the variable
+        assert!(out[6].names_read_as_units.is_empty());
+        // and a variable read as a unit after a number is its own note, not this one
+        assert!(out[7].names_read_as_units.is_empty());
+        // SMath's marked documents never read a bare name as a unit
+        let marked = run_marked(&["M := 40 'N", "z := M/W"]);
+        assert!(marked[1].names_read_as_units.is_empty());
     }
 
     #[test]

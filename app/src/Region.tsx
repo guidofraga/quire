@@ -1,4 +1,4 @@
-import { MathEditor, NameNotes } from "./MathEditor";
+import { MathEditor, NameNotes, unitNoteText } from "./MathEditor";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
@@ -293,6 +293,19 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
             title={check() ? "This check passes" : "This check fails"}
           >
             {check() ? "✓" : "✗ fails"}
+          </span>
+        </Show>
+        {/* a finished document shows it too: a forgotten definition is a wrong number */}
+        <Show when={!editing() && prefs.nameNotes && view()?.namesReadAsUnits?.length}>
+          <span
+            class="unit-mark"
+            role="note"
+            tabindex="0"
+            aria-label={view()!.namesReadAsUnits!.map(unitNoteText).join(". ")}
+            data-text={view()!.namesReadAsUnits!.map(unitNoteText).join("\n")}
+            title={view()!.namesReadAsUnits!.map(unitNoteText).join("\n")}
+          >
+            <span aria-hidden="true">?</span>
           </span>
         </Show>
         <Show when={props.r.note && !editing()}>

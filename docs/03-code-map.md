@@ -57,6 +57,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `budget.rs` | Limits on one evaluation: the step budget (which matrix operations charge too) and the largest matrix. With the nesting limits in `interp.rs` and `symbolic/work.rs`, any document gives an error, never a crash or a hang; its tests try each limit on a 1 MB stack, as in WebAssembly. |
 | | `constants.rs` | Built-in constants and the name-resolution order (your variable, then constant, then unit). |
 | | `worksheet.rs` | Worksheet semantics: definitions in reading order, global `≡`, "defined further down", working units. |
+| | `unit_names.rs` | Which bare names read as units sit where a variable is more usual (`M/W`), for the "define it above" note. |
 | | `format.rs` | Result display: rounding, notation, which unit a result is shown in. |
 | | `sheet/` | Spreadsheet tables: `formula.rs` (A1 syntax), `functions.rs` (SUM, IF, VLOOKUP…), `mod.rs` (evaluating a table, named tables as matrices). |
 | | `plot.rs` | Sampling plot series where the plot sits in reading order; SMath systems (`sys`), marker rows and animation frames. |

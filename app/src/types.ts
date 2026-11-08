@@ -38,6 +38,8 @@ export interface RegionView {
   shadowing: string[];
   /** Your variables read as a unit here because they follow a number (`10 m`). */
   unitsOverVariables?: string[];
+  /** Plain names read as units where a variable is more usual (`W` in `M/W`, no `W` defined). */
+  namesReadAsUnits?: { name: string; unit?: string }[];
   defines: string | null;
   /** A spreadsheet table's cells. */
   cells?: CellView[][];

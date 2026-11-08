@@ -4886,3 +4886,54 @@ body.resizing-sidebar {
     transform: translate(-50%, 8px);
   }
 }
+
+/* a name read as a unit where a variable is usual (M/W with no W): a quiet mark, text on hover or focus */
+.unit-mark {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #b45309;
+  border-radius: 50%;
+  color: #b45309;
+  font:
+    600 10px/12px -apple-system,
+    system-ui,
+    sans-serif;
+  text-align: center;
+  vertical-align: middle;
+  opacity: 0.7;
+  cursor: help;
+}
+
+.unit-mark:hover,
+.unit-mark:focus-visible {
+  opacity: 1;
+}
+
+.unit-mark:focus-visible::after {
+  content: attr(data-text);
+  position: absolute;
+  left: 0;
+  top: 18px;
+  z-index: 20;
+  width: max-content;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font:
+    400 11.5px -apple-system,
+    system-ui,
+    sans-serif;
+  text-align: left;
+  white-space: pre-line;
+}
+
+@media print {
+  .unit-mark {
+    display: none;
+  }
+}

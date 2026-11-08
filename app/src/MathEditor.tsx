@@ -20,6 +20,7 @@ import {
   editText,
   flash,
   layout,
+  quietUnitNote,
   runAppCommand,
   setLive,
   setState,
@@ -397,6 +398,12 @@ function useVariable(name: string) {
   document.execCommand("insertText", false, next);
 }
 
+/** `W is the unit watt; if you meant a variable, define it above`. */
+export function unitNoteText(n: { name: string; unit?: string }) {
+  const what = n.unit ? `the unit ${n.unit}` : "a unit";
+  return `${n.name} is ${what}; if you meant a variable, define it above`;
+}
+
 /** What the ambiguous names in this math mean, with a one-click switch where useful. */
 export function NameNotes(props: { id: string }) {
   const notes = () => {
@@ -422,6 +429,13 @@ export function NameNotes(props: { id: string }) {
         name,
         text: `unit here, not your variable`,
         action: [`Use variable ${name}`, () => useVariable(name)],
+      });
+    }
+    for (const n of v?.namesReadAsUnits ?? []) {
+      out.push({
+        name: n.name,
+        text: unitNoteText(n),
+        action: [`Dismiss for ${n.name}`, () => quietUnitNote(n.name)],
       });
     }
     for (const name of v?.shadowing ?? []) {
