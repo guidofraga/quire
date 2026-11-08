@@ -124,7 +124,7 @@ fn diag(app: &AppHandle, started: Instant) {
             && RELOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5
         {
             eprintln!("quire: DIAG reloading");
-            view.reload();
+            view.reload_bypass_cache();
         }
         // what the page says about itself, read back through the title next time round
         #[allow(deprecated)]
