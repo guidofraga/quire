@@ -49,15 +49,18 @@ fn bookmarks(
     Ok(())
 }
 
-#[test]
-#[ignore = "drives the desktop app; see the module comment"]
-fn exported_report_has_details_bookmarks_and_links() -> TestResult {
+/// Two exports side by side would slow each other down, and the app's start-up limits with them.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Run `quire-app --export-pdf` on the report and return what it said on stderr.
+fn export(out: &Path, env: &[(&str, &str)]) -> TestResult<String> {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let input = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/report.quire");
-    let out = std::env::temp_dir().join(format!("quire-export-{}.pdf", std::process::id()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_quire-app"))
         .arg("--export-pdf")
         .arg(&input)
-        .arg(&out)
+        .arg(out)
+        .envs(env.iter().copied())
         .stderr(Stdio::piped())
         .spawn()?;
     // what the app says on stderr, read as it comes so a full pipe can't stall it
@@ -84,16 +87,40 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     let said = said.join().unwrap_or_default();
     match status {
         None => {
-            return Err(format!(
-                "the export did not end, and the app's own watchdog did not stop it\n{said}"
-            )
-            .into());
+            Err(format!("the export did not end, and the app's own watchdog did not stop it\n{said}").into())
         }
-        Some(status) if !status.success() => {
-            return Err(format!("quire-app exited with {status}\n{said}").into());
+        Some(status) if !status.success() => Err(format!("quire-app exited with {status}\n{said}").into()),
+        Some(_) => {
+            eprintln!("APPLOG {}", said.replace('\n', "\nAPPLOG "));
+            Ok(said)
         }
-        Some(_) => {}
     }
+}
+
+fn temp_pdf(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("quire-{name}-{}.pdf", std::process::id()))
+}
+
+/// Issue #93: on Linux WebKitGTK sometimes never runs the page, and the export then starts again
+/// in a new process. The first try is made to stall, so this fails (after the 60 s limit) if the
+/// export does not start over.
+#[test]
+#[cfg(target_os = "linux")]
+#[ignore = "drives the desktop app; see the module comment"]
+fn export_starts_over_when_the_page_never_runs() -> TestResult {
+    let out = temp_pdf("restart");
+    let said = export(&out, &[("QUIRE_EXPORT_STALL_FIRST_TRY", "1")])?;
+    assert!(said.contains("starting the export again"), "no restart in:\n{said}");
+    assert!(Document::load(&out)?.page_iter().count() > 0);
+    std::fs::remove_file(&out).ok();
+    Ok(())
+}
+
+#[test]
+#[ignore = "drives the desktop app; see the module comment"]
+fn exported_report_has_details_bookmarks_and_links() -> TestResult {
+    let out = temp_pdf("export");
+    export(&out, &[])?;
     let doc = Document::load(&out)?;
     std::fs::remove_file(&out).ok();
 

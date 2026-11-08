@@ -2,6 +2,10 @@
 //! and must always end (issue #59). The page reports each step to [`export_step`]; a thread here
 //! ends the process if the page never starts or a step never finishes. It runs in Rust because
 //! a page that never loaded, or that the system has suspended, runs no JavaScript at all.
+//!
+//! On Linux about one launch in fifteen gets a page that WebKitGTK never runs (issue #93): the
+//! page loads, but its script (a module served by the app's own protocol) fails to start, and
+//! it stays that way, reloads included, so the process starts the export again, once.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -13,6 +17,29 @@ use tauri::{AppHandle, Manager};
 const START: Duration = Duration::from_secs(60);
 /// How long the whole export may take, start to finish (the print job itself allows 120 s).
 const WHOLE: Duration = Duration::from_secs(140);
+/// Linux: how long the page may take before the export starts over in a new process. A page
+/// that is going to start does so within a few seconds, even on a busy CI machine.
+#[cfg(target_os = "linux")]
+const RESTART: Duration = Duration::from_secs(15);
+/// Set in the process that is the second try, so it never starts a third.
+#[cfg(target_os = "linux")]
+const SECOND_TRY: &str = "QUIRE_EXPORT_SECOND_TRY";
+/// For the test only: the first try's page never reports, as when WebKitGTK does not run it.
+pub const STALL_FIRST_TRY: &str = "QUIRE_EXPORT_STALL_FIRST_TRY";
+
+/// Whether this process is the one that must stall on purpose (see [`STALL_FIRST_TRY`]).
+pub fn stalls() -> bool {
+    std::env::var_os(STALL_FIRST_TRY).is_some() && !is_second_try()
+}
+
+#[cfg(target_os = "linux")]
+fn is_second_try() -> bool {
+    std::env::var_os(SECOND_TRY).is_some()
+}
+#[cfg(not(target_os = "linux"))]
+fn is_second_try() -> bool {
+    false
+}
 
 /// When the export started, the step the page reported last, and how far the page itself
 /// got loading before it ran any script.
@@ -54,6 +81,10 @@ pub fn watch(app: &AppHandle) {
             std::thread::sleep(Duration::from_millis(500));
             let progress = app.state::<Progress>();
             let step = progress.step.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            #[cfg(target_os = "linux")]
+            if step.is_none() && started.elapsed() > RESTART && !is_second_try() {
+                restart();
+            }
             let reason = match step {
                 None if started.elapsed() > START => {
                     let load = *progress.load.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -73,6 +104,26 @@ pub fn watch(app: &AppHandle) {
             }
         }
     });
+}
+
+/// Linux: run the same command again in a new process (a new WebKit web process: reloading the
+/// page in this one does not help) and end with its result. Only the first try calls this.
+#[cfg(target_os = "linux")]
+fn restart() -> ! {
+    use std::process::Command;
+    eprintln!(
+        "quire: the page did not start within {} s (WebKitGTK sometimes never runs it, issue #93); \
+         starting the export again",
+        RESTART.as_secs()
+    );
+    let code = std::env::current_exe()
+        .and_then(|exe| Command::new(exe).args(std::env::args_os().skip(1)).env(SECOND_TRY, "1").status())
+        .map(|status| status.code().unwrap_or(1))
+        .unwrap_or_else(|e| {
+            eprintln!("quire: export failed: could not start it again: {e}");
+            1
+        });
+    std::process::exit(code)
 }
 
 /// Tell macOS the export is work the user asked for: the process has no visible window, so

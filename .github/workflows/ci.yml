@@ -98,8 +98,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]
-        mode: [base, warm]
+        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40]
+        mode: [fix]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,19 +118,20 @@ jobs:
       - name: Front end
         run: npm ci && npm run build
         working-directory: app
-      - name: Strip crossorigin
-        if: matrix.mode == 'nocors'
-        run: sed -i 's/ crossorigin//' app/dist/index.html && cat app/dist/index.html
-      - name: Test
-        env:
-          MODE: ${{ matrix.mode }}
+      - name: Test, 70 times
         run: |
-          if [ "$MODE" = warm ]; then export QUIRE_WARM=1; fi
-          dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture
-          for i in 1 2 3 4; do
-            dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture > run.log 2>&1 || { grep APPLOG run.log | head -12 | cut -c1-500; exit 1; }
-            echo "extra run $i PASS restarts=$(grep -c 'starting the export again' run.log)"
+          cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
+          pass=0; restarts=0; fails=0
+          for i in $(seq 1 70); do
+            if dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report --nocapture > run.log 2>&1; then
+              pass=$((pass+1))
+            else
+              fails=$((fails+1)); echo "run $i FAILED"; grep -E "APPLOG|Error" run.log | cut -c1-400 | head -20
+            fi
+            if grep -q 'starting the export again' run.log; then restarts=$((restarts+1)); echo "run $i restarted"; grep APPLOG run.log | head -14 | cut -c1-200; fi
           done
+          echo "RESULT pass=$pass fails=$fails restarts=$restarts of 70"
+          [ "$fails" = 0 ]
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
   app-macos-windows:

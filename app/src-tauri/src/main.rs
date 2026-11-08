@@ -736,17 +736,6 @@ fn main() {
             }
         })
         .on_page_load(|webview, payload| {
-            if webview.label() == "main"
-                && std::env::var_os("QUIRE_WARM").is_some()
-                && payload.url().scheme() == "about"
-                && payload.event() == tauri::webview::PageLoadEvent::Finished
-            {
-                eprintln!("quire: warm-up page loaded, opening the app page");
-                if let Ok(url) = "tauri://localhost".parse() {
-                    let _ = webview.navigate(url);
-                }
-                return;
-            }
             if webview.label() == "main" {
                 let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
                 headless::page_load(webview.app_handle(), finished);
@@ -765,12 +754,7 @@ fn main() {
                 // your templates, and the images they hold until a new document is saved
                 scope.grant_folder(&templates_dir(app.handle())?);
             }
-            let mut config = app.config().app.windows.first().cloned().ok_or("tauri.conf.json has no window")?;
-            if job.is_some() && std::env::var_os("QUIRE_WARM").is_some() {
-                if let Ok(blank) = "about:blank".parse() {
-                    config.url = tauri::WebviewUrl::External(blank);
-                }
-            }
+            let config = app.config().app.windows.first().cloned().ok_or("tauri.conf.json has no window")?;
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some((input, output)) = &job {
                 let job = json!({ "open": input, "pdf": output });
@@ -779,7 +763,11 @@ fn main() {
                     // a hidden page must keep running: macOS 14 and later would otherwise
                     // throttle its timers and rendering (issue #59)
                     .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
-                    .initialization_script(format!("window.__QUIRE_EXPORT__ = {job};"));
+                    .initialization_script(if headless::stalls() {
+                        String::new()
+                    } else {
+                        format!("window.__QUIRE_EXPORT__ = {job};")
+                    });
                 headless::watch(app.handle());
             }
             window.build()?;
