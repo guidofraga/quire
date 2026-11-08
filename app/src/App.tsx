@@ -40,7 +40,7 @@ import { insertPlot3d } from "./Plot3D";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
-import { type Background, paperPoints } from "./pages";
+import { pageAssets, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
@@ -171,8 +171,7 @@ const loadingAssets = new Set<string>();
 function loadAssets() {
   // images inserted into an unsaved document are served from the staging area
   const bundle = state.path ?? state.origin ?? "";
-  const backgrounds = (state.doc.page?.backgrounds as Background[] | undefined) ?? [];
-  const sources = [...layout().list.map((p) => p.region.src), ...backgrounds.map((b) => b.src)];
+  const sources = [...layout().list.map((p) => p.region.src), ...pageAssets(state.doc)];
   for (const src of sources) {
     if (!src || state.assets[src] || loadingAssets.has(src)) continue;
     loadingAssets.add(src);
@@ -797,7 +796,7 @@ function speakChanges() {
 export function App() {
   createEffect(on(() => state.rev, liveReport.schedule));
   speakChanges();
-  createEffect(on(() => [state.path, state.origin, layout()] as const, loadAssets));
+  createEffect(on(() => [state.path, state.origin, layout(), state.doc.page] as const, loadAssets));
   createEffect(() => {
     void setWindowTitle(`${fileName(state.path)}${state.dirty ? " — Edited" : ""}`);
   });

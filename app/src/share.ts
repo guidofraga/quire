@@ -3,6 +3,7 @@
 // GitHub's included. Images stay out (they would make links too long to send); a document
 // with images travels as a .quirez file instead.
 
+import { pageAssets } from "./pages";
 import type { Doc } from "./types";
 
 /** Where the web version lives; links made in the desktop app open there. */
@@ -59,8 +60,7 @@ export async function linkFor(doc: Doc, base: string): Promise<string> {
   return `${base.replace(/#.*$/, "")}${PREFIX}${await encodeDoc(doc)}`;
 }
 
-/** Whether a document uses images (page backgrounds included), which links leave out. */
+/** Whether a document uses images (page backgrounds and header logos included), which links leave out. */
 export function hasImages(doc: Doc): boolean {
-  const backgrounds = (doc.page?.backgrounds as { src?: string }[] | undefined) ?? [];
-  return doc.regions.some((r) => r.kind === "image") || backgrounds.some((b) => !!b.src);
+  return doc.regions.some((r) => r.kind === "image") || pageAssets(doc).length > 0;
 }

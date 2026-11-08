@@ -116,13 +116,53 @@
         "color": { "$ref": "#/$defs/color" }
       }
     },
+    "bandImage": {
+      "type": "object",
+      "required": ["src"],
+      "properties": {
+        "src": { "$ref": "#/$defs/asset" },
+        "slot": { "enum": ["left", "center", "right"], "default": "left" },
+        "height": {
+          "$ref": "#/$defs/length",
+          "description": "Height of the image; its width follows. Default: half the band's margin. Never taller than the band."
+        }
+      },
+      "additionalProperties": false
+    },
     "headerFooter": {
       "type": "object",
       "properties": {
         "left": { "type": "string" },
         "center": { "type": "string" },
         "right": { "type": "string" },
-        "color": { "$ref": "#/$defs/color" }
+        "image": { "$ref": "#/$defs/bandImage" },
+        "color": { "$ref": "#/$defs/color" },
+        "size": { "type": "number", "exclusiveMinimum": 0, "default": 8, "description": "Font size in points." },
+        "bold": { "type": "boolean", "default": false },
+        "rule": {
+          "type": "object",
+          "description": "A line under the header or over the footer; present means drawn.",
+          "properties": {
+            "width": { "$ref": "#/$defs/length", "description": "Default 0.5pt." },
+            "color": { "$ref": "#/$defs/color", "description": "Default: the band's text colour." }
+          },
+          "additionalProperties": false
+        },
+        "distance": {
+          "$ref": "#/$defs/length",
+          "description": "From the paper's top edge to the header (bottom edge to the footer). Default: centred in the margin."
+        },
+        "even": {
+          "type": "object",
+          "description": "Different odd and even pages: what even-numbered pages show instead of left/center/right/image. Present means on, even when empty.",
+          "properties": {
+            "left": { "type": "string" },
+            "center": { "type": "string" },
+            "right": { "type": "string" },
+            "image": { "$ref": "#/$defs/bandImage" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

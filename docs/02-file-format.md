@@ -101,7 +101,10 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
     "paper": "A4",                     // or ["210mm", "297mm"]
     "orientation": "portrait",
     "margins": { "top": "25.4mm", "right": "18.8mm", "bottom": "25.4mm", "left": "18.8mm" },
-    "header": { "center": "{date} {time} - {file}", "color": "#a9a9a9" },
+    "header": { "center": "{date} {time} - {file}", "color": "#a9a9a9",
+                "image": { "src": "assets/1a2b3c4d5e6f7081.png", "slot": "left", "height": "9mm" },
+                "rule": { "width": "0.5pt" }, "distance": "8mm", "size": 9, "bold": true,
+                "even": { "left": "{page}", "right": "{title}" } },   // different odd and even pages
     "footer": { "left": "{author} | {company}", "right": "{page} / {pages}", "color": "#a9a9a9" },
     "firstPage": { "header": false },  // different first page
     "backgrounds": [{ "pages": "1", "src": "assets/0a1b2c3d4e5f6071.png", "fit": "margins" }],
@@ -111,6 +114,21 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
   "regions": [ /* §4, sorted by (y, x) */ ]
 }
 ```
+
+`header` and `footer` take the same keys, all optional; a key left out keeps the behaviour documents had before it existed:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `left` `center` `right` | string | empty | The three slots' text, with fields (below). |
+| `image` | `{ src, slot?, height? }` | none | A picture (a logo) in a slot. `src` is an asset (`assets/…`, §2); `slot` is `left` (default), `center` or `right`; `height` is a length, by default half the margin the band sits in, and never taller than that margin. The width follows the picture. In the `right` slot it sits after the text, on the outer edge; elsewhere before it. |
+| `color` | colour | `#8a8f98` | The text colour. |
+| `size` | number | `8` | Font size in points. |
+| `bold` | boolean | `false` | Bold text. |
+| `rule` | `{ width?, color? }` | none | A line under the header, or over the footer, 3 px from its text across the band's width. Present means drawn: `{}` is a 0.5 pt line in the text's colour. `width` is a length. |
+| `distance` | length | centred | From the paper's top edge to the header's line (from the bottom edge to the footer's), independent of the margins. Without it the line is centred in the margin, as before. The line never leaves the margin. |
+| `even` | `{ left?, center?, right?, image? }` | none | Different odd and even pages: even-numbered pages (by the printed number, so `pageNumber.start` counts) show these instead of the band's own slots and image; `color`, `size`, `bold`, `rule` and `distance` are shared. Present means on, even when empty (blank even pages). |
+
+`firstPage` (`{ "header": false }`) leaves the band off page 1; it wins over `even`.
 
 Header/footer fields: `{page} {pages} {date} {time} {file} {title} {author} {company} {section}` (`{section}` is the last first-level heading on or before the page). Any other `{word}` is kept as typed.
 Lengths: bare numbers are **layout px (1/96 in)**, which is identical to SMath's coordinates so imports are exact. Strings may carry `mm`, `cm`, `in` or `pt`.

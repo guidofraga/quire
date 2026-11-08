@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { fillFields, pageGeom, pageMatches, PX_PER_MM, paperPoints, toPx } from "./pages";
+import {
+  bandLayout,
+  contentOn,
+  evenPage,
+  fillFields,
+  type HeaderFooter,
+  mirrored,
+  pageAssets,
+  pageGeom,
+  pageMatches,
+  PX_PER_MM,
+  paperPoints,
+  scopeLabel,
+  toPx,
+} from "./pages";
 import type { Doc } from "./types";
 
 const doc = (page: Doc["page"]): Doc => ({ format: "quire/1", meta: { title: "T" }, regions: [], page });
@@ -106,5 +120,85 @@ describe("fillFields", () => {
 
   it("leaves unknown fields as typed", () => {
     expect(fillFields("{nope} {page}", c)).toBe("{nope} 2");
+  });
+});
+
+describe("headers and footers", () => {
+  const hf: HeaderFooter = { left: "Report", right: "{page}", even: { left: "{page}", right: "Even" } };
+
+  it("tells even pages by their printed number", () => {
+    expect([0, 1, 2].map((k) => evenPage(k))).toEqual([false, true, false]);
+    // numbering that starts at 2 makes the first page even
+    expect(evenPage(0, 2)).toBe(true);
+  });
+
+  it("shows the even-page content on even pages, and nothing on a first page set apart", () => {
+    expect(contentOn(hf, 0)?.left).toBe("Report");
+    expect(contentOn(hf, 1)?.right).toBe("Even");
+    expect(contentOn(hf, 2)?.left).toBe("Report");
+    expect(contentOn(hf, 0, 1, true)).toBeUndefined();
+    // without even content, every page shows the band's own slots
+    expect(contentOn({ center: "x" }, 1)?.center).toBe("x");
+    expect(contentOn(undefined, 0)).toBeUndefined();
+  });
+
+  it("starts even pages as a mirror of the odd ones, image included", () => {
+    expect(mirrored({ left: "A", center: "B", right: "{page}", image: { src: "assets/a.png" } })).toEqual({
+      left: "{page}",
+      center: "B",
+      right: "A",
+      image: { src: "assets/a.png", slot: "right" },
+    });
+  });
+
+  it("centres the row in the margin by default, as before these settings", () => {
+    const l = bandLayout(undefined, undefined, 76);
+    expect(l.fontPx).toBeCloseTo((8 * 96) / 72);
+    expect(l.offset).toBeCloseTo((76 - l.rowH) / 2);
+    expect(l.imageH).toBe(0);
+    expect(l.ruleW).toBe(0);
+  });
+
+  it("puts the row its distance from the paper's edge, but keeps it inside the margin", () => {
+    expect(bandLayout({ distance: "5mm" }, undefined, 76).offset).toBeCloseTo(5 * PX_PER_MM);
+    const far = bandLayout({ distance: "50mm", rule: {} }, undefined, 76);
+    expect(far.offset + far.rowH + 3 + far.ruleW).toBeCloseTo(76);
+  });
+
+  it("sizes an image to half the band by default and never taller than the band", () => {
+    const img = { src: "assets/a.png" };
+    expect(bandLayout({}, { image: img }, 80).imageH).toBe(40);
+    expect(bandLayout({}, { image: { ...img, height: "10mm" } }, 80).imageH).toBe(Math.round(10 * PX_PER_MM));
+    expect(bandLayout({}, { image: { ...img, height: "100mm" } }, 80).imageH).toBe(76);
+    // the row grows to the image, so the text centres on it
+    expect(bandLayout({}, { image: img }, 80).rowH).toBe(40);
+  });
+
+  it("draws the rule 0.5 pt by default, or as wide as set", () => {
+    expect(bandLayout({ rule: {} }, undefined, 76).ruleW).toBeCloseTo(0.5 * (96 / 72));
+    expect(bandLayout({ rule: { width: "1.5pt" } }, undefined, 76).ruleW).toBeCloseTo(2);
+  });
+
+  it("follows the band's text size", () => {
+    expect(bandLayout({ size: 12 }, undefined, 76).fontPx).toBeCloseTo(16);
+  });
+
+  it("names which pages an edit reaches", () => {
+    const o = { firstBlank: false, oddEven: false };
+    expect(scopeLabel(3, o)).toBe("All pages");
+    expect(scopeLabel(0, { ...o, firstBlank: true })).toBe("First page");
+    expect(scopeLabel(1, { ...o, firstBlank: true })).toBe("All pages but the first");
+    expect(scopeLabel(1, { ...o, oddEven: true })).toBe("Even pages");
+    expect(scopeLabel(2, { firstBlank: true, oddEven: true })).toBe("Odd pages but the first");
+    expect(scopeLabel(1, { firstBlank: true, oddEven: true })).toBe("Even pages");
+  });
+
+  it("lists the images headers and footers use with the backgrounds", () => {
+    const d = doc({
+      backgrounds: [{ src: "assets/bg.png" }],
+      header: { image: { src: "assets/logo.png" }, even: { image: { src: "assets/even.png" } } },
+      footer: { left: "x" },
+    });
+    expect(pageAssets(d)).toEqual(["assets/bg.png", "assets/logo.png", "assets/even.png"]);
   });
 });
