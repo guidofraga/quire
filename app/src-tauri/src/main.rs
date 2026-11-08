@@ -763,11 +763,7 @@ fn main() {
                     // a hidden page must keep running: macOS 14 and later would otherwise
                     // throttle its timers and rendering (issue #59)
                     .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
-                    .initialization_script(if headless::stalls() {
-                        String::new()
-                    } else {
-                        format!("window.__QUIRE_EXPORT__ = {job};")
-                    });
+                    .initialization_script(format!("window.__QUIRE_EXPORT__ = {job};"));
                 headless::watch(app.handle());
             }
             window.build()?;
