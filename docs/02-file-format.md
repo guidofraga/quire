@@ -86,7 +86,8 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
     "calc":    { "angle": "rad", "precision": "double" },
     "units":   { "system": "SI",
                  "prefer": { "force": "kN", "stress": "MPa", "moment": "kN*m" },
-                 "marked": false }      // true: units are always written quoted, a bare name is never a unit (§4.3)
+                 "marked": false,       // true: units are always written quoted, a bare name is never a unit (§4.3)
+                 "quietNames": ["W"] }  // names whose "read as a unit" note is dismissed (§4.3)
   },
   "units":  { "tf": "1000 'kgf", "crane_load": "1.4 'tonnef" },   // custom unit definitions
   "styles": {
@@ -188,6 +189,8 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 4. `'g` always means the unit.
 
 In a **marked** document (`"settings": {"units": {"marked": true}}`, which the SMath importer writes for every worksheet, since SMath marks every unit) a bare name is never a unit or a constant. Only `π`, `pi`, `e` and `∞` resolve without a definition. As in SMath, any other name with no value is a symbol: `y := Fz*2` defines `y` as the formula `2*Fz`, and `→` works with it. Showing such a value with `=` asks for a number, so it is an error naming the first undefined name (`Fz is not defined; did you mean F?`, or `m is not defined; for the unit, write 'm` when the name is a unit). Quoted units work as before. The Inspector's Document tab shows the setting for these documents and can turn it off.
+
+A bare name with no variable that is read as a unit where a variable is the more usual reading (not right after a number or another unit: `M/W`, a lone `W`, `sin(W)`) gets a note, `W is the unit watt; if you meant a variable, define it above`, since a forgotten definition would otherwise give a wrong number. `5 W`, `kN*m`, `'W` and marked documents get none. `settings.units.quietNames` lists the names whose note was dismissed in this document; readers that don't know it ignore it.
 
 The report tells the editor how each name was resolved, and which variables hide a constant. The editor colours units blue and constants purple, explains a name on hover, and offers a one-click "use the unit" fix while you type.
 

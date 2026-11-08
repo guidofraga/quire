@@ -1604,6 +1604,16 @@ export function updateDoc(fn: (d: Doc) => void) {
   mutate(fn);
 }
 
+/** Stop saying that `name` was read as a unit, in this document (`settings.units.quietNames`). */
+export function quietUnitNote(name: string) {
+  mutate((d) => {
+    const settings = (d.settings ??= {}) as Record<string, Record<string, unknown>>;
+    const units = (settings.units ??= {});
+    const names = Array.isArray(units.quietNames) ? (units.quietNames as string[]) : [];
+    if (!names.includes(name)) units.quietNames = [...names, name].sort();
+  });
+}
+
 /** The document's title, as typed in the Inspector: a title in several languages keeps the others. */
 export function setDocTitle(text: string) {
   mutate((d) => {

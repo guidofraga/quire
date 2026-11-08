@@ -94,6 +94,57 @@ fn marked_units(doc: &Document) -> bool {
     doc.settings.extra.get("units").and_then(|u| u.get("marked")).and_then(Json::as_bool).unwrap_or(false)
 }
 
+/// `"settings": {"units": {"quietNames": ["W"]}}`: names whose "read as a unit" note the
+/// reader dismissed in this document.
+fn quiet_names(doc: &Document) -> Vec<String> {
+    doc.settings
+        .extra
+        .get("units")
+        .and_then(|u| u.get("quietNames"))
+        .and_then(Json::as_array)
+        .map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// A name read as a unit where a variable is more usual, for the note under the line.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameAsUnit {
+    pub name: String,
+    /// What the unit is called in words (`watt`), when it has a common name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+/// The word for a named SI unit, for the note ("W is the unit watt").
+fn unit_word(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "m" => "metre",
+        "g" => "gram",
+        "s" => "second",
+        "A" => "ampere",
+        "K" => "kelvin",
+        "mol" => "mole",
+        "cd" => "candela",
+        "N" => "newton",
+        "Pa" => "pascal",
+        "J" => "joule",
+        "W" => "watt",
+        "C" => "coulomb",
+        "V" => "volt",
+        "F" => "farad",
+        "Ω" | "ohm" => "ohm",
+        "S" => "siemens",
+        "Wb" => "weber",
+        "T" => "tesla",
+        "H" => "henry",
+        "Hz" => "hertz",
+        "L" | "l" => "litre",
+        "h" => "hour",
+        _ => return None,
+    })
+}
+
 fn display_of(r: &quire_doc::Region) -> DisplaySpec {
     DisplaySpec {
         unit: r.display.as_ref().and_then(|d| d.unit.clone()),
@@ -379,6 +430,10 @@ pub struct RegionView {
     /// Your variables read as a unit here because they follow a number (`10 m`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub units_over_variables: Vec<String>,
+    /// Plain names read as units where a variable is more usual (`W` in `M/W` with no `W`
+    /// defined), except those the document dismissed (`settings.units.quietNames`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub names_read_as_units: Vec<NameAsUnit>,
     /// The name this region defines (`L`, `f(x)`), for the editor's knowledge of variables.
     pub defines: Option<String>,
     /// A spreadsheet table's cells, row-major.
@@ -717,6 +772,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
         .iter()
         .filter_map(|u| quire_eval::parse_unit_spec(u, units).ok().map(|s| (*u, s.dim)))
         .collect();
+    let quiet = quiet_names(&doc);
     let mut regions = Vec::with_capacity(ev.inputs.len());
     let mut error_count = 0;
     for (input, o) in ev.inputs.iter().zip(&ev.outcomes) {
@@ -736,6 +792,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 constants: o.constants.clone(),
                 shadowing: Vec::new(),
                 units_over_variables: Vec::new(),
+                names_read_as_units: Vec::new(),
                 defines: None,
                 cells: None,
                 unit_choices: Vec::new(),
@@ -775,6 +832,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 constants: o.constants.clone(),
                 shadowing: Vec::new(),
                 units_over_variables: Vec::new(),
+                names_read_as_units: Vec::new(),
                 defines: o.defines.clone(),
                 cells: Some(cells),
                 unit_choices: Vec::new(),
@@ -801,6 +859,12 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             constants: o.constants.clone(),
             shadowing: o.shadowing.clone(),
             units_over_variables: o.units_over_variables.clone(),
+            names_read_as_units: o
+                .names_read_as_units
+                .iter()
+                .filter(|n| !quiet.contains(n))
+                .map(|n| NameAsUnit { name: n.clone(), unit: unit_word(n).map(str::to_string) })
+                .collect(),
             defines: o.defines.clone(),
             cells: None,
             unit_choices: if input.show && o.error.is_none() {
@@ -1283,6 +1347,31 @@ mod tests {
         assert!(r.html.values().any(|h| h.contains("<h1>Loads</h1>")));
         assert!(r.html.contains_key("scheme:caption"));
         assert!(r.glossary.contains_key("constant:g"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_name_read_as_a_unit_is_reported_until_dismissed()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let doc = |settings: Json| {
+            serde_json::json!({ "format": "quire/1", "settings": settings, "regions": [
+                { "id": "aaaaaa", "kind": "math", "at": [0, 0], "expr": "M := 40 'N", "show": "value" },
+                { "id": "bbbbbb", "kind": "math", "at": [0, 40], "expr": "z := M/W", "show": "value" },
+                { "id": "cccccc", "kind": "math", "at": [0, 80], "expr": "P := 5 W", "show": "value" }
+            ] })
+        };
+        let names = |r: &Report, i: usize| -> Vec<(String, Option<String>)> {
+            r.regions[i].names_read_as_units.iter().map(|n| (n.name.clone(), n.unit.clone())).collect()
+        };
+        let plain = report(&doc(serde_json::json!({})))?;
+        assert_eq!(names(&plain, 1), [("W".to_string(), Some("watt".to_string()))]);
+        assert!(names(&plain, 2).is_empty(), "5 W is plainly a unit");
+        // dismissed for the name, in this document
+        let quiet = report(&doc(serde_json::json!({ "units": { "quietNames": ["W"] } })))?;
+        assert!(names(&quiet, 1).is_empty());
+        // SMath documents never read a bare name as a unit
+        let marked = report(&doc(serde_json::json!({ "units": { "marked": true } })))?;
+        assert!(names(&marked, 1).is_empty());
         Ok(())
     }
 

@@ -21,6 +21,7 @@ mod solvers;
 mod special;
 mod stats;
 mod symbolic;
+mod unit_names;
 mod value;
 mod worksheet;
 
