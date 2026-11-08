@@ -181,6 +181,23 @@ function beginEdit(text: string | null, typed: boolean) {
   });
 }
 
+/**
+ * Text typed so fast it reached the page's hidden field before the new table took focus: it
+ * goes into the active cell as if typed there. False while the table is not on the page yet.
+ */
+export function forwardTypingToTable(text: string): boolean {
+  if (!editingTable() || !document.querySelector(".region.editing .sheet-wrap")) return false;
+  if (draft() === null) {
+    beginEdit(text, true);
+    return true;
+  }
+  const input = document.querySelector<HTMLInputElement>(".region.editing .cell-input");
+  if (!input) return false;
+  input.focus();
+  document.execCommand("insertText", false, text);
+  return true;
+}
+
 /** Put the cell being typed into the table; false when nothing was being typed. */
 function writeDraft(): boolean {
   const t = editingTable();
