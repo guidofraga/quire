@@ -98,8 +98,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40]
-        mode: [reload]
+        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+        mode: [dmabuf, compositing, base]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,7 +123,9 @@ jobs:
         run: sed -i 's/ crossorigin//' app/dist/index.html && cat app/dist/index.html
       - name: Test
         env:
-          QUIRE_EXPORT_MODE: ${{ matrix.mode }}
+          QUIRE_EXPORT_MODE: none
+          WEBKIT_DISABLE_DMABUF_RENDERER: ${{ matrix.mode == 'dmabuf' && '1' || '' }}
+          WEBKIT_DISABLE_COMPOSITING_MODE: ${{ matrix.mode == 'compositing' && '1' || '' }}
         run: |
           dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture
           for i in 1 2 3 4; do
