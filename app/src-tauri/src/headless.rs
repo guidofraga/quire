@@ -2,6 +2,10 @@
 //! and must always end (issue #59). The page reports each step to [`export_step`]; a thread here
 //! ends the process if the page never starts or a step never finishes. It runs in Rust because
 //! a page that never loaded, or that the system has suspended, runs no JavaScript at all.
+//!
+//! On Linux about one launch in fifteen gets a page that WebKitGTK never runs (issue #93): the
+//! page loads, but its script (a module served by the app's own protocol) fails to start, and
+//! it stays that way, reloads included, so the process starts the export again, once.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -13,6 +17,29 @@ use tauri::{AppHandle, Manager};
 const START: Duration = Duration::from_secs(60);
 /// How long the whole export may take, start to finish (the print job itself allows 120 s).
 const WHOLE: Duration = Duration::from_secs(140);
+/// Linux: how long the page may take before the export starts over in a new process. A page
+/// that is going to start does so within a few seconds, even on a busy CI machine.
+#[cfg(target_os = "linux")]
+const RESTART: Duration = Duration::from_secs(15);
+/// Set in the process that is the second try, so it never starts a third.
+#[cfg(target_os = "linux")]
+const SECOND_TRY: &str = "QUIRE_EXPORT_SECOND_TRY";
+/// For the test only: the first try's page never reports, as when WebKitGTK does not run it.
+pub const STALL_FIRST_TRY: &str = "QUIRE_EXPORT_STALL_FIRST_TRY";
+
+/// Whether this process is the one that must stall on purpose (see [`STALL_FIRST_TRY`]).
+pub fn stalls() -> bool {
+    std::env::var_os(STALL_FIRST_TRY).is_some() && !is_second_try()
+}
+
+#[cfg(target_os = "linux")]
+fn is_second_try() -> bool {
+    std::env::var_os(SECOND_TRY).is_some()
+}
+#[cfg(not(target_os = "linux"))]
+fn is_second_try() -> bool {
+    false
+}
 
 /// When the export started, the step the page reported last, and how far the page itself
 /// got loading before it ran any script.
@@ -52,10 +79,12 @@ pub fn watch(app: &AppHandle) {
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(Duration::from_millis(500));
-            #[cfg(target_os = "linux")]
-            diag(&app, started);
             let progress = app.state::<Progress>();
             let step = progress.step.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            #[cfg(target_os = "linux")]
+            if step.is_none() && started.elapsed() > RESTART && !is_second_try() {
+                restart();
+            }
             let reason = match step {
                 None if started.elapsed() > START => {
                     let load = *progress.load.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -77,6 +106,26 @@ pub fn watch(app: &AppHandle) {
     });
 }
 
+/// Linux: run the same command again in a new process (a new WebKit web process: reloading the
+/// page in this one does not help) and end with its result. Only the first try calls this.
+#[cfg(target_os = "linux")]
+fn restart() -> ! {
+    use std::process::Command;
+    eprintln!(
+        "quire: the page did not start within {} s (WebKitGTK sometimes never runs it, issue #93); \
+         starting the export again",
+        RESTART.as_secs()
+    );
+    let code = std::env::current_exe()
+        .and_then(|exe| Command::new(exe).args(std::env::args_os().skip(1)).env(SECOND_TRY, "1").status())
+        .map(|status| status.code().unwrap_or(1))
+        .unwrap_or_else(|e| {
+            eprintln!("quire: export failed: could not start it again: {e}");
+            1
+        });
+    std::process::exit(code)
+}
+
 /// Tell macOS the export is work the user asked for: the process has no visible window, so
 /// otherwise App Nap may slow its timers to a crawl while the screen is locked or asleep.
 #[cfg(target_os = "macos")]
@@ -87,65 +136,4 @@ fn keep_running() {
         .beginActivityWithOptions_reason(NSActivityOptions::UserInitiated, &reason);
     // held until the process exits, which is when the export ends
     std::mem::forget(activity);
-}
-
-#[cfg(target_os = "linux")]
-fn diag(app: &AppHandle, started: Instant) {
-    use gtk::prelude::WidgetExt;
-    use webkit2gtk::WebViewExt;
-    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
-    {
-        let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if last.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
-            return;
-        }
-        *last = Some(Instant::now());
-    }
-    let Some(w) = app.get_webview_window("main") else {
-        eprintln!("quire: DIAG {:.1} s: no window yet", started.elapsed().as_secs_f64());
-        return;
-    };
-    let t0 = started;
-    tauri::async_runtime::spawn(async move {
-        eprintln!("quire: DIAG {:.1} s: tokio alive", t0.elapsed().as_secs_f64());
-    });
-    std::thread::spawn(move || {
-        gtk::glib::MainContext::default().invoke(move || {
-            eprintln!("quire: DIAG {:.1} s: main context hop alive", t0.elapsed().as_secs_f64());
-        });
-    });
-    let stuck = app.state::<Progress>().step.lock().map(|s| s.is_none()).unwrap_or(false);
-    let ran = w.with_webview(move |wv| {
-        let view = wv.inner();
-        static RELOADS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        if stuck
-            && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("reload")
-            && started.elapsed() > Duration::from_secs(3)
-            && RELOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5
-        {
-            eprintln!("quire: DIAG reloading");
-            view.reload_bypass_cache();
-        }
-        // what the page says about itself, read back through the title next time round
-        #[allow(deprecated)]
-        view.run_javascript(
-            "const sc = document.scripts[0]; window.__probe = window.__probe || 'pending'; if (window.__probe === 'pending' && sc) { window.__probe = 'importing'; fetch(sc.src).then(r => r.text()).then(t => { window.__fetch = 'fetched ' + t.length; }, e => { window.__fetch = 'fetch-failed ' + e; }); import(sc.src).then(() => { window.__probe = 'import-ok'; }, e => { window.__probe = 'import-failed: ' + e; }); } document.title = 'DIAG probe=' + window.__probe + ' fetch=' + window.__fetch + ' res=' + JSON.stringify(performance.getEntriesByType('resource').map(r => [r.name.slice(-30), r.responseStatus, Math.round(r.duration)])) + ' src=' + (sc && sc.src) + ' ready=' + document.readyState + ' internals=' + (typeof window.__TAURI_INTERNALS__) + ' export=' + (typeof window.__QUIRE_EXPORT__) + ' scripts=' + document.scripts.length + ' root=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'none') + ' vis=' + document.visibilityState + ' errs=' + JSON.stringify(window.__errs || 'no-errs-array')",
-            None::<&gtk::gio::Cancellable>,
-            |_| {},
-        );
-        eprintln!(
-            "quire: DIAG {:.1} s: title={:?} loading={} progress={:.2} uri={:?} mapped={} visible={} realized={}",
-            started.elapsed().as_secs_f64(),
-            view.title(),
-            view.is_loading(),
-            view.estimated_load_progress(),
-            view.uri(),
-            view.is_mapped(),
-            view.is_visible(),
-            view.is_realized(),
-        );
-    });
-    if ran.is_err() {
-        eprintln!("quire: DIAG {:.1} s: with_webview failed", started.elapsed().as_secs_f64());
-    }
 }

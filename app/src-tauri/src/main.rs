@@ -715,39 +715,7 @@ fn main() {
         chosen.grant_file(output);
     }
     let pending = launch_docs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-    let mut builder = tauri::Builder::default();
-    if job.is_some() && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("ownproto") {
-        static FIRST: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-        builder = builder.register_asynchronous_uri_scheme_protocol("tauri", |ctx, request, responder| {
-            let first = *FIRST.get_or_init(std::time::Instant::now);
-            let path = request.uri().path().to_string();
-            eprintln!("quire: DIAG {:?} request {path}", first.elapsed());
-            let app = ctx.app_handle();
-            let mut response = tauri::http::Response::builder().header("Access-Control-Allow-Origin", "tauri://localhost");
-            let asset = app.asset_resolver().get(path.clone());
-            let response = match asset {
-                Some(asset) => {
-                    response = response.header("Content-Type", asset.mime_type.clone());
-                    if let Some(csp) = &asset.csp_header {
-                        response = response.header("Content-Security-Policy", csp.clone());
-                    }
-                    response.body(std::borrow::Cow::Owned(asset.bytes.to_vec()))
-                }
-                None => response.status(404).body(std::borrow::Cow::Owned(Vec::new())),
-            };
-            if let Ok(response) = response {
-                let slow = path.ends_with(".js") && path.contains("index-");
-                std::thread::spawn(move || {
-                    if slow {
-                        std::thread::sleep(std::time::Duration::from_millis(300));
-                    }
-                    eprintln!("quire: DIAG {:?} answering {path}", first.elapsed());
-                    responder.respond(response);
-                });
-            }
-        });
-    }
-    let built = builder
+    let built = tauri::Builder::default()
         .manage::<Requests>(Mutex::new(OpenRequests { ready: false, pending }))
         .manage::<Chosen>(Mutex::new(chosen))
         .plugin(tauri_plugin_dialog::init())
@@ -790,26 +758,19 @@ fn main() {
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some((input, output)) = &job {
                 let job = json!({ "open": input, "pdf": output });
-                let mode = std::env::var("QUIRE_EXPORT_MODE").unwrap_or_default();
                 window = window
                     .visible(false)
-                    .position(if mode == "offscreen" { -10000.0 } else { 0.0 }, if mode == "offscreen" { -10000.0 } else { 0.0 })
                     // a hidden page must keep running: macOS 14 and later would otherwise
                     // throttle its timers and rendering (issue #59)
                     .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
-                    .initialization_script(format!("window.__QUIRE_EXPORT__ = {job}; window.__errs = []; window.__t0 = performance.now(); for (const t of ['error', 'load', 'abort']) window.addEventListener(t, e => window.__errs.push(t + ':' + (e.target && (e.target.src || e.target.href || e.target.nodeName)) + '@' + Math.round(performance.now())), true); document.addEventListener('securitypolicyviolation', e => window.__errs.push('csp:' + e.violatedDirective + ' ' + e.blockedURI)); document.addEventListener('DOMContentLoaded', () => window.__errs.push('DCL@' + Math.round(performance.now()))); window.addEventListener('error', e => window.__errs.push('error: ' + e.message + ' @' + e.filename + ':' + e.lineno)); window.addEventListener('unhandledrejection', e => window.__errs.push('rejection: ' + e.reason)); {{ const ce = console.error; console.error = (...a) => {{ window.__errs.push('console.error: ' + a.join(' ')); ce.apply(console, a); }}; }}"));
+                    .initialization_script(if headless::stalls() {
+                        String::new()
+                    } else {
+                        format!("window.__QUIRE_EXPORT__ = {job};")
+                    });
                 headless::watch(app.handle());
             }
-            let built = window.build()?;
-            #[cfg(target_os = "linux")]
-            if job.is_some() && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("opacity") {
-                use gtk::prelude::WidgetExt;
-                if let Ok(win) = built.gtk_window() {
-                    win.set_opacity(0.0);
-                }
-                built.show()?;
-            }
-            let _ = built;
+            window.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
