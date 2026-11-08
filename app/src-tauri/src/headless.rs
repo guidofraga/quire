@@ -105,6 +105,15 @@ fn diag(app: &AppHandle, started: Instant) {
         eprintln!("quire: DIAG {:.1} s: no window yet", started.elapsed().as_secs_f64());
         return;
     };
+    let t0 = started;
+    tauri::async_runtime::spawn(async move {
+        eprintln!("quire: DIAG {:.1} s: tokio alive", t0.elapsed().as_secs_f64());
+    });
+    std::thread::spawn(move || {
+        gtk::glib::MainContext::default().invoke(move || {
+            eprintln!("quire: DIAG {:.1} s: main context hop alive", t0.elapsed().as_secs_f64());
+        });
+    });
     let stuck = app.state::<Progress>().step.lock().map(|s| s.is_none()).unwrap_or(false);
     let ran = w.with_webview(move |wv| {
         let view = wv.inner();
