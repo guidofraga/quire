@@ -715,7 +715,32 @@ fn main() {
         chosen.grant_file(output);
     }
     let pending = launch_docs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-    let built = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if job.is_some() && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("ownproto") {
+        builder = builder.register_asynchronous_uri_scheme_protocol("tauri", |ctx, request, responder| {
+            let t = std::time::Instant::now();
+            let path = request.uri().path().to_string();
+            eprintln!("quire: DIAG request {path}");
+            let app = ctx.app_handle();
+            let mut response = tauri::http::Response::builder().header("Access-Control-Allow-Origin", "tauri://localhost");
+            let asset = app.asset_resolver().get(path.clone());
+            let response = match asset {
+                Some(asset) => {
+                    response = response.header("Content-Type", asset.mime_type.clone());
+                    if let Some(csp) = &asset.csp_header {
+                        response = response.header("Content-Security-Policy", csp.clone());
+                    }
+                    response.body(std::borrow::Cow::Owned(asset.bytes.to_vec()))
+                }
+                None => response.status(404).body(std::borrow::Cow::Owned(Vec::new())),
+            };
+            if let Ok(response) = response {
+                responder.respond(response);
+            }
+            eprintln!("quire: DIAG answered {path} in {:?}", t.elapsed());
+        });
+    }
+    let built = builder
         .manage::<Requests>(Mutex::new(OpenRequests { ready: false, pending }))
         .manage::<Chosen>(Mutex::new(chosen))
         .plugin(tauri_plugin_dialog::init())
