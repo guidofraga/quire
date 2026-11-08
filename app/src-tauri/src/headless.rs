@@ -52,8 +52,6 @@ pub fn watch(app: &AppHandle) {
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(Duration::from_millis(500));
-            #[cfg(target_os = "linux")]
-            diag(&app, started);
             let progress = app.state::<Progress>();
             let step = progress.step.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
             let reason = match step {
@@ -87,66 +85,4 @@ fn keep_running() {
         .beginActivityWithOptions_reason(NSActivityOptions::UserInitiated, &reason);
     // held until the process exits, which is when the export ends
     std::mem::forget(activity);
-}
-
-#[cfg(target_os = "linux")]
-pub fn hook(app: &AppHandle) {
-    use webkit2gtk::WebViewExt;
-    let Some(w) = app.get_webview_window("main") else { return };
-    let started = app.state::<Progress>().started;
-    let _ = w.with_webview(move |wv| {
-        let view = wv.inner();
-        view.connect_load_failed(move |_, ev, uri, err| {
-            eprintln!("quire: DIAG {:.1} s: load failed {ev:?} {uri} {err}", started.elapsed().as_secs_f64());
-            false
-        });
-        view.connect_web_process_terminated(move |_, why| {
-            eprintln!("quire: DIAG {:.1} s: web process terminated {why:?}", started.elapsed().as_secs_f64());
-        });
-        view.connect_load_changed(move |_, ev| {
-            eprintln!("quire: DIAG {:.1} s: load-changed {ev:?}", started.elapsed().as_secs_f64());
-        });
-    });
-}
-
-#[cfg(target_os = "linux")]
-fn diag(app: &AppHandle, started: Instant) {
-    use gtk::prelude::WidgetExt;
-    use webkit2gtk::WebViewExt;
-    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
-    {
-        let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if last.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
-            return;
-        }
-        *last = Some(Instant::now());
-    }
-    let Some(w) = app.get_webview_window("main") else {
-        eprintln!("quire: DIAG {:.1} s: no window yet", started.elapsed().as_secs_f64());
-        return;
-    };
-    let ran = w.with_webview(move |wv| {
-        let view = wv.inner();
-        // what the page says about itself, read back through the title next time round
-        #[allow(deprecated)]
-        view.run_javascript(
-            "document.title = 'DIAG ready=' + document.readyState + ' internals=' + (typeof window.__TAURI_INTERNALS__) + ' export=' + (typeof window.__QUIRE_EXPORT__) + ' scripts=' + document.scripts.length + ' root=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'none') + ' vis=' + document.visibilityState + ' errs=' + JSON.stringify(window.__errs || 'no-errs-array')",
-            None::<&gtk::gio::Cancellable>,
-            |_| {},
-        );
-        eprintln!(
-            "quire: DIAG {:.1} s: title={:?} loading={} progress={:.2} uri={:?} mapped={} visible={} realized={}",
-            started.elapsed().as_secs_f64(),
-            view.title(),
-            view.is_loading(),
-            view.estimated_load_progress(),
-            view.uri(),
-            view.is_mapped(),
-            view.is_visible(),
-            view.is_realized(),
-        );
-    });
-    if ran.is_err() {
-        eprintln!("quire: DIAG {:.1} s: with_webview failed", started.elapsed().as_secs_f64());
-    }
 }

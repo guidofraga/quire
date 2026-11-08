@@ -763,14 +763,10 @@ fn main() {
                     // a hidden page must keep running: macOS 14 and later would otherwise
                     // throttle its timers and rendering (issue #59)
                     .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
-                    .initialization_script(format!("window.__QUIRE_EXPORT__ = {job}; window.__errs = []; window.addEventListener('error', e => window.__errs.push('error: ' + e.message + ' @' + e.filename + ':' + e.lineno)); window.addEventListener('unhandledrejection', e => window.__errs.push('rejection: ' + e.reason)); {{ const ce = console.error; console.error = (...a) => {{ window.__errs.push('console.error: ' + a.join(' ')); ce.apply(console, a); }}; }}"));
+                    .initialization_script(format!("window.__QUIRE_EXPORT__ = {job};"));
                 headless::watch(app.handle());
             }
             window.build()?;
-            #[cfg(target_os = "linux")]
-            if job.is_some() {
-                headless::hook(app.handle());
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
