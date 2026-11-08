@@ -82,6 +82,7 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
         std::thread::sleep(Duration::from_millis(100));
     };
     let said = said.join().unwrap_or_default();
+    eprintln!("APPLOG {}", said.replace('\n', "\nAPPLOG "));
     match status {
         None => {
             return Err(format!(
