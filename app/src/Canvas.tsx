@@ -2,6 +2,8 @@ import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMo
 import { openRegionMenu, openRegionMenuAt } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping } from "./MathEditor";
+import { activeView } from "./richtext";
+import { forwardTypingToTable } from "./TableEditor";
 import { RegionBox, resizable, resizeBy } from "./Region";
 import { announce } from "./a11y";
 import { isMac } from "./api";
@@ -296,12 +298,95 @@ export function Canvas() {
     sink.value = "";
     if (!text) return;
     if (state.editing) {
-      forwardTyping(text);
+      handOver({ text });
       return;
     }
     if (!state.caret) return;
     if (text.startsWith('"')) insertAtCaret("text", text.slice(1));
     else insertAtCaret("math", text);
+  }
+
+  // Keys that reach the hidden field while a new region is being edited came too early for
+  // the region's editor to take focus. They wait here, in order, and go to the editor once it
+  // is on the page.
+  type Held = { text: string } | { key: KeyboardEventInit };
+  let held: Held[] = [];
+  let handing = false;
+
+  /** The editor of the region being edited, once it is on the page. */
+  function editorElement() {
+    if (!state.editing) return null;
+    return (
+      viewportEl?.querySelector<HTMLElement>(".region.editing :is(input, [contenteditable=true], .sheet-wrap)") ?? null
+    );
+  }
+
+  function sendText(text: string) {
+    if (forwardTyping(text) || forwardTypingToTable(text)) return true;
+    const view = activeView();
+    if (!view) return false;
+    view.focus();
+    document.execCommand("insertText", false, text);
+    return true;
+  }
+
+  function handOver(op: Held) {
+    held.push(op);
+    void drain();
+  }
+
+  async function drain() {
+    if (handing) return;
+    handing = true;
+    // an editor that is not there yet shows up within a few frames
+    for (let waited = 0; held.length && state.editing && waited < 120;) {
+      const editor = editorElement();
+      const op = held[0];
+      if (!editor || ("text" in op && !sendText(op.text))) {
+        waited++;
+        await new Promise((r) => requestAnimationFrame(r));
+        continue;
+      }
+      held.shift();
+      if ("key" in op) {
+        // a key goes to what has focus now: the table's cell field, once typing has opened it
+        if (document.activeElement === sink || !document.activeElement) editor.focus({ preventScroll: true });
+        (document.activeElement ?? editor).dispatchEvent(
+          new KeyboardEvent("keydown", { ...op.key, bubbles: true, cancelable: true }),
+        );
+      }
+      // the editor's own focus moves (a table opening a cell) land before the next key
+      await Promise.resolve();
+    }
+    held = [];
+    handing = false;
+  }
+
+  /** Never leave the keyboard on the hidden field while a region is being edited. */
+  function leaveSink() {
+    if (document.activeElement !== sink) return;
+    const editor = editorElement();
+    if (editor) editor.focus({ preventScroll: true });
+    else if (state.editing) requestAnimationFrame(leaveSink);
+  }
+
+  createEffect(
+    on(
+      () => state.editing,
+      (id) => {
+        if (id) queueMicrotask(leaveSink);
+      },
+    ),
+  );
+
+  const HANDED_KEYS = /^(Tab|Escape|Enter|Backspace|Delete|Arrow(Up|Down|Left|Right)|Home|End|F2)$/;
+
+  function onSinkKeyDown(e: KeyboardEvent) {
+    if (!state.editing || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || !HANDED_KEYS.test(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const { key, shiftKey } = e;
+    handOver({ key: { key, shiftKey } });
   }
 
   /** Screen point → scene point (undo pan and zoom). */
@@ -818,6 +903,8 @@ export function Canvas() {
           spellcheck={false}
           style={{ left: `${caretScene()?.[0] ?? 0}px`, top: `${caretScene()?.[1] ?? 0}px` }}
           onInput={onSinkInput}
+          onKeyDown={onSinkKeyDown}
+          onFocus={leaveSink}
           onCompositionEnd={takeSink}
         />
       </div>
