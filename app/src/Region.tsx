@@ -48,9 +48,9 @@ import {
   noteRoom,
   PAGE_WIDTH,
   type Placed,
-  regionGrew,
   renameIn,
   revealRegion,
+  scheduleGrowth,
   setHeights,
   setLive,
   setState,
@@ -766,14 +766,14 @@ export function RegionBox(props: RegionProps) {
   const selected = () => state.selection.includes(r().id);
   const editing = () => state.editing === r().id;
   let el!: HTMLDivElement;
-  // pagination needs real heights; report them whenever the rendering changes size
+  // pagination and spacing need real heights; report them whenever the rendering changes size
   onMount(() => {
     const ro = new ResizeObserver(() => {
       const h = el.offsetHeight;
       const before = untrack(() => heights[r().id]) ?? 0;
       if (h && Math.abs(before - h) > 0.5) {
         setHeights(r().id, h);
-        regionGrew(r().id, before, h);
+        scheduleGrowth();
       }
       const w = el.offsetWidth;
       if (w && Math.abs((untrack(() => widths[r().id]) ?? 0) - w) > 0.5) setWidths(r().id, w);

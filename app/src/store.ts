@@ -97,6 +97,7 @@ const MAX_CHARS = 20_000_000;
 let undoChars = 0;
 
 function touch() {
+  edited = true;
   setState({ dirty: true, rev: state.rev + 1 });
 }
 
@@ -180,6 +181,8 @@ let loads = 0;
 export function loadDoc(doc: Doc, path: string | null, origin: string | null = null) {
   importSettle = null;
   loads++;
+  edited = false;
+  settled.clear();
   // nothing held back from the last document may show in this one
   forgetReport();
   undoStack.length = 0;
@@ -656,6 +659,107 @@ export function settleRegions(
   return changes;
 }
 
+/** The insertion point, as `pushBelow` moves it: a point that follows what is above it. */
+const CARET_ID = "\0caret";
+
+/**
+ * Regions that grew after an edit (a fraction, a result, an error or a matrix appearing) push
+ * what is directly below them in their column down, to a grid step under their new bottom. A
+ * region that moves takes what is below it in its column along, so the spacing that follows is
+ * kept. Only ever down, and only as far as needed: what already has room doesn't move, and a
+ * region beside the one that grew (not overlapping it horizontally) stays. An expanded area
+ * grows to hold its children when they need more room, and pushes what is below it in turn.
+ *
+ * `grown`: the regions that grew, with the height they had before. `caret`, in document
+ * coordinates, moves like a region of no height; its new place is under `CARET_ID`.
+ * Works on a copy; the input is not changed.
+ */
+export function pushBelow(
+  regions: Region[],
+  heights: Record<string, number>,
+  widths: Record<string, number>,
+  grown: Map<string, number>,
+  caret?: [number, number] | null,
+): Settling {
+  const work = structuredClone(regions);
+  const point: Region | null = caret ? { id: CARET_ID, kind: "math", at: [caret[0], caret[1]] } : null;
+  if (point) work.push(point);
+  const width = (r: Region) => (r === point ? 1 : (widths[r.id] ?? 40));
+  const extent = (r: Region): number | undefined =>
+    r === point ? undefined : r.kind === "area" ? r.height : heights[r.id];
+  /** Heights before the growth, for areas grown by their children here too. */
+  const before = new Map(grown);
+
+  const settleList = (list: Region[]): boolean => {
+    let changed = false;
+    // what is inside expanded areas first: an area that must grow then pushes at this level
+    for (const r of list) {
+      if (r.kind !== "area" || r.collapsed || r.height === undefined || !r.regions) continue;
+      if (!settleList(r.regions)) continue;
+      changed = true;
+      let bottom = 0;
+      for (const c of r.regions) bottom = Math.max(bottom, c.at[1] + (extent(c) ?? 0));
+      const want = Math.ceil(bottom / GRID) * GRID + GRID;
+      if (want > r.height + 0.5) {
+        before.set(r.id, r.height);
+        r.height = want;
+      }
+    }
+    const order = [...list].sort((a, b) => a.at[1] - b.at[1] || a.at[0] - b.at[0]);
+    const top = new Map(order.map((r) => [r, r.at[1]]));
+    const moved = new Map<Region, number>();
+    for (let i = 0; i < order.length; i++) {
+      const r = order[i];
+      const y = top.get(r)!;
+      let dy = 0;
+      for (let j = 0; j < i; j++) {
+        const p = order[j];
+        const h = extent(p);
+        if (h === undefined) continue;
+        const old = before.get(p.id) ?? h;
+        // only what starts below p (not beside it) and shares its column
+        const py = top.get(p)!;
+        if (y < py + old - 0.5 || !(r.at[0] < p.at[0] + width(p) && r.at[0] + width(r) > p.at[0])) continue;
+        const pdy = moved.get(p) ?? 0;
+        dy = Math.max(dy, pdy);
+        if (h > old + 0.5) dy = Math.max(dy, Math.ceil((py + pdy + h) / GRID) * GRID + GRID - y);
+      }
+      if (dy > 0.5) {
+        moved.set(r, dy);
+        r.at = [r.at[0], y + dy];
+        changed = true;
+      }
+    }
+    return changed;
+  };
+  settleList(work);
+
+  const original = new Map<string, Region>();
+  const collect = (list: Region[]) => {
+    for (const r of list) {
+      original.set(r.id, r);
+      if (r.regions) collect(r.regions);
+    }
+  };
+  collect(regions);
+  const changes: Settling = new Map();
+  if (point && caret && point.at[1] !== caret[1]) changes.set(CARET_ID, { at: point.at });
+  const compare = (list: Region[]) => {
+    for (const r of list) {
+      const old = original.get(r.id);
+      if (old) {
+        const change: { at?: [number, number]; height?: number } = {};
+        if (old.at[1] !== r.at[1]) change.at = [r.at[0], r.at[1]];
+        if (r.kind === "area" && r.height !== old.height) change.height = r.height;
+        if (change.at || change.height !== undefined) changes.set(r.id, change);
+      }
+      if (r.regions) compare(r.regions);
+    }
+  };
+  compare(work.filter((r) => r !== point));
+  return changes;
+}
+
 /** Ids of a region and everything inside it. */
 function subtreeIds(r: Region, out: Set<string>): Set<string> {
   out.add(r.id);
@@ -713,7 +817,10 @@ function applySettling(changes: Settling) {
       if (c.height !== undefined) r.height = c.height;
     }
   });
-  if (!wasDirty) setState({ dirty: false });
+  if (!wasDirty) {
+    setState({ dirty: false });
+    edited = false;
+  }
 }
 
 function runImportSettle() {
@@ -1213,44 +1320,75 @@ export function commitEditing() {
   }
   if (editSnapshot !== null && editSnapshot !== snapshot()) record(editSnapshot);
   editSnapshot = null;
-  if (r && !empty) justCommitted = { id, until: Date.now() + 3000 };
   setState({ editing: null });
+  // its rendering may now be taller than the editor was
+  scheduleGrowth();
 }
 
-/** The region whose edit just ended: its new rendering may be taller than the editor was. */
-let justCommitted: { id: string; until: number } | null = null;
+// ---------------------------------------------------------------------------
+// Growth: a region that becomes taller after an edit pushes what is below it down
+// ---------------------------------------------------------------------------
+
+/** Each region's height when growth was last settled (layout px). */
+const settled = new Map<string, number>();
+/**
+ * Whether the document changed since it was opened. Until then a region that grows (fonts or
+ * the first results arriving) only records its height, so opening a document never moves it.
+ */
+let edited = false;
+let growthQueued = false;
+
+/** A region's measured height changed, or an edit ended: settle growth once the measuring is done. */
+export function scheduleGrowth() {
+  if (growthQueued) return;
+  growthQueued = true;
+  queueMicrotask(settleGrowth);
+}
 
 /**
- * A region just committed grew (a fraction, a matrix, an error line under it) into what
- * sits below it: move everything below down, SMath-style, and the insertion point with it.
- * Only the region just edited does this, so opening a document never shuffles it.
+ * Push down what is below the regions that grew since the last time (`pushBelow`), and the
+ * insertion point with it, as part of the edit's undo step. The region being typed in doesn't
+ * push: its editor isn't its height, and lines must not jump while typing. It pushes once the
+ * edit ends. Pushing only moves regions, which changes no height, so this settles in one pass.
  */
-export function regionGrew(id: string, before: number, after: number) {
-  if (!before || after <= before + 0.5 || justCommitted?.id !== id || Date.now() > justCommitted.until) return;
-  const p = layout().byId.get(id);
-  if (!p || p.parent) return;
-  const [x0, y] = p.region.at;
-  const x1 = x0 + (widths[id] ?? 40);
-  const oldBottom = y + before;
-  const newBottom = y + after;
-  const top = layout().list.filter((q) => !q.parent && q.region.id !== id && q.region.at[1] >= oldBottom - 0.5);
-  const overlaps = (q: Placed) => q.region.at[0] < x1 && q.region.at[0] + (widths[q.region.id] ?? 40) > x0;
-  const hit = top.filter((q) => q.region.at[1] < newBottom + GRID && overlaps(q));
-  const caret = state.caret;
-  const caretHit =
-    caret && caret[1] >= oldBottom - 0.5 && caret[1] < newBottom + GRID && caret[0] < x1 && caret[0] >= x0 - GRID;
-  if (!hit.length && !caretHit) return;
-  const highest = Math.min(...hit.map((q) => q.region.at[1]), caretHit ? caret[1] : Infinity);
-  const dy = Math.ceil(newBottom / GRID) * GRID + GRID - highest;
-  if (dy <= 0) return;
-  if (top.length) {
-    moveTo(new Map(top.map((q) => [q.region.id, [q.region.at[0], q.region.at[1]] as [number, number]])), 0, dy);
-    touch();
+function settleGrowth() {
+  growthQueued = false;
+  const editing = state.editing;
+  const now: Record<string, number> = { ...unwrap(heights) };
+  const grown = new Map<string, number>();
+  for (const p of layout().list) {
+    const id = p.region.id;
+    if (p.hidden || now[id] === undefined) continue;
+    // what is on screen now: right after an edit ends, before the next measurement reports it
+    const el = document.querySelector<HTMLElement>(`[data-region="${CSS.escape(id)}"]`);
+    if (el?.offsetHeight) now[id] = el.offsetHeight;
+    const was = settled.get(id);
+    if (id === editing) {
+      if (was === undefined) settled.set(id, now[id]);
+      else now[id] = was;
+    } else if (was === undefined || now[id] < was) settled.set(id, now[id]);
+    else if (now[id] > was + 0.5) grown.set(id, was);
   }
-  if (caret && caret[1] >= oldBottom - 0.5) {
-    const moved: [number, number] = [caret[0], caret[1] + dy];
-    if (leftBox && leftBox.caret[0] === caret[0] && leftBox.caret[1] === caret[1]) leftBox.caret = moved;
-    setState({ caret: moved });
+  if (!grown.size) return;
+  for (const id of grown.keys()) settled.set(id, now[id]);
+  if (!edited) return;
+  const changes = pushBelow(unwrap(state.doc).regions, now, widths, grown, state.caret);
+  const caret = changes.get(CARET_ID)?.at;
+  changes.delete(CARET_ID);
+  // no checkpoint: the push belongs to the edit that made the region grow
+  if (changes.size)
+    mutate((d) => {
+      for (const [id, c] of changes) {
+        const r = findDraft(d, id);
+        if (!r) continue;
+        if (c.at) r.at = c.at;
+        if (c.height !== undefined) r.height = c.height;
+      }
+    }, false);
+  if (caret && state.caret) {
+    const old = state.caret;
+    if (leftBox && leftBox.caret[0] === old[0] && leftBox.caret[1] === old[1]) leftBox.caret = caret;
+    setState({ caret });
   }
 }
 
@@ -1263,8 +1401,10 @@ export function commitBelow(id: string) {
   const p = layout().byId.get(id);
   commitEditing();
   if (!p || !el || !layout().byId.has(id)) return;
-  const h = el.getBoundingClientRect().height / state.view.zoom;
-  const caret: [number, number] = [p.x, Math.ceil((p.y + h) / GRID) * GRID + GRID];
+  // the rendering that replaced the editor, error line included: not a fixed line height
+  const h = el.offsetHeight;
+  // on the paper in page view, as placeAt keeps a click; the page breaks below by itself
+  const caret: [number, number] = [Math.min(p.x, maxContentX()), Math.ceil((p.y + h) / GRID) * GRID + GRID];
   leftBox = { id, caret };
   setState({ caret, selection: [] });
 }

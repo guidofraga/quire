@@ -32,6 +32,10 @@ import {
   setState,
   setLive,
   showReport,
+  pushBelow,
+  scheduleGrowth,
+  setHeights,
+  setWidths,
   settleRegions,
   startEditing,
   state,
@@ -797,5 +801,100 @@ describe("placing at a point on the screen", () => {
   it("leaves canvas view alone", () => {
     loadDoc(doc([math("a", 0, "1")], { view: "canvas" }), null);
     expect(placeAt(5000, 300)).toEqual([5004, 297]);
+  });
+});
+
+describe("pushBelow (a region grew after an edit)", () => {
+  const box = (id: string, x: number, y: number): Region => ({ id, kind: "math", at: [x, y], expr: id });
+  const area = (id: string, y: number, height: number, regions: Region[]): Region => ({
+    id,
+    kind: "area",
+    at: [0, y],
+    height,
+    regions,
+  });
+  const wide = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, 100]));
+  const grew = (id: string, from: number) => new Map([[id, from]]);
+
+  it("pushes the line below to a grid step under the new bottom, and what follows keeps its spacing", () => {
+    // r grew from 18 to 40 (an error line appeared under it); q was a grid step below it
+    const regions = [box("r", 0, 0), box("q", 0, 27), box("s", 0, 90)];
+    const changes = pushBelow(regions, { r: 40, q: 18, s: 18 }, wide(["r", "q", "s"]), grew("r", 18));
+    // 40 px bottom → the grid line at 45, one grid step further: 54
+    expect(changes.get("q")?.at).toEqual([0, 54]);
+    expect(changes.get("s")?.at).toEqual([0, 117]);
+    expect(changes.has("r")).toBe(false);
+  });
+
+  it("leaves what already has room, and never pulls up", () => {
+    const regions = [box("r", 0, 0), box("q", 0, 90)];
+    expect(pushBelow(regions, { r: 40, q: 18 }, wide(["r", "q"]), grew("r", 18)).size).toBe(0);
+    // r shrank: q stays where the user put it
+    expect(pushBelow(regions, { r: 18, q: 18 }, wide(["r", "q"]), grew("r", 40)).size).toBe(0);
+  });
+
+  it("leaves another column alone, beside the line that grew or beside the one pushed", () => {
+    const regions = [box("r", 0, 0), box("side", 200, 0), box("q", 0, 27), box("next", 200, 27)];
+    const heights = { r: 40, side: 18, q: 18, next: 18 };
+    const changes = pushBelow(regions, heights, wide(["r", "side", "q", "next"]), grew("r", 18));
+    expect(changes.get("q")?.at).toEqual([0, 54]);
+    expect(changes.has("side")).toBe(false);
+    expect(changes.has("next")).toBe(false);
+  });
+
+  it("leaves a region that starts beside the one that grew rather than below it", () => {
+    const regions = [box("r", 0, 0), box("q", 50, 9)];
+    expect(pushBelow(regions, { r: 40, q: 18 }, wide(["r", "q"]), grew("r", 18)).size).toBe(0);
+  });
+
+  it("grows an expanded area for a child that grew, and pushes what is below the area", () => {
+    const a = area("a", 0, 54, [box("c", 0, 0), box("d", 0, 27)]);
+    const changes = pushBelow([a, box("b", 0, 63)], { c: 30, d: 18, b: 18 }, wide(["a", "c", "d", "b"]), grew("c", 18));
+    // c ends at 30 → 36 + 9: d moves to 45 and ends at 63, so the area needs 63 + 9 = 72
+    expect(changes.get("d")?.at).toEqual([0, 45]);
+    expect(changes.get("a")?.height).toBe(72);
+    // the area now ends at 72: b goes to 81
+    expect(changes.get("b")?.at).toEqual([0, 81]);
+  });
+
+  it("moves the insertion point under a line that grew", () => {
+    const changes = pushBelow([box("r", 0, 0)], { r: 40 }, wide(["r"]), grew("r", 18), [0, 27]);
+    expect([...changes.values()].map((c) => c.at)).toEqual([[0, 54]]);
+  });
+
+  it("does not change its input", () => {
+    const regions = [box("r", 0, 0), box("q", 0, 27)];
+    pushBelow(regions, { r: 40, q: 18 }, wide(["r", "q"]), grew("r", 18));
+    expect(regions[1].at).toEqual([0, 27]);
+  });
+});
+
+describe("growth after an edit", () => {
+  const settle = async (h: Record<string, number>) => {
+    for (const [id, v] of Object.entries(h)) setHeights(id, v);
+    scheduleGrowth();
+    await Promise.resolve();
+  };
+  beforeEach(async () => {
+    loadDoc(doc([math("a", 0, "x := 1"), math("b", 27, "y := x")]), null);
+    setWidths({ a: 100, b: 100 });
+    await settle({ a: 18, b: 18 });
+  });
+
+  it("doesn't move a document that was only opened", async () => {
+    // fonts or the first results arriving
+    await settle({ a: 40 });
+    expect(state.doc.regions[1].at).toEqual([0, 27]);
+    expect(state.dirty).toBe(false);
+  });
+
+  it("pushes the line below as part of the edit's undo step", async () => {
+    updateRegion("a", { expr: "x := 1 + zz" });
+    // the error line under a appears with the next report
+    await settle({ a: 40 });
+    expect(state.doc.regions[1].at).toEqual([0, 54]);
+    undo();
+    expect(state.doc.regions[0].expr).toBe("x := 1");
+    expect(state.doc.regions[1].at).toEqual([0, 27]);
   });
 });
