@@ -89,11 +89,11 @@ jobs:
         run: |
           cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
           fails=0
-          for i in $(seq 1 30); do
+          for i in $(seq 1 80); do
             echo "=== run $i"
             dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture > run.log 2>&1 && echo "run $i PASS" || { echo "run $i FAIL"; fails=$((fails+1)); grep -E "APPLOG|test result" run.log; }
           done
-          echo "failures: $fails of 30"
+          echo "failures: $fails of 80"
           [ "$fails" = 0 ]
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
