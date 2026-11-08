@@ -123,9 +123,11 @@ jobs:
         run: sed -i 's/ crossorigin//' app/dist/index.html && cat app/dist/index.html
       - name: Test
         env:
-          NO_AT_BRIDGE: ${{ matrix.mode == 'noatbridge' && '1' || '' }}
-          WEBKIT_USE_SINGLE_WEB_PROCESS: ${{ matrix.mode == 'single' && '1' || '' }}
+          MODE: ${{ matrix.mode }}
         run: |
+          if [ "$MODE" = noatbridge ]; then export NO_AT_BRIDGE=1; fi
+          if [ "$MODE" = single ]; then export WEBKIT_USE_SINGLE_WEB_PROCESS=1; fi
+          env | grep -E 'NO_AT|SINGLE' || true
           dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture
           for i in 1 2 3 4; do
             dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture > run.log 2>&1 || { grep APPLOG run.log | head -12 | cut -c1-500; exit 1; }
