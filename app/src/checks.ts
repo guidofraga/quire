@@ -1,4 +1,4 @@
-// Design checks: a comparison shown with `=` (`σ ≤ f.y =`), or a result that reads as
+// Design checks: a comparison (`σ ≤ f.y`, with or without `=`), or a result that reads as
 // pass or fail (`if(…, "OK", "FAIL")`), in math or in a table cell. They are marked ✓ / ✗,
 // counted in the status bar and listed by Insert ▸ Summary of Checks.
 import { createMemo, createRoot } from "solid-js";
@@ -22,7 +22,10 @@ export const isComparison = (e: Expr | null | undefined): boolean =>
 
 /** Whether a math region is a check, and whether it passes. */
 export function mathCheck(r: Region, v: RegionView | undefined): boolean | null {
-  if (r.kind !== "math" || !r.show || !v?.resultText || v.error) return null;
+  if (r.kind !== "math" || v?.error) return null;
+  // a line that is only a comparison is a check by itself; the engine says whether it holds
+  if (v?.check !== undefined && isComparison(v.input)) return v.check;
+  if (!r.show || !v?.resultText) return null;
   if (isComparison(v.input)) return v.resultText.trim() !== "0";
   return v.result?.t === "Str" ? verdictOf(v.result.c) : null;
 }

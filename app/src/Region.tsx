@@ -491,7 +491,7 @@ function ChecksBody(props: { p: Placed }) {
       <div class="contents-title">{String(r().title ?? "Summary of Checks")}</div>
       <Show
         when={checks().length}
-        fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}
+        fallback={<div class="contents-empty">No checks yet: write a comparison, like σ ≤ f.y.</div>}
       >
         <div class="checks-total" classList={{ failing: failing().length > 0 }}>
           {summary()}
