@@ -90,7 +90,7 @@ jobs:
           cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
           fails=0
           for i in $(seq 1 80); do
-            echo "=== run $i"
+            echo "=== run $i"; sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
             dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture > run.log 2>&1 && echo "run $i PASS" || { echo "run $i FAIL"; fails=$((fails+1)); grep -E "APPLOG|test result" run.log; }
           done
           echo "failures: $fails of 80"
