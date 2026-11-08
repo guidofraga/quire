@@ -39,6 +39,9 @@ pub struct Outcome {
     pub value: Option<Value>,
     /// The displayed result, when the region shows one.
     pub shown: Option<String>,
+    /// Whether a line that is only a comparison holds, with or without `=` (a design check).
+    /// SMath shows nothing for such a line, so documents in its marked mode never have one.
+    pub check: Option<bool>,
     pub error: Option<String>,
     /// Plain names in this region that mean units (`2 m`), for display.
     pub units: Vec<String>,
@@ -76,6 +79,7 @@ impl Outcome {
             defines: None,
             value: None,
             shown: None,
+            check: None,
             error: None,
             units: Vec::new(),
             constants: Vec::new(),
@@ -727,6 +731,13 @@ impl Worksheet {
                         Err(err) => out.error = Some(err.message),
                     }
                 }
+                if matches!(e, Expr::Compare(..))
+                    && out.error.is_none()
+                    && !self.settings.marked_units
+                    && let Value::Num(q) = &v
+                {
+                    out.check = Some(q.v != 0.0);
+                }
                 out.value = Some(v);
             }
             Err(err) if r.show && self.symbolic_call(&mut out, e, &err) => {}
@@ -1026,6 +1037,50 @@ mod tests {
 
     fn errors(outs: &[Outcome]) -> Vec<&str> {
         outs.iter().map(|o| o.error.as_deref().unwrap_or("ok")).collect()
+    }
+
+    /// Like `run_with`, but `=` is shown only on lines ending in `=`.
+    fn run_checks(lines: &[&str], settings: DisplaySettings) -> Vec<Outcome> {
+        let regions: Vec<MathInput> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| MathInput {
+                id: i.to_string(),
+                expr: l.strip_suffix('=').unwrap_or(l).trim().to_string(),
+                show: l.ends_with('='),
+                display: DisplaySpec::default(),
+                table: None,
+                plot: None,
+                symbolic: false,
+            })
+            .collect();
+        Worksheet::new(settings).run(&regions)
+    }
+
+    #[test]
+    fn a_comparison_is_a_check_with_or_without_equals() {
+        let outs = run_checks(
+            &[
+                "M := 50 kN*m",
+                "M <= 60 kN*m",
+                "M >= 60 kN*m",
+                "0 < 5 < 1",
+                "M <= 60 kN*m =",
+                "ok := M <= 60 kN*m",
+                "M",
+            ],
+            DisplaySettings::default(),
+        );
+        let checks: Vec<_> = outs.iter().map(|o| o.check).collect();
+        assert_eq!(checks, [None, Some(true), Some(false), Some(false), Some(true), None, None]);
+        assert_eq!(shown_at(&outs, 1), None, "only the badge, no value");
+    }
+
+    #[test]
+    fn a_comparison_in_an_smath_document_is_not_a_check() {
+        let settings = DisplaySettings { marked_units: true, ..Default::default() };
+        let outs = run_checks(&["x := 1", "x < 2"], settings);
+        assert_eq!(outs[1].check, None, "SMath shows nothing for a bare comparison");
     }
 
     #[test]

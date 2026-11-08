@@ -365,6 +365,9 @@ pub struct RegionView {
     pub input: Option<Expr>,
     pub result: Option<Expr>,
     pub result_text: Option<String>,
+    /// Pass or fail of a line that is only a comparison, shown with or without `=`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check: Option<bool>,
     pub error: Option<String>,
     pub syntax_error: bool,
     /// Plain names that mean units here (`2 m`), drawn as units.
@@ -726,6 +729,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 input: None,
                 result: None,
                 result_text: None,
+                check: None,
                 error: o.error.clone(),
                 syntax_error: false,
                 units: o.units.clone(),
@@ -764,6 +768,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 input: None,
                 result: None,
                 result_text: None,
+                check: None,
                 error: o.error.clone(),
                 syntax_error: false,
                 units: o.units.clone(),
@@ -789,6 +794,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             input: parsed.ok(),
             result: o.shown.as_deref().and_then(|s| parse(s).ok()),
             result_text: o.shown.clone(),
+            check: o.check,
             error: o.error.clone(),
             syntax_error,
             units: o.units.clone(),

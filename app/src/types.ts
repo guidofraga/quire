@@ -26,6 +26,8 @@ export interface RegionView {
   input: Expr | null;
   result: Expr | null;
   resultText: string | null;
+  /** Pass or fail of a line that is only a comparison, with or without `=`. */
+  check?: boolean;
   error: string | null;
   syntaxError: boolean;
   /** Plain names that mean units in this region (`2 m`). */
