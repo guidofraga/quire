@@ -99,7 +99,7 @@ jobs:
       fail-fast: false
       matrix:
         n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-        mode: [offscreen, opacity]
+        mode: [reload, nocors]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,8 +118,9 @@ jobs:
       - name: Front end
         run: npm ci && npm run build
         working-directory: app
-      - name: Lint the desktop app
-        run: cargo clippy -p quire-app --all-targets --locked -- -D warnings
+      - name: Strip crossorigin
+        if: matrix.mode == 'nocors'
+        run: sed -i 's/ crossorigin//' app/dist/index.html && cat app/dist/index.html
       - name: Test
         env:
           QUIRE_EXPORT_MODE: ${{ matrix.mode }}

@@ -760,7 +760,7 @@ fn main() {
                 let job = json!({ "open": input, "pdf": output });
                 let mode = std::env::var("QUIRE_EXPORT_MODE").unwrap_or_default();
                 window = window
-                    .visible(cfg!(target_os = "linux") && mode == "offscreen")
+                    .visible(false)
                     .position(if mode == "offscreen" { -10000.0 } else { 0.0 }, if mode == "offscreen" { -10000.0 } else { 0.0 })
                     // a hidden page must keep running: macOS 14 and later would otherwise
                     // throttle its timers and rendering (issue #59)

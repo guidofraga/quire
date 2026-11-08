@@ -105,8 +105,18 @@ fn diag(app: &AppHandle, started: Instant) {
         eprintln!("quire: DIAG {:.1} s: no window yet", started.elapsed().as_secs_f64());
         return;
     };
+    let stuck = app.state::<Progress>().step.lock().map(|s| s.is_none()).unwrap_or(false);
     let ran = w.with_webview(move |wv| {
         let view = wv.inner();
+        static RELOADS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        if stuck
+            && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("reload")
+            && started.elapsed() > Duration::from_secs(3)
+            && RELOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5
+        {
+            eprintln!("quire: DIAG reloading");
+            view.reload();
+        }
         // what the page says about itself, read back through the title next time round
         #[allow(deprecated)]
         view.run_javascript(
