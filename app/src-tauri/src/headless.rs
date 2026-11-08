@@ -107,13 +107,6 @@ fn diag(app: &AppHandle, started: Instant) {
     };
     let ran = w.with_webview(move |wv| {
         let view = wv.inner();
-        if started.elapsed() > Duration::from_secs(9) {
-            static RELOADED: std::sync::Once = std::sync::Once::new();
-            RELOADED.call_once(|| {
-                eprintln!("quire: DIAG reloading");
-                view.reload();
-            });
-        }
         // what the page says about itself, read back through the title next time round
         #[allow(deprecated)]
         view.run_javascript(

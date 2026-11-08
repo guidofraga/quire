@@ -758,15 +758,26 @@ fn main() {
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some((input, output)) = &job {
                 let job = json!({ "open": input, "pdf": output });
+                let mode = std::env::var("QUIRE_EXPORT_MODE").unwrap_or_default();
                 window = window
-                    .visible(false)
+                    .visible(cfg!(target_os = "linux") && mode == "offscreen")
+                    .position(if mode == "offscreen" { -10000.0 } else { 0.0 }, if mode == "offscreen" { -10000.0 } else { 0.0 })
                     // a hidden page must keep running: macOS 14 and later would otherwise
                     // throttle its timers and rendering (issue #59)
                     .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
                     .initialization_script(format!("window.__QUIRE_EXPORT__ = {job}; window.__errs = []; window.addEventListener('error', e => window.__errs.push('error: ' + e.message + ' @' + e.filename + ':' + e.lineno)); window.addEventListener('unhandledrejection', e => window.__errs.push('rejection: ' + e.reason)); {{ const ce = console.error; console.error = (...a) => {{ window.__errs.push('console.error: ' + a.join(' ')); ce.apply(console, a); }}; }}"));
                 headless::watch(app.handle());
             }
-            window.build()?;
+            let built = window.build()?;
+            #[cfg(target_os = "linux")]
+            if job.is_some() && std::env::var("QUIRE_EXPORT_MODE").as_deref() == Ok("opacity") {
+                use gtk::prelude::WidgetExt;
+                if let Ok(win) = built.gtk_window() {
+                    win.set_opacity(0.0);
+                }
+                built.show()?;
+            }
+            let _ = built;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
