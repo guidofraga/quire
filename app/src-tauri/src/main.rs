@@ -767,6 +767,10 @@ fn main() {
                 headless::watch(app.handle());
             }
             window.build()?;
+            #[cfg(target_os = "linux")]
+            if job.is_some() {
+                headless::hook(app.handle());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

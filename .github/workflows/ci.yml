@@ -86,7 +86,15 @@ jobs:
       # prints in a virtual display. With no session bus, GTK and WebKit wait for D-Bus calls
       # to time out (30 s per launch), and the export sometimes outran its watchdog (#59)
       - name: Test the desktop app and export a PDF (Linux)
-        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored
+        run: |
+          cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
+          fails=0
+          for i in $(seq 1 30); do
+            echo "=== run $i"
+            dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored --nocapture > run.log 2>&1 && echo "run $i PASS" || { echo "run $i FAIL"; fails=$((fails+1)); grep -E "APPLOG|test result" run.log; }
+          done
+          echo "failures: $fails of 30"
+          [ "$fails" = 0 ]
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
         run: |
