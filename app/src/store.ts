@@ -1358,10 +1358,14 @@ function settleGrowth() {
   const grown = new Map<string, number>();
   for (const p of layout().list) {
     const id = p.region.id;
-    if (p.hidden || now[id] === undefined) continue;
-    // what is on screen now: right after an edit ends, before the next measurement reports it
+    if (p.hidden) continue;
+    // what is on screen now: right after an edit ends, before the next measurement reports it.
+    // A region drawn but not measured yet counts too: on a slow machine its first measurement
+    // can come after its result has made it taller, and that would then be taken for its
+    // starting height, so the growth would never push the line placed under it.
     const el = document.querySelector<HTMLElement>(`[data-region="${CSS.escape(id)}"]`);
     if (el?.offsetHeight) now[id] = el.offsetHeight;
+    if (now[id] === undefined) continue;
     const was = settled.get(id);
     if (id === editing) {
       if (was === undefined) settled.set(id, now[id]);
