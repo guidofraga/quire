@@ -107,10 +107,17 @@ fn diag(app: &AppHandle, started: Instant) {
     };
     let ran = w.with_webview(move |wv| {
         let view = wv.inner();
+        if started.elapsed() > Duration::from_secs(9) {
+            static RELOADED: std::sync::Once = std::sync::Once::new();
+            RELOADED.call_once(|| {
+                eprintln!("quire: DIAG reloading");
+                view.reload();
+            });
+        }
         // what the page says about itself, read back through the title next time round
         #[allow(deprecated)]
         view.run_javascript(
-            "document.title = 'DIAG ready=' + document.readyState + ' internals=' + (typeof window.__TAURI_INTERNALS__) + ' export=' + (typeof window.__QUIRE_EXPORT__) + ' scripts=' + document.scripts.length + ' root=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'none') + ' vis=' + document.visibilityState + ' errs=' + JSON.stringify(window.__errs || 'no-errs-array')",
+            "const sc = document.scripts[0]; window.__probe = window.__probe || 'pending'; if (window.__probe === 'pending' && sc) { window.__probe = 'importing'; import(sc.src).then(() => { window.__probe = 'import-ok'; }, e => { window.__probe = 'import-failed: ' + e; }); } document.title = 'DIAG probe=' + window.__probe + ' res=' + JSON.stringify(performance.getEntriesByType('resource').map(r => [r.name.slice(-30), r.responseStatus, Math.round(r.duration)])) + ' src=' + (sc && sc.src) + ' ready=' + document.readyState + ' internals=' + (typeof window.__TAURI_INTERNALS__) + ' export=' + (typeof window.__QUIRE_EXPORT__) + ' scripts=' + document.scripts.length + ' root=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'none') + ' vis=' + document.visibilityState + ' errs=' + JSON.stringify(window.__errs || 'no-errs-array')",
             None::<&gtk::gio::Cancellable>,
             |_| {},
         );
