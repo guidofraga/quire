@@ -5,6 +5,8 @@
 #
 # Nothing is built until `check` has seen that the tag matches the version in Cargo.toml,
 # app/package.json and tauri.conf.json, that the commit is on main, and that CI passed on it.
+# The draft release is created once, by `draft`, before the three builds start; the builds only
+# upload to it by id (tauri-action would otherwise create one release per job when none exists yet).
 # The build job holds the updater's signing key, so every action it uses is pinned by commit.
 name: Release
 
@@ -16,12 +18,19 @@ on:
 permissions:
   contents: read
 
+# one release run per ref at a time: two runs for the same tag would race in `draft`
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       actions: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Run from main
         if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
@@ -32,6 +41,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: The tag matches the version
+        id: version
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
@@ -48,6 +58,8 @@ jobs:
             echo "::error::Tag $REF_NAME doesn't match version $cargo_v"
             exit 1
           fi
+          # a manual run has no tag: the release is named after the version, as tauri-action did
+          if [ "$REF_TYPE" = tag ]; then echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"; else echo "tag=v$cargo_v" >> "$GITHUB_OUTPUT"; fi
       - name: The commit is on main
         run: |
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
@@ -75,8 +87,48 @@ jobs:
           echo "::error::CI did not finish within an hour"
           exit 1
 
-  build:
+  # Creates the draft release once. The builds below run at the same time and would each create
+  # their own if none existed yet. Re-running reuses the draft instead of making another.
+  draft:
     needs: check
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - name: Create the draft release, or reuse it
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          # drafts are listed too (with contents: write); one entry per release with this tag
+          found=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | \"\(.id) \(.draft)\"")
+          if [ "$(echo -n "$found" | grep -c .)" -gt 1 ]; then
+            echo "::error::More than one release exists for $TAG; delete the extra drafts and re-run"
+            echo "$found"
+            exit 1
+          fi
+          if [ -n "$found" ]; then
+            id=${found% *}
+            if [ "${found#* }" != true ]; then
+              echo "::error::$TAG is already published (release $id); not touching it"
+              exit 1
+            fi
+            echo "Reusing the draft release $id for $TAG"
+          else
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" -X POST \
+              -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" -f name="Quire $TAG" \
+              -f body="Installers for Windows (.msi / .exe), Linux (.AppImage / .deb / .rpm) and macOS (.dmg). These builds are not code-signed yet." \
+              -F draft=true --jq .id)
+            echo "Created the draft release $id for $TAG"
+          fi
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [check, draft]
     permissions:
       contents: write
     strategy:
@@ -130,10 +182,46 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
-          releaseName: Quire ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          # uploads to the draft made by `draft`; with a releaseId the action never creates a release
+          releaseId: ${{ needs.draft.outputs.release_id }}
+          # only used as the "notes" in latest.json
           releaseBody: Installers for Windows (.msi / .exe), Linux (.AppImage / .deb / .rpm) and macOS (.dmg). These builds are not code-signed yet.
-          releaseDraft: true
           # latest.json: what the app checks for updates (only published releases count)
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # The three builds each merge their platforms into latest.json (read, delete, upload again, retried
+  # on conflict). Make sure nothing was lost and that only one release exists before anyone publishes.
+  verify:
+    needs: [check, draft, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      # draft releases and their assets are only visible to a token that can write
+      contents: write
+    steps:
+      - name: One release, and latest.json covers every platform
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+          RELEASE_ID: ${{ needs.draft.outputs.release_id }}
+        run: |
+          n=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id" | grep -c .)
+          if [ "$n" != 1 ]; then
+            echo "::error::Expected one release for $TAG, found $n"
+            exit 1
+          fi
+          asset=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" \
+            --jq '.[] | select(.name == "latest.json") | .id')
+          if [ -z "$asset" ]; then
+            echo "::error::latest.json is missing from release $RELEASE_ID"
+            exit 1
+          fi
+          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$asset" > latest.json
+          jq '.platforms | keys' latest.json
+          for os in windows linux darwin; do
+            if ! jq -e --arg os "$os" '.platforms | keys | any(startswith($os + "-"))' latest.json > /dev/null; then
+              echo "::error::latest.json has no $os entry (a concurrent upload overwrote it?); re-run the failed jobs"
+              exit 1
+            fi
+          done
