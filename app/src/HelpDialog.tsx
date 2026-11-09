@@ -108,6 +108,16 @@ const KEYS: Row[] = [
   [`Hold ${mod} while dragging`, "move freely, without guides"],
 ];
 
+const NOTEBOOK: Row[] = [
+  ["Drag a note or section", "a line shows where it lands; onto a section puts it inside; Esc cancels"],
+  [`${mod}click, ${shift}click`, "pick several, then drag them, Move to… or New Section with N Items"],
+  ["↑ ↓, ← →", "move through the sidebar; close and open sections"],
+  [`${alt}↑ / ${alt}↓`, "move the picked items up or down a place"],
+  ["Enter, F2", isMac ? "open; rename (Return on the open note renames too)" : "open; rename"],
+  [isMac ? "⌫ or Delete" : "Delete", "move to the Trash, after asking"],
+  [`${mod}Z in the sidebar`, "undo the last move"],
+];
+
 function Table(props: { rows: Row[]; code?: boolean }) {
   return (
     <table class="help-table">
@@ -179,6 +189,9 @@ function Dialog() {
           </Part>
           <Part title="Tables">
             <Table rows={TABLES} code />
+          </Part>
+          <Part title="Notebook sidebar">
+            <Table rows={NOTEBOOK} />
           </Part>
           <Part title="Keyboard">
             <Table rows={KEYS} />

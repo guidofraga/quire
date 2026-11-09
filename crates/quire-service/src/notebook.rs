@@ -533,39 +533,107 @@ pub fn rename(root: &Path, rel: &str, name: &str) -> Result<String> {
 /// Move a section or note into section `to` (the root is `""`), at `index` there
 /// (the end by default). Also reorders within one section. Returns the new path.
 pub fn move_item(root: &Path, rel: &str, to: &str, index: Option<usize>) -> Result<String> {
-    let from = inside(root, rel)?;
+    let moved = move_items(root, &[rel.to_string()], to, index)?;
+    moved.into_iter().next().ok_or_else(|| err(format!("there is no {rel} in the notebook")))
+}
+
+/// `rel` is `of` or lies inside it.
+fn within(rel: &str, of: &str) -> bool {
+    rel == of || rel.strip_prefix(of).is_some_and(|r| r.starts_with('/'))
+}
+
+/// Move several sections and notes into section `to` (the root is `""`), side by side at
+/// `index` among the items already there (the end by default), in the order given. A section
+/// takes everything in it along, so an item inside another one being moved stays where it is
+/// in that one. Everything is checked before anything moves: a section can't go inside itself,
+/// and nothing may take a name already used in `to`. Returns the new paths, in the order given.
+pub fn move_items(root: &Path, rels: &[String], to: &str, index: Option<usize>) -> Result<Vec<String>> {
     let dest = inside(root, to)?;
-    if rel.is_empty() || !from.exists() {
-        return Err(err(format!("there is no {rel} in the notebook")));
-    }
     if !dest.is_dir() || is_note(&dest) {
         return Err(err(format!("there is no section {to}")));
     }
-    if to == rel || to.starts_with(&format!("{rel}/")) {
-        return Err(err("a section can't go inside itself"));
+    let mut items: Vec<&str> = Vec::new();
+    for rel in rels {
+        if rel.is_empty() || !inside(root, rel)?.exists() {
+            return Err(err(format!("there is no {rel} in the notebook")));
+        }
+        if within(to, rel) {
+            return Err(err("a section can't go inside itself"));
+        }
+        if !items.contains(&rel.as_str()) {
+            items.push(rel);
+        }
     }
-    if parent_rel(rel) == to {
-        place(root, rel, index)?;
-        return Ok(rel.to_string());
+    // what lies inside another moved section goes along with it
+    let tops: Vec<&str> =
+        items.iter().copied().filter(|r| !items.iter().any(|o| o != r && within(r, o))).collect();
+    let mut names: Vec<&str> = Vec::new();
+    for rel in &tops {
+        let name = file_name(rel);
+        let path = dest.join(name);
+        // a note and its other format share a title: `Beam.quire` can't join `Beam.quirez`
+        let taken =
+            path.exists() || (is_note(&path) && NOTE_EXTS.iter().any(|e| path.with_extension(e).exists()));
+        let stem = |n: &str| {
+            let p = Path::new(n);
+            if is_note(p) {
+                p.file_stem().unwrap_or_default().to_string_lossy().into_owned()
+            } else {
+                n.to_string()
+            }
+        };
+        let clash = names.iter().any(|n| stem(n).eq_ignore_ascii_case(&stem(name)))
+            || (parent_rel(rel) != to && taken);
+        if clash {
+            return Err(err(format!(
+                "there is already something called {} in {}",
+                stem(name),
+                if to.is_empty() { "the notebook" } else { to }
+            )));
+        }
+        names.push(name);
     }
-    let name = file_name(rel);
-    let target = dest.join(name);
-    if target.exists() {
-        return Err(err(format!(
-            "there is already something called {name} in {}",
-            if to.is_empty() { "the notebook" } else { to }
-        )));
-    }
-    std::fs::rename(&from, &target)?;
-    let new_rel = join_rel(to, name);
+    // the settings follow each item that moved, even when a later one fails to
     let mut meta = read_meta(root);
-    if let Some(list) = meta.order.get_mut(parent_rel(rel)) {
-        list.retain(|n| n != name);
+    let mut failed = None;
+    for rel in &tops {
+        if parent_rel(rel) == to {
+            continue;
+        }
+        let name = file_name(rel);
+        if let Err(e) = std::fs::rename(inside(root, rel)?, dest.join(name)) {
+            failed = Some(e);
+            break;
+        }
+        if let Some(list) = meta.order.get_mut(parent_rel(rel)) {
+            list.retain(|n| n != name);
+        }
+        rekey(&mut meta, rel, &join_rel(to, name));
     }
-    rekey(&mut meta, rel, &new_rel);
     write_meta(root, &meta)?;
-    place(root, &new_rel, index)?;
-    Ok(new_rel)
+    if let Some(e) = failed {
+        return Err(e.into());
+    }
+    // their place among the items of `to`: an unordered folder sorts one newcomer by name
+    // anyway, but keeps several, or a chosen place, in a remembered order
+    let ordered = read_meta(root).order.contains_key(to);
+    if index.is_some() || ordered || tops.len() > 1 {
+        let mut list = ordered_names(root, to)?;
+        list.retain(|n| !names.contains(&n.as_str()));
+        let at = index.unwrap_or(usize::MAX).min(list.len());
+        list.splice(at..at, names.iter().map(|n| n.to_string()));
+        let mut meta = read_meta(root);
+        meta.order.insert(to.to_string(), list);
+        write_meta(root, &meta)?;
+    }
+    let moved: Vec<String> = rels
+        .iter()
+        .map(|rel| match tops.iter().find(|t| within(rel, t)) {
+            Some(top) => join_rel(to, file_name(top)) + &rel[top.len()..],
+            None => rel.clone(),
+        })
+        .collect();
+    Ok(moved)
 }
 
 /// Copy a note beside itself ("Kinematics copy"). Returns the copy.
@@ -598,11 +666,16 @@ fn to_trash(_: &Path) -> std::result::Result<(), &'static str> {
 
 /// Move a section or note to the system's Trash, where it can be put back.
 pub fn trash(root: &Path, rel: &str) -> Result<()> {
+    remove(root, rel, |path| to_trash(path).map_err(|e| e.to_string()))
+}
+
+/// Take `rel` away with `how` (to the Trash), and forget its place and style.
+fn remove(root: &Path, rel: &str, how: impl FnOnce(&Path) -> std::result::Result<(), String>) -> Result<()> {
     let path = inside(root, rel)?;
     if rel.is_empty() || !path.exists() {
         return Err(err(format!("there is no {rel} in the notebook")));
     }
-    to_trash(&path).map_err(|e| err(format!("could not move {} to the Trash: {e}", file_name(rel))))?;
+    how(&path).map_err(|e| err(format!("could not move {} to the Trash: {e}", file_name(rel))))?;
     let mut meta = read_meta(root);
     forget(&mut meta, rel);
     write_meta(root, &meta)
@@ -834,6 +907,16 @@ pub fn call(op: &str, args: &Json) -> Result<Json> {
         )?),
         "rename" => text(rename(&root()?, s("rel")?, s("name")?)?),
         "move" => text(move_item(&root()?, s("rel")?, s("to")?, index)?),
+        "move_many" => {
+            let rels: Vec<String> = args
+                .get("rels")
+                .and_then(Json::as_array)
+                .ok_or_else(|| err("missing \"rels\""))?
+                .iter()
+                .map(|r| r.as_str().map(str::to_string).ok_or_else(|| err("\"rels\" holds paths")))
+                .collect::<Result<_>>()?;
+            Ok(serde_json::to_value(move_items(&root()?, &rels, s("to")?, index)?)?)
+        }
         "duplicate" => text(duplicate(&root()?, s("rel")?)?),
         "trash" => trash(&root()?, s("rel")?).map(|_| Json::Null),
         "set_style" => set_style(&root()?, s("rel")?, Style { color: opt_s("color"), icon: opt_s("icon") })
@@ -1017,6 +1100,213 @@ mod tests {
         Ok(())
     }
 
+    /// Each folder and its items, depth first: `["/: Intro, Mech", "Mech: Hooke"]`.
+    fn orders(b: &Book) -> std::result::Result<Vec<String>, Box<dyn std::error::Error>> {
+        fn walk(dir: &str, nodes: &[Node], out: &mut Vec<String>) {
+            let names: Vec<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
+            out.push(format!("{}: {}", if dir.is_empty() { "/" } else { dir }, names.join(", ")));
+            for n in nodes.iter().filter(|n| n.kind == Kind::Section) {
+                walk(&n.rel, &n.children, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk("", &list(&b.0)?.children, &mut out);
+        Ok(out)
+    }
+
+    /// A notebook in an order of the user's own: not sections first, not by name.
+    fn arranged(tag: &str) -> std::result::Result<Book, Box<dyn std::error::Error>> {
+        let b = Book::new(tag)?;
+        create_section(&b.0, "", "Mech", None)?;
+        for n in ["Newton", "Euler", "Hooke"] {
+            create_note(&b.0, "Mech", n, "quire", None)?;
+        }
+        create_section(&b.0, "Mech", "Waves", None)?;
+        create_note(&b.0, "Mech/Waves", "Sound", "quire", None)?;
+        create_note(&b.0, "Mech/Waves", "Light", "quire", None)?;
+        create_section(&b.0, "", "Optics", None)?;
+        create_note(&b.0, "", "Intro", "quire", None)?;
+        move_item(&b.0, "Intro.quire", "", Some(0))?;
+        move_item(&b.0, "Mech/Hooke.quire", "Mech", Some(0))?;
+        move_item(&b.0, "Mech/Waves", "Mech", Some(1))?;
+        assert_eq!(
+            orders(&b)?,
+            [
+                "/: Intro, Mech, Optics",
+                "Mech: Hooke, Waves, Euler, Newton",
+                "Mech/Waves: Light, Sound",
+                "Optics: "
+            ]
+        );
+        Ok(b)
+    }
+
+    #[test]
+    fn a_new_section_leaves_every_note_where_it_was() -> TestResult {
+        let b = arranged("new-section")?;
+        create_section(&b.0, "", "Thermo", None)?;
+        create_section(&b.0, "", "Labs", Some(1))?;
+        create_section(&b.0, "Mech", "Statics", Some(2))?;
+        create_section(&b.0, "Mech", "Fluids", None)?;
+        create_section(&b.0, "Optics", "Lenses", None)?;
+        assert_eq!(
+            orders(&b)?,
+            [
+                "/: Intro, Labs, Mech, Optics, Thermo",
+                "Labs: ",
+                "Mech: Hooke, Waves, Statics, Euler, Newton, Fluids",
+                "Mech/Waves: Light, Sound",
+                "Mech/Statics: ",
+                "Mech/Fluids: ",
+                "Optics: Lenses",
+                "Optics/Lenses: ",
+                "Thermo: ",
+            ]
+        );
+        for n in [
+            "Intro.quire",
+            "Mech/Hooke.quire",
+            "Mech/Euler.quire",
+            "Mech/Newton.quire",
+            "Mech/Waves/Sound.quire",
+        ] {
+            assert!(b.0.join(n).exists(), "{n} stays where it was");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_order_survives_every_operation() -> TestResult {
+        let b = arranged("survives")?;
+        create_note(&b.0, "Mech", "Kepler", "quire", Some(1))?;
+        assert_eq!(orders(&b)?[1], "Mech: Hooke, Kepler, Waves, Euler, Newton");
+        rename(&b.0, "Mech/Euler.quire", "Bernoulli")?;
+        assert_eq!(
+            orders(&b)?[1],
+            "Mech: Hooke, Kepler, Waves, Bernoulli, Newton",
+            "a rename keeps the place"
+        );
+        rename(&b.0, "Mech", "Mechanics")?;
+        assert_eq!(
+            orders(&b)?[..3],
+            [
+                "/: Intro, Mechanics, Optics",
+                "Mechanics: Hooke, Kepler, Waves, Bernoulli, Newton",
+                "Mechanics/Waves: Light, Sound"
+            ],
+            "a section's own order follows its new name"
+        );
+        duplicate(&b.0, "Mechanics/Kepler.quire")?;
+        assert_eq!(orders(&b)?[1], "Mechanics: Hooke, Kepler, Kepler copy, Waves, Bernoulli, Newton");
+        remove(&b.0, "Mechanics/Kepler copy.quire", |p| {
+            std::fs::remove_dir_all(p).map_err(|e| e.to_string())
+        })?;
+        assert_eq!(
+            orders(&b)?[1],
+            "Mechanics: Hooke, Kepler, Waves, Bernoulli, Newton",
+            "a deletion closes the gap"
+        );
+        move_item(&b.0, "Mechanics/Waves", "Optics", None)?;
+        assert_eq!(
+            orders(&b)?,
+            [
+                "/: Intro, Mechanics, Optics",
+                "Mechanics: Hooke, Kepler, Bernoulli, Newton",
+                "Optics: Waves",
+                "Optics/Waves: Light, Sound",
+            ],
+            "a section moves with what is in it, in its order"
+        );
+        move_item(&b.0, "Optics/Waves", "Mechanics", Some(1))?;
+        assert_eq!(orders(&b)?[1], "Mechanics: Hooke, Waves, Kepler, Bernoulli, Newton");
+        assert_eq!(orders(&b)?[2], "Mechanics/Waves: Light, Sound");
+        remove(&b.0, "Mechanics/Waves", |p| std::fs::remove_dir_all(p).map_err(|e| e.to_string()))?;
+        create_section(&b.0, "Mechanics", "Waves", None)?;
+        assert_eq!(orders(&b)?[2], "Mechanics/Waves: ", "a deleted section's order isn't inherited");
+        Ok(())
+    }
+
+    #[test]
+    fn moves_several_items_side_by_side_in_the_order_given() -> TestResult {
+        let b = arranged("many")?;
+        let moved = move_items(
+            &b.0,
+            &[
+                "Mech/Newton.quire".into(),
+                "Intro.quire".into(),
+                "Mech/Waves".into(),
+                "Mech/Waves/Sound.quire".into(),
+            ],
+            "Optics",
+            None,
+        )?;
+        assert_eq!(
+            moved,
+            ["Optics/Newton.quire", "Optics/Intro.quire", "Optics/Waves", "Optics/Waves/Sound.quire"]
+        );
+        assert_eq!(
+            orders(&b)?,
+            [
+                "/: Mech, Optics",
+                "Mech: Hooke, Euler",
+                "Optics: Newton, Intro, Waves",
+                "Optics/Waves: Light, Sound",
+            ],
+            "a note inside a moved section stays in it"
+        );
+        // reordering several within their own section, and in from another one, at a place
+        move_items(
+            &b.0,
+            &["Optics/Waves".into(), "Mech/Euler.quire".into(), "Optics/Newton.quire".into()],
+            "Optics",
+            Some(0),
+        )?;
+        assert_eq!(orders(&b)?[1..3], ["Mech: Hooke", "Optics: Waves, Euler, Newton, Intro"]);
+        move_items(&b.0, &["Optics/Intro.quire".into(), "Optics/Euler.quire".into()], "Optics", Some(1))?;
+        assert_eq!(orders(&b)?[2], "Optics: Waves, Intro, Euler, Newton");
+        Ok(())
+    }
+
+    #[test]
+    fn a_move_of_several_checks_everything_before_moving_anything() -> TestResult {
+        let b = arranged("many-checks")?;
+        create_note(&b.0, "Optics", "Euler", "quirez", None)?;
+        let before = orders(&b)?;
+        let refused = [
+            (vec!["Mech/Hooke.quire", "Mech/Euler.quire"], "Optics", "Euler is taken there, as a .quirez"),
+            (vec!["Intro.quire", "Mech"], "Mech/Waves", "a section can't go inside itself"),
+            (vec!["Intro.quire", "Mech/Waves"], "Mech/Waves", "nor into itself"),
+            (vec!["Intro.quire", "Nowhere.quire"], "Optics", "everything must be there"),
+            (vec!["Intro.quire"], "Mech/Hooke.quire", "a note is not a section"),
+        ];
+        for (rels, to, why) in refused {
+            let rels: Vec<String> = rels.into_iter().map(String::from).collect();
+            assert!(move_items(&b.0, &rels, to, Some(0)).is_err(), "{why}");
+            assert_eq!(orders(&b)?, before, "{why}: nothing moved");
+        }
+        create_section(&b.0, "Optics", "Inner", None)?;
+        create_note(&b.0, "Optics/Inner", "Hooke", "quire", None)?;
+        let two_hookes = vec!["Mech/Hooke.quire".to_string(), "Optics/Inner/Hooke.quire".to_string()];
+        assert!(move_items(&b.0, &two_hookes, "", None).is_err(), "two items of one name");
+        assert!(b.0.join("Mech/Hooke.quire").exists() && b.0.join("Optics/Inner/Hooke.quire").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn moves_several_by_name_as_the_app_does() -> TestResult {
+        let b = arranged("many-call")?;
+        let root = b.0.to_string_lossy().into_owned();
+        let args = serde_json::json!({ "root": root, "rels": ["Mech/Euler.quire", "Intro.quire"], "to": "Optics", "index": 0 });
+        assert_eq!(
+            call("move_many", &args)?,
+            serde_json::json!(["Optics/Euler.quire", "Optics/Intro.quire"])
+        );
+        assert!(
+            call("move_many", &serde_json::json!({ "root": root, "rels": "Intro.quire", "to": "" })).is_err()
+        );
+        Ok(())
+    }
+
     #[test]
     fn duplicates_beside_the_original() -> TestResult {
         let b = Book::new("dup")?;
@@ -1113,8 +1403,17 @@ mod tests {
         call("create_notebook", &args)?;
         assert!(made.join("Untitled.quire").exists());
         assert_eq!(std::fs::read_dir(&elsewhere)?.count(), 0);
-        for op in ["list", "create_note", "create_section", "rename", "move", "duplicate", "trash", "search"]
-        {
+        for op in [
+            "list",
+            "create_note",
+            "create_section",
+            "rename",
+            "move",
+            "move_many",
+            "duplicate",
+            "trash",
+            "search",
+        ] {
             assert_eq!(folder(op, &args)?, elsewhere, "{op} works in its root");
         }
         assert!(folder("list", &serde_json::json!({ "path": made })).is_err(), "no root, no folder");
@@ -1125,6 +1424,8 @@ mod tests {
             ("create_section", serde_json::json!({ "dir": "../Elsewhere", "name": "x" })),
             ("rename", serde_json::json!({ "rel": "../Elsewhere", "name": "x" })),
             ("move", serde_json::json!({ "rel": "Untitled.quire", "to": ".." })),
+            ("move_many", serde_json::json!({ "rels": ["Untitled.quire"], "to": ".." })),
+            ("move_many", serde_json::json!({ "rels": ["../Elsewhere"], "to": "" })),
             ("trash", serde_json::json!({ "rel": "../Elsewhere" })),
         ] {
             let mut args = extra;

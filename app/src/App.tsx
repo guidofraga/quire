@@ -630,7 +630,7 @@ function runCommand(id: string) {
     case "new_document":
       return newDocument();
     case "new_section":
-      return nb.book ? newSection("") : openNotebookDialog();
+      return nb.book ? newSection() : openNotebookDialog();
     case "new_notebook":
       return newNotebookDialog();
     case "open_notebook":

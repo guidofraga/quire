@@ -8,11 +8,11 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 |---|---|---|---|
 | Engine unit tests | `#[cfg(test)] mod tests` next to the code; `quire-eval/src/symbolic/tests.rs` | `cargo test --workspace --exclude quire-app` | Parsing, units, evaluation, tables, symbolic math, notebooks, file I/O |
 | Worksheet fixtures | `crates/quire-cli/tests/fixtures/*.quire` with `results.json`, checked by `tests/check.rs` | the same `cargo test` | Whole documents against results worked out independently |
-| UI logic | `app/src/*.test.ts` (Vitest, jsdom) | `npm --prefix app test` (`run test:watch` while you work) | Store and undo, clipboard, CSV, LaTeX, speech, pages, notebook paths |
+| UI logic | `app/src/*.test.ts` (Vitest, jsdom) | `npm --prefix app test` (`run test:watch` while you work) | Store and undo, clipboard, CSV, LaTeX, speech, pages, notebook paths and drops |
 | End to end | `app/e2e/*.spec.ts` (Playwright, WebKit) | `npm --prefix app run e2e` | The UI against `quire serve`, typed as a user would; `web.spec.ts` runs the web version with its WebAssembly engine (project `web`) |
 | SMath examples | `crates/quire-cli/tests/smath_examples.rs` | `cargo test -p quire-cli --test smath_examples -- --nocapture` | Every worksheet in the SMath corpus imports, evaluates, and reproduces at least its floor of SMath's cached results |
 | SMath robustness | `crates/quire-cli/tests/smath_robustness.rs` | the same `cargo test` | The importer never panics on hostile input, corpus prefixes or mutations |
-| Accessibility | `app/e2e/a11y.spec.ts`, plus axe in `notebook.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
+| Accessibility | `app/e2e/a11y.spec.ts`, plus axe in `notebook.spec.ts` and `notebook-organise.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
 | Desktop app | `#[cfg(test)]` in `app/src-tauri/src` (`scope.rs`, `pdf.rs`) | `npm --prefix app run build`, then `cargo test -p quire-app` | Which paths the app may touch; finishing exported PDFs |
 | PDF export | `app/src-tauri/tests/` (macOS and Linux; CI runs it on Linux under `dbus-run-session` and `xvfb-run`) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --include-ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
 

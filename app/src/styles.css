@@ -4248,6 +4248,11 @@ input[type="radio"]:focus-visible,
   --nb-current: rgba(0, 0, 0, 0.075);
   --nb-section: #b4b6bd;
   --nb-row: 28px;
+  --nb-selected: rgba(47, 111, 223, 0.1);
+  --nb-selected-strong: rgba(47, 111, 223, 0.17);
+  --nb-danger: #d93a32;
+  --nb-danger-hover: #c2302a;
+  --nb-danger-soft: rgba(217, 58, 50, 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -4257,6 +4262,11 @@ input[type="radio"]:focus-visible,
     --nb-hover: rgba(255, 255, 255, 0.05);
     --nb-current: rgba(255, 255, 255, 0.09);
     --nb-section: #6c6f78;
+    --nb-selected: rgba(110, 160, 255, 0.14);
+    --nb-selected-strong: rgba(110, 160, 255, 0.24);
+    --nb-danger: #c8372f;
+    --nb-danger-hover: #b7312a;
+    --nb-danger-soft: rgba(229, 83, 75, 0.16);
   }
 }
 
@@ -4471,33 +4481,356 @@ input[type="radio"]:focus-visible,
   font-weight: 600;
 }
 
-.nb-row.dragging {
-  opacity: 0.4;
+/* picked with ⌘/Ctrl- or Shift-click, to move or delete together */
+.nb-row.selected {
+  background: var(--nb-selected);
 }
 
-.nb-row.drop-before::before,
-.nb-row.drop-after::after {
-  content: "";
+.nb-row.selected.current {
+  background: var(--nb-selected-strong);
+}
+
+.nb-tree:focus-within .nb-row.selected {
+  background: var(--nb-selected-strong);
+}
+
+/* dragging: what moves fades in place, rows don't light up under the pointer, a line shows
+   where the items land between rows and a section to drop into is filled */
+body.nb-dragging,
+body.nb-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.nb-tree.dragging .nb-row:hover:not(.current):not(.selected) {
+  background: transparent;
+}
+
+.nb-tree.dragging .nb-actions {
+  opacity: 0;
+}
+
+.nb-row.dragging {
+  opacity: 0.38;
+}
+
+.nb-scroll {
+  position: relative;
+}
+
+.nb-drop-line {
   position: absolute;
-  left: 6px;
-  right: 6px;
+  top: 0;
+  right: 8px;
   height: 2px;
   border-radius: 1px;
   background: var(--accent);
   pointer-events: none;
+  z-index: 2;
+  transition:
+    transform 70ms var(--ease-out),
+    left 70ms var(--ease-out);
 }
 
-.nb-row.drop-before::before {
-  top: -1px;
+/* a ring at the start, so the level the items land at reads at a glance */
+.nb-drop-line::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--sidebar);
 }
 
-.nb-row.drop-after::after {
-  bottom: -1px;
-}
-
-.nb-row.drop-inside {
+.nb-row.drop-inside,
+.nb-empty-section.drop-inside {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.nb-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: var(--shadow-menu);
+  font:
+    12.5px -apple-system,
+    system-ui,
+    sans-serif;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* several items: a little stack behind the first */
+.nb-ghost.many {
+  box-shadow:
+    3px 3px 0 -1px var(--chrome),
+    3px 3px 0 0 var(--chrome-border),
+    var(--shadow-menu);
+}
+
+.nb-ghost.none {
+  opacity: 0.7;
+}
+
+.nb-ghost-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-ghost-count {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* the last move, with Undo */
+.nb-undo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 6px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  background: var(--field);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+  animation: nb-undo-in 160ms var(--ease-out);
+}
+
+.nb-undo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-undo-btn {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+}
+
+.nb-undo-btn:hover {
+  background: var(--accent-soft);
+}
+
+@keyframes nb-undo-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Move to Trash? and Move to… */
+.nb-dialog {
+  width: min(400px, calc(100vw - 32px));
+}
+
+.nb-dialog-body {
+  display: flex;
+  gap: 14px;
+  padding: 20px 20px 8px;
+}
+
+.nb-dialog-body h2 {
+  margin: 1px 0 6px;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.nb-dialog-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.nb-dialog-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--nb-danger-soft);
+  color: var(--error-ink);
+}
+
+.nb-dialog-list {
+  max-height: 150px;
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--field);
+  list-style: none;
+}
+
+.nb-dialog-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.nb-dialog-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-dialog-more {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nb-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 18px;
+}
+
+.btn.danger {
+  border-color: var(--nb-danger);
+  background: var(--nb-danger);
+  color: #fff;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--nb-danger-hover);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent));
+  outline-offset: 2px;
+}
+
+.nb-move {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.nb-move-search {
+  position: relative;
+  padding: 10px 12px 6px;
+}
+
+.nb-move-search > svg {
+  position: absolute;
+  left: 22px;
+  top: 18px;
+  color: var(--muted);
+}
+
+.nb-move-search input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 28px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--field-ink);
+  font: inherit;
+  outline: none;
+}
+
+.nb-move-search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.nb-move-list {
+  max-height: min(360px, 50vh);
+  margin: 0;
+  padding: 4px 6px 10px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.nb-move-list li[role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-right: 10px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.nb-move-list li.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.nb-move-list li.active .nb-move-path,
+.nb-move-list li.active .nb-move-here,
+.nb-move-list li.active .nb-move-book {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.nb-move-list li.here {
+  color: var(--muted);
+}
+
+.nb-move-book {
+  flex: none;
+  color: var(--muted);
+}
+
+.nb-move-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-move-path,
+.nb-move-here {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.nb-move-none {
+  padding: 10px 12px;
+  color: var(--muted);
 }
 
 .nb-chevron {
