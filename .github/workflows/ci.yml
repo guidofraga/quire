@@ -98,8 +98,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40]
-        mode: [fix]
+        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]
+        mode: [base, proxy, netmon, both]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,19 +118,19 @@ jobs:
       - name: Front end
         run: npm ci && npm run build
         working-directory: app
-      - name: Diagnose
+      - name: Test once with the variant
+        env:
+          MODE: ${{ matrix.mode }}
         run: |
-          cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
-          cat > diag.sh <<'EOS'
-          echo "--- userns: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>&1) $(sysctl -n kernel.unprivileged_userns_clone 2>&1) $(sysctl -n user.max_user_namespaces 2>&1)"
-          bwrap --unshare-all --ro-bind / / true && echo "bwrap ok" || echo "bwrap FAILS"
-          if cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report > run.log 2>&1; then echo "EXPORT PASS"; else echo "EXPORT FAIL"; fi
-          echo "--- processes"; ps -eo pid,etimes,args | grep -E "portal|bwrap|dbus|WebKit|Xvfb|quire" | grep -v grep | cut -c1-200
-          echo "--- session bus names"; busctl --user list --no-pager 2>&1 | head -20
-          EOS
-          dbus-run-session -- xvfb-run -a bash diag.sh 2>&1 | tee diag.log
-          echo "HOSTINFO $(uptime) $(cat /proc/loadavg) $(systemctl is-system-running 2>&1)"
-          systemctl list-units --state=running --no-pager 2>&1 | cut -c1-110 | head -40
+          case "$MODE" in
+            proxy) export GIO_USE_PROXY_RESOLVER=dummy ;;
+            netmon) export GIO_USE_NETWORK_MONITOR=base ;;
+            both) export GIO_USE_PROXY_RESOLVER=dummy GIO_USE_NETWORK_MONITOR=base ;;
+          esac
+          echo "VARIANT $MODE proxy=$GIO_USE_PROXY_RESOLVER netmon=$GIO_USE_NETWORK_MONITOR"
+          env | grep -i proxy || echo "no proxy env"
+          cat /etc/resolv.conf | head -5
+          dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report && echo "EXPORT PASS" || { echo "EXPORT FAIL"; exit 1; }
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
   app-macos-windows:
