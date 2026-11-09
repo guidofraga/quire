@@ -1,5 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
-import { absPath, baseOf, nb, parentOf, relOf, setNb, titleOf, trail, trashItem, walk } from "./notebook";
+import {
+  absPath,
+  baseOf,
+  changesNothing,
+  dropPlace,
+  nb,
+  parentOf,
+  rangeTo,
+  relOf,
+  select,
+  setNb,
+  titleOf,
+  topmost,
+  trail,
+  trashItem,
+  walk,
+} from "./notebook";
 import { unwrap } from "solid-js/store";
 import { loadDoc, state, updateRegion } from "./store";
 
@@ -61,6 +77,49 @@ describe("notebook paths", () => {
     expect(walk().map((n) => n.name)).toEqual(["Mechanics", "Forces", "Friction", "Kinematics", "Syllabus"]);
     expect(trail("Mechanics/Forces/Friction.quire").map((n) => n.name)).toEqual(["Mechanics", "Forces"]);
     expect(trail("Syllabus.quire")).toEqual([]);
+  });
+});
+
+describe("organising", () => {
+  const mech = "Mechanics";
+  const forces = "Mechanics/Forces";
+  const kin = "Mechanics/Kinematics.quirez";
+  const syl = "Syllabus.quire";
+  const fric = "Mechanics/Forces/Friction.quire";
+
+  it("moves a section without what is inside it, in sidebar order", () => {
+    book("/nb");
+    expect(topmost([syl, fric, mech, "Gone.quire"])).toEqual([mech, syl]);
+    expect(topmost([kin, fric])).toEqual([fric, kin]);
+  });
+
+  it("finds where a drop lands among the items that stay", () => {
+    book("/nb");
+    expect(dropPlace([syl], kin, "before")).toEqual({ to: mech, index: 1 });
+    expect(dropPlace([syl], kin, "after")).toEqual({ to: mech, index: 2 });
+    expect(dropPlace([syl], forces, "inside")).toEqual({ to: forces, index: 1 });
+    expect(dropPlace([syl], null, "after")).toEqual({ to: "", index: 1 });
+    // the dragged item doesn't count: below its own neighbour is one place on
+    expect(dropPlace([forces], kin, "after")).toEqual({ to: mech, index: 1 });
+    expect(dropPlace([mech], forces, "inside"), "into itself").toBeNull();
+    expect(dropPlace([mech], fric, "before"), "inside itself").toBeNull();
+    expect(dropPlace([kin], kin, "after"), "onto itself").toBeNull();
+  });
+
+  it("knows a drop that changes nothing", () => {
+    book("/nb");
+    expect(changesNothing([kin], mech, 1)).toBe(true);
+    expect(changesNothing([kin], mech, 0)).toBe(false);
+    expect(changesNothing([syl], mech, 2)).toBe(false);
+  });
+
+  it("picks a Shift range over the rows on screen", () => {
+    book("/nb");
+    setNb("expanded", { [mech]: true });
+    select([forces]);
+    expect(rangeTo(syl)).toEqual([forces, kin, syl]);
+    expect(rangeTo(mech)).toEqual([mech, forces]);
+    setNb("expanded", {});
   });
 });
 

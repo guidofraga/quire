@@ -1,27 +1,35 @@
 // The notebook sidebar: switch notebooks, search every note, and arrange sections and
 // notes by dragging, as in OneNote, Notion and Obsidian.
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { Portal } from "solid-js/web";
 import { announce } from "./a11y";
 import { api, confirmDiscard, DOC_EXT, isMac, pickNewNotebookPath, pickNotebookFolder } from "./api";
 import { closeMenu, type MenuItems, setMenu } from "./menu";
 import {
+  childrenOf,
   closeNotebook,
+  dropPlace,
   duplicate,
   find,
   flushSave,
   forgetNotebook,
   type Hit,
-  moveTo,
+  lastMove,
+  moveItems,
   nb,
   type NbNode,
   newNote,
   newSection,
+  newSectionWith,
   openNote,
   openNotebook,
   parentOf,
+  rangeTo,
   recentNotebooks,
   rename,
+  select,
   setExpanded,
+  setLastMove,
   setNb,
   setQuery,
   setSidebarOpen,
@@ -29,10 +37,15 @@ import {
   setStyle,
   sidebarWidth,
   titleOf,
+  topmost,
   trail,
-  trashItem,
+  undoMove,
+  visible,
   walk,
+  type Where,
+  within,
 } from "./notebook";
+import { askMove, askTrash, SidebarDialogs } from "./SidebarDialogs";
 import { flash, state } from "./store";
 
 const mod = isMac ? "⌘" : "Ctrl+";
@@ -120,13 +133,31 @@ function openSwitcher(e: MouseEvent) {
 // Item menus
 // ---------------------------------------------------------------------------
 
+const trashKey = isMac ? "⌫" : "Del";
+const plural = (n: number) => (n === 1 ? "1 Item" : `${n} Items`);
+
+/** The selection a command on `rel` acts on: all of it when `rel` is in it, else `rel` alone. */
+function actOn(rel: string): string[] {
+  return nb.selected.includes(rel) ? topmost(nb.selected) : [rel];
+}
+
 function itemMenu(node: NbNode | null, x: number, y: number) {
   const go = (fn: () => void) => () => (closeMenu(), fn());
   let items: MenuItems;
+  // right-clicking outside the selection picks that item, as in the Finder and Obsidian
+  if (node && !nb.selected.includes(node.rel)) select([node.rel]);
+  const many = node ? actOn(node.rel) : [];
   if (!node) {
     items = [
       { label: "New Note", shortcut: `${mod}N`, run: go(() => void newNote("")) },
       { label: "New Section", shortcut: `⌥${mod}N`, run: go(() => void newSection("")) },
+    ];
+  } else if (many.length > 1) {
+    items = [
+      { label: `Move ${plural(many.length)} to…`, run: go(() => askMove(many)) },
+      { label: `New Section with ${plural(many.length)}`, run: go(() => void newSectionWith(many)) },
+      null,
+      { label: `Move ${plural(many.length)} to Trash…`, shortcut: trashKey, run: go(() => askTrash(many)) },
     ];
   } else if (node.kind === "section") {
     items = [
@@ -134,6 +165,7 @@ function itemMenu(node: NbNode | null, x: number, y: number) {
       { label: "New Section Inside", run: go(() => void newSection(node.rel)) },
       null,
       { label: "Rename", shortcut: "F2", run: go(() => setNb("renaming", node.rel)) },
+      { label: "Move to…", run: go(() => askMove([node.rel])) },
       null,
       { label: "No Colour", checked: !node.color, run: go(() => void setStyle(node.rel, { color: null })) },
       ...COLORS.map(([name, c]) => ({
@@ -143,47 +175,260 @@ function itemMenu(node: NbNode | null, x: number, y: number) {
         run: go(() => void setStyle(node.rel, { color: c })),
       })),
       null,
-      { label: "Move to Trash", shortcut: `${mod}⌫`, run: go(() => void trashItem(node.rel)) },
+      { label: "Move to Trash…", shortcut: trashKey, run: go(() => askTrash([node.rel])) },
     ];
   } else {
     items = [
       { label: "Open", run: go(() => void openNote(node.rel)) },
       { label: "Rename", shortcut: "F2", run: go(() => setNb("renaming", node.rel)) },
       { label: "Duplicate", run: go(() => void duplicate(node.rel)) },
+      { label: "Move to…", run: go(() => askMove([node.rel])) },
       null,
-      { label: "Move to Trash", shortcut: `${mod}⌫`, run: go(() => void trashItem(node.rel)) },
+      { label: "Move to Trash…", shortcut: trashKey, run: go(() => askTrash([node.rel])) },
     ];
   }
   setMenu({ x, y, items });
 }
 
 // ---------------------------------------------------------------------------
-// Dragging
+// Dragging: with the pointer rather than HTML drag and drop, which the desktop app's
+// webview hands to the system on some platforms, and which can't scroll the list, open a
+// section held over, or show a line exactly where the items will land
 // ---------------------------------------------------------------------------
 
-type Where = "before" | "after" | "inside";
-const [dragging, setDragging] = createSignal<string | null>(null);
-const [drop, setDrop] = createSignal<{ rel: string; where: Where } | null>(null);
-
-function dropAllowed(from: string, onto: string, where: Where) {
-  const dest = where === "inside" ? onto : parentOf(onto);
-  return from !== onto && dest !== from && !dest.startsWith(`${from}/`);
+/** Where a drop would land: on a row (`null` is the end of the notebook), and how. */
+interface Target {
+  onto: string | null;
+  where: Where;
 }
 
-async function dropOn(onto: string | null, where: Where) {
-  const from = dragging();
-  setDragging(null);
-  setDrop(null);
-  if (!from) return;
-  if (onto === null) return void moveTo(from, "", undefined); // empty space: the end of the notebook
-  if (!dropAllowed(from, onto, where)) return;
-  if (where === "inside") return void moveTo(from, onto, undefined);
-  const dir = parentOf(onto);
-  const siblings = (dir ? (find(dir)?.children ?? []) : (nb.book?.children ?? []))
-    .map((n) => n.rel)
-    .filter((r) => r !== from);
-  const at = siblings.indexOf(onto) + (where === "after" ? 1 : 0);
-  await moveTo(from, dir, at);
+const [dragged, setDragged] = createSignal<string[] | null>(null);
+const [target, setTarget] = createSignal<Target | null>(null);
+const [ghostAt, setGhostAt] = createSignal<[number, number]>([0, 0]);
+/** Where the drop line is drawn, in the list's own coordinates. */
+const [line, setLine] = createSignal<{ top: number; left: number } | null>(null);
+
+const isDragged = (rel: string) => !!dragged()?.some((d) => within(rel, d));
+const rowOf = (rel: string) => document.querySelector<HTMLElement>(`.nb-tree [data-rel="${CSS.escape(rel)}"]`);
+/** The indent of a row at `depth` (`.nb-row` padding plus the chevron), where its line starts. */
+const indent = (depth: number) => 8 + depth * 16 + 18;
+const depthOf = (rel: string | null) => (rel ? rel.split("/").length - 1 : 0);
+
+/** The drop under the pointer, from the row it is over and how far down that row it is. */
+function targetAt(x: number, y: number): Target | null | undefined {
+  const scroll = document.querySelector<HTMLElement>(".nb-scroll");
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  if (!scroll || !el || !scroll.contains(el)) return null;
+  const add = el.closest<HTMLElement>("[data-add]");
+  // an empty section's "Add a note" is that section's inside
+  if (add) return { onto: add.dataset.add!, where: "inside" };
+  const row = el.closest<HTMLElement>(".nb-row[data-rel]");
+  if (!row) {
+    // below the last row: the end of the notebook; in a gap between rows: as before
+    const rows = scroll.querySelectorAll(".nb-tree .nb-row, .nb-tree [data-add]");
+    const last = rows[rows.length - 1]?.getBoundingClientRect();
+    return !last || y > last.bottom ? { onto: null, where: "after" } : undefined;
+  }
+  const rel = row.dataset.rel!;
+  const node = find(rel);
+  if (!node) return undefined;
+  const box = row.getBoundingClientRect();
+  const fy = (y - box.top) / box.height;
+  if (node.kind === "section") {
+    const open = !!nb.expanded[rel];
+    if (fy < 0.25) return { onto: rel, where: "before" };
+    if (fy <= 0.75) return { onto: rel, where: "inside" };
+    // the lower edge of an open section is the top of what is in it
+    const first = node.children?.[0];
+    if (open) return first ? { onto: first.rel, where: "before" } : { onto: rel, where: "inside" };
+    return outdent({ onto: rel, where: "after" }, x, box.left);
+  }
+  return fy < 0.5 ? { onto: rel, where: "before" } : outdent({ onto: rel, where: "after" }, x, box.left);
+}
+
+/** Below the last item of a section, moving the pointer left drops after the section instead:
+ *  each indent further left climbs out one level. */
+function outdent(t: Target, x: number, left: number): Target {
+  let rel = t.onto!;
+  for (;;) {
+    const dir = parentOf(rel);
+    if (!dir) return { onto: rel, where: "after" };
+    const siblings = find(dir)?.children ?? [];
+    if (siblings[siblings.length - 1]?.rel !== rel || x - left >= indent(depthOf(rel)) - 4)
+      return { onto: rel, where: "after" };
+    rel = dir;
+  }
+}
+
+/** The line for a drop before or after a row, at that row's indent. */
+function placeLine(t: Target | null) {
+  const scroll = document.querySelector<HTMLElement>(".nb-scroll");
+  if (!t || !scroll || t.where === "inside") return setLine(null);
+  const at = (el: HTMLElement | null | undefined, bottom: boolean) => {
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    const s = scroll.getBoundingClientRect();
+    return (bottom ? box.bottom : box.top) - s.top + scroll.scrollTop;
+  };
+  let top: number | null;
+  let depth: number;
+  if (t.onto === null) {
+    const rows = scroll.querySelectorAll<HTMLElement>(".nb-tree .nb-row, .nb-tree [data-add]");
+    top = at(rows[rows.length - 1], true);
+    depth = 0;
+  } else if (t.where === "before") {
+    top = at(rowOf(t.onto), false);
+    depth = depthOf(t.onto);
+  } else {
+    // after a section: below the last row shown inside it
+    const rows = [...scroll.querySelectorAll<HTMLElement>(".nb-tree .nb-row[data-rel], .nb-tree [data-add]")].filter(
+      (r) => within(r.dataset.rel ?? r.dataset.add ?? "", t.onto!),
+    );
+    top = at(rows[rows.length - 1], true);
+    depth = depthOf(t.onto);
+  }
+  setLine(top === null ? null : { top: top - 1, left: indent(depth) - 6 });
+}
+
+let press: { x: number; y: number; rel: string; additive: boolean } | null = null;
+let justDragged = false;
+let holdTimer: ReturnType<typeof setTimeout> | undefined;
+let held: string | null = null;
+let scrollFrame = 0;
+let pointer: [number, number] = [0, 0];
+
+function beginDrag(rel: string, additive: boolean) {
+  if (!nb.selected.includes(rel)) select(additive ? [...nb.selected, rel] : [rel], rel);
+  const rels = topmost(nb.selected.includes(rel) ? nb.selected : [rel]);
+  setDragged(rels);
+  closeMenu();
+  document.body.classList.add("nb-dragging");
+  window.addEventListener("keydown", dragKeys, true);
+  scrollFrame = requestAnimationFrame(autoScroll);
+}
+
+function endDrag() {
+  setDragged(null);
+  setTarget(null);
+  setLine(null);
+  clearTimeout(holdTimer);
+  held = null;
+  cancelAnimationFrame(scrollFrame);
+  document.body.classList.remove("nb-dragging");
+  window.removeEventListener("keydown", dragKeys, true);
+  // the click that ends a drag isn't a click on the row
+  justDragged = true;
+  setTimeout(() => (justDragged = false));
+}
+
+/** Esc cancels a drag, leaving everything where it was. */
+function dragKeys(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  endDrag();
+  announce("Move cancelled");
+}
+
+function track(x: number, y: number) {
+  const rels = dragged();
+  if (!rels) return;
+  pointer = [x, y];
+  setGhostAt([x, y]);
+  const t = targetAt(x, y);
+  if (t === undefined) return; // a gap between rows: keep the last place
+  const ok = t && dropPlace(rels, t.onto, t.where) ? t : null;
+  const prev = target();
+  if (ok?.onto !== prev?.onto || ok?.where !== prev?.where) {
+    setTarget(ok);
+    // a closed section held under the pointer opens, to drop deeper
+    clearTimeout(holdTimer);
+    held = ok?.where === "inside" && ok.onto && !nb.expanded[ok.onto] ? ok.onto : null;
+    if (held) {
+      const rel = held;
+      holdTimer = setTimeout(() => held === rel && setExpanded(rel, true), 650);
+    }
+  }
+  placeLine(ok);
+}
+
+/** Near the top or bottom edge of the list while dragging, the list scrolls, faster nearer. */
+function autoScroll() {
+  const scroll = document.querySelector<HTMLElement>(".nb-scroll");
+  if (scroll && dragged()) {
+    const box = scroll.getBoundingClientRect();
+    const [x, y] = pointer;
+    const edge = 36;
+    const speed = y < box.top + edge ? -(box.top + edge - y) : y > box.bottom - edge ? y - (box.bottom - edge) : 0;
+    if (speed && x >= box.left && x <= box.right) {
+      const before = scroll.scrollTop;
+      scroll.scrollTop += Math.max(-14, Math.min(14, speed / 2.5));
+      if (scroll.scrollTop !== before) track(x, y);
+    }
+  }
+  if (dragged()) scrollFrame = requestAnimationFrame(autoScroll);
+}
+
+async function drop() {
+  const rels = dragged();
+  const t = target();
+  endDrag();
+  if (!rels || !t) return;
+  const place = dropPlace(rels, t.onto, t.where);
+  if (!place) return;
+  await moveItems(rels, place.to, place.index);
+}
+
+function onPointerDown(e: PointerEvent, rel: string) {
+  if (e.button !== 0 || nb.renaming === rel || (e.target as HTMLElement).closest("input, .nb-act")) return;
+  press = { x: e.clientX, y: e.clientY, rel, additive: isMac ? e.metaKey : e.ctrlKey };
+  const move = (m: PointerEvent) => {
+    if (press && !dragged() && Math.hypot(m.clientX - press.x, m.clientY - press.y) > 4)
+      beginDrag(press.rel, press.additive);
+    if (dragged()) {
+      m.preventDefault();
+      track(m.clientX, m.clientY);
+    }
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cancel);
+    press = null;
+    if (dragged()) void drop();
+  };
+  const cancel = () => {
+    up();
+    if (dragged()) endDrag();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cancel);
+}
+
+/** What follows the pointer while dragging: the item, or how many. */
+function Ghost() {
+  const first = () => find(dragged()?.[0] ?? "");
+  return (
+    <Show when={dragged()}>
+      {(rels) => (
+        <Portal>
+          <div
+            class="nb-ghost"
+            classList={{ many: rels().length > 1, none: !target() }}
+            style={{ transform: `translate(${ghostAt()[0] + 14}px, ${ghostAt()[1] + 10}px)` }}
+            aria-hidden="true"
+          >
+            <Show when={first()}>{(n) => <Glyph node={n()} />}</Show>
+            <span class="nb-ghost-name">{first()?.name}</span>
+            <Show when={rels().length > 1}>
+              <span class="nb-ghost-count">{rels().length}</span>
+            </Show>
+          </div>
+        </Portal>
+      )}
+    </Show>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -246,13 +491,33 @@ function Glyph(props: { node: NbNode }) {
   );
 }
 
+/** A click on a row: ⌘/Ctrl adds or removes it, Shift picks the range from the last one,
+ *  a plain click picks it alone and opens it (a section opens or closes). */
+function clickRow(e: MouseEvent, node: NbNode) {
+  if (justDragged) return;
+  const rel = node.rel;
+  (e.currentTarget as HTMLElement).focus({ preventScroll: true });
+  if (isMac ? e.metaKey : e.ctrlKey) {
+    const on = nb.selected.includes(rel);
+    select(on ? nb.selected.filter((r) => r !== rel) : [...nb.selected, rel], rel);
+    return;
+  }
+  if (e.shiftKey) {
+    setNb("selected", rangeTo(rel));
+    return;
+  }
+  select([rel]);
+  if (node.kind === "section") setExpanded(rel, !nb.expanded[rel]);
+  else void openNote(rel);
+}
+
 function Row(props: { node: NbNode; depth: number }) {
   const n = () => props.node;
   const open = () => !!nb.expanded[n().rel];
   const isSection = () => n().kind === "section";
   const current = () => nb.current === n().rel;
-  const marker = () => (drop()?.rel === n().rel ? drop()!.where : null);
-  const activate = () => (isSection() ? setExpanded(n().rel, !open()) : void openNote(n().rel));
+  const picked = () => nb.selected.includes(n().rel);
+  const inside = () => target()?.where === "inside" && target()?.onto === n().rel;
   return (
     <li role="none">
       <div
@@ -260,56 +525,31 @@ function Row(props: { node: NbNode; depth: number }) {
         classList={{
           section: isSection(),
           current: current(),
-          "drop-before": marker() === "before",
-          "drop-after": marker() === "after",
-          "drop-inside": marker() === "inside",
-          dragging: dragging() === n().rel,
+          // the open note alone is shown as open, not also as picked
+          selected: picked() && !(current() && nb.selected.length === 1),
+          "drop-inside": inside(),
+          dragging: isDragged(n().rel),
         }}
         role="treeitem"
         aria-level={props.depth + 1}
         aria-expanded={isSection() ? open() : undefined}
-        aria-selected={current()}
+        aria-selected={picked()}
+        aria-current={current() ? "page" : undefined}
         aria-label={isSection() ? `${n().name}, section` : n().name}
         data-rel={n().rel}
         tabIndex={current() ? 0 : -1}
         style={{ "padding-left": `${8 + props.depth * 16}px`, "--nb-color": n().color ?? "" }}
-        draggable={nb.renaming !== n().rel}
-        onClick={activate}
-        onDblClick={() => !isSection() && setNb("renaming", n().rel)}
+        onPointerDown={(e) => onPointerDown(e, n().rel)}
+        onClick={(e) => clickRow(e, n())}
+        onDblClick={(e) => !isSection() && !e.metaKey && !e.ctrlKey && !e.shiftKey && setNb("renaming", n().rel)}
+        onFocus={(e) => {
+          // one row of the tree is reached with Tab: the one last focused
+          for (const r of e.currentTarget.closest(".nb-tree")?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])
+            r.tabIndex = r === e.currentTarget ? 0 : -1;
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           itemMenu(n(), e.clientX, e.clientY);
-        }}
-        onDragStart={(e) => {
-          setDragging(n().rel);
-          e.dataTransfer?.setData("text/plain", n().name);
-          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={() => (setDragging(null), setDrop(null))}
-        onDragOver={(e) => {
-          const from = dragging();
-          if (!from) return;
-          const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          const y = (e.clientY - box.top) / box.height;
-          const where: Where = isSection()
-            ? y < 0.28
-              ? "before"
-              : y > 0.72 && !open()
-                ? "after"
-                : "inside"
-            : y < 0.5
-              ? "before"
-              : "after";
-          if (!dropAllowed(from, n().rel, where)) return setDrop(null);
-          e.preventDefault();
-          e.stopPropagation();
-          setDrop({ rel: n().rel, where });
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const d = drop();
-          void dropOn(n().rel, d?.rel === n().rel ? d.where : "after");
         }}
       >
         <span
@@ -317,7 +557,7 @@ function Row(props: { node: NbNode; depth: number }) {
           classList={{ open: open(), none: !isSection() }}
           aria-hidden="true"
           onClick={(e) => {
-            if (!isSection()) return;
+            if (!isSection() || justDragged) return;
             e.stopPropagation();
             setExpanded(n().rel, !open());
           }}
@@ -382,18 +622,20 @@ function Row(props: { node: NbNode; depth: number }) {
         </ul>
       </Show>
       <Show when={isSection() && open() && !(n().children?.length ?? 0)}>
-        {/* an empty section offers its first note, as an item of its own in the tree */}
+        {/* an empty section offers its first note, as an item of its own in the tree; dropped
+            on, it is the section's inside */}
         <ul role="group" class="nb-group">
           <li role="none">
             <div
               class="nb-empty-section"
+              classList={{ "drop-inside": inside() }}
               role="treeitem"
               aria-level={props.depth + 2}
               aria-label={`Add a note to ${n().name}`}
               data-add={n().rel}
               tabIndex={-1}
               style={{ "padding-left": `${30 + (props.depth + 1) * 16}px` }}
-              onClick={() => void newNote(n().rel)}
+              onClick={() => !justDragged && void newNote(n().rel)}
             >
               <span class="nb-link">Add a note</span>
             </div>
@@ -413,17 +655,35 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
   const focus = (i: number) => {
     const r = rows[Math.max(0, Math.min(rows.length - 1, i))];
     if (!r) return;
-    rows.forEach((x) => (x.tabIndex = -1));
-    r.tabIndex = 0;
     r.focus();
+    r.scrollIntoView({ block: "nearest" });
+    // the selection follows the keyboard; with Shift it grows from where it started
+    const to = r.dataset.rel;
+    if (!to) return;
+    if (e.shiftKey) setNb("selected", rangeTo(to));
+    else select([to]);
   };
   const cmd = isMac ? e.metaKey : e.ctrlKey;
+  /** Up or down one place among its neighbours (⌥↑, ⌥↓), for reordering from the keyboard. */
+  const nudge = (by: number) => {
+    if (!node) return;
+    const items = actOn(node.rel);
+    const dir = parentOf(items[0]);
+    if (items.some((r) => parentOf(r) !== dir)) return;
+    const all = childrenOf(dir).map((c) => c.rel);
+    const first = all.indexOf(items[0]);
+    const stay = all.filter((r) => !items.includes(r));
+    const index = Math.max(0, Math.min(stay.length, all.slice(0, first).filter((r) => !items.includes(r)).length + by));
+    void moveItems(items, dir, index).then(() => rowOf(node.rel)?.focus());
+  };
   switch (e.key) {
     case "ArrowDown":
-      focus(at + 1);
+      if (e.altKey) nudge(1);
+      else focus(at + 1);
       break;
     case "ArrowUp":
-      focus(at - 1);
+      if (e.altKey) nudge(-1);
+      else focus(at - 1);
       break;
     case "Home":
       focus(0);
@@ -438,6 +698,7 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
       break;
     case "ArrowLeft":
       if (node?.kind === "section" && nb.expanded[node.rel]) setExpanded(node.rel, false);
+      else if (el?.dataset.add !== undefined) focus(rows.findIndex((r) => r.dataset.rel === el.dataset.add));
       else if (node && parentOf(node.rel)) focus(rows.findIndex((r) => r.dataset.rel === parentOf(node.rel)));
       else return;
       break;
@@ -448,16 +709,14 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
         break;
       }
       if (!node) return;
-      if (node.kind === "section") setExpanded(node.rel, !nb.expanded[node.rel]);
+      // on a Mac, Return on the open note renames it, as in the Finder
+      if (isMac && e.key === "Enter" && node.rel === nb.current) setNb("renaming", node.rel);
+      else if (node.kind === "section") setExpanded(node.rel, !nb.expanded[node.rel]);
       else {
         // opened from the keyboard, focus stays in the tree for the next arrow key; the page
         // is a Tab or Esc away
         const rel = node.rel;
-        void openNote(rel).then(() =>
-          setTimeout(() =>
-            root.querySelector<HTMLElement>(`[data-rel="${CSS.escape(rel)}"]`)?.focus({ preventScroll: true }),
-          ),
-        );
+        void openNote(rel).then(() => setTimeout(() => rowOf(rel)?.focus({ preventScroll: true })));
       }
       break;
     case "F2":
@@ -465,8 +724,25 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
       break;
     case "Backspace":
     case "Delete":
-      // plain Backspace does nothing here, but is kept from the browser, which would go back a page
-      if (node && (e.key === "Delete" || cmd)) void trashItem(node.rel);
+      if (node) askTrash(actOn(node.rel));
+      break;
+    case "a":
+    case "A":
+      if (!cmd) return;
+      select(
+        visible().map((n) => n.rel),
+        rel ?? null,
+      );
+      break;
+    case "z":
+    case "Z":
+      if (!cmd || e.shiftKey) return;
+      void undoMove().then((done) => !done && flash("Nothing to undo in the notebook"));
+      break;
+    case "Escape":
+      // a selection of several drops back to the focused item; the page is a Tab away
+      if (nb.selected.length > 1 && rel) select([rel]);
+      else return;
       break;
     case "ContextMenu":
     case "F10":
@@ -479,6 +755,30 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
   }
   e.preventDefault();
   e.stopPropagation();
+}
+
+/** The last move, with Undo, at the foot of the sidebar for a few seconds. */
+function UndoBar() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(lastMove, (m) => {
+      clearTimeout(timer);
+      if (m) timer = setTimeout(() => lastMove()?.seq === m.seq && setLastMove(null), 7000);
+    }),
+  );
+  onCleanup(() => clearTimeout(timer));
+  return (
+    <Show when={lastMove()}>
+      {(m) => (
+        <div class="nb-undo" role="status">
+          <span class="nb-undo-text">{m().what}</span>
+          <button class="nb-undo-btn" onClick={() => void undoMove()} title={`Undo (${mod}Z in the sidebar)`}>
+            Undo
+          </button>
+        </div>
+      )}
+    </Show>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -746,17 +1046,17 @@ export function Sidebar(props: { collapsed?: boolean }) {
                 e.preventDefault();
                 itemMenu(null, e.clientX, e.clientY);
               }}
-              onDragOver={(e) => {
-                if (!dragging() || (e.target as HTMLElement).closest(".nb-row")) return;
-                e.preventDefault();
-                setDrop(null);
-              }}
-              onDrop={(e) => {
-                if ((e.target as HTMLElement).closest(".nb-row")) return;
-                e.preventDefault();
-                void dropOn(null, "after");
-              }}
+              classList={{ "drop-end": target()?.onto === null }}
             >
+              <Show when={line()}>
+                {(l) => (
+                  <div
+                    class="nb-drop-line"
+                    style={{ transform: `translateY(${l().top}px)`, left: `${l().left}px` }}
+                    aria-hidden="true"
+                  />
+                )}
+              </Show>
               <Show
                 when={!searching()}
                 fallback={
@@ -770,8 +1070,10 @@ export function Sidebar(props: { collapsed?: boolean }) {
                 <ul
                   ref={tree}
                   class="nb-tree"
+                  classList={{ dragging: !!dragged() }}
                   role="tree"
                   aria-label={book().name}
+                  aria-multiselectable="true"
                   onKeyDown={(e) => tree && treeKeys(e, tree)}
                 >
                   <For each={book().children}>{(n) => <Row node={n} depth={0} />}</For>
@@ -781,6 +1083,7 @@ export function Sidebar(props: { collapsed?: boolean }) {
                 </Show>
               </Show>
             </div>
+            <UndoBar />
             <div class="sidebar-foot">
               <button class="nb-new" onClick={() => void newNote()}>
                 <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -790,7 +1093,7 @@ export function Sidebar(props: { collapsed?: boolean }) {
               </button>
               <button
                 class="sb-icon"
-                onClick={() => void newSection("")}
+                onClick={() => void newSection()}
                 title={`New section (⌥${mod}N)`}
                 aria-label="New section"
               >
@@ -814,6 +1117,8 @@ export function Sidebar(props: { collapsed?: boolean }) {
           </>
         )}
       </Show>
+      <Ghost />
+      <SidebarDialogs />
       <div
         class="sidebar-resize"
         role="separator"

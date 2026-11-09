@@ -69,7 +69,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `assets.rs` | Images, content-addressed (`assets/<sha256:16>.<ext>`), staged in memory until the first save. |
 | | `text.rs` | Djot → HTML for text regions; documents are untrusted, so raw HTML is dropped. |
 | | `templates.rs`, `templates/*.json` | Built-in templates and the user's own. |
-| | `notebook.rs` | Notebooks: list, create, rename, move, duplicate, trash, style, search. One entry point, `call(op, args)`. |
+| | `notebook.rs` | Notebooks: list, create, rename, move (one item or several at once, `move_items`: all checked before anything moves), duplicate, trash, style, search. The order the user arranged is kept per folder in `.quire-notebook.json` and follows every operation. One entry point, `call(op, args)`. |
 | `quire-web` | `lib.rs` | The service as WebAssembly for the web version: `dispatch` (the calls a browser can make, files as base64) behind a plain `alloc`/`call` interface, no binding generator. Built with `npm --prefix app run wasm` (the `web` profile in `Cargo.toml`, optimised for size). |
 | `quire-smath` | `lib.rs` | `convert` and `convert_file` (the file name sets the document's source): XML in, `Imported` out (document, cached results, assets, warnings). |
 | | `convert.rs` | The importer proper: settings, metadata, page model, and every region kind. |
@@ -110,7 +110,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `types.ts` | TypeScript mirrors of the document JSON and of `quire-service`'s report. |
 | `settings.ts`, `recent.ts` | App preferences and Open Recent, in `localStorage`. |
 | `recovery.ts` | Crash recovery: a copy of unsaved changes, kept by the backend a few seconds after the last edit. |
-| `notebook.ts` | Notebook state and logic (open, autosave, rename, move, search), path helpers. |
+| `notebook.ts` | Notebook state and logic (open, autosave, rename, move, search), the sidebar's selection, where a drop lands (`dropPlace`), undo for moves, path helpers. |
 
 **The page**
 
@@ -137,7 +137,8 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 |---|---|
 | `FormatBar.tsx` | The ribbon: Text, Paragraph, Equation, Arrange. |
 | `Inspector.tsx` | Region, document and page properties. |
-| `Sidebar.tsx` | The notebook sidebar: switcher, tree, search, the note title in the toolbar. |
+| `Sidebar.tsx` | The notebook sidebar: switcher, tree, search, the note title in the toolbar. Dragging is done with pointer events (not HTML drag and drop, which the desktop webview hands to the system on some platforms): a drop line between rows, a filled section to drop into, sections that open when held over, scrolling near the edges. |
+| `SidebarDialogs.tsx` | The sidebar's confirmation before items go to the Trash, and the Move to… picker of sections. |
 | `Palette.tsx` | ⌘K: commands, variables, symbols and notes. |
 | `Welcome.tsx`, `TemplatesDialog.tsx`, `SettingsDialog.tsx`, `HelpDialog.tsx`, `RefPicker.tsx`, `Updates.tsx` | Dialogs and banners. |
 | `ContextMenu.tsx`, `menu.ts`, `Popover.tsx`, `Tooltip.tsx`, `Completion.tsx`, `FindBar.tsx` | Small floating UI. |
