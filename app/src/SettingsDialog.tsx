@@ -73,7 +73,7 @@ function Dialog() {
                 onChange={(v) => setPref("canvasPattern", v)}
               />
             </Field>
-            <Check checked={prefs.pageBreaks} label="Page breaks on the canvas" onChange={toggle("pageBreaks")} />
+            <Check checked={prefs.pageBreaks} label="Page guides on the canvas" onChange={toggle("pageBreaks")} />
           </Section>
           <Section title="Editing">
             <Check checked={prefs.latex} label="LaTeX shortcuts (\alpha → α)" onChange={toggle("latex")} />

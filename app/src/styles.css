@@ -121,7 +121,8 @@ body {
   padding-left: 84px; /* traffic lights */
 }
 
-.title {
+/* the toolbar's document name (only there: a Title in the document wraps like other text) */
+.toolbar .title {
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -129,7 +130,7 @@ body {
   min-width: 80px;
 }
 
-.title .edited {
+.toolbar .title .edited {
   font-weight: 400;
   color: var(--muted);
 }
@@ -252,40 +253,73 @@ body {
   transform-origin: 0 0;
 }
 
-/* the free canvas: the printable column and where pages break, as in the page view and PDF */
+/* the free canvas's page guides (View ▸ Show Page Guides): the printable column and where
+   pages break, as in the page view and the PDF. Faint enough to read past, never printed. */
+:root {
+  --guide-line: color-mix(in srgb, var(--accent) 26%, transparent);
+  --guide-fill: color-mix(in srgb, var(--accent) 2.5%, transparent);
+  --guide-label-bg: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  /* 4.5:1 on the label's tint (WCAG AA) */
+  --guide-label-ink: color-mix(in srgb, var(--accent) 60%, #000);
+}
+
+/* the canvas stays paper in either theme; beside the dark window the lines read a touch firmer */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --guide-line: color-mix(in srgb, var(--accent) 32%, transparent);
+    --guide-label-bg: color-mix(in srgb, var(--accent) 11%, var(--paper));
+  }
+}
+
+.page-guides {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 .page-column {
   position: absolute;
   top: 0;
   left: 0;
-  border-right: 1px dashed color-mix(in srgb, var(--accent) 22%, transparent);
-  pointer-events: none;
+  border-left: 1px solid var(--guide-line);
+  border-right: 1px solid var(--guide-line);
+  background: var(--guide-fill);
+  /* the column fades out below the content rather than stopping on a hard edge */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
 }
 
+/* across the column, fading out into the page margins on both sides */
 .page-break {
   position: absolute;
-  left: 0;
-  border-top: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
-  pointer-events: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--guide-line) var(--fade),
+    var(--guide-line) calc(100% - var(--fade)),
+    transparent
+  );
 }
 
-/* to the right of the printable column, in what is the page's margin */
+/* in the page's right margin, just right of the column, on the line it names */
 .page-label {
   position: absolute;
-  left: calc(100% + 10px);
-  top: -9px;
-  padding: 1px 6px;
+  left: calc(var(--column-right) + 12px);
+  top: -8px;
+  padding: 1px 7px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
-  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  background: var(--guide-label-bg);
+  color: var(--guide-label-ink);
   font:
-    10px -apple-system,
+    500 10px -apple-system,
     system-ui,
     sans-serif;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
-.app.printing .page-column,
-.app.printing .page-break {
+.app.printing .page-guides {
   display: none;
 }
 
@@ -4184,10 +4218,6 @@ input[type="radio"]:focus-visible,
 
 .palette-item.active .palette-hint {
   color: #fff;
-}
-
-.page-label {
-  color: color-mix(in srgb, var(--accent) 60%, #000);
 }
 
 /* units in the Symbols gallery sit on the dark window, not on paper */

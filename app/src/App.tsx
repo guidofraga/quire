@@ -86,7 +86,7 @@ import { setShareOpen, ShareDialog } from "./ShareDialog";
 import { decodeDoc, docInHash, linkFor } from "./share";
 import { directPdf, pdfInfo, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
-import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
+import { applyTheme, prefs, setPref, setSettingsOpen, withDefaults } from "./settings";
 import { type Align, activeView, commands, run as runText } from "./richtext";
 import {
   type AlignMode,
@@ -461,6 +461,13 @@ function openInsertMenu(e: MouseEvent) {
   });
 }
 
+/** View ▸ Show Page Guides: the printable column and page breaks on the free canvas (an app setting). */
+function togglePageGuides() {
+  const on = !prefs.pageBreaks;
+  setPref("pageBreaks", on);
+  if (layout().pageView) flash(on ? "Page guides will show on the canvas" : "Page guides hidden on the canvas");
+}
+
 /** The toolbar's zoom percentage: common sizes, and fitting the page to the window. */
 function openZoomMenu(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -478,6 +485,10 @@ function openZoomMenu(e: MouseEvent) {
       null,
       { label: pages ? "Fit Page Width" : "Fit Printable Width", run: () => (closeMenu(), zoomToFit("width")) },
       ...(pages ? [{ label: "Fit Whole Page", run: () => (closeMenu(), zoomToFit("page")) }] : []),
+      // the canvas's view options sit with its zoom (the web version has no View menu)
+      ...(pages
+        ? []
+        : [{ label: "Page Guides", checked: prefs.pageBreaks, run: () => (closeMenu(), togglePageGuides()) }]),
       null,
       { label: "Zoom In", shortcut: "⌘=", run: () => (closeMenu(), zoomCenter(1.2)) },
       { label: "Zoom Out", shortcut: "⌘-", run: () => (closeMenu(), zoomCenter(1 / 1.2)) },
@@ -693,6 +704,8 @@ function runCommand(id: string) {
       return nextError();
     case "page_view":
       return togglePageView();
+    case "toggle_page_guides":
+      return togglePageGuides();
     case "export_pdf":
       return exportPdf().catch((e) => flash(`Could not export: ${e.message ?? e}`));
     case "print":

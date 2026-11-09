@@ -29,6 +29,7 @@ import {
 } from "./clipboard";
 import { closeMenu, type MenuItems, setRegionMenuBuilder } from "./menu";
 import type { Background } from "./pages";
+import { prefs } from "./settings";
 import {
   availableWidth,
   commitEditing,
@@ -237,7 +238,9 @@ export function pasteRegions(regions: Region[]) {
   const shift = Math.min(0, maxContentX() - Math.max(...regions.map((r) => r.at[0] - minX + tx)));
   const pasted = regions.map((r) => {
     const c = cloneWithNewIds(r);
-    c.at = [Math.max(0, snap(c.at[0] - minX + tx + shift)), Math.max(0, snap(c.at[1] - minY + ty))];
+    // on the free canvas a caret above or left of the start is kept: `regroup` shifts the document
+    const at: [number, number] = [snap(c.at[0] - minX + tx + shift), snap(c.at[1] - minY + ty)];
+    c.at = layout().pageView ? [Math.max(0, at[0]), Math.max(0, at[1])] : at;
     return c;
   });
   mutate((d) => {
@@ -570,7 +573,7 @@ export function installContextMenus(run: (command: string) => void) {
               { label: "Edit Header", run: go("edit_header") },
               { label: "Edit Footer", run: go("edit_footer") },
             ]
-          : []),
+          : [{ label: "Page Guides", checked: prefs.pageBreaks, run: go("toggle_page_guides") }]),
         { label: "Document Settings…", run: go("document_settings") },
       ];
     }
