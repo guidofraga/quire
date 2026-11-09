@@ -1,10 +1,10 @@
 // Small text helpers: design-check verdicts, names under the caret, result formatting, pasted cells.
 import { describe, expect, it } from "vitest";
-import { isComparison, verdictOf } from "./checks";
+import { isComparison, mathCheck, verdictOf } from "./checks";
 import { groupDigits, mathml, prettyValue } from "./math";
 import { nameAt } from "./trace";
 import { parseTsv } from "./TableEditor";
-import type { Expr } from "./types";
+import type { Expr, Region, RegionView } from "./types";
 
 describe("verdictOf", () => {
   it.each(["OK", "ok", '"OK"', " Pass ", "passed", "atende", "cumple", "erfüllt", "sí"])("%j passes", (t) => {
@@ -30,6 +30,24 @@ describe("isComparison", () => {
       isComparison({ t: "Define", c: { lhs: { t: "Ident", c: "x" }, rhs: { t: "Num", c: "1" }, global: false } }),
     ).toBe(false);
     expect(isComparison(null)).toBe(false);
+  });
+});
+
+describe("mathCheck", () => {
+  const cmp: Expr = { t: "Compare", c: [{ t: "Ident", c: "M" }, [["Le", { t: "Ident", c: "R" }]]] };
+  const region = (show?: "value") => ({ id: "a", kind: "math", expr: "M <= R", show }) as unknown as Region;
+  const view = (extra: Partial<RegionView>) => ({ id: "a", input: cmp, error: null, ...extra }) as RegionView;
+  it("a comparison without = passes or fails by what the engine says", () => {
+    expect(mathCheck(region(), view({ check: true }))).toBe(true);
+    expect(mathCheck(region(), view({ check: false }))).toBe(false);
+  });
+  it("a comparison with = still reads its shown result", () => {
+    expect(mathCheck(region("value"), view({ resultText: "1" }))).toBe(true);
+    expect(mathCheck(region("value"), view({ resultText: "0" }))).toBe(false);
+  });
+  it("a line the engine reports no verdict for is no check", () => {
+    expect(mathCheck(region(), view({}))).toBeNull();
+    expect(mathCheck(region(), view({ check: true, error: "boom" }))).toBeNull();
   });
 });
 

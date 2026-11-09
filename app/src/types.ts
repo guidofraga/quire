@@ -26,6 +26,8 @@ export interface RegionView {
   input: Expr | null;
   result: Expr | null;
   resultText: string | null;
+  /** Pass or fail of a line that is only a comparison, with or without `=`. */
+  check?: boolean;
   error: string | null;
   syntaxError: boolean;
   /** Plain names that mean units in this region (`2 m`). */
@@ -36,6 +38,8 @@ export interface RegionView {
   shadowing: string[];
   /** Your variables read as a unit here because they follow a number (`10 m`). */
   unitsOverVariables?: string[];
+  /** Plain names read as units where a variable is more usual (`W` in `M/W`, no `W` defined). */
+  namesReadAsUnits?: { name: string; unit?: string }[];
   defines: string | null;
   /** A spreadsheet table's cells. */
   cells?: CellView[][];

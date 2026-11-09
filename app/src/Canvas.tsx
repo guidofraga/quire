@@ -18,6 +18,7 @@ import {
   commitEditing,
   contentBottom,
   deleteRegions,
+  flash,
   GRID,
   insertAtCaret,
   insertPageBreak,
@@ -395,20 +396,13 @@ export function Canvas() {
     return [(cx - rect.left - state.view.x) / state.view.zoom, (cy - rect.top - state.view.y) / state.view.zoom];
   };
 
-  // canvas view: where each page starts, from the same layout as the page view and the
-  // PDF (keep-together pushes included), and the printable column they share
-  const pageBreaks = createMemo(() => {
-    const l = layout();
-    if (l.pageView || !prefs.pageBreaks || !state.doc.page) return [];
-    const paged = pagedLayout();
-    const starts: number[] = [];
-    for (let k = 1; k < paged.pages; k++) {
-      const first = paged.list.filter((p) => p.page === k && !p.hidden && !p.parent).sort((a, b) => a.y - b.y)[0];
-      if (first) starts.push(l.toScene(0, first.y)[1] - GRID);
-    }
-    return starts;
-  });
-  const columnHeight = () => Math.max(contentBottom(), pageBreaks().at(-1) ?? 0) + layout().geom.contentH / 3;
+  // canvas view: where each page starts, from the same layout as the page view and the PDF
+  // (margins, keep-together pushes and page breaks included), and the printable column they
+  // share. Canvas scene y is the document's visible y, which is what `pageStarts` holds.
+  const guidesShown = () => !layout().pageView && prefs.pageBreaks;
+  const pageBreaks = createMemo(() => (guidesShown() ? pagedLayout().pageStarts : []));
+  const columnHeight = () =>
+    Math.max(contentBottom(), pageBreaks().at(-1) ?? 0) + Math.max(layout().geom.contentH / 3, 160);
 
   function startPan(e: PointerEvent) {
     const start = { x: e.clientX, y: e.clientY, vx: state.view.x, vy: state.view.y };
@@ -479,7 +473,7 @@ export function Canvas() {
     for (const id of ids) {
       const p = l.byId.get(id);
       const w = widths[id];
-      if (p && w !== undefined) room = Math.min(room, l.geom.contentW - p.x - w);
+      if (p && w !== undefined) room = Math.min(room, l.geom.contentW - (p.x - p.pulled) - w);
     }
     return Math.max(0, room);
   }
@@ -663,8 +657,11 @@ export function Canvas() {
       const step = GRID * (e.shiftKey ? 5 : 1);
       const [dx, dy] = arrows[e.key];
       if (sel.length) nudge(sel, dx * step, dy * step);
-      else if (state.caret)
-        setState("caret", [Math.max(0, state.caret[0] + dx * step), Math.max(0, state.caret[1] + dy * step)]);
+      else if (state.caret) {
+        // the free canvas goes on above and left of the start; the page keeps it on the paper
+        const floor = layout().pageView ? 0 : -Infinity;
+        setState("caret", [Math.max(floor, state.caret[0] + dx * step), Math.max(floor, state.caret[1] + dy * step)]);
+      }
       return;
     }
     // Printable keys fall through to the hidden field (SMath behaviour: typing at the
@@ -721,8 +718,29 @@ export function Canvas() {
       const doc = prev.fromScene((w / 2 - x) / zoom, (h / 3 - y) / zoom);
       const [sx, sy] = l.toScene(doc[0], doc[1]);
       setState("view", { x: w / 2 - sx * zoom, y: h / 3 - sy * zoom });
+      if (l.pageView && !state.printing) notePulled();
     }),
   );
+
+  // the page view draws what was put past the printable column on the paper, without
+  // changing the document; say so once, when switching to it (after the switched view's
+  // text has been measured: it wraps differently there)
+  let pulledTimer: ReturnType<typeof setTimeout> | undefined;
+  function notePulled() {
+    clearTimeout(pulledTimer);
+    pulledTimer = setTimeout(() => {
+      const l = layout();
+      if (!l.pageView || state.printing) return;
+      const n = l.list.filter((p) => !p.hidden && p.pulled > 0).length;
+      if (n)
+        flash(
+          n === 1
+            ? "1 region past the printable width is shown inside the margins"
+            : `${n} regions past the printable width are shown inside the margins`,
+        );
+    }, 250);
+  }
+  onCleanup(() => clearTimeout(pulledTimer));
 
   // page view: "Page 2 of 5" while scrolling
   const [pageHint, setPageHint] = createSignal<string | null>(null);
@@ -839,20 +857,30 @@ export function Canvas() {
       }}
     >
       <div class="scene" style={sceneStyle()}>
-        <Show when={!layout().pageView && prefs.pageBreaks && state.doc.page}>
-          <div class="page-column" style={{ width: `${layout().geom.contentW}px`, height: `${columnHeight()}px` }}>
-            <span class="page-label" style={{ top: "0px" }}>
-              Page 1
-            </span>
+        <Show when={guidesShown()}>
+          {/* on screen only: hidden while printing, and not part of the document */}
+          <div class="page-guides" aria-hidden="true">
+            <div class="page-column" style={{ width: `${layout().geom.contentW}px`, height: `${columnHeight()}px` }} />
+            {/* the top of page 1, then each page's start, across the paper's width */}
+            <For each={pageBreaks()}>
+              {(y, i) => (
+                <div
+                  class="page-break"
+                  data-page={i() + 1}
+                  style={{
+                    top: `${y}px`,
+                    left: `${-layout().geom.margins.left}px`,
+                    width: `${layout().geom.paperW}px`,
+                    "--fade": `${layout().geom.margins.left * 0.75}px`,
+                    "--column-right": `${layout().geom.margins.left + layout().geom.contentW}px`,
+                  }}
+                >
+                  <span class="page-label">Page {i() + 1}</span>
+                </div>
+              )}
+            </For>
           </div>
         </Show>
-        <For each={pageBreaks()}>
-          {(y, i) => (
-            <div class="page-break" style={{ top: `${y}px`, width: `${layout().geom.contentW}px` }}>
-              <span class="page-label">Page {i() + 2}</span>
-            </div>
-          )}
-        </For>
         <Show
           when={layout().pageView}
           fallback={

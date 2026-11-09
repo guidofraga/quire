@@ -38,6 +38,8 @@ describe("documents in links", () => {
       hasImages({ ...doc, regions: [...doc.regions, { id: "i", kind: "image", at: [0, 0], src: "assets/x.png" }] }),
     ).toBe(true);
     expect(hasImages({ ...doc, page: { backgrounds: [{ pages: "1", src: "assets/y.png" }] } })).toBe(true);
+    // a logo in a header counts too
+    expect(hasImages({ ...doc, page: { header: { image: { src: "assets/z.png" } } } })).toBe(true);
   });
 });
 

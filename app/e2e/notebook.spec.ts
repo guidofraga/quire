@@ -149,9 +149,15 @@ test("keys on a focused note stay in the tree and leave the page alone", async (
   const before = await at();
 
   await row(page, "A").focus();
-  // keys the tree has no use for on a top-level note (⌘⌫ and Delete trash it)
+  // keys the tree has no use for on a top-level note, and Backspace, which asks before the
+  // note goes to the Trash (Esc keeps it)
   for (const key of ["ArrowRight", "ArrowLeft", "Backspace"]) {
     await page.keyboard.press(key);
+    if (key === "Backspace") {
+      await expect(page.getByRole("alertdialog", { name: "Move “A” to the Trash?" })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    }
     await expect(row(page, "A")).toBeFocused();
     await expect(region).toHaveCount(1);
     await expect(region).toHaveClass(/selected/);
@@ -213,7 +219,8 @@ test("typing while a note goes to the Trash does not write it back", async ({ pa
     await route.fulfill({ status: 200, contentType: "application/json", body: "null" });
   });
   await row(page, "Scrap").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to Trash" }).click();
+  await page.getByRole("menuitem", { name: "Move to Trash…" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Move to Trash" }).click();
   await page.mouse.click(900, 300);
   await page.keyboard.type(" and more");
   await expect(row(page, "Scrap")).toHaveCount(0);

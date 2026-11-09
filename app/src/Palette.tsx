@@ -66,6 +66,7 @@ const COMMANDS: [string, string, string][] = [
   ["insert_tables", "Insert List of Tables", ""],
   ["insert_checks", "Insert Summary of Checks", ""],
   ["page_view", "Toggle Page View", `${shift}${mod}P`],
+  ["toggle_page_guides", "Show or Hide Page Guides", ""],
   ["toggle_inspector", "Show Inspector", `${alt}${mod}I`],
   ["region_properties", "Region Properties", ""],
   ["zoom_in", "Zoom In", `${mod}=`],

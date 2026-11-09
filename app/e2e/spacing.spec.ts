@@ -25,6 +25,30 @@ const box = async (page: Page, i: number) => {
 /** The free space between region `i` and the one after it. */
 const gap = async (page: Page, i: number) => (await box(page, i + 1)).top - (await box(page, i)).bottom;
 
+/**
+ * Lines one under the other, each placed a grid step under the one above once that one has its
+ * result. (Enter measures the rendering before the result, which is taller than the final one,
+ * and would leave more room than these tests mean to start from.)
+ */
+async function typeStacked(page: Page, ...lines: string[]) {
+  for (const [i, line] of lines.entries()) {
+    if (i > 0) {
+      let was = -1;
+      await expect
+        .poll(async () => {
+          const b = await box(page, i - 1);
+          const settled = b.bottom - b.top === was;
+          was = b.bottom - b.top;
+          return settled;
+        })
+        .toBe(true);
+      const above = await box(page, i - 1);
+      await page.mouse.click(above.left + 4, above.bottom + GRID);
+    }
+    await typeLines(page, line);
+  }
+}
+
 /** Edit the math of region `i` from scratch. */
 async function retype(page: Page, i: number, text: string) {
   await regions(page).nth(i).dblclick();
@@ -42,9 +66,77 @@ test("a line typed under a fraction keeps a grid step clear of it", async ({ pag
   await expect.poll(() => gap(page, 2)).toBeGreaterThanOrEqual(GRID - 0.5);
 });
 
+/** The engine answers slowly (a busy machine): `release` lets every held result through. */
+async function slowEngine(page: Page) {
+  const held: (() => void)[] = [];
+  let slow = true;
+  await page.route("**/api/report", (route) => {
+    const go = () => void route.continue().catch(() => {});
+    if (slow) held.push(go);
+    else go();
+  });
+  return {
+    held: () => held.length,
+    release() {
+      slow = false;
+      for (const go of held.splice(0)) go();
+    },
+  };
+}
+
+test("a line typed under a fraction keeps its gap when the results arrive late", async ({ page }) => {
+  await blank(page);
+  await typeLines(page, "q:=12 kN/m", "L:=6 m");
+  await expect(regions(page)).toHaveCount(2);
+  const engine = await slowEngine(page);
+  const last = await box(page, 1);
+  await page.mouse.click(last.left + 4, last.bottom + 30);
+  await typeLines(page, "M:=q*L^2/8", "V:=q*L/2");
+  await expect(regions(page)).toHaveCount(4);
+  await expect.poll(() => engine.held()).toBeGreaterThan(0);
+  engine.release();
+  await expect(regions(page).nth(2).locator("mfrac")).toHaveCount(1);
+  await expect.poll(() => gap(page, 2)).toBeGreaterThanOrEqual(GRID - 0.5);
+});
+
+test("a line typed under a fraction keeps its gap when the measuring comes late", async ({ page }) => {
+  // Each region is measured once it is drawn. Held back here, as a slow machine does, until the
+  // fraction has its result and the next line has been typed: its first measurement is then
+  // already the tall one, and must not be taken for the height the line below was placed for.
+  await page.addInitScript(() => {
+    const w = window as unknown as { held: (() => void)[]; holding: boolean };
+    w.held = [];
+    w.holding = false;
+    const Real = window.ResizeObserver;
+    window.ResizeObserver = class extends Real {
+      constructor(cb: ResizeObserverCallback) {
+        super((entries, observer) => {
+          if (w.holding) w.held.push(() => cb(entries, observer));
+          else cb(entries, observer);
+        });
+      }
+    };
+  });
+  await blank(page);
+  await typeLines(page, "q:=12 kN/m", "L:=6 m");
+  await expect(regions(page)).toHaveCount(2);
+  const last = await box(page, 1);
+  await page.evaluate(() => ((window as unknown as { holding: boolean }).holding = true));
+  await page.mouse.click(last.left + 4, last.bottom + 30);
+  await typeLines(page, "M:=q*L^2/8", "V:=q*L/2");
+  await expect(regions(page)).toHaveCount(4);
+  await expect(regions(page).nth(2).locator("mfrac")).toHaveCount(1);
+  await page.evaluate(() => {
+    const w = window as unknown as { held: (() => void)[]; holding: boolean };
+    w.holding = false;
+    for (const run of w.held.splice(0)) run();
+  });
+  await expect.poll(() => gap(page, 2)).toBeGreaterThanOrEqual(GRID - 0.5);
+});
+
 test("an error appearing under a line pushes the next line down, and undo puts both back", async ({ page }) => {
   await blank(page);
-  await typeLines(page, "a:=1", "b:=a+1", "c:=2");
+  await typeStacked(page, "a:=1", "b:=a+1", "c:=2");
   await expect(regions(page)).toHaveCount(3);
   const before = await box(page, 2);
   // renaming a breaks the line below it, which wasn't edited
@@ -64,7 +156,7 @@ test("an error appearing under a line pushes the next line down, and undo puts b
 
 test("a line growing leaves what is in another column where it is", async ({ page }) => {
   await blank(page);
-  await typeLines(page, "a:=1", "b:=2");
+  await typeStacked(page, "a:=1", "b:=2");
   const line = (name: string) => regions(page).filter({ hasText: `${name} is defined as` });
   const top = async (name: string) => (await line(name).boundingBox())!.y;
   const b = await line("b").boundingBox();
@@ -85,7 +177,7 @@ test("a line growing leaves what is in another column where it is", async ({ pag
 
 test("typing in a line doesn't move the lines around it", async ({ page }) => {
   await blank(page);
-  await typeLines(page, "a:=1", "b:=a+1", "c:=2");
+  await typeStacked(page, "a:=1", "b:=a+1", "c:=2");
   await expect(regions(page)).toHaveCount(3);
   const where = () => regions(page).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
   await regions(page).nth(1).dblclick();

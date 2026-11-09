@@ -121,7 +121,8 @@ body {
   padding-left: 84px; /* traffic lights */
 }
 
-.title {
+/* the toolbar's document name (only there: a Title in the document wraps like other text) */
+.toolbar .title {
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -129,7 +130,7 @@ body {
   min-width: 80px;
 }
 
-.title .edited {
+.toolbar .title .edited {
   font-weight: 400;
   color: var(--muted);
 }
@@ -252,40 +253,73 @@ body {
   transform-origin: 0 0;
 }
 
-/* the free canvas: the printable column and where pages break, as in the page view and PDF */
+/* the free canvas's page guides (View ▸ Show Page Guides): the printable column and where
+   pages break, as in the page view and the PDF. Faint enough to read past, never printed. */
+:root {
+  --guide-line: color-mix(in srgb, var(--accent) 26%, transparent);
+  --guide-fill: color-mix(in srgb, var(--accent) 2.5%, transparent);
+  --guide-label-bg: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  /* 4.5:1 on the label's tint (WCAG AA) */
+  --guide-label-ink: color-mix(in srgb, var(--accent) 60%, #000);
+}
+
+/* the canvas stays paper in either theme; beside the dark window the lines read a touch firmer */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --guide-line: color-mix(in srgb, var(--accent) 32%, transparent);
+    --guide-label-bg: color-mix(in srgb, var(--accent) 11%, var(--paper));
+  }
+}
+
+.page-guides {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 .page-column {
   position: absolute;
   top: 0;
   left: 0;
-  border-right: 1px dashed color-mix(in srgb, var(--accent) 22%, transparent);
-  pointer-events: none;
+  border-left: 1px solid var(--guide-line);
+  border-right: 1px solid var(--guide-line);
+  background: var(--guide-fill);
+  /* the column fades out below the content rather than stopping on a hard edge */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
 }
 
+/* across the column, fading out into the page margins on both sides */
 .page-break {
   position: absolute;
-  left: 0;
-  border-top: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
-  pointer-events: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--guide-line) var(--fade),
+    var(--guide-line) calc(100% - var(--fade)),
+    transparent
+  );
 }
 
-/* to the right of the printable column, in what is the page's margin */
+/* in the page's right margin, just right of the column, on the line it names */
 .page-label {
   position: absolute;
-  left: calc(100% + 10px);
-  top: -9px;
-  padding: 1px 6px;
+  left: calc(var(--column-right) + 12px);
+  top: -8px;
+  padding: 1px 7px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
-  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  background: var(--guide-label-bg);
+  color: var(--guide-label-ink);
   font:
-    10px -apple-system,
+    500 10px -apple-system,
     system-ui,
     sans-serif;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
-.app.printing .page-column,
-.app.printing .page-break {
+.app.printing .page-guides {
   display: none;
 }
 
@@ -334,6 +368,13 @@ body {
   border-radius: 3px;
   outline: 1px solid transparent;
   white-space: nowrap;
+}
+
+/* the free canvas: the scene has no width of its own, so a region would shrink to its narrowest
+   (a table losing its column widths). It takes its content's width, as on a page; text still
+   wraps at its max-width. */
+.scene > .region {
+  width: max-content;
 }
 
 .region:hover {
@@ -820,10 +861,20 @@ ms.str {
   user-select: none;
 }
 
+/* a band's row (HeaderFooterBand.tsx sets where it sits, its height, size and weight): the same
+   markup on screen, in print and in the PDF, so they agree */
+.hf-print {
+  position: absolute;
+  pointer-events: none;
+}
+
 .page-hf {
   position: absolute;
+  left: 0;
+  right: 0;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   font:
@@ -834,16 +885,43 @@ ms.str {
   pointer-events: none;
 }
 
+.hf-left,
+.hf-center,
+.hf-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .hf-left {
+  justify-content: flex-start;
   text-align: left;
 }
 
 .hf-center {
+  justify-content: center;
   text-align: center;
 }
 
 .hf-right {
+  justify-content: flex-end;
   text-align: right;
+}
+
+/* a logo: its height is the band's (bandLayout), its width follows */
+.hf-image {
+  flex: none;
+  max-width: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hf-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
 }
 
 /* ---------------------------------------------------------------- headers and footers on the page */
@@ -946,6 +1024,11 @@ ms.str {
   transition:
     background-color 120ms var(--ease-out),
     box-shadow 120ms var(--ease-out);
+}
+
+/* beside a logo, the slot takes what is left of its cell */
+.hf-cell .hf-slot {
+  flex: 1 1 auto;
 }
 
 .hf-slot:hover {
@@ -1053,6 +1136,52 @@ ms.str {
 
 .hf-toolbar .fb-select {
   gap: 5px;
+}
+
+/* a narrow window wraps the toolbar onto a second line rather than cutting it off */
+.hf-toolbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.hf-tail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 6px;
+}
+
+.hf-toolbar .hf-text-btn {
+  gap: 5px;
+  width: auto;
+  padding: 0 8px;
+  font: inherit;
+}
+
+/* the image in use, small, as the Image menu's button */
+.hf-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 18px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--chrome-border);
+  overflow: hidden;
+}
+
+.hf-thumb img {
+  max-width: 24px;
+  max-height: 16px;
+  object-fit: contain;
+}
+
+.hf-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--chrome-border);
 }
 
 .hf-check {
@@ -1805,6 +1934,12 @@ ms.str {
   object-fit: contain;
   border: 1px solid var(--chrome-border);
   background: #fff;
+}
+
+/* a header's logo is wide and short */
+.insp-bg img.insp-hf-image {
+  height: 40px;
+  padding: 3px;
 }
 
 .insp-bg-fields {
@@ -3573,7 +3708,9 @@ a.xref-missing {
 .view-pill {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  /* above a message while one shows (App.tsx liftPillsAbove) */
+  bottom: calc(18px + var(--toast-room, 0px));
+  transition: bottom 160ms ease-out;
   z-index: 5;
   transform: translateX(-50%);
   padding: 4px 12px;
@@ -4092,10 +4229,6 @@ input[type="radio"]:focus-visible,
   color: #fff;
 }
 
-.page-label {
-  color: color-mix(in srgb, var(--accent) 60%, #000);
-}
-
 /* units in the Symbols gallery sit on the dark window, not on paper */
 @media (prefers-color-scheme: dark) {
   .fb-pop .unit-color {
@@ -4154,6 +4287,11 @@ input[type="radio"]:focus-visible,
   --nb-current: rgba(0, 0, 0, 0.075);
   --nb-section: #b4b6bd;
   --nb-row: 28px;
+  --nb-selected: rgba(47, 111, 223, 0.1);
+  --nb-selected-strong: rgba(47, 111, 223, 0.17);
+  --nb-danger: #d93a32;
+  --nb-danger-hover: #c2302a;
+  --nb-danger-soft: rgba(217, 58, 50, 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -4163,6 +4301,11 @@ input[type="radio"]:focus-visible,
     --nb-hover: rgba(255, 255, 255, 0.05);
     --nb-current: rgba(255, 255, 255, 0.09);
     --nb-section: #6c6f78;
+    --nb-selected: rgba(110, 160, 255, 0.14);
+    --nb-selected-strong: rgba(110, 160, 255, 0.24);
+    --nb-danger: #c8372f;
+    --nb-danger-hover: #b7312a;
+    --nb-danger-soft: rgba(229, 83, 75, 0.16);
   }
 }
 
@@ -4377,33 +4520,356 @@ input[type="radio"]:focus-visible,
   font-weight: 600;
 }
 
-.nb-row.dragging {
-  opacity: 0.4;
+/* picked with ⌘/Ctrl- or Shift-click, to move or delete together */
+.nb-row.selected {
+  background: var(--nb-selected);
 }
 
-.nb-row.drop-before::before,
-.nb-row.drop-after::after {
-  content: "";
+.nb-row.selected.current {
+  background: var(--nb-selected-strong);
+}
+
+.nb-tree:focus-within .nb-row.selected {
+  background: var(--nb-selected-strong);
+}
+
+/* dragging: what moves fades in place, rows don't light up under the pointer, a line shows
+   where the items land between rows and a section to drop into is filled */
+body.nb-dragging,
+body.nb-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.nb-tree.dragging .nb-row:hover:not(.current):not(.selected) {
+  background: transparent;
+}
+
+.nb-tree.dragging .nb-actions {
+  opacity: 0;
+}
+
+.nb-row.dragging {
+  opacity: 0.38;
+}
+
+.nb-scroll {
+  position: relative;
+}
+
+.nb-drop-line {
   position: absolute;
-  left: 6px;
-  right: 6px;
+  top: 0;
+  right: 8px;
   height: 2px;
   border-radius: 1px;
   background: var(--accent);
   pointer-events: none;
+  z-index: 2;
+  transition:
+    transform 70ms var(--ease-out),
+    left 70ms var(--ease-out);
 }
 
-.nb-row.drop-before::before {
-  top: -1px;
+/* a ring at the start, so the level the items land at reads at a glance */
+.nb-drop-line::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--sidebar);
 }
 
-.nb-row.drop-after::after {
-  bottom: -1px;
-}
-
-.nb-row.drop-inside {
+.nb-row.drop-inside,
+.nb-empty-section.drop-inside {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.nb-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--chrome);
+  color: var(--chrome-ink);
+  box-shadow: var(--shadow-menu);
+  font:
+    12.5px -apple-system,
+    system-ui,
+    sans-serif;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* several items: a little stack behind the first */
+.nb-ghost.many {
+  box-shadow:
+    3px 3px 0 -1px var(--chrome),
+    3px 3px 0 0 var(--chrome-border),
+    var(--shadow-menu);
+}
+
+.nb-ghost.none {
+  opacity: 0.7;
+}
+
+.nb-ghost-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-ghost-count {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* the last move, with Undo */
+.nb-undo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 6px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  background: var(--field);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+  animation: nb-undo-in 160ms var(--ease-out);
+}
+
+.nb-undo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-undo-btn {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+}
+
+.nb-undo-btn:hover {
+  background: var(--accent-soft);
+}
+
+@keyframes nb-undo-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Move to Trash? and Move to… */
+.nb-dialog {
+  width: min(400px, calc(100vw - 32px));
+}
+
+.nb-dialog-body {
+  display: flex;
+  gap: 14px;
+  padding: 20px 20px 8px;
+}
+
+.nb-dialog-body h2 {
+  margin: 1px 0 6px;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.nb-dialog-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.nb-dialog-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--nb-danger-soft);
+  color: var(--error-ink);
+}
+
+.nb-dialog-list {
+  max-height: 150px;
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--field);
+  list-style: none;
+}
+
+.nb-dialog-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.nb-dialog-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-dialog-more {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nb-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 18px;
+}
+
+.btn.danger {
+  border-color: var(--nb-danger);
+  background: var(--nb-danger);
+  color: #fff;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--nb-danger-hover);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent));
+  outline-offset: 2px;
+}
+
+.nb-move {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.nb-move-search {
+  position: relative;
+  padding: 10px 12px 6px;
+}
+
+.nb-move-search > svg {
+  position: absolute;
+  left: 22px;
+  top: 18px;
+  color: var(--muted);
+}
+
+.nb-move-search input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 28px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--field-ink);
+  font: inherit;
+  outline: none;
+}
+
+.nb-move-search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.nb-move-list {
+  max-height: min(360px, 50vh);
+  margin: 0;
+  padding: 4px 6px 10px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.nb-move-list li[role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-right: 10px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.nb-move-list li.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.nb-move-list li.active .nb-move-path,
+.nb-move-list li.active .nb-move-here,
+.nb-move-list li.active .nb-move-book {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.nb-move-list li.here {
+  color: var(--muted);
+}
+
+.nb-move-book {
+  flex: none;
+  color: var(--muted);
+}
+
+.nb-move-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-move-path,
+.nb-move-here {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.nb-move-none {
+  padding: 10px 12px;
+  color: var(--muted);
 }
 
 .nb-chevron {
@@ -4884,5 +5350,56 @@ body.resizing-sidebar {
   from {
     opacity: 0;
     transform: translate(-50%, 8px);
+  }
+}
+
+/* a name read as a unit where a variable is usual (M/W with no W): a quiet mark, text on hover or focus */
+.unit-mark {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #b45309;
+  border-radius: 50%;
+  color: #b45309;
+  font:
+    600 10px/12px -apple-system,
+    system-ui,
+    sans-serif;
+  text-align: center;
+  vertical-align: middle;
+  opacity: 0.7;
+  cursor: help;
+}
+
+.unit-mark:hover,
+.unit-mark:focus-visible {
+  opacity: 1;
+}
+
+.unit-mark:focus-visible::after {
+  content: attr(data-text);
+  position: absolute;
+  left: 0;
+  top: 18px;
+  z-index: 20;
+  width: max-content;
+  max-width: 260px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font:
+    400 11.5px -apple-system,
+    system-ui,
+    sans-serif;
+  text-align: left;
+  white-space: pre-line;
+}
+
+@media print {
+  .unit-mark {
+    display: none;
   }
 }

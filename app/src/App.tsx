@@ -1,4 +1,4 @@
-import { createEffect, createRoot, on, onMount, Show } from "solid-js";
+import { createEffect, createRoot, on, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import {
   api,
@@ -40,7 +40,7 @@ import { insertPlot3d } from "./Plot3D";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
-import { type Background, paperPoints } from "./pages";
+import { pageAssets, paperPoints } from "./pages";
 import { NameTooltip } from "./Tooltip";
 import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
@@ -86,7 +86,7 @@ import { setShareOpen, ShareDialog } from "./ShareDialog";
 import { decodeDoc, docInHash, linkFor } from "./share";
 import { directPdf, pdfInfo, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
-import { applyTheme, prefs, setSettingsOpen, withDefaults } from "./settings";
+import { applyTheme, prefs, setPref, setSettingsOpen, withDefaults } from "./settings";
 import { type Align, activeView, commands, run as runText } from "./richtext";
 import {
   type AlignMode,
@@ -171,8 +171,7 @@ const loadingAssets = new Set<string>();
 function loadAssets() {
   // images inserted into an unsaved document are served from the staging area
   const bundle = state.path ?? state.origin ?? "";
-  const backgrounds = (state.doc.page?.backgrounds as Background[] | undefined) ?? [];
-  const sources = [...layout().list.map((p) => p.region.src), ...backgrounds.map((b) => b.src)];
+  const sources = [...layout().list.map((p) => p.region.src), ...pageAssets(state.doc)];
   for (const src of sources) {
     if (!src || state.assets[src] || loadingAssets.has(src)) continue;
     loadingAssets.add(src);
@@ -462,6 +461,41 @@ function openInsertMenu(e: MouseEvent) {
   });
 }
 
+/** The toast's distance from the window's bottom edge (styles.css `.toast`). */
+const TOAST_BOTTOM = 20;
+/** The page's pills ("Page 2 of 5", "Back to your document") from the page's bottom edge (`.view-pill`). */
+const PILL_BOTTOM = 18;
+
+/**
+ * While a message shows, the page's pills sit above it rather than under it: both are centred
+ * at the bottom. `--toast-room` says how far up; it goes when the message does.
+ */
+function liftPillsAbove(toast: HTMLElement) {
+  const root = document.documentElement.style;
+  const place = () => {
+    const page = document.querySelector(".viewport")?.getBoundingClientRect();
+    // from its layout box, not its rendered one: it rises into place
+    const top = window.innerHeight - TOAST_BOTTOM - toast.offsetHeight;
+    const room = page ? Math.max(0, page.bottom - top + 8 - PILL_BOTTOM) : 0;
+    root.setProperty("--toast-room", `${room}px`);
+  };
+  const ro = new ResizeObserver(place);
+  ro.observe(toast);
+  window.addEventListener("resize", place);
+  onCleanup(() => {
+    ro.disconnect();
+    window.removeEventListener("resize", place);
+    root.removeProperty("--toast-room");
+  });
+}
+
+/** View ▸ Show Page Guides: the printable column and page breaks on the free canvas (an app setting). */
+function togglePageGuides() {
+  const on = !prefs.pageBreaks;
+  setPref("pageBreaks", on);
+  if (layout().pageView) flash(on ? "Page guides will show on the canvas" : "Page guides hidden on the canvas");
+}
+
 /** The toolbar's zoom percentage: common sizes, and fitting the page to the window. */
 function openZoomMenu(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -479,6 +513,10 @@ function openZoomMenu(e: MouseEvent) {
       null,
       { label: pages ? "Fit Page Width" : "Fit Printable Width", run: () => (closeMenu(), zoomToFit("width")) },
       ...(pages ? [{ label: "Fit Whole Page", run: () => (closeMenu(), zoomToFit("page")) }] : []),
+      // the canvas's view options sit with its zoom (the web version has no View menu)
+      ...(pages
+        ? []
+        : [{ label: "Page Guides", checked: prefs.pageBreaks, run: () => (closeMenu(), togglePageGuides()) }]),
       null,
       { label: "Zoom In", shortcut: "⌘=", run: () => (closeMenu(), zoomCenter(1.2)) },
       { label: "Zoom Out", shortcut: "⌘-", run: () => (closeMenu(), zoomCenter(1 / 1.2)) },
@@ -631,7 +669,7 @@ function runCommand(id: string) {
     case "new_document":
       return newDocument();
     case "new_section":
-      return nb.book ? newSection("") : openNotebookDialog();
+      return nb.book ? newSection() : openNotebookDialog();
     case "new_notebook":
       return newNotebookDialog();
     case "open_notebook":
@@ -694,6 +732,8 @@ function runCommand(id: string) {
       return nextError();
     case "page_view":
       return togglePageView();
+    case "toggle_page_guides":
+      return togglePageGuides();
     case "export_pdf":
       return exportPdf().catch((e) => flash(`Could not export: ${e.message ?? e}`));
     case "print":
@@ -797,7 +837,7 @@ function speakChanges() {
 export function App() {
   createEffect(on(() => state.rev, liveReport.schedule));
   speakChanges();
-  createEffect(on(() => [state.path, state.origin, layout()] as const, loadAssets));
+  createEffect(on(() => [state.path, state.origin, layout(), state.doc.page] as const, loadAssets));
   createEffect(() => {
     void setWindowTitle(`${fileName(state.path)}${state.dirty ? " — Edited" : ""}`);
   });
@@ -1102,7 +1142,7 @@ export function App() {
         onBlank={newDocument}
       />
       <Show when={state.message}>
-        <div class="toast" aria-hidden="true" onClick={() => setState({ message: null })}>
+        <div class="toast" ref={liftPillsAbove} aria-hidden="true" onClick={() => setState({ message: null })}>
           {state.message}
         </div>
       </Show>

@@ -1,4 +1,4 @@
-import { MathEditor, NameNotes } from "./MathEditor";
+import { MathEditor, NameNotes, unitNoteText } from "./MathEditor";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
@@ -46,7 +46,6 @@ import {
   layout,
   localized,
   noteRoom,
-  PAGE_WIDTH,
   type Placed,
   renameIn,
   revealRegion,
@@ -295,6 +294,19 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
             {check() ? "✓" : "✗ fails"}
           </span>
         </Show>
+        {/* a finished document shows it too: a forgotten definition is a wrong number */}
+        <Show when={!editing() && prefs.nameNotes && view()?.namesReadAsUnits?.length}>
+          <span
+            class="unit-mark"
+            role="note"
+            tabindex="0"
+            aria-label={view()!.namesReadAsUnits!.map(unitNoteText).join(". ")}
+            data-text={view()!.namesReadAsUnits!.map(unitNoteText).join("\n")}
+            title={view()!.namesReadAsUnits!.map(unitNoteText).join("\n")}
+          >
+            <span aria-hidden="true">?</span>
+          </span>
+        </Show>
         <Show when={props.r.note && !editing()}>
           <Html html={state.report?.html[`${props.r.id}:note`]} class="note" />
         </Show>
@@ -394,6 +406,22 @@ function PlotFigure(props: { p: Placed; selected: boolean }) {
   );
 }
 
+/**
+ * An area's band: the printable column in page view. On the free canvas it starts as wide as
+ * the column and reaches on to hold what is placed inside it further right.
+ */
+function areaWidth(p: Placed): number {
+  const l = layout();
+  if (l.pageView) return l.geom.contentW;
+  let right = l.geom.contentW;
+  for (const q of l.list) {
+    let inside = false;
+    for (let a = q.parent; a && !inside; a = l.byId.get(a.id)?.parent ?? null) inside = a.id === p.region.id;
+    if (inside && !q.hidden) right = Math.max(right, q.x - p.x + (widths[q.region.id] ?? 0) + GRID);
+  }
+  return right;
+}
+
 function AreaBody(props: { p: Placed }) {
   const r = () => props.p.region;
   const height = () => (r().collapsed ? AREA_COLLAPSED_HEIGHT : (r().height ?? 90));
@@ -401,7 +429,7 @@ function AreaBody(props: { p: Placed }) {
     <div
       class="area"
       classList={{ collapsed: !!r().collapsed }}
-      style={{ width: `${layout().pageView ? layout().geom.contentW : PAGE_WIDTH}px`, height: `${height()}px` }}
+      style={{ width: `${areaWidth(props.p)}px`, height: `${height()}px` }}
     >
       <div class="area-header">
         <button
@@ -491,7 +519,7 @@ function ChecksBody(props: { p: Placed }) {
       <div class="contents-title">{String(r().title ?? "Summary of Checks")}</div>
       <Show
         when={checks().length}
-        fallback={<div class="contents-empty">No checks yet: show a comparison with =, like σ ≤ f.y =.</div>}
+        fallback={<div class="contents-empty">No checks yet: write a comparison, like σ ≤ f.y.</div>}
       >
         <div class="checks-total" classList={{ failing: failing().length > 0 }}>
           {summary()}
@@ -761,6 +789,7 @@ export function RegionBox(props: RegionProps) {
       page: 0,
       left: 0,
       top: 0,
+      pulled: 0,
     };
   const r = () => props.region;
   const selected = () => state.selection.includes(r().id);
@@ -869,7 +898,7 @@ export function RegionBox(props: RegionProps) {
         </Match>
         <Match when={r().kind === "pagebreak"}>
           {/* a mark on screen only: what follows starts on the next page (store.ts computeLayout) */}
-          <div class="pagebreak-mark" style={{ width: `${Math.max(120, layout().geom.contentW - placed().x)}px` }}>
+          <div class="pagebreak-mark" style={{ width: `${availableWidth(placed().x)}px` }}>
             <span>Page break</span>
           </div>
         </Match>
