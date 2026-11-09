@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# one release run per ref at a time: two runs for the same tag would race in `draft`
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-22.04
@@ -191,7 +196,8 @@ jobs:
     needs: [check, draft, build]
     runs-on: ubuntu-22.04
     permissions:
-      contents: read
+      # draft releases and their assets are only visible to a token that can write
+      contents: write
     steps:
       - name: One release, and latest.json covers every platform
         env:
