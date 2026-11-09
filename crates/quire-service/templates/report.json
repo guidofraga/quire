@@ -17,7 +17,7 @@
       "id": "crnzkk",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Project", "Project name"],
         ["Client", "Client name"],
@@ -30,7 +30,7 @@
       "id": "crjadm",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Document no.", "CALC-STR-001"],
         ["Revision", "A"],

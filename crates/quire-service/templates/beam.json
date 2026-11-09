@@ -22,7 +22,7 @@
       "id": "bmhfkd",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Project", "Project name"],
         ["Client", "Client name"],
@@ -35,7 +35,7 @@
       "id": "bmabaa",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Document no.", "CALC-STR-002"],
         ["Revision", "A"],
@@ -49,28 +49,28 @@
       "id": "bmnddm",
       "kind": "text",
       "text": "The total deflection check fails on purpose, to show a failing check. An IPE 330 (I~y~ = 11 770 cm⁴, W~pl,y~ = 804.3 cm³) passes them all.",
-      "at": [0, 430]
+      "at": [0, 432]
     },
-    {"id": "bmgkvr", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 494]},
+    {"id": "bmgkvr", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 496]},
     {
       "id": "bmykug",
       "kind": "text",
       "text": "Steel beam, simply supported, with its compression flange restrained by the floor, so lateral-torsional buckling (6.3.2) does not govern. ULS to EN 1990 (6.10), SLS characteristic. Clauses refer to EN 1993-1-1. National annex values are taken as the recommended values.",
-      "at": [0, 526]
+      "at": [0, 528]
     },
-    {"id": "bmgusd", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 601]},
-    {"id": "bmxman", "kind": "math", "expr": "L:=7 m", "note": "span", "at": [0, 633]},
-    {"id": "bmehaz", "kind": "math", "expr": "f.y:=355 MPa", "at": [220, 633]},
-    {"id": "bmzewn", "kind": "math", "expr": "E:=210 GPa", "at": [440, 633]},
-    {"id": "bmuxim", "kind": "math", "expr": "h:=300 mm", "note": "IPE 300", "at": [0, 673]},
-    {"id": "bmnash", "kind": "math", "expr": "b:=150 mm", "at": [220, 673]},
-    {"id": "bmrncc", "kind": "math", "expr": "t.w:=7.1 mm", "at": [440, 673]},
-    {"id": "bmutjn", "kind": "math", "expr": "t.f:=10.7 mm", "at": [0, 708]},
-    {"id": "bmhhim", "kind": "math", "expr": "r:=15 mm", "at": [220, 708]},
-    {"id": "bmqiuy", "kind": "math", "expr": "A:=53.81 cm^2", "at": [440, 708]},
-    {"id": "bmburh", "kind": "math", "expr": "I.y:=8356 cm^4", "at": [0, 743]},
-    {"id": "bmzfah", "kind": "math", "expr": "W.pl.y:=628.4 cm^3", "at": [220, 743]},
-    {"id": "bmqeab", "kind": "math", "expr": "γ.M0:=1.0", "at": [440, 743]},
+    {"id": "bmgusd", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 603]},
+    {"id": "bmxman", "kind": "math", "expr": "L:=7 m", "note": "span", "at": [0, 635]},
+    {"id": "bmehaz", "kind": "math", "expr": "f.y:=355 MPa", "at": [220, 635]},
+    {"id": "bmzewn", "kind": "math", "expr": "E:=210 GPa", "at": [440, 635]},
+    {"id": "bmuxim", "kind": "math", "expr": "h:=300 mm", "note": "IPE 300", "at": [0, 675]},
+    {"id": "bmnash", "kind": "math", "expr": "b:=150 mm", "at": [220, 675]},
+    {"id": "bmrncc", "kind": "math", "expr": "t.w:=7.1 mm", "at": [440, 675]},
+    {"id": "bmutjn", "kind": "math", "expr": "t.f:=10.7 mm", "at": [0, 710]},
+    {"id": "bmhhim", "kind": "math", "expr": "r:=15 mm", "at": [220, 710]},
+    {"id": "bmqiuy", "kind": "math", "expr": "A:=53.81 cm^2", "at": [440, 710]},
+    {"id": "bmburh", "kind": "math", "expr": "I.y:=8356 cm^4", "at": [0, 745]},
+    {"id": "bmzfah", "kind": "math", "expr": "W.pl.y:=628.4 cm^3", "at": [220, 745]},
+    {"id": "bmqeab", "kind": "math", "expr": "γ.M0:=1.0", "at": [440, 745]},
     {
       "id": "bmyvup",
       "kind": "table",
@@ -85,20 +85,20 @@
         ["Variable", "8 kN/m", "1.5", "=B3*C3"],
         ["Total", "=SUM(B2:B3)", "", "=SUM(D2:D3)"]
       ],
-      "at": [0, 781]
+      "at": [0, 783]
     },
-    {"id": "bmdcah", "kind": "math", "expr": "g.k:=loads[2, 2]", "show": "value", "at": [0, 908]},
-    {"id": "bmwryc", "kind": "math", "expr": "q.k:=loads[3, 2]", "show": "value", "at": [220, 908]},
-    {"id": "bmdfif", "kind": "math", "expr": "q.d:=loads[4, 4]", "show": "value", "at": [440, 908]},
-    {"id": "bmjyem", "kind": "text", "style": {"size": 12}, "text": "# Internal forces", "at": [0, 958]},
+    {"id": "bmdcah", "kind": "math", "expr": "g.k:=loads[2, 2]", "show": "value", "at": [0, 910]},
+    {"id": "bmwryc", "kind": "math", "expr": "q.k:=loads[3, 2]", "show": "value", "at": [220, 910]},
+    {"id": "bmdfif", "kind": "math", "expr": "q.d:=loads[4, 4]", "show": "value", "at": [440, 910]},
+    {"id": "bmjyem", "kind": "text", "style": {"size": 12}, "text": "# Internal forces", "at": [0, 960]},
     {
       "id": "bmydwi",
       "kind": "text",
       "text": "Design bending moment and shear force along the span, drawn in [](#ref:bmmjdd) and [](#ref:bmxprt).",
-      "at": [0, 990]
+      "at": [0, 992]
     },
-    {"id": "bmckfv", "kind": "math", "expr": "M(x):=q.d*x*(L-x)/2", "at": [0, 1023]},
-    {"id": "bmidth", "kind": "math", "expr": "V(x):=q.d*(L/2-x)", "at": [330, 1023]},
+    {"id": "bmckfv", "kind": "math", "expr": "M(x):=q.d*x*(L-x)/2", "at": [0, 1025]},
+    {"id": "bmidth", "kind": "math", "expr": "V(x):=q.d*(L/2-x)", "at": [330, 1025]},
     {
       "id": "bmmjdd",
       "kind": "plot2d",
@@ -108,7 +108,7 @@
       "grid": true,
       "extrema": true,
       "caption": {"text": "Design bending moment"},
-      "at": [0, 1077]
+      "at": [0, 1079]
     },
     {
       "id": "bmxprt",
@@ -119,9 +119,9 @@
       "grid": true,
       "extrema": true,
       "caption": {"text": "Design shear force"},
-      "at": [332, 1077]
+      "at": [332, 1079]
     },
-    {"id": "bmqyeu", "kind": "text", "style": {"size": 12}, "text": "# Cross-section class", "at": [0, 1317]},
+    {"id": "bmqyeu", "kind": "text", "style": {"size": 12}, "text": "# Cross-section class", "at": [0, 1319]},
     {
       "id": "bmerbk",
       "kind": "math",
@@ -129,7 +129,7 @@
       "show": "value",
       "display": {"decimals": 3},
       "note": "Table 5.2",
-      "at": [0, 1349]
+      "at": [0, 1351]
     },
     {
       "id": "bmrizf",
@@ -138,14 +138,14 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "flange outstand",
-      "at": [0, 1415]
+      "at": [0, 1417]
     },
-    {"id": "bmzsyj", "kind": "math", "expr": "c.f/t.f<=9*ε", "note": "flange, Class 1", "at": [360, 1415]},
-    {"id": "bmaiab", "kind": "math", "expr": "c.w:=h-2*t.f-2*r", "show": "value", "display": {"decimals": 1}, "note": "web", "at": [0, 1465]},
-    {"id": "bmewuz", "kind": "math", "expr": "c.w/t.w<=72*ε", "note": "web in bending, Class 1", "at": [360, 1465]},
-    {"id": "bmkdfg", "kind": "text", "style": {"size": 12}, "text": "# Ultimate limit state", "at": [0, 1527]},
-    {"id": "bmyyyq", "kind": "text", "text": "## Bending", "at": [0, 1563]},
-    {"id": "bmdnwh", "kind": "math", "expr": "M.Ed:=M(L/2)", "show": "value", "display": {"unit": "kN*m"}, "note": "midspan", "at": [0, 1591]},
+    {"id": "bmzsyj", "kind": "math", "expr": "c.f/t.f<=9*ε", "note": "flange, Class 1", "at": [360, 1417]},
+    {"id": "bmaiab", "kind": "math", "expr": "c.w:=h-2*t.f-2*r", "show": "value", "display": {"decimals": 1}, "note": "web", "at": [0, 1467]},
+    {"id": "bmewuz", "kind": "math", "expr": "c.w/t.w<=72*ε", "note": "web in bending, Class 1", "at": [360, 1467]},
+    {"id": "bmkdfg", "kind": "text", "style": {"size": 12}, "text": "# Ultimate limit state", "at": [0, 1529]},
+    {"id": "bmyyyq", "kind": "text", "text": "## Bending", "at": [0, 1565]},
+    {"id": "bmdnwh", "kind": "math", "expr": "M.Ed:=M(L/2)", "show": "value", "display": {"unit": "kN*m"}, "note": "midspan", "at": [0, 1593]},
     {
       "id": "bmqyvy",
       "kind": "math",
@@ -153,13 +153,13 @@
       "show": "value",
       "display": {"unit": "kN*m"},
       "note": "6.2.5 (6.13)",
-      "at": [0, 1644]
+      "at": [0, 1646]
     },
-    {"id": "bmcsxq", "kind": "math", "expr": "M.Ed<=M.c.Rd", "note": "bending, 6.2.5(1)", "at": [0, 1706]},
-    {"id": "bmxnya", "kind": "text", "text": "## Shear", "at": [0, 1745]},
-    {"id": "bmucqw", "kind": "math", "expr": "V.Ed:=V(0 m)", "show": "value", "display": {"unit": "kN"}, "note": "support", "at": [0, 1773]},
-    {"id": "bmujee", "kind": "math", "expr": "h.w:=h-2*t.f", "show": "value", "display": {"decimals": 1}, "at": [330, 1773]},
-    {"id": "bmxzen", "kind": "math", "expr": "η:=1.0", "note": "6.2.6(3), conservative", "at": [0, 1808]},
+    {"id": "bmcsxq", "kind": "math", "expr": "M.Ed<=M.c.Rd", "note": "bending, 6.2.5(1)", "at": [0, 1708]},
+    {"id": "bmxnya", "kind": "text", "text": "## Shear", "at": [0, 1747]},
+    {"id": "bmucqw", "kind": "math", "expr": "V.Ed:=V(0 m)", "show": "value", "display": {"unit": "kN"}, "note": "support", "at": [0, 1775]},
+    {"id": "bmujee", "kind": "math", "expr": "h.w:=h-2*t.f", "show": "value", "display": {"decimals": 1}, "at": [330, 1775]},
+    {"id": "bmxzen", "kind": "math", "expr": "η:=1.0", "note": "6.2.6(3), conservative", "at": [0, 1810]},
     {
       "id": "bmcxke",
       "kind": "math",
@@ -167,7 +167,7 @@
       "show": "value",
       "display": {"unit": "cm^2"},
       "note": "rolled I section, 6.2.6(3)a",
-      "at": [0, 1843]
+      "at": [0, 1845]
     },
     {
       "id": "bmkkvj",
@@ -176,27 +176,28 @@
       "show": "value",
       "display": {"unit": "kN"},
       "note": "6.2.6 (6.18)",
-      "at": [0, 1880]
+      "at": [0, 1882]
     },
-    {"id": "bmpdpj", "kind": "math", "expr": "V.Ed<=V.pl.Rd", "note": "shear, 6.2.6(1)", "at": [0, 1945]},
-    {"id": "bmdnmu", "kind": "math", "expr": "h.w/t.w<=72*ε/η", "note": "no shear buckling check, 6.2.6(6)", "at": [0, 1982]},
-    {"id": "bmkimr", "kind": "math", "expr": "V.Ed<=0.5*V.pl.Rd", "note": "no reduction for shear, 6.2.8(2)", "at": [0, 2036]},
-    {"id": "bmqwpy", "kind": "text", "style": {"size": 12}, "text": "# Serviceability limit state", "at": [0, 2085]},
+    {"id": "bmpdpj", "kind": "math", "expr": "V.Ed<=V.pl.Rd", "note": "shear, 6.2.6(1)", "at": [0, 1947]},
+    {"id": "bmrfui", "kind": "math", "expr": "η.w:=1.2", "note": "EN 1993-1-5 5.1(2), steel up to S460", "at": [0, 1984]},
+    {"id": "bmdnmu", "kind": "math", "expr": "h.w/t.w<=72*ε/η.w", "note": "no shear buckling, 6.2.6(6)", "at": [330, 1984]},
+    {"id": "bmkimr", "kind": "math", "expr": "V.Ed<=0.5*V.pl.Rd", "note": "no reduction for shear, 6.2.8(2)", "at": [0, 2041]},
+    {"id": "bmqwpy", "kind": "text", "style": {"size": 12}, "text": "# Serviceability limit state", "at": [0, 2090]},
     {
       "id": "bmenej",
       "kind": "text",
       "text": "Deflection under characteristic loads; the limits are project values (EN 1990, A1.4.3).",
-      "at": [0, 2117]
+      "at": [0, 2122]
     },
-    {"id": "bmuchz", "kind": "math", "expr": "δ.lim.tot:=L/300", "note": "total", "at": [0, 2150]},
-    {"id": "bmhagm", "kind": "math", "expr": "δ.lim.q:=L/360", "note": "variable action", "at": [330, 2150]},
+    {"id": "bmuchz", "kind": "math", "expr": "δ.lim.tot:=L/300", "note": "total", "at": [0, 2155]},
+    {"id": "bmhagm", "kind": "math", "expr": "δ.lim.q:=L/360", "note": "variable action", "at": [330, 2155]},
     {
       "id": "bmvcgf",
       "kind": "math",
       "expr": "δ.tot:=5*(g.k+q.k)*L^4/(384*E*I.y)",
       "show": "value",
       "display": {"unit": "mm", "decimals": 1},
-      "at": [0, 2200]
+      "at": [0, 2205]
     },
     {
       "id": "bmfqhh",
@@ -204,9 +205,9 @@
       "expr": "δ.q:=5*q.k*L^4/(384*E*I.y)",
       "show": "value",
       "display": {"unit": "mm", "decimals": 1},
-      "at": [0, 2265]
+      "at": [0, 2270]
     },
-    {"id": "bmtfxx", "kind": "math", "expr": "δ.tot<=δ.lim.tot", "note": "total deflection", "at": [0, 2327]},
-    {"id": "bmdphp", "kind": "math", "expr": "δ.q<=δ.lim.q", "note": "deflection from variable action", "at": [330, 2327]}
+    {"id": "bmtfxx", "kind": "math", "expr": "δ.tot<=δ.lim.tot", "note": "total deflection", "at": [0, 2332]},
+    {"id": "bmdphp", "kind": "math", "expr": "δ.q<=δ.lim.q", "note": "deflection from variable action", "at": [330, 2332]}
   ]
 }

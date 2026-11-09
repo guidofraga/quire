@@ -22,7 +22,7 @@
       "id": "rcmqqp",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Project", "Project name"],
         ["Client", "Client name"],
@@ -35,7 +35,7 @@
       "id": "rcfvan",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Document no.", "CALC-STR-004"],
         ["Revision", "A"],
@@ -69,7 +69,14 @@
     {"id": "rcbakm", "kind": "text", "style": {"size": 12}, "text": "# Materials", "at": [0, 741]},
     {"id": "rcsryu", "kind": "math", "expr": "f.cd:=α.cc*f.ck/γ.C", "show": "value", "note": "3.1.6 (3.15)", "at": [0, 773]},
     {"id": "rcazbs", "kind": "math", "expr": "f.yd:=f.yk/γ.S", "show": "value", "note": "3.2.7(2)", "at": [330, 773]},
-    {"id": "rcandk", "kind": "math", "expr": "f.ctm:=0.30 MPa*(f.ck/(1 MPa))^(2/3)", "show": "value", "note": "Table 3.1", "at": [0, 835]},
+    {
+      "id": "rcandk",
+      "kind": "math",
+      "expr": "f.ctm:=0.30 MPa*(f.ck/(1 MPa))^(2/3)",
+      "show": "value",
+      "note": "Table 3.1, up to C50/60",
+      "at": [0, 835]
+    },
     {"id": "rceerb", "kind": "math", "expr": "λ:=0.8", "note": "3.1.7 (3.19)", "at": [0, 904]},
     {"id": "rcutjy", "kind": "math", "expr": "η:=1.0", "note": "(3.21)", "at": [220, 904]},
     {"id": "rcmcud", "kind": "math", "expr": "ε.cu3:=0.0035", "note": "Table 3.1", "at": [440, 904]},
@@ -192,6 +199,6 @@
       "note": "5.5(4) with δ = 1, k1 = 0.44, k2 = 1.25(0.6 + 0.0014/ε~cu2~)",
       "at": [0, 2032]
     },
-    {"id": "rcsfce", "kind": "math", "expr": "x.p/d<=ξ.lim", "note": "ductility, 5.5(4)", "at": [0, 2104]}
+    {"id": "rcsfce", "kind": "math", "expr": "x.p/d<=ξ.lim", "note": "5.5(4) limit with δ = 1, as a ductility criterion", "at": [0, 2104]}
   ]
 }

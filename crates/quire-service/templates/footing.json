@@ -22,7 +22,7 @@
       "id": "pfsigv",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Project", "Project name"],
         ["Client", "Client name"],
@@ -35,7 +35,7 @@
       "id": "pfrhwb",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Document no.", "CALC-GEO-006"],
         ["Revision", "A"],
@@ -62,7 +62,7 @@
     {"id": "pfrxyt", "kind": "math", "expr": "N.k:=600 kN", "note": "vertical", "at": [0, 571]},
     {"id": "pfwxdt", "kind": "math", "expr": "H.k:=40 kN", "note": "horizontal", "at": [220, 571]},
     {"id": "pfyfvv", "kind": "math", "expr": "M.k:=80 kN*m", "note": "moment", "at": [440, 571]},
-    {"id": "pfhwgh", "kind": "math", "expr": "q.a:=200 kPa", "note": "allowable bearing pressure", "at": [0, 606]},
+    {"id": "pfhwgh", "kind": "math", "expr": "q.a:=200 kPa", "note": "gross allowable pressure", "at": [0, 606]},
     {"id": "pffjng", "kind": "math", "expr": "δ.b:=20 deg", "note": "base friction angle", "at": [330, 606]},
     {"id": "pfgsyx", "kind": "math", "expr": "FS.s:=1.5", "note": "sliding", "at": [0, 644]},
     {"id": "pfkprw", "kind": "math", "expr": "FS.o:=2.0", "note": "overturning", "at": [330, 644]},
@@ -106,15 +106,21 @@
       "at": [0, 903]
     },
     {"id": "pfyjyz", "kind": "text", "style": {"size": 12}, "text": "# Bearing pressure", "at": [0, 968]},
-    {"id": "pfxezh", "kind": "math", "expr": "e.b<=L.f/6", "note": "resultant in the middle third: the whole base in contact", "at": [0, 1000]},
-    {"id": "pfrdke", "kind": "math", "expr": "q.avg:=N.b/(B*L.f)", "show": "value", "display": {"unit": "kPa", "decimals": 1}, "at": [0, 1050]},
+    {"id": "pfrdke", "kind": "math", "expr": "q.avg:=N.b/(B*L.f)", "show": "value", "display": {"unit": "kPa", "decimals": 1}, "at": [0, 1000]},
+    {"id": "pfxezh", "kind": "math", "expr": "e.b<=L.f/6", "note": "middle third: full contact", "at": [330, 1000]},
+    {
+      "id": "pfykxe",
+      "kind": "math",
+      "expr": "q.tri:=if(e.b<L.f/2, 2*N.b/(3*B*(L.f/2-e.b)), error(\"the resultant is outside the base\"))",
+      "at": [0, 1053]
+    },
     {
       "id": "pfekpz",
       "kind": "math",
-      "expr": "q.max:=if(e.b<=L.f/6, q.avg*(1+6*e.b/L.f), 2*N.b/(3*B*(L.f/2-e.b)))",
+      "expr": "q.max:=if(e.b<=L.f/6, q.avg*(1+6*e.b/L.f), q.tri)",
       "show": "value",
       "display": {"unit": "kPa", "decimals": 1},
-      "at": [0, 1103]
+      "at": [0, 1138]
     },
     {
       "id": "pfvpek",
@@ -122,20 +128,20 @@
       "expr": "q.min:=if(e.b<=L.f/6, q.avg*(1-6*e.b/L.f), 0 kPa)",
       "show": "value",
       "display": {"unit": "kPa", "decimals": 1},
-      "at": [0, 1188]
+      "at": [0, 1198]
     },
-    {"id": "pfxiqf", "kind": "math", "expr": "q.max<=q.a", "note": "bearing pressure", "at": [0, 1248]},
+    {"id": "pfxiqf", "kind": "math", "expr": "q.max<=q.a", "note": "bearing pressure", "at": [0, 1258]},
     {
       "id": "pfcqai",
       "kind": "text",
-      "text": "If the resultant leaves the middle third, the pressure is triangular: the second branch of $`q.max` and of _q_(_x_). The pressure is drawn in [](#ref:pfyzcz) and [](#ref:pfvcma).",
-      "at": [0, 1286]
+      "text": "Outside the middle third the pressure is triangular, peaking at $`q.tri`; see [](#ref:pfyzcz) and [](#ref:pfvcma).",
+      "at": [0, 1296]
     },
     {
       "id": "pfmrxe",
       "kind": "math",
       "expr": "q(x):=if(e.b<=L.f/6, q.avg*(1+12*e.b*x/L.f^2), max(q.max*(1-(L.f/2-x)/(3*(L.f/2-e.b))), 0 kPa))",
-      "at": [0, 1338]
+      "at": [0, 1333]
     },
     {
       "id": "pfyzcz",
@@ -146,19 +152,19 @@
       "grid": true,
       "extrema": true,
       "caption": {"text": "Bearing pressure along the footing"},
-      "at": [0, 1423]
+      "at": [0, 1418]
     },
     {
       "id": "pfvcma",
       "kind": "plot3d",
-      "size": [310, 210],
+      "size": [310, 250],
       "series": [{"surface": "q(x)", "xrange": "-L.f/2..L.f/2", "yrange": "-B/2..B/2", "label": "q"}],
       "axes": {"x": {"unit": "m"}, "y": {"unit": "m"}, "z": {"unit": "kPa", "label": "q"}},
       "camera": {"azimuth": -55, "elevation": 25, "distance": 3.4},
       "caption": {"text": "Bearing pressure under the base"},
-      "at": [332, 1423]
+      "at": [332, 1418]
     },
-    {"id": "pfwpwz", "kind": "text", "style": {"size": 12}, "text": "# Sliding and overturning", "at": [0, 1683]},
+    {"id": "pfwpwz", "kind": "text", "style": {"size": 12}, "text": "# Sliding and overturning", "at": [0, 1718]},
     {
       "id": "pfkgwf",
       "kind": "math",
@@ -166,7 +172,7 @@
       "show": "value",
       "display": {"unit": "kN", "decimals": 1},
       "note": "base friction",
-      "at": [0, 1715]
+      "at": [0, 1750]
     },
     {
       "id": "pftgfv",
@@ -175,11 +181,11 @@
       "show": "value",
       "display": {"unit": "kN*m", "decimals": 1},
       "note": "about the toe",
-      "at": [330, 1715]
+      "at": [330, 1750]
     },
-    {"id": "pfvpbx", "kind": "math", "expr": "F.s:=R.s/H.k", "show": "value", "display": {"decimals": 2}, "at": [0, 1765]},
-    {"id": "pfcbqt", "kind": "math", "expr": "F.o:=M.r/M.b", "show": "value", "display": {"decimals": 2}, "at": [330, 1765]},
-    {"id": "pftsus", "kind": "math", "expr": "F.s>=FS.s", "note": "sliding", "at": [0, 1818]},
-    {"id": "pfdpbc", "kind": "math", "expr": "F.o>=FS.o", "note": "overturning", "at": [330, 1818]}
+    {"id": "pfvpbx", "kind": "math", "expr": "F.s:=R.s/H.k", "show": "value", "display": {"decimals": 2}, "at": [0, 1800]},
+    {"id": "pfcbqt", "kind": "math", "expr": "F.o:=M.r/M.b", "show": "value", "display": {"decimals": 2}, "at": [330, 1800]},
+    {"id": "pftsus", "kind": "math", "expr": "F.s>=FS.s", "note": "sliding", "at": [0, 1853]},
+    {"id": "pfdpbc", "kind": "math", "expr": "F.o>=FS.o", "note": "overturning", "at": [330, 1853]}
   ]
 }

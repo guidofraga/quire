@@ -22,7 +22,7 @@
       "id": "bcdhcs",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Project", "Project name"],
         ["Client", "Client name"],
@@ -35,7 +35,7 @@
       "id": "bcuqut",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Document no.", "CALC-STR-005"],
         ["Revision", "A"],
@@ -163,6 +163,7 @@
       "expr": "F.b.Rd.in:=k.1*α.b.in*f.u*d*t.p/γ.M2",
       "show": "value",
       "display": {"unit": "kN"},
+      "note": "edge-line k1: exact for 2 bolt lines, conservative for more",
       "at": [0, 1546]
     },
     {"id": "bcmtaz", "kind": "math", "expr": "F.v.Ed<=F.b.Rd.end", "note": "bearing, end bolts", "at": [0, 1605]},
@@ -214,10 +215,10 @@
     {
       "id": "bcyanx",
       "kind": "math",
-      "expr": "A.nv:=n.2*(e.1+(n.1-1)*p.1-(n.1-0.5)*d.0)*t.p",
+      "expr": "A.nv:=2*(e.1+(n.1-1)*p.1-(n.1-0.5)*d.0)*t.p",
       "show": "value",
       "display": {"unit": "mm^2", "decimals": 0},
-      "note": "net area in shear",
+      "note": "net area in shear, two faces",
       "at": [0, 1976]
     },
     {

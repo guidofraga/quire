@@ -17,7 +17,7 @@
       "id": "lcyhip",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Project", "Project name"],
         ["Client", "Client name"],
@@ -30,7 +30,7 @@
       "id": "lcgwtq",
       "kind": "table",
       "header": {"column": true},
-      "columns": [{"width": 104}, {"width": 210}],
+      "columns": [{"width": 104}, {"width": 206}],
       "rows": [
         ["Document no.", "CALC-STR-003"],
         ["Revision", "A"],
@@ -62,7 +62,7 @@
       "columns": [{"width": 170}, {"width": 150, "align": "right"}, {"width": 150, "align": "right"}, {"width": 150, "align": "right"}],
       "rows": [
         ["", "G", "Q1", "Q2"],
-        ["Action", "Permanent", "Imposed, cat. B", "Snow, H ≤ 1000 m"],
+        ["Action", "Permanent", "Imposed, cat. B", "Snow ¹"],
         ["Characteristic effect", "120 kN", "80 kN", "30 kN"],
         ["γ, unfavourable", "1.35", "1.5", "1.5"],
         ["ψ0", "", "0.7", "0.5"],
@@ -71,8 +71,14 @@
       ],
       "at": [0, 400]
     },
-    {"id": "lcavyb", "kind": "math", "expr": "ξ:=0.85", "note": "reduction factor for permanent actions in (6.10b)", "at": [0, 593]},
-    {"id": "lcihbk", "kind": "text", "style": {"size": 12}, "text": "# Ultimate limit state", "at": [0, 640]},
+    {
+      "id": "lcsrmd",
+      "kind": "text",
+      "text": "¹ Snow on sites at H ≤ 1000 m a.s.l., remainder of CEN member states (EN 1990, Table A1.1).",
+      "at": [0, 593]
+    },
+    {"id": "lcavyb", "kind": "math", "expr": "ξ:=0.85", "note": "reduction factor for permanent actions in (6.10b)", "at": [0, 620]},
+    {"id": "lcihbk", "kind": "text", "style": {"size": 12}, "text": "# Ultimate limit state", "at": [0, 667]},
     {
       "id": "lcdpqp",
       "kind": "table",
@@ -88,9 +94,9 @@
         ["Q1 leading", "(6.10b)", "=ξ*actions!B4", "=actions!C4", "=actions!D4*actions!D5", "=SUMPRODUCT(C5:E5, actions!B3:D3)"],
         ["Q2 leading", "(6.10b)", "=ξ*actions!B4", "=actions!C4*actions!C5", "=actions!D4", "=SUMPRODUCT(C6:E6, actions!B3:D3)"]
       ],
-      "at": [0, 672]
+      "at": [0, 699]
     },
-    {"id": "lcsgms", "kind": "text", "style": {"size": 12}, "text": "# Governing design values", "at": [0, 855]},
+    {"id": "lcsgms", "kind": "text", "style": {"size": 12}, "text": "# Governing design values", "at": [0, 882]},
     {
       "id": "lcrfvs",
       "kind": "table",
@@ -103,18 +109,18 @@
         ["(6.10)", "=MAX(uls!F2:F3)", "=INDEX(uls!A2:A3, MATCH(B2, uls!F2:F3, 0))&\" \"&INDEX(uls!B2:B3, MATCH(B2, uls!F2:F3, 0))"],
         ["(6.10a) and (6.10b)", "=MAX(uls!F4:F6)", "=INDEX(uls!A4:A6, MATCH(B3, uls!F4:F6, 0))&\" \"&INDEX(uls!B4:B6, MATCH(B3, uls!F4:F6, 0))"]
       ],
-      "at": [0, 887]
+      "at": [0, 914]
     },
-    {"id": "lchvef", "kind": "math", "expr": "E.d.610:=gov[2, 2]", "show": "value", "display": {"decimals": 1}, "at": [0, 992]},
-    {"id": "lcnxsi", "kind": "math", "expr": "E.d.610ab:=gov[3, 2]", "show": "value", "display": {"decimals": 1}, "at": [330, 992]},
+    {"id": "lchvef", "kind": "math", "expr": "E.d.610:=gov[2, 2]", "show": "value", "display": {"decimals": 1}, "at": [0, 1019]},
+    {"id": "lcnxsi", "kind": "math", "expr": "E.d.610ab:=gov[3, 2]", "show": "value", "display": {"decimals": 1}, "at": [330, 1019]},
     {
       "id": "lcyrew",
       "kind": "math",
       "expr": "E.d.610ab<=E.d.610",
       "note": "(6.10a) and (6.10b) are never more onerous than (6.10)",
-      "at": [0, 1031]
+      "at": [0, 1058]
     },
-    {"id": "lcevqf", "kind": "math", "expr": "set:=1", "note": "1: expression (6.10); 2: expressions (6.10a) and (6.10b)", "at": [0, 1066]},
+    {"id": "lcevqf", "kind": "math", "expr": "set:=1", "note": "1: expression (6.10); 2: expressions (6.10a) and (6.10b)", "at": [0, 1093]},
     {
       "id": "lczvch",
       "kind": "math",
@@ -122,9 +128,9 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "design effect carried forward",
-      "at": [0, 1100]
+      "at": [0, 1127]
     },
-    {"id": "lcdhyd", "kind": "text", "style": {"size": 12}, "text": "# Serviceability limit state", "at": [0, 1149]},
+    {"id": "lcdhyd", "kind": "text", "style": {"size": 12}, "text": "# Serviceability limit state", "at": [0, 1176]},
     {
       "id": "lcbigp",
       "kind": "table",
@@ -140,7 +146,7 @@
         ["Frequent, Q2 leading", "(6.15b)", "1", "=actions!C7", "=actions!D6", "=SUMPRODUCT(C5:E5, actions!B3:D3)"],
         ["Quasi-permanent", "(6.16b)", "1", "=actions!C7", "=actions!D7", "=SUMPRODUCT(C6:E6, actions!B3:D3)"]
       ],
-      "at": [0, 1181]
+      "at": [0, 1208]
     },
     {
       "id": "lcufue",
@@ -149,7 +155,7 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "characteristic",
-      "at": [0, 1352]
+      "at": [0, 1379]
     },
     {
       "id": "lckqbs",
@@ -158,7 +164,7 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "frequent",
-      "at": [0, 1389]
+      "at": [0, 1416]
     },
     {
       "id": "lcvwrp",
@@ -167,7 +173,7 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "quasi-permanent",
-      "at": [0, 1427]
+      "at": [0, 1454]
     }
   ]
 }
