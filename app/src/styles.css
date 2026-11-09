@@ -370,6 +370,13 @@ body {
   white-space: nowrap;
 }
 
+/* the free canvas: the scene has no width of its own, so a region would shrink to its narrowest
+   (a table losing its column widths). It takes its content's width, as on a page; text still
+   wraps at its max-width. */
+.scene > .region {
+  width: max-content;
+}
+
 .region:hover {
   outline-color: rgba(47, 111, 223, 0.25);
 }
@@ -3701,7 +3708,9 @@ a.xref-missing {
 .view-pill {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  /* above a message while one shows (App.tsx liftPillsAbove) */
+  bottom: calc(18px + var(--toast-room, 0px));
+  transition: bottom 160ms ease-out;
   z-index: 5;
   transform: translateX(-50%);
   padding: 4px 12px;

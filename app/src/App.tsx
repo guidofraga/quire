@@ -1,4 +1,4 @@
-import { createEffect, createRoot, on, onMount, Show } from "solid-js";
+import { createEffect, createRoot, on, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import {
   api,
@@ -458,6 +458,34 @@ function openInsertMenu(e: MouseEvent) {
       item("List of Tables", "insert_tables"),
       item("Summary of Checks", "insert_checks"),
     ],
+  });
+}
+
+/** The toast's distance from the window's bottom edge (styles.css `.toast`). */
+const TOAST_BOTTOM = 20;
+/** The page's pills ("Page 2 of 5", "Back to your document") from the page's bottom edge (`.view-pill`). */
+const PILL_BOTTOM = 18;
+
+/**
+ * While a message shows, the page's pills sit above it rather than under it: both are centred
+ * at the bottom. `--toast-room` says how far up; it goes when the message does.
+ */
+function liftPillsAbove(toast: HTMLElement) {
+  const root = document.documentElement.style;
+  const place = () => {
+    const page = document.querySelector(".viewport")?.getBoundingClientRect();
+    // from its layout box, not its rendered one: it rises into place
+    const top = window.innerHeight - TOAST_BOTTOM - toast.offsetHeight;
+    const room = page ? Math.max(0, page.bottom - top + 8 - PILL_BOTTOM) : 0;
+    root.setProperty("--toast-room", `${room}px`);
+  };
+  const ro = new ResizeObserver(place);
+  ro.observe(toast);
+  window.addEventListener("resize", place);
+  onCleanup(() => {
+    ro.disconnect();
+    window.removeEventListener("resize", place);
+    root.removeProperty("--toast-room");
   });
 }
 
@@ -1114,7 +1142,7 @@ export function App() {
         onBlank={newDocument}
       />
       <Show when={state.message}>
-        <div class="toast" aria-hidden="true" onClick={() => setState({ message: null })}>
+        <div class="toast" ref={liftPillsAbove} aria-hidden="true" onClick={() => setState({ message: null })}>
           {state.message}
         </div>
       </Show>

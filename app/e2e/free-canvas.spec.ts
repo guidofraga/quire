@@ -131,7 +131,7 @@ test("dragging above and left of the start moves the document back without a jum
     expect(at.b[1] - at.a[1]).toBe(90 + 81);
 
     // one undo step puts it all back
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+    await page.keyboard.press("Meta+z");
     await expect.poll(() => positions(page)).toEqual({ a: [0, 0], b: [180, 90] });
     // and the view with it: b doesn't jump, a is back where it started
     const b2 = await settled(b);
@@ -197,7 +197,7 @@ test("page guides show the printable column and page breaks, toggle, and are rem
     expect(second.y).toBeLessThanOrEqual(far.y + 1);
 
     // off from the command palette
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+    await page.keyboard.press("Meta+k");
     await page.keyboard.type("page guides");
     await page.keyboard.press("Enter");
     await expect(column).toHaveCount(0);
@@ -240,6 +240,151 @@ test("the page view keeps what is past the printable column on the paper, withou
     const near = await settled(region(page, "near"));
     const back = await settled(region(page, "far"));
     expect(Math.round(back.x - near.x)).toBe(900);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** Every region's width on screen, by id (at zoom 100%). */
+function widthsOf(page: Page) {
+  return page.evaluate(() =>
+    Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>("[data-region]")]
+        .filter((el) => el.offsetParent)
+        .map((el) => [el.dataset.region!, el.getBoundingClientRect().width]),
+    ),
+  );
+}
+
+/** Widths measured on the canvas and then in the page view, once each has settled. */
+async function bothViews(page: Page, ids: string[]) {
+  // fonts in, results drawn, and no width changing for three samples in a row
+  const steady = async () => {
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    let w = await widthsOf(page);
+    let still = 0;
+    await expect
+      .poll(
+        async () => {
+          const was = w;
+          w = await widthsOf(page);
+          const same = ids.every((id) => w[id] !== undefined && Math.abs(w[id] - was[id]) < 0.5);
+          still = same ? still + 1 : 0;
+          return still >= 3;
+        },
+        { intervals: [200], timeout: 10_000 },
+      )
+      .toBe(true);
+    return w;
+  };
+  const canvas = await steady();
+  await page.getByRole("button", { name: "Pages", exact: true }).click();
+  await expect(page.locator(".sheet").first()).toBeVisible();
+  return { canvas, pages: await steady() };
+}
+
+test("a table keeps its column widths on the canvas, as on the page", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Simply supported beam/ }).click();
+  await page.getByRole("button", { name: "Canvas", exact: true }).click();
+  await expect(region(page, "b08").locator("table")).toBeVisible();
+  const ids = ["b00", "b01", "b02", "b03", "b05", "b08", "b11", "b12", "b12b", "b16", "b17"];
+  const { canvas, pages } = await bothViews(page, ids);
+  // Table 1's columns are 110 + 110 + 70 + 110 px wide
+  expect(canvas.b08).toBeGreaterThan(400);
+  for (const id of ids)
+    expect(
+      Math.abs(canvas[id] - pages[id]),
+      `${id}: ${canvas[id]} on the canvas, ${pages[id]} on the page`,
+    ).toBeLessThanOrEqual(1);
+});
+
+test("every kind of region is as wide on the canvas as on the page", async ({ page }) => {
+  const dir = await openDoc(page, "canvas", [
+    {
+      id: "ar",
+      kind: "area",
+      at: [0, 0],
+      height: 72,
+      title: "Area",
+      regions: [{ id: "in", kind: "math", at: [0, 27], expr: "x:=1" }],
+    },
+    { id: "chk", kind: "toc", at: [0, 108], of: "checks", title: "Summary of Checks" },
+    {
+      id: "sized",
+      kind: "text",
+      at: [0, 198],
+      width: 300,
+      text: "Text with a width of its own, long enough to wrap at it.",
+    },
+    { id: "centred", kind: "text", at: [0, 288], text: "{.center}\nCentred text" },
+    { id: "plain", kind: "text", at: [0, 342], text: "Plain text that hugs its words" },
+    { id: "img", kind: "image", at: [0, 396], size: [200, 100], src: "assets/missing.png" },
+    {
+      id: "plot",
+      kind: "plot2d",
+      at: [0, 540],
+      size: [300, 160],
+      series: [{ expr: "sin(t)", var: "t", from: "0", to: "6" }],
+    },
+    { id: "m", kind: "math", at: [0, 760], expr: "y:=[1;2;3]" },
+  ]);
+  try {
+    await expect(region(page, "m")).toBeVisible();
+    const ids = ["ar", "in", "chk", "sized", "centred", "plain", "img", "plot", "m"];
+    const { canvas, pages } = await bothViews(page, ids);
+    for (const id of ids)
+      expect(
+        Math.abs(canvas[id] - pages[id]),
+        `${id}: ${canvas[id]} on the canvas, ${pages[id]} on the page`,
+      ).toBeLessThanOrEqual(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** Whether two boxes on screen overlap. */
+const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test("a message never covers the page's pills, nor they it", async ({ page }) => {
+  const dir = await openDoc(page, "canvas", [
+    { id: "near", kind: "math", at: [0, 0], expr: "near:=1" },
+    { id: "far", kind: "math", at: [900, 90], expr: "far:=2" },
+    { id: "next", kind: "math", at: [0, 1300], expr: "next:=3" },
+  ]);
+  try {
+    await expect(region(page, "far")).toBeVisible();
+    // the page view's note, while "Page 1 of 2" shows as the pages scroll
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
+    const toast = page.locator(".toast");
+    await expect(toast).toContainText("printable width");
+    await page.mouse.move(700, 500);
+    await page.mouse.wheel(0, 120);
+    const hint = page.locator(".page-hint");
+    await expect(hint).toBeVisible();
+    await expect.poll(async () => overlap((await toast.boundingBox())!, (await hint.boundingBox())!)).toBe(false);
+    // and once the message goes, the pill is back in its place below where it was lifted to
+    const lifted = (await hint.boundingBox())!;
+    await toast.click();
+    await expect(toast).toHaveCount(0);
+    await page.mouse.wheel(0, 120);
+    await expect(hint).toBeVisible();
+    await expect.poll(async () => (await hint.boundingBox())!.y).toBeGreaterThan(lifted.y + 20);
+
+    // the canvas's way back, and any other message (⇧⌘R with no text to put it in)
+    await page.getByRole("button", { name: "Canvas", exact: true }).click();
+    await expect(page.locator(".sheet")).toHaveCount(0);
+    await settled(region(page, "near"));
+    await page.mouse.move(700, 500);
+    await page.mouse.wheel(3000, 4000);
+    const back = page.getByRole("button", { name: "Back to your document" });
+    await expect(back).toBeVisible();
+    await page.locator(".viewport").click({ position: { x: 300, y: 300 } });
+    await page.keyboard.press("Meta+Shift+r");
+    await expect(toast).toContainText("Put the cursor in text first");
+    await expect.poll(async () => overlap((await toast.boundingBox())!, (await back.boundingBox())!)).toBe(false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
