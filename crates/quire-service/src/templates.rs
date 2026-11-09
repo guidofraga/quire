@@ -15,24 +15,49 @@ struct Builtin {
     json: &'static str,
 }
 
+/// In the order the Welcome screen and the Templates dialog show them.
 const BUILTIN: &[Builtin] = &[
     Builtin {
         id: "builtin:report",
         name: "Calculation report",
-        description: "Title block, sections, headers and footers",
+        description: "A worked example to copy and make your own",
         json: include_str!("../templates/report.json"),
     },
     Builtin {
         id: "builtin:beam",
         name: "Simply supported beam",
-        description: "Bending, deflection and checks for a steel beam",
+        description: "EN 1993-1-1: bending, shear, deflection",
         json: include_str!("../templates/beam.json"),
     },
     Builtin {
         id: "builtin:combinations",
         name: "Load combinations",
-        description: "Factored actions and the governing combination",
+        description: "EN 1990 (6.10) and (6.10a, b), ULS and SLS",
         json: include_str!("../templates/combinations.json"),
+    },
+    Builtin {
+        id: "builtin:rc-section",
+        name: "RC section in bending",
+        description: "EN 1992-1-1: reinforcement, limits and ductility",
+        json: include_str!("../templates/rc-section.json"),
+    },
+    Builtin {
+        id: "builtin:bolted",
+        name: "Bolted connection",
+        description: "EN 1993-1-8: bolt shear, bearing, block tearing",
+        json: include_str!("../templates/bolted.json"),
+    },
+    Builtin {
+        id: "builtin:footing",
+        name: "Pad footing",
+        description: "Bearing pressure, sliding and overturning",
+        json: include_str!("../templates/footing.json"),
+    },
+    Builtin {
+        id: "builtin:pipe",
+        name: "Pipe flow head loss",
+        description: "Darcy–Weisbach, minor losses, pump duty",
+        json: include_str!("../templates/pipe.json"),
     },
 ];
 
@@ -158,17 +183,65 @@ pub fn delete(dir: &Path, id: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// The checks each built-in template fails on purpose, to show what a failing check looks like.
+    const FAILING_ON_PURPOSE: &[(&str, &[&str])] = &[
+        ("builtin:beam", &["bmtfxx"]),   // total deflection
+        ("builtin:bolted", &["bcmqgz"]), // bolt shear, shear plane through the thread
+    ];
+
     #[test]
     fn builtin_templates_load_and_evaluate_cleanly() -> std::result::Result<(), Box<dyn std::error::Error>> {
         for b in BUILTIN {
             let doc: Json = serde_json::from_str(b.json).map_err(|e| format!("{}: {e}", b.id))?;
             let report = crate::report(&doc).map_err(|e| format!("{}: {}", b.id, e.0))?;
-            let errors: Vec<_> = report
+            let mut errors: Vec<_> = report
                 .regions
                 .iter()
                 .filter_map(|r| r.error.as_ref().map(|e| format!("{}: {e}", r.id)))
                 .collect();
+            for r in &report.regions {
+                for c in r.cells.iter().flatten().flatten() {
+                    if let Some(e) = &c.error {
+                        errors.push(format!("{} (cell): {e}", r.id));
+                    }
+                }
+            }
             assert!(errors.is_empty(), "{}: {errors:?}", b.id);
+            assert_eq!(report.error_count, 0, "{}", b.id);
+            assert!(report.document_errors.is_empty(), "{}: {:?}", b.id, report.document_errors);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn builtin_templates_pass_their_checks_except_the_ones_meant_to_fail()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        for b in BUILTIN {
+            let doc: Json = serde_json::from_str(b.json)?;
+            let report = crate::report(&doc).map_err(|e| e.0)?;
+            let checks: Vec<(&str, bool)> =
+                report.regions.iter().filter_map(|r| r.check.map(|c| (r.id.as_str(), c))).collect();
+            let failing: Vec<&str> = checks.iter().filter(|(_, pass)| !pass).map(|(id, _)| *id).collect();
+            let expected = FAILING_ON_PURPOSE.iter().find(|(id, _)| *id == b.id).map_or(&[][..], |(_, f)| *f);
+            assert_eq!(failing, expected, "{}: failing checks", b.id);
+            assert!(checks.len() > failing.len(), "{}: no passing checks", b.id);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn builtin_template_region_ids_are_well_formed_and_unique()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let mut seen = std::collections::HashSet::new();
+        for b in BUILTIN {
+            let doc: Json = serde_json::from_str(b.json)?;
+            for r in doc["regions"].as_array().ok_or("no regions")? {
+                let id = r["id"].as_str().ok_or("region without an id")?;
+                let ok =
+                    id.len() == 6 && id.chars().all(|c| c.is_ascii_lowercase() || ('2'..='9').contains(&c));
+                assert!(ok, "{}: id {id}", b.id);
+                assert!(seen.insert(id.to_string()), "{}: duplicate id {id}", b.id);
+            }
         }
         Ok(())
     }

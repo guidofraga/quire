@@ -1,47 +1,213 @@
 {
   "format": "quire/1",
-  "meta": { "title": "Simply Supported Beam", "authors": ["Your Name"] },
-  "settings": { "display": { "decimals": 3, "resultUnits": "working" } },
-  "styles": { "numbering": { "headings": "1.1", "tables": "Table {n} –" } },
+  "meta": {
+    "title": "Simply supported beam",
+    "authors": ["A. Engineer"],
+    "company": "Your Company",
+    "lang": "en"
+  },
+  "settings": {"display": {"decimals": 2, "resultUnits": "working"}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
   "page": {
     "view": "pages",
     "paper": "A4",
-    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
-    "footer": { "left": "{title}", "right": "{page} / {pages}", "color": "#8a8f98" }
+    "margins": {"top": "24mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {"left": "{company}", "right": "{title}", "color": "#5f6670", "rule": {}},
+    "footer": {"left": "{date}", "right": "Page {page} of {pages}", "color": "#5f6670", "rule": {}}
   },
   "regions": [
-    { "id": "b00", "kind": "text", "at": [0, 0], "text": "{.title}\n# Simply supported steel beam" },
-    { "id": "b01", "kind": "text", "at": [0, 54], "width": 640, "text": "Bending and deflection of a simply supported beam under a uniform load. Change the data and everything below follows: the bending moment is plotted in [](#ref:b12b) and the checks are summarised in [](#ref:b17)." },
-    { "id": "b02", "kind": "text", "at": [0, 108], "text": "# Data" },
-    { "id": "b03", "kind": "math", "at": [0, 144], "expr": "L:=6 m", "note": "span" },
-    { "id": "b04", "kind": "math", "at": [0, 180], "expr": "E:=210 GPa" },
-    { "id": "b05", "kind": "math", "at": [180, 180], "expr": "f.y:=355 MPa" },
-    { "id": "b06", "kind": "math", "at": [0, 216], "expr": "I:=3892 cm^4", "note": "IPE 240" },
-    { "id": "b07", "kind": "math", "at": [180, 216], "expr": "W:=324 cm^3" },
-    { "id": "b08", "kind": "table", "at": [0, 270], "name": "loads", "header": { "row": true },
-      "caption": { "text": "Loads per metre", "position": "above" },
-      "display": { "decimals": 2 },
-      "columns": [{ "width": 110 }, { "width": 110 }, { "width": 70 }, { "width": 110 }],
-      "rows": [["Load", "Characteristic", "γ", "Design"],
-               ["Dead", "4.5 kN/m", "1.35", "=B2*C2"],
-               ["Live", "3 kN/m", "1.5", "=B3*C3"],
-               ["Total", "=SUM(B2:B3)", "", "=SUM(D2:D3)"]] },
-    { "id": "b09", "kind": "math", "at": [0, 414], "expr": "q.k:=loads[4, 2]", "show": "value" },
-    { "id": "b10", "kind": "math", "at": [234, 414], "expr": "q.d:=loads[4, 4]", "show": "value" },
-    { "id": "b11", "kind": "text", "at": [0, 468], "text": "# Calculations" },
-    { "id": "b12", "kind": "math", "at": [0, 504], "expr": "M.d:=q.d*L^2/8", "show": "value", "note": "design moment" },
-    { "id": "b12a", "kind": "math", "at": [0, 558], "expr": "M(x):=q.d*x*(L-x)/2" },
-    { "id": "b12b", "kind": "plot2d", "at": [0, 603], "size": [440, 240], "series": [{ "y": "M(x)", "x": "x", "range": "0 m..L", "label": "Design moment" }], "axes": { "y": { "label": "M" } }, "grid": true, "extrema": true, "caption": { "text": "Bending moment along the span" } },
-    { "id": "b13", "kind": "math", "at": [0, 900], "expr": "σ:=M.d/W", "show": "value", "display": { "unit": "MPa" } },
-    { "id": "b14", "kind": "math", "at": [0, 954], "expr": "δ:=5*q.k*L^4/(384*E*I)", "show": "value", "display": { "unit": "mm", "decimals": 1 } },
-    { "id": "b15", "kind": "math", "at": [0, 1008], "expr": "δ.lim:=L/250", "show": "value", "display": { "unit": "mm", "decimals": 1 } },
-    { "id": "b16", "kind": "text", "at": [0, 1062], "text": "# Checks" },
-    { "id": "b17", "kind": "table", "at": [0, 1098], "name": "checks", "header": { "row": true },
-      "caption": { "text": "Summary of checks", "position": "above" },
-      "display": { "decimals": 2 },
-      "columns": [{ "width": 110 }, { "width": 100 }, { "width": 100 }, { "width": 70 }, { "width": 80, "align": "center" }],
-      "rows": [["Check", "Value", "Limit", "Ratio", "Result"],
-               ["Bending", "=σ", "=f.y", "=B2/C2", "=IF(D2<=1, \"OK\", \"FAIL\")"],
-               ["Deflection", "=δ", "=δ.lim", "=B3/C3", "=IF(D3<=1, \"OK\", \"FAIL\")"]] }
+    {"id": "bmfnru", "kind": "text", "text": "{.title}\n# Simply supported steel beam", "at": [0, 0]},
+    {"id": "bmawah", "kind": "text", "text": "IPE section in S355 under a uniform load · EN 1993-1-1", "at": [0, 34]},
+    {
+      "id": "bmhfkd",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Project", "Project name"],
+        ["Client", "Client name"],
+        ["Element", "Floor beam B1"],
+        ["Prepared by", "A. Engineer"]
+      ],
+      "at": [0, 69]
+    },
+    {
+      "id": "bmabaa",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Document no.", "CALC-STR-002"],
+        ["Revision", "A"],
+        ["Date", "YYYY-MM-DD"],
+        ["Checked by", "—"]
+      ],
+      "at": [328, 69]
+    },
+    {"id": "bmbnvk", "kind": "toc", "of": "checks", "title": "Summary of checks", "at": [0, 186]},
+    {
+      "id": "bmnddm",
+      "kind": "text",
+      "text": "The total deflection check fails on purpose, to show a failing check. An IPE 330 (I~y~ = 11 770 cm⁴, W~pl,y~ = 804.3 cm³) passes them all.",
+      "at": [0, 432]
+    },
+    {"id": "bmgkvr", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 496]},
+    {
+      "id": "bmykug",
+      "kind": "text",
+      "text": "Steel beam, simply supported, with its compression flange restrained by the floor, so lateral-torsional buckling (6.3.2) does not govern. ULS to EN 1990 (6.10), SLS characteristic. Clauses refer to EN 1993-1-1. National annex values are taken as the recommended values.",
+      "at": [0, 528]
+    },
+    {"id": "bmgusd", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 603]},
+    {"id": "bmxman", "kind": "math", "expr": "L:=7 m", "note": "span", "at": [0, 635]},
+    {"id": "bmehaz", "kind": "math", "expr": "f.y:=355 MPa", "at": [220, 635]},
+    {"id": "bmzewn", "kind": "math", "expr": "E:=210 GPa", "at": [440, 635]},
+    {"id": "bmuxim", "kind": "math", "expr": "h:=300 mm", "note": "IPE 300", "at": [0, 675]},
+    {"id": "bmnash", "kind": "math", "expr": "b:=150 mm", "at": [220, 675]},
+    {"id": "bmrncc", "kind": "math", "expr": "t.w:=7.1 mm", "at": [440, 675]},
+    {"id": "bmutjn", "kind": "math", "expr": "t.f:=10.7 mm", "at": [0, 710]},
+    {"id": "bmhhim", "kind": "math", "expr": "r:=15 mm", "at": [220, 710]},
+    {"id": "bmqiuy", "kind": "math", "expr": "A:=53.81 cm^2", "at": [440, 710]},
+    {"id": "bmburh", "kind": "math", "expr": "I.y:=8356 cm^4", "at": [0, 745]},
+    {"id": "bmzfah", "kind": "math", "expr": "W.pl.y:=628.4 cm^3", "at": [220, 745]},
+    {"id": "bmqeab", "kind": "math", "expr": "γ.M0:=1.0", "at": [440, 745]},
+    {
+      "id": "bmyvup",
+      "kind": "table",
+      "name": "loads",
+      "header": {"row": true},
+      "caption": {"text": "Loads per metre, including self-weight", "position": "above"},
+      "display": {"decimals": 2},
+      "columns": [{"width": 130}, {"width": 120, "align": "right"}, {"width": 70, "align": "right"}, {"width": 120, "align": "right"}],
+      "rows": [
+        ["Load", "Characteristic", "γ", "Design"],
+        ["Permanent", "6 kN/m", "1.35", "=B2*C2"],
+        ["Variable", "8 kN/m", "1.5", "=B3*C3"],
+        ["Total", "=SUM(B2:B3)", "", "=SUM(D2:D3)"]
+      ],
+      "at": [0, 783]
+    },
+    {"id": "bmdcah", "kind": "math", "expr": "g.k:=loads[2, 2]", "show": "value", "at": [0, 910]},
+    {"id": "bmwryc", "kind": "math", "expr": "q.k:=loads[3, 2]", "show": "value", "at": [220, 910]},
+    {"id": "bmdfif", "kind": "math", "expr": "q.d:=loads[4, 4]", "show": "value", "at": [440, 910]},
+    {"id": "bmjyem", "kind": "text", "style": {"size": 12}, "text": "# Internal forces", "at": [0, 960]},
+    {
+      "id": "bmydwi",
+      "kind": "text",
+      "text": "Design bending moment and shear force along the span, drawn in [](#ref:bmmjdd) and [](#ref:bmxprt).",
+      "at": [0, 992]
+    },
+    {"id": "bmckfv", "kind": "math", "expr": "M(x):=q.d*x*(L-x)/2", "at": [0, 1025]},
+    {"id": "bmidth", "kind": "math", "expr": "V(x):=q.d*(L/2-x)", "at": [330, 1025]},
+    {
+      "id": "bmmjdd",
+      "kind": "plot2d",
+      "size": [310, 190],
+      "series": [{"y": "M(x)", "x": "x", "range": "0 m..L", "label": "M.Ed"}],
+      "axes": {"x": {"unit": "m", "label": "x"}, "y": {"unit": "kN*m", "label": "M"}},
+      "grid": true,
+      "extrema": true,
+      "caption": {"text": "Design bending moment"},
+      "at": [0, 1079]
+    },
+    {
+      "id": "bmxprt",
+      "kind": "plot2d",
+      "size": [310, 190],
+      "series": [{"y": "V(x)", "x": "x", "range": "0 m..L", "label": "V.Ed"}],
+      "axes": {"x": {"unit": "m", "label": "x"}, "y": {"unit": "kN", "label": "V"}},
+      "grid": true,
+      "extrema": true,
+      "caption": {"text": "Design shear force"},
+      "at": [332, 1079]
+    },
+    {"id": "bmqyeu", "kind": "text", "style": {"size": 12}, "text": "# Cross-section class", "at": [0, 1319]},
+    {
+      "id": "bmerbk",
+      "kind": "math",
+      "expr": "ε:=sqrt(235 MPa/f.y)",
+      "show": "value",
+      "display": {"decimals": 3},
+      "note": "Table 5.2",
+      "at": [0, 1351]
+    },
+    {
+      "id": "bmrizf",
+      "kind": "math",
+      "expr": "c.f:=(b-t.w-2*r)/2",
+      "show": "value",
+      "display": {"decimals": 1},
+      "note": "flange outstand",
+      "at": [0, 1417]
+    },
+    {"id": "bmzsyj", "kind": "math", "expr": "c.f/t.f<=9*ε", "note": "flange, Class 1", "at": [360, 1417]},
+    {"id": "bmaiab", "kind": "math", "expr": "c.w:=h-2*t.f-2*r", "show": "value", "display": {"decimals": 1}, "note": "web", "at": [0, 1467]},
+    {"id": "bmewuz", "kind": "math", "expr": "c.w/t.w<=72*ε", "note": "web in bending, Class 1", "at": [360, 1467]},
+    {"id": "bmkdfg", "kind": "text", "style": {"size": 12}, "text": "# Ultimate limit state", "at": [0, 1529]},
+    {"id": "bmyyyq", "kind": "text", "text": "## Bending", "at": [0, 1565]},
+    {"id": "bmdnwh", "kind": "math", "expr": "M.Ed:=M(L/2)", "show": "value", "display": {"unit": "kN*m"}, "note": "midspan", "at": [0, 1593]},
+    {
+      "id": "bmqyvy",
+      "kind": "math",
+      "expr": "M.c.Rd:=W.pl.y*f.y/γ.M0",
+      "show": "value",
+      "display": {"unit": "kN*m"},
+      "note": "6.2.5 (6.13)",
+      "at": [0, 1646]
+    },
+    {"id": "bmcsxq", "kind": "math", "expr": "M.Ed<=M.c.Rd", "note": "bending, 6.2.5(1)", "at": [0, 1708]},
+    {"id": "bmxnya", "kind": "text", "text": "## Shear", "at": [0, 1747]},
+    {"id": "bmucqw", "kind": "math", "expr": "V.Ed:=V(0 m)", "show": "value", "display": {"unit": "kN"}, "note": "support", "at": [0, 1775]},
+    {"id": "bmujee", "kind": "math", "expr": "h.w:=h-2*t.f", "show": "value", "display": {"decimals": 1}, "at": [330, 1775]},
+    {"id": "bmxzen", "kind": "math", "expr": "η:=1.0", "note": "6.2.6(3), conservative", "at": [0, 1810]},
+    {
+      "id": "bmcxke",
+      "kind": "math",
+      "expr": "A.v:=max(A-2*b*t.f+(t.w+2*r)*t.f, η*h.w*t.w)",
+      "show": "value",
+      "display": {"unit": "cm^2"},
+      "note": "rolled I section, 6.2.6(3)a",
+      "at": [0, 1845]
+    },
+    {
+      "id": "bmkkvj",
+      "kind": "math",
+      "expr": "V.pl.Rd:=A.v*f.y/(sqrt(3)*γ.M0)",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "6.2.6 (6.18)",
+      "at": [0, 1882]
+    },
+    {"id": "bmpdpj", "kind": "math", "expr": "V.Ed<=V.pl.Rd", "note": "shear, 6.2.6(1)", "at": [0, 1947]},
+    {"id": "bmrfui", "kind": "math", "expr": "η.w:=1.2", "note": "EN 1993-1-5 5.1(2), steel up to S460", "at": [0, 1984]},
+    {"id": "bmdnmu", "kind": "math", "expr": "h.w/t.w<=72*ε/η.w", "note": "no shear buckling, 6.2.6(6)", "at": [330, 1984]},
+    {"id": "bmkimr", "kind": "math", "expr": "V.Ed<=0.5*V.pl.Rd", "note": "no reduction for shear, 6.2.8(2)", "at": [0, 2041]},
+    {"id": "bmqwpy", "kind": "text", "style": {"size": 12}, "text": "# Serviceability limit state", "at": [0, 2090]},
+    {
+      "id": "bmenej",
+      "kind": "text",
+      "text": "Deflection under characteristic loads; the limits are project values (EN 1990, A1.4.3).",
+      "at": [0, 2122]
+    },
+    {"id": "bmuchz", "kind": "math", "expr": "δ.lim.tot:=L/300", "note": "total", "at": [0, 2155]},
+    {"id": "bmhagm", "kind": "math", "expr": "δ.lim.q:=L/360", "note": "variable action", "at": [330, 2155]},
+    {
+      "id": "bmvcgf",
+      "kind": "math",
+      "expr": "δ.tot:=5*(g.k+q.k)*L^4/(384*E*I.y)",
+      "show": "value",
+      "display": {"unit": "mm", "decimals": 1},
+      "at": [0, 2205]
+    },
+    {
+      "id": "bmfqhh",
+      "kind": "math",
+      "expr": "δ.q:=5*q.k*L^4/(384*E*I.y)",
+      "show": "value",
+      "display": {"unit": "mm", "decimals": 1},
+      "at": [0, 2270]
+    },
+    {"id": "bmtfxx", "kind": "math", "expr": "δ.tot<=δ.lim.tot", "note": "total deflection", "at": [0, 2332]},
+    {"id": "bmdphp", "kind": "math", "expr": "δ.q<=δ.lim.q", "note": "deflection from variable action", "at": [330, 2332]}
   ]
 }

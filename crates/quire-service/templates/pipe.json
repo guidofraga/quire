@@ -1,0 +1,198 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Pipe flow head loss",
+    "authors": ["A. Engineer"],
+    "company": "Your Company",
+    "lang": "en"
+  },
+  "settings": {"display": {"decimals": 2, "resultUnits": "working", "exponentialThreshold": 7}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": {"top": "24mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {"left": "{company}", "right": "{title}", "color": "#5f6670", "rule": {}},
+    "footer": {"left": "{date}", "right": "Page {page} of {pages}", "color": "#5f6670", "rule": {}}
+  },
+  "regions": [
+    {"id": "pppubt", "kind": "text", "text": "{.title}\n# Pipe flow head loss", "at": [0, 0]},
+    {"id": "pphvui", "kind": "text", "text": "Darcy–Weisbach with the Swamee–Jain friction factor, minor losses and pump duty", "at": [0, 34]},
+    {
+      "id": "ppivyb",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Project", "Project name"],
+        ["Client", "Client name"],
+        ["Element", "Cooling water line CW-01"],
+        ["Prepared by", "A. Engineer"]
+      ],
+      "at": [0, 69]
+    },
+    {
+      "id": "ppqrva",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Document no.", "CALC-MEC-007"],
+        ["Revision", "A"],
+        ["Date", "YYYY-MM-DD"],
+        ["Checked by", "—"]
+      ],
+      "at": [328, 69]
+    },
+    {"id": "ppjnug", "kind": "toc", "of": "checks", "title": "Summary of checks", "at": [0, 186]},
+    {
+      "id": "pppwsi",
+      "kind": "text",
+      "text": "The pump duty, head and power, is in [](#ref:ppcyxk); [](#ref:ppsgkw) shows the system curve.",
+      "at": [0, 310]
+    },
+    {"id": "pprfug", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 355]},
+    {
+      "id": "pprgxv",
+      "kind": "text",
+      "text": "Steady, incompressible flow of water at 20 °C in a full circular pipe. Friction losses by Darcy–Weisbach, with the Swamee–Jain explicit approximation of the Colebrook equation for turbulent flow and 64/Re for laminar flow. Minor losses are velocity heads times the loss coefficients of [](#ref:ppeqsb), typical values to be replaced with the manufacturer's.",
+      "at": [0, 387]
+    },
+    {"id": "pphqmp", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 477]},
+    {"id": "ppkcyt", "kind": "math", "expr": "Q:=12 L/s", "note": "flow", "at": [0, 509]},
+    {"id": "ppqggt", "kind": "math", "expr": "D:=100 mm", "note": "internal diameter", "at": [220, 509]},
+    {"id": "ppqvvs", "kind": "math", "expr": "L.p:=250 m", "note": "length", "at": [440, 509]},
+    {"id": "ppxbag", "kind": "math", "expr": "ε.r:=0.045 mm", "note": "roughness, commercial steel", "at": [0, 546]},
+    {"id": "ppzrit", "kind": "math", "expr": "Δz:=12 m", "note": "static lift", "at": [330, 546]},
+    {"id": "ppsins", "kind": "math", "expr": "ρ:=998.2 kg/m^3", "note": "water, 20 °C", "at": [0, 581]},
+    {"id": "ppmnmd", "kind": "math", "expr": "ν:=1.004 mm^2/s", "note": "kinematic viscosity, 20 °C", "at": [330, 581]},
+    {"id": "ppjbaz", "kind": "math", "expr": "η.p:=0.70", "note": "pump efficiency", "at": [0, 616]},
+    {"id": "ppetvf", "kind": "math", "expr": "V.max:=2.5 m/s", "note": "velocity limit, project", "at": [330, 616]},
+    {
+      "id": "ppeqsb",
+      "kind": "table",
+      "name": "fittings",
+      "header": {"row": true},
+      "caption": {"text": "Minor loss coefficients", "position": "above"},
+      "columns": [{"width": 200}, {"width": 80, "align": "right"}, {"width": 80, "align": "right"}, {"width": 110, "align": "right"}],
+      "rows": [
+        ["Fitting", "K", "Number", "K × number"],
+        ["Entrance, sharp-edged", "0.5", "1", "=B2*C2"],
+        ["90° bend, flanged", "0.3", "6", "=B3*C3"],
+        ["Gate valve, fully open", "0.2", "2", "=B4*C4"],
+        ["Swing check valve", "2", "1", "=B5*C5"],
+        ["Exit", "1", "1", "=B6*C6"],
+        ["Total", "", "", "=SUM(D2:D6)"]
+      ],
+      "at": [0, 656]
+    },
+    {"id": "ppaudw", "kind": "math", "expr": "K.tot:=fittings[7, 4]", "show": "value", "at": [0, 849]},
+    {"id": "ppzaqc", "kind": "text", "style": {"size": 12}, "text": "# Flow", "at": [0, 900]},
+    {"id": "pphvip", "kind": "math", "expr": "A:=π*D^2/4", "show": "value", "display": {"unit": "cm^2", "decimals": 1}, "at": [0, 932]},
+    {"id": "pptcrq", "kind": "math", "expr": "V:=Q/A", "show": "value", "display": {"unit": "m/s", "decimals": 3}, "at": [0, 985]},
+    {"id": "ppurcs", "kind": "math", "expr": "V<=V.max", "note": "velocity", "at": [330, 985]},
+    {
+      "id": "ppsguc",
+      "kind": "math",
+      "expr": "Re:=V*D/ν",
+      "show": "value",
+      "display": {"decimals": 0},
+      "note": "Reynolds number",
+      "at": [0, 1035]
+    },
+    {"id": "ppxxxt", "kind": "math", "expr": "f.SJ(r):=0.25/log10(ε.r/(3.7*D)+5.74/r^0.9)^2", "note": "Swamee–Jain", "at": [0, 1085]},
+    {
+      "id": "ppujmh",
+      "kind": "math",
+      "expr": "f.D:=if(Re<2300, 64/Re, f.SJ(Re))",
+      "show": "value",
+      "display": {"decimals": 4},
+      "note": "Darcy friction factor",
+      "at": [0, 1157]
+    },
+    {"id": "ppzame", "kind": "math", "expr": "5000<=Re<=10^8", "note": "Swamee–Jain range, Reynolds number", "at": [0, 1210]},
+    {"id": "ppxpqb", "kind": "math", "expr": "10^-6<=ε.r/D<=10^-2", "note": "Swamee–Jain range, relative roughness", "at": [0, 1245]},
+    {"id": "ppdccz", "kind": "text", "style": {"size": 12}, "text": "# Head loss", "at": [0, 1304]},
+    {
+      "id": "ppvbnu",
+      "kind": "math",
+      "expr": "h.v:=V^2/(2*g)",
+      "show": "value",
+      "display": {"unit": "m", "decimals": 3},
+      "note": "velocity head",
+      "at": [0, 1336]
+    },
+    {
+      "id": "ppcuku",
+      "kind": "math",
+      "expr": "h.f:=f.D*L.p/D*h.v",
+      "show": "value",
+      "display": {"unit": "m", "decimals": 2},
+      "note": "friction, Darcy–Weisbach",
+      "at": [0, 1393]
+    },
+    {
+      "id": "ppxhqa",
+      "kind": "math",
+      "expr": "h.m:=K.tot*h.v",
+      "show": "value",
+      "display": {"unit": "m", "decimals": 2},
+      "note": "minor losses",
+      "at": [0, 1446]
+    },
+    {"id": "ppcviw", "kind": "math", "expr": "h.L:=h.f+h.m", "show": "value", "display": {"unit": "m", "decimals": 2}, "at": [0, 1481]},
+    {
+      "id": "ppyqfc",
+      "kind": "math",
+      "expr": "Δp:=ρ*g*h.L",
+      "show": "value",
+      "display": {"unit": "kPa", "decimals": 1},
+      "note": "pressure drop",
+      "at": [330, 1481]
+    },
+    {"id": "ppcyxk", "kind": "text", "style": {"size": 12}, "text": "# Pump duty", "at": [0, 1528]},
+    {
+      "id": "ppjbpt",
+      "kind": "math",
+      "expr": "H.p:=Δz+h.L",
+      "show": "value",
+      "display": {"unit": "m", "decimals": 2},
+      "note": "pump head",
+      "at": [0, 1560]
+    },
+    {
+      "id": "ppyzun",
+      "kind": "math",
+      "expr": "P.p:=ρ*g*Q*H.p/η.p",
+      "show": "value",
+      "display": {"unit": "kW", "decimals": 2},
+      "note": "shaft power",
+      "at": [0, 1597]
+    },
+    {"id": "ppmeuu", "kind": "pagebreak", "at": [0, 1658]},
+    {"id": "ppjfnf", "kind": "text", "style": {"size": 12}, "text": "# System curve", "at": [0, 1692]},
+    {
+      "id": "ppmrcw",
+      "kind": "text",
+      "text": "The head the pump must deliver at any flow, with the same pipe and fittings, is drawn in [](#ref:ppsgkw); the circle marks the duty point.",
+      "at": [0, 1724]
+    },
+    {
+      "id": "ppmhqa",
+      "kind": "math",
+      "expr": "H.sys(q):=Δz+(f.SJ(q*D/(A*ν))*L.p/D+K.tot)*(q/A)^2/(2*g)",
+      "note": "system curve",
+      "at": [0, 1772]
+    },
+    {
+      "id": "ppsgkw",
+      "kind": "plot2d",
+      "size": [480, 260],
+      "series": [{"y": "H.sys(q)", "x": "q", "range": "2 L/s..20 L/s", "label": "System curve"}, {"y": "[Q, H.p, \"o\"; Q, H.p, \"Duty point\"]", "label": "Duty point"}],
+      "axes": {"x": {"unit": "L/s", "label": "Q"}, "y": {"unit": "m", "label": "H", "min": 0}},
+      "grid": true,
+      "caption": {"text": "System curve and duty point"},
+      "at": [0, 1861]
+    }
+  ]
+}

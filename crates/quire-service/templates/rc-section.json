@@ -1,0 +1,204 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Reinforced concrete section in bending",
+    "authors": ["A. Engineer"],
+    "company": "Your Company",
+    "lang": "en"
+  },
+  "settings": {"display": {"decimals": 2, "resultUnits": "working"}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": {"top": "24mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {"left": "{company}", "right": "{title}", "color": "#5f6670", "rule": {}},
+    "footer": {"left": "{date}", "right": "Page {page} of {pages}", "color": "#5f6670", "rule": {}}
+  },
+  "regions": [
+    {"id": "rcddtz", "kind": "text", "text": "{.title}\n# RC rectangular section in bending", "at": [0, 0]},
+    {"id": "rcqymu", "kind": "text", "text": "Singly reinforced, simplified rectangular stress block · EN 1992-1-1", "at": [0, 34]},
+    {
+      "id": "rcmqqp",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Project", "Project name"],
+        ["Client", "Client name"],
+        ["Element", "Beam B2, midspan"],
+        ["Prepared by", "A. Engineer"]
+      ],
+      "at": [0, 69]
+    },
+    {
+      "id": "rcfvan",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Document no.", "CALC-STR-004"],
+        ["Revision", "A"],
+        ["Date", "YYYY-MM-DD"],
+        ["Checked by", "—"]
+      ],
+      "at": [328, 69]
+    },
+    {"id": "rcphkn", "kind": "toc", "of": "checks", "title": "Summary of checks", "at": [0, 186]},
+    {"id": "rckqqp", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 386]},
+    {
+      "id": "rcpsjb",
+      "kind": "text",
+      "text": "Rectangular section with tension reinforcement only, at the ultimate limit state. The concrete stress block is rectangular (3.1.7(3)); the steel has a horizontal top branch (3.2.7(2)b), so its stress is f~yd~ once it yields. No moment redistribution. Clauses refer to EN 1992-1-1. National annex values are taken as the recommended values.",
+      "at": [0, 418]
+    },
+    {"id": "rcnaez", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 511]},
+    {"id": "rcwjbj", "kind": "math", "expr": "b:=300 mm", "note": "width", "at": [0, 543]},
+    {"id": "rcfbxv", "kind": "math", "expr": "h:=500 mm", "note": "depth", "at": [220, 543]},
+    {"id": "rcevry", "kind": "math", "expr": "c.nom:=30 mm", "note": "cover", "at": [440, 543]},
+    {"id": "rcnire", "kind": "math", "expr": "ϕ.l:=8 mm", "note": "link", "at": [0, 578]},
+    {"id": "rcffbc", "kind": "math", "expr": "ϕ:=20 mm", "note": "bar", "at": [220, 578]},
+    {"id": "rcchbd", "kind": "math", "expr": "n.b:=4", "note": "bars, one layer", "at": [440, 578]},
+    {"id": "rceqav", "kind": "math", "expr": "f.ck:=30 MPa", "note": "C30/37", "at": [0, 616]},
+    {"id": "rcauhw", "kind": "math", "expr": "f.yk:=500 MPa", "note": "B500", "at": [220, 616]},
+    {"id": "rcngni", "kind": "math", "expr": "d.g:=20 mm", "note": "aggregate", "at": [440, 616]},
+    {"id": "rczefs", "kind": "math", "expr": "γ.C:=1.5", "at": [0, 656]},
+    {"id": "rcaads", "kind": "math", "expr": "γ.S:=1.15", "at": [220, 656]},
+    {"id": "rcqtgt", "kind": "math", "expr": "α.cc:=1.0", "note": "3.1.6(1)", "at": [440, 656]},
+    {"id": "rcahnm", "kind": "math", "expr": "M.Ed:=180 kN*m", "note": "design moment", "at": [0, 694]},
+    {"id": "rcbakm", "kind": "text", "style": {"size": 12}, "text": "# Materials", "at": [0, 741]},
+    {"id": "rcsryu", "kind": "math", "expr": "f.cd:=α.cc*f.ck/γ.C", "show": "value", "note": "3.1.6 (3.15)", "at": [0, 773]},
+    {"id": "rcazbs", "kind": "math", "expr": "f.yd:=f.yk/γ.S", "show": "value", "note": "3.2.7(2)", "at": [330, 773]},
+    {
+      "id": "rcandk",
+      "kind": "math",
+      "expr": "f.ctm:=0.30 MPa*(f.ck/(1 MPa))^(2/3)",
+      "show": "value",
+      "note": "Table 3.1, up to C50/60",
+      "at": [0, 835]
+    },
+    {"id": "rceerb", "kind": "math", "expr": "λ:=0.8", "note": "3.1.7 (3.19)", "at": [0, 904]},
+    {"id": "rcutjy", "kind": "math", "expr": "η:=1.0", "note": "(3.21)", "at": [220, 904]},
+    {"id": "rcmcud", "kind": "math", "expr": "ε.cu3:=0.0035", "note": "Table 3.1", "at": [440, 904]},
+    {"id": "rcpzvi", "kind": "math", "expr": "ε.cu2:=0.0035", "note": "Table 3.1", "at": [0, 939]},
+    {"id": "rcphzx", "kind": "math", "expr": "E.s:=200 GPa", "note": "3.2.7(4)", "at": [220, 939]},
+    {"id": "rcanua", "kind": "math", "expr": "ε.yd:=f.yd/E.s", "show": "value", "display": {"decimals": 5}, "at": [440, 939]},
+    {"id": "rcfrtt", "kind": "text", "style": {"size": 12}, "text": "# Required reinforcement", "at": [0, 1010]},
+    {"id": "rcvmmh", "kind": "math", "expr": "d:=h-c.nom-ϕ.l-ϕ/2", "show": "value", "note": "effective depth", "at": [0, 1042]},
+    {
+      "id": "rcaywu",
+      "kind": "math",
+      "expr": "μ:=M.Ed/(b*d^2*η*f.cd)",
+      "show": "value",
+      "display": {"decimals": 4},
+      "note": "relative moment",
+      "at": [0, 1092]
+    },
+    {
+      "id": "rcmxgr",
+      "kind": "math",
+      "expr": "x:=d*(1-sqrt(1-2*μ))/λ",
+      "show": "value",
+      "display": {"unit": "mm", "decimals": 1},
+      "note": "neutral axis, from equilibrium of the block",
+      "at": [0, 1151]
+    },
+    {
+      "id": "rcpisn",
+      "kind": "math",
+      "expr": "z:=d-λ*x/2",
+      "show": "value",
+      "display": {"unit": "mm", "decimals": 1},
+      "note": "lever arm",
+      "at": [0, 1210]
+    },
+    {
+      "id": "rcsdxn",
+      "kind": "math",
+      "expr": "A.s.req:=M.Ed/(f.yd*z)",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "at": [0, 1260]
+    },
+    {
+      "id": "rcxtph",
+      "kind": "math",
+      "expr": "A.s.prov:=n.b*π*ϕ^2/4",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "provided",
+      "at": [0, 1318]
+    },
+    {"id": "rcvqaq", "kind": "math", "expr": "A.s.req<=A.s.prov", "note": "reinforcement provided", "at": [0, 1372]},
+    {"id": "rcpdnz", "kind": "text", "style": {"size": 12}, "text": "# Reinforcement limits", "at": [0, 1421]},
+    {
+      "id": "rckxfs",
+      "kind": "math",
+      "expr": "A.s.min:=max(0.26*f.ctm/f.yk, 0.0013)*b*d",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "9.2.1.1 (9.1N)",
+      "at": [0, 1453]
+    },
+    {
+      "id": "rcrbze",
+      "kind": "math",
+      "expr": "A.s.max:=0.04*b*h",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "9.2.1.1(3)",
+      "at": [0, 1521]
+    },
+    {"id": "rcbxpb", "kind": "math", "expr": "A.s.min<=A.s.prov<=A.s.max", "note": "minimum and maximum reinforcement", "at": [0, 1556]},
+    {
+      "id": "rcarnv",
+      "kind": "math",
+      "expr": "s.b:=(b-2*(c.nom+ϕ.l)-n.b*ϕ)/(n.b-1)",
+      "show": "value",
+      "display": {"unit": "mm", "decimals": 0},
+      "note": "clear spacing",
+      "at": [0, 1593]
+    },
+    {"id": "rcqxpy", "kind": "math", "expr": "s.b>=max(ϕ, d.g+5 mm, 20 mm)", "note": "bar spacing, 8.2(2)", "at": [0, 1655]},
+    {"id": "rchppy", "kind": "text", "style": {"size": 12}, "text": "# Resistance and ductility", "at": [0, 1708]},
+    {"id": "rcqfpw", "kind": "text", "text": "With the reinforcement provided, assuming that it yields:", "at": [0, 1740]},
+    {
+      "id": "rcyxch",
+      "kind": "math",
+      "expr": "x.p:=A.s.prov*f.yd/(η*f.cd*b*λ)",
+      "show": "value",
+      "display": {"unit": "mm", "decimals": 1},
+      "note": "neutral axis",
+      "at": [0, 1773]
+    },
+    {
+      "id": "rcawiy",
+      "kind": "math",
+      "expr": "M.Rd:=A.s.prov*f.yd*(d-λ*x.p/2)",
+      "show": "value",
+      "display": {"unit": "kN*m", "decimals": 1},
+      "at": [0, 1835]
+    },
+    {"id": "rcdrcx", "kind": "math", "expr": "M.Ed<=M.Rd", "note": "bending resistance", "at": [0, 1895]},
+    {
+      "id": "rcpgum",
+      "kind": "math",
+      "expr": "ε.s:=ε.cu3*(d-x.p)/x.p",
+      "show": "value",
+      "display": {"decimals": 5},
+      "note": "steel strain at failure",
+      "at": [0, 1930]
+    },
+    {"id": "rcyipy", "kind": "math", "expr": "ε.s>=ε.yd", "note": "the reinforcement yields", "at": [0, 1994]},
+    {
+      "id": "rczzub",
+      "kind": "math",
+      "expr": "ξ.lim:=(1-0.44)/(1.25*(0.6+0.0014/ε.cu2))",
+      "show": "value",
+      "display": {"decimals": 3},
+      "note": "5.5(4) with δ = 1, k1 = 0.44, k2 = 1.25(0.6 + 0.0014/ε~cu2~)",
+      "at": [0, 2032]
+    },
+    {"id": "rcsfce", "kind": "math", "expr": "x.p/d<=ξ.lim", "note": "5.5(4) limit with δ = 1, as a ductility criterion", "at": [0, 2104]}
+  ]
+}

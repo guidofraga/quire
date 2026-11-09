@@ -42,7 +42,7 @@ for (const scheme of ["light", "dark"] as const) {
       // the rest of the window is inert until the welcome screen has gone
       await expect(page.getByRole("dialog", { name: "Welcome to Quire" })).toBeHidden();
       await expect(page.locator("[inert]")).toHaveCount(0);
-      await expect(page.locator(".region.plot2d")).toBeVisible();
+      await expect(page.locator(".region.plot2d").first()).toBeVisible();
       await expect(page.locator(".region.math .res").first()).toBeVisible();
       await audit(page, "beam, pages");
       await page.getByRole("button", { name: "Canvas" }).click();
@@ -51,7 +51,7 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(page.getByRole("menu")).toBeVisible();
       await audit(page, "region menu");
       await page.keyboard.press("Escape");
-      await page.locator(".region.table").first().dblclick();
+      await page.locator(".region.table", { hasText: "Permanent" }).dblclick();
       await expect(page.getByRole("grid")).toBeVisible();
       await audit(page, "table being edited");
     });

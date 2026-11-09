@@ -1,28 +1,166 @@
 {
   "format": "quire/1",
-  "meta": { "title": "Calculation Report", "authors": ["Your Name"], "company": "Your Company" },
-  "settings": { "display": { "decimals": 3, "resultUnits": "working" } },
-  "styles": { "numbering": { "headings": "1.1" } },
+  "meta": {"title": "Calculation report", "authors": ["A. Engineer"], "company": "Your Company", "lang": "en"},
+  "settings": {"display": {"decimals": 2, "resultUnits": "working"}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
   "page": {
     "view": "pages",
     "paper": "A4",
-    "margins": { "top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm" },
-    "header": { "left": "{title}", "right": "{company}", "color": "#8a8f98" },
-    "footer": { "left": "{author}", "center": "{date}", "right": "{page} / {pages}", "color": "#8a8f98" },
-    "firstPage": { "header": false }
+    "margins": {"top": "24mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {"left": "{company}", "right": "{title}", "color": "#5f6670", "rule": {}},
+    "footer": {"left": "{date}", "right": "Page {page} of {pages}", "color": "#5f6670", "rule": {}}
   },
   "regions": [
-    { "id": "t0", "kind": "text", "at": [0, 0], "text": "{.title}\n# Calculation Report" },
-    { "id": "t1", "kind": "table", "at": [0, 54], "header": { "column": true }, "columns": [{ "width": 150 }, { "width": 300 }],
-      "rows": [["Project", "Project name"], ["Client", "Client name"], ["Document", "CR-001"], ["Revision", "A"], ["Prepared by", "Your Name"], ["Checked by", ""]] },
-    { "id": "t2", "kind": "text", "at": [0, 234], "text": "# Scope" },
-    { "id": "t3", "kind": "text", "at": [0, 270], "width": 640, "text": "What is designed or checked, the codes used and the main assumptions." },
-    { "id": "t4", "kind": "text", "at": [0, 324], "text": "# Design data" },
-    { "id": "t5", "kind": "text", "at": [0, 360], "width": 640, "text": "Materials, geometry and loads. Type definitions such as `L := 6 m` anywhere on the page." },
-    { "id": "t6", "kind": "text", "at": [0, 414], "text": "# Calculations" },
-    { "id": "t7", "kind": "text", "at": [0, 450], "width": 640, "text": "End a line with `=` to show its result; type a unit after it (`M = kN*m`) to choose how it is shown." },
-    { "id": "t8", "kind": "text", "at": [0, 504], "text": "# Checks" },
-    { "id": "t9", "kind": "text", "at": [0, 540], "width": 640, "text": "Compare results with their limits; a table with `=IF(…)` makes a summary that never goes stale." },
-    { "id": "ta", "kind": "text", "at": [0, 594], "text": "# Conclusion" }
+    {"id": "crmnxn", "kind": "text", "text": "{.title}\n# Steel hanger in tension", "at": [0, 0]},
+    {"id": "crbpwv", "kind": "text", "text": "Worked example in the report format · EN 1993-1-1", "at": [0, 34]},
+    {
+      "id": "crnzkk",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Project", "Project name"],
+        ["Client", "Client name"],
+        ["Element", "Hanger H1"],
+        ["Prepared by", "A. Engineer"]
+      ],
+      "at": [0, 69]
+    },
+    {
+      "id": "crjadm",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Document no.", "CALC-STR-001"],
+        ["Revision", "A"],
+        ["Date", "YYYY-MM-DD"],
+        ["Checked by", "—"]
+      ],
+      "at": [328, 69]
+    },
+    {"id": "crumhg", "kind": "toc", "of": "checks", "title": "Summary of checks", "at": [0, 186]},
+    {
+      "id": "crkthf",
+      "kind": "text",
+      "text": "Make this report your own: replace the data and the text. Headings, captions, cross-references and the summary above number and update themselves.",
+      "at": [0, 266]
+    },
+    {
+      "id": "crpvwv",
+      "kind": "table",
+      "header": {"row": true},
+      "caption": {"text": "Revisions", "position": "above"},
+      "columns": [{"width": 50}, {"width": 110}, {"width": 300}, {"width": 80}, {"width": 80}],
+      "rows": [
+        ["Rev.", "Date", "Description", "By", "Checked"],
+        ["A", "YYYY-MM-DD", "First issue", "AE", "—"]
+      ],
+      "at": [0, 314]
+    },
+    {"id": "crneyh", "kind": "text", "style": {"size": 12}, "text": "# Scope", "at": [0, 409]},
+    {
+      "id": "crbnay",
+      "kind": "text",
+      "text": "Check of a flat steel hanger that carries a suspended platform, in tension, at the ultimate limit state. Its end connections are checked separately.",
+      "at": [0, 441]
+    },
+    {"id": "cryyfy", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 501]},
+    {
+      "id": "crbjti",
+      "kind": "text",
+      "text": "- EN 1990:2002+A1:2005, Basis of structural design: combination (6.10).\n- EN 1993-1-1:2005, Design of steel structures, general rules: tension, 6.2.3.\n- National annex values are taken as the recommended values.\n- The hanger has one 22 mm bolt hole at each end and carries axial tension only.",
+      "at": [0, 533]
+    },
+    {"id": "crawxk", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 627]},
+    {"id": "crbvfq", "kind": "text", "text": "## Material and section", "at": [0, 663]},
+    {"id": "crqduw", "kind": "math", "expr": "f.y:=355 MPa", "note": "S355, t ≤ 40 mm", "at": [0, 691]},
+    {"id": "crztkb", "kind": "math", "expr": "f.u:=510 MPa", "note": "EN 1993-1-1, Table 3.1", "at": [330, 691]},
+    {"id": "crvuhg", "kind": "math", "expr": "γ.M0:=1.0", "note": "6.1(1)", "at": [0, 731]},
+    {"id": "crxzac", "kind": "math", "expr": "γ.M2:=1.25", "note": "6.1(1)", "at": [330, 731]},
+    {"id": "criuqq", "kind": "math", "expr": "b:=100 mm", "note": "flat 100 × 10", "at": [0, 769]},
+    {"id": "crwvks", "kind": "math", "expr": "t.p:=10 mm", "at": [220, 769]},
+    {"id": "crmmce", "kind": "math", "expr": "d.0:=22 mm", "note": "bolt hole", "at": [440, 769]},
+    {"id": "crsmac", "kind": "text", "text": "## Loads", "at": [0, 810]},
+    {
+      "id": "crhent",
+      "kind": "table",
+      "name": "loads",
+      "header": {"row": true},
+      "caption": {"text": "Hanger force", "position": "above"},
+      "columns": [{"width": 230}, {"width": 120, "align": "right"}, {"width": 70, "align": "right"}, {"width": 120, "align": "right"}],
+      "rows": [
+        ["Action", "Characteristic", "γ", "Design"],
+        ["Permanent: platform and plant", "80 kN", "1.35", "=B2*C2"],
+        ["Variable: imposed", "60 kN", "1.5", "=B3*C3"],
+        ["Total", "=SUM(B2:B3)", "", "=SUM(D2:D3)"]
+      ],
+      "at": [0, 838]
+    },
+    {"id": "crupkc", "kind": "math", "expr": "N.Ed:=loads[4, 4]", "show": "value", "note": "design tension, EN 1990 (6.10)", "at": [0, 965]},
+    {"id": "crfcup", "kind": "text", "style": {"size": 12}, "text": "# Calculations", "at": [0, 1013]},
+    {
+      "id": "crijpd",
+      "kind": "math",
+      "expr": "A:=b*t.p",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "gross area",
+      "at": [0, 1045]
+    },
+    {
+      "id": "crbzkm",
+      "kind": "math",
+      "expr": "A.net:=(b-d.0)*t.p",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "net area",
+      "at": [330, 1045]
+    },
+    {
+      "id": "crketf",
+      "kind": "math",
+      "expr": "N.pl.Rd:=A*f.y/γ.M0",
+      "show": "value",
+      "display": {"unit": "kN", "decimals": 1},
+      "note": "gross section yielding, (6.6)",
+      "at": [0, 1083]
+    },
+    {
+      "id": "crkhic",
+      "kind": "math",
+      "expr": "N.u.Rd:=0.9*A.net*f.u/γ.M2",
+      "show": "value",
+      "display": {"unit": "kN", "decimals": 1},
+      "note": "net section fracture, (6.7)",
+      "at": [0, 1145]
+    },
+    {
+      "id": "crwmya",
+      "kind": "math",
+      "expr": "N.t.Rd:=min(N.pl.Rd, N.u.Rd)",
+      "show": "value",
+      "display": {"unit": "kN", "decimals": 1},
+      "note": "6.2.3(2)",
+      "at": [0, 1204]
+    },
+    {"id": "crhhjf", "kind": "text", "style": {"size": 12}, "text": "# Checks", "at": [0, 1257]},
+    {"id": "crcznv", "kind": "math", "expr": "N.Ed<=N.t.Rd", "note": "tension, 6.2.3 (6.5)", "at": [0, 1289]},
+    {
+      "id": "crbjmq",
+      "kind": "math",
+      "expr": "η:=N.Ed/N.t.Rd",
+      "show": "value",
+      "display": {"decimals": 2},
+      "note": "utilisation",
+      "at": [0, 1324]
+    },
+    {"id": "crumyz", "kind": "text", "style": {"size": 12}, "text": "# Conclusion", "at": [0, 1389]},
+    {
+      "id": "craxzu",
+      "kind": "text",
+      "text": "The 100 × 10 flat in S355 is adequate in tension, with a utilisation of $`η =`; net section fracture governs.",
+      "at": [0, 1421]
+    }
   ]
 }

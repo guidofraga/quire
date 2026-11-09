@@ -44,8 +44,8 @@ test("a shared link opens the document, as it was, in another browser", async ({
 
   const other = await browser.newPage();
   await other.goto(link);
-  await expect(other.locator(".toolbar .title")).toHaveText("Simply Supported Beam");
-  await expect(other.locator(".region.math").filter({ hasText: /M\s*d/ }).first()).toContainText(/47\.587\s*kN/);
+  await expect(other.locator(".toolbar .title")).toHaveText("Simply supported beam");
+  await expect(other.locator('[data-region="bmdnwh"]')).toContainText(/123\.11\s*kN/);
   await other.close();
 });
 

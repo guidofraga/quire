@@ -1,0 +1,235 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Bolted connection in shear",
+    "authors": ["A. Engineer"],
+    "company": "Your Company",
+    "lang": "en"
+  },
+  "settings": {"display": {"decimals": 2, "resultUnits": "working"}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": {"top": "24mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {"left": "{company}", "right": "{title}", "color": "#5f6670", "rule": {}},
+    "footer": {"left": "{date}", "right": "Page {page} of {pages}", "color": "#5f6670", "rule": {}}
+  },
+  "regions": [
+    {"id": "bcdgei", "kind": "text", "text": "{.title}\n# Bolted connection in shear", "at": [0, 0]},
+    {"id": "bcqvez", "kind": "text", "text": "Lap joint, non-preloaded bolts, category A · EN 1993-1-8", "at": [0, 34]},
+    {
+      "id": "bcdhcs",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Project", "Project name"],
+        ["Client", "Client name"],
+        ["Element", "Tie splice S1"],
+        ["Prepared by", "A. Engineer"]
+      ],
+      "at": [0, 69]
+    },
+    {
+      "id": "bcuqut",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 206}],
+      "rows": [
+        ["Document no.", "CALC-STR-005"],
+        ["Revision", "A"],
+        ["Date", "YYYY-MM-DD"],
+        ["Checked by", "—"]
+      ],
+      "at": [328, 69]
+    },
+    {"id": "bchshc", "kind": "toc", "of": "checks", "title": "Summary of checks", "at": [0, 186]},
+    {
+      "id": "bcqinf",
+      "kind": "text",
+      "text": "The bolt shear check fails on purpose, to show a failing check. With the shear plane through the unthreaded shank (A = π d²/4 = 314 mm² in place of A~s~) it passes.",
+      "at": [0, 417]
+    },
+    {"id": "bccmvw", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 481]},
+    {
+      "id": "bcwyxs",
+      "kind": "text",
+      "text": "Two plates lapped and joined by 2 × 2 bolts in one shear plane, carrying a design tension F~Ed~ in line with the bolt group. Each bolt carries an equal share; checking each bolt against its own resistances is never less safe than the group rule of 3.7(1). Bearing and spacing to Tables 3.3 and 3.4, block tearing to 3.10.2 of EN 1993-1-8; net section to 6.2.3 of EN 1993-1-1. National annex values are taken as the recommended values.",
+      "at": [0, 513]
+    },
+    {"id": "bctuzp", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 621]},
+    {"id": "bcgyfh", "kind": "math", "expr": "F.Ed:=400 kN", "note": "design tension", "at": [0, 653]},
+    {"id": "bcfese", "kind": "math", "expr": "d:=20 mm", "note": "M20, class 8.8", "at": [0, 688]},
+    {"id": "bcgbsg", "kind": "math", "expr": "d.0:=22 mm", "note": "hole", "at": [220, 688]},
+    {"id": "bciebv", "kind": "math", "expr": "A.s:=245 mm^2", "note": "stress area", "at": [440, 688]},
+    {"id": "bchzqb", "kind": "math", "expr": "f.ub:=800 MPa", "at": [0, 723]},
+    {"id": "bcdiav", "kind": "math", "expr": "α.v:=0.6", "note": "Table 3.4", "at": [220, 723]},
+    {"id": "bcvdva", "kind": "math", "expr": "γ.M2:=1.25", "at": [440, 723]},
+    {"id": "bcwise", "kind": "math", "expr": "t.p:=12 mm", "note": "thinner plate", "at": [0, 761]},
+    {"id": "bcinxs", "kind": "math", "expr": "f.y:=355 MPa", "note": "S355", "at": [220, 761]},
+    {"id": "bcqubk", "kind": "math", "expr": "f.u:=510 MPa", "note": "Table 3.1", "at": [440, 761]},
+    {"id": "bcdszm", "kind": "math", "expr": "n.1:=2", "note": "bolts along the force", "at": [0, 801]},
+    {"id": "bckhzx", "kind": "math", "expr": "n.2:=2", "note": "across it", "at": [220, 801]},
+    {"id": "bcwwpw", "kind": "math", "expr": "n:=n.1*n.2", "show": "value", "at": [440, 801]},
+    {"id": "bcxrqk", "kind": "math", "expr": "e.1:=45 mm", "at": [0, 836]},
+    {"id": "bcqvzp", "kind": "math", "expr": "p.1:=70 mm", "at": [160, 836]},
+    {"id": "bcgtyu", "kind": "math", "expr": "e.2:=45 mm", "at": [320, 836]},
+    {"id": "bcqttu", "kind": "math", "expr": "p.2:=70 mm", "at": [480, 836]},
+    {"id": "bcrnyz", "kind": "math", "expr": "γ.M0:=1.0", "at": [0, 874]},
+    {"id": "bcbxxc", "kind": "math", "expr": "b.p:=2*e.2+(n.2-1)*p.2", "show": "value", "note": "plate width", "at": [220, 874]},
+    {"id": "bcqtpn", "kind": "text", "style": {"size": 12}, "text": "# Edge distances and spacing", "at": [0, 924]},
+    {"id": "bcghwd", "kind": "math", "expr": "e.1>=1.2*d.0", "note": "end distance", "at": [0, 956]},
+    {"id": "bckkqj", "kind": "math", "expr": "e.2>=1.2*d.0", "note": "edge distance", "at": [330, 956]},
+    {"id": "bctqjj", "kind": "math", "expr": "p.1>=2.2*d.0", "note": "spacing, in line", "at": [0, 991]},
+    {"id": "bcyswp", "kind": "math", "expr": "p.2>=2.4*d.0", "note": "spacing, across", "at": [330, 991]},
+    {"id": "bcvkeh", "kind": "text", "text": "Minimum values of Table 3.3.", "at": [0, 1029]},
+    {"id": "bcuktp", "kind": "text", "style": {"size": 12}, "text": "# Resistance of one bolt", "at": [0, 1074]},
+    {
+      "id": "bcrvfw",
+      "kind": "math",
+      "expr": "F.v.Ed:=F.Ed/n",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "force on each bolt",
+      "at": [0, 1106]
+    },
+    {"id": "bcecsr", "kind": "text", "text": "## Shear", "at": [0, 1160]},
+    {
+      "id": "bccggn",
+      "kind": "math",
+      "expr": "F.v.Rd:=α.v*f.ub*A.s/γ.M2",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "Table 3.4, shear plane through the thread",
+      "at": [0, 1188]
+    },
+    {"id": "bcmqgz", "kind": "math", "expr": "F.v.Ed<=F.v.Rd", "note": "bolt shear", "at": [0, 1247]},
+    {"id": "bcjzsu", "kind": "text", "text": "## Bearing", "at": [0, 1286]},
+    {
+      "id": "bctqtp",
+      "kind": "math",
+      "expr": "k.1:=min(2.8*e.2/d.0-1.7, 1.4*p.2/d.0-1.7, 2.5)",
+      "show": "value",
+      "display": {"decimals": 2},
+      "note": "edge bolts, Table 3.4",
+      "at": [0, 1314]
+    },
+    {
+      "id": "bczpcs",
+      "kind": "math",
+      "expr": "α.d.end:=e.1/(3*d.0)",
+      "show": "value",
+      "display": {"decimals": 3},
+      "note": "end bolts",
+      "at": [0, 1374]
+    },
+    {
+      "id": "bckmwa",
+      "kind": "math",
+      "expr": "α.d.in:=p.1/(3*d.0)-1/4",
+      "show": "value",
+      "display": {"decimals": 3},
+      "note": "inner bolts",
+      "at": [330, 1374]
+    },
+    {
+      "id": "bcdrwc",
+      "kind": "math",
+      "expr": "α.b.end:=min(α.d.end, f.ub/f.u, 1.0)",
+      "show": "value",
+      "display": {"decimals": 3},
+      "at": [0, 1427]
+    },
+    {
+      "id": "bctvrq",
+      "kind": "math",
+      "expr": "α.b.in:=min(α.d.in, f.ub/f.u, 1.0)",
+      "show": "value",
+      "display": {"decimals": 3},
+      "at": [330, 1427]
+    },
+    {
+      "id": "bcyaak",
+      "kind": "math",
+      "expr": "F.b.Rd.end:=k.1*α.b.end*f.u*d*t.p/γ.M2",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "at": [0, 1487]
+    },
+    {
+      "id": "bctqbe",
+      "kind": "math",
+      "expr": "F.b.Rd.in:=k.1*α.b.in*f.u*d*t.p/γ.M2",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "edge-line k1: exact for 2 bolt lines, conservative for more",
+      "at": [0, 1546]
+    },
+    {"id": "bcmtaz", "kind": "math", "expr": "F.v.Ed<=F.b.Rd.end", "note": "bearing, end bolts", "at": [0, 1605]},
+    {"id": "bcecxv", "kind": "math", "expr": "F.v.Ed<=F.b.Rd.in", "note": "bearing, inner bolts", "at": [330, 1605]},
+    {"id": "bcrdsw", "kind": "text", "style": {"size": 12}, "text": "# Plate", "at": [0, 1652]},
+    {
+      "id": "bcmuwn",
+      "kind": "math",
+      "expr": "A.net:=(b.p-n.2*d.0)*t.p",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "net section",
+      "at": [0, 1684]
+    },
+    {
+      "id": "bcasvs",
+      "kind": "math",
+      "expr": "N.pl.Rd:=b.p*t.p*f.y/γ.M0",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "EN 1993-1-1 (6.6)",
+      "at": [0, 1725]
+    },
+    {
+      "id": "bccgnx",
+      "kind": "math",
+      "expr": "N.u.Rd:=0.9*A.net*f.u/γ.M2",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "EN 1993-1-1 (6.7)",
+      "at": [0, 1787]
+    },
+    {"id": "bcrmkt", "kind": "math", "expr": "F.Ed<=min(N.pl.Rd, N.u.Rd)", "note": "plate in tension, EN 1993-1-1 6.2.3", "at": [0, 1846]},
+    {
+      "id": "bcfrqk",
+      "kind": "text",
+      "text": "Block tearing: the block between the bolt lines tears out in tension across them and in shear along them, from the end of the plate to the last bolt.",
+      "at": [0, 1887]
+    },
+    {
+      "id": "bcedvb",
+      "kind": "math",
+      "expr": "A.nt:=(n.2-1)*(p.2-d.0)*t.p",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "net area in tension",
+      "at": [0, 1935]
+    },
+    {
+      "id": "bcyanx",
+      "kind": "math",
+      "expr": "A.nv:=2*(e.1+(n.1-1)*p.1-(n.1-0.5)*d.0)*t.p",
+      "show": "value",
+      "display": {"unit": "mm^2", "decimals": 0},
+      "note": "net area in shear, two faces",
+      "at": [0, 1976]
+    },
+    {
+      "id": "bcejsu",
+      "kind": "math",
+      "expr": "V.eff.1.Rd:=f.u*A.nt/γ.M2+f.y*A.nv/(sqrt(3)*γ.M0)",
+      "show": "value",
+      "display": {"unit": "kN"},
+      "note": "3.10.2 (3.9)",
+      "at": [0, 2017]
+    },
+    {"id": "bcuazd", "kind": "math", "expr": "F.Ed<=V.eff.1.Rd", "note": "block tearing", "at": [0, 2082]}
+  ]
+}
