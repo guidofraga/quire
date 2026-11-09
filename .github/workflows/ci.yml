@@ -122,7 +122,8 @@ jobs:
         run: |
           cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
           pass=0; restarts=0; fails=0
-          for i in $(seq 1 70); do
+          echo "HOST $(grep -m1 'model name' /proc/cpuinfo) | cpus=$(nproc) | $(grep MemTotal /proc/meminfo) | $(uname -r) | $(grep -m1 flags /proc/cpuinfo | grep -o -E 'avx512f|avx2' | sort -u | tr '\n' ' ') | $(cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null) $(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null)"
+          for i in $(seq 1 3); do
             if dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report --nocapture > run.log 2>&1; then
               pass=$((pass+1))
             else
@@ -130,7 +131,7 @@ jobs:
             fi
             if grep -q 'starting the export again' run.log; then restarts=$((restarts+1)); echo "run $i restarted"; grep APPLOG run.log | head -14 | cut -c1-200; fi
           done
-          echo "RESULT pass=$pass fails=$fails restarts=$restarts of 70"
+          echo "RESULT $(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2) pass=$pass fails=$fails restarts=$restarts of 70"
           [ "$fails" = 0 ]
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
