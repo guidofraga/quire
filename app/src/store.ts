@@ -8,7 +8,6 @@ import type { Doc, Localized, Region, Report, RegionView } from "./types";
 /** SMath's grid: imported coordinates are multiples of 9 px. */
 export const GRID = 9;
 export const AREA_COLLAPSED_HEIGHT = 18;
-export const PAGE_WIDTH = 700;
 
 export interface Viewport {
   x: number;
@@ -106,14 +105,40 @@ export function markSaved(rev: number) {
   if (state.rev === rev) setState({ dirty: false });
 }
 
+/**
+ * Steps that shifted the whole document back to the origin (`normalizeOrigin`), by the
+ * snapshot before the step (`undone`: after it, for redo), with the shift. Undo and redo pan
+ * the canvas by the same amount, so what the step didn't move stays put on screen.
+ */
+const shifted = new Map<string, [number, number]>();
+const undone = new Map<string, [number, number]>();
+/** The shift made while a region is being typed; it joins the edit's step when that is recorded. */
+let editShift: [number, number] | null = null;
+
+const addShift = (map: Map<string, [number, number]>, key: string, [dx, dy]: [number, number]) => {
+  const [x, y] = map.get(key) ?? [0, 0];
+  map.set(key, [x + dx, y + dy]);
+};
+
+/** Pan the canvas so a document shifted by (dx, dy) shows where it was. */
+function panBy(dx: number, dy: number) {
+  if (isPageView()) return;
+  const z = state.view.zoom;
+  setState("view", { x: state.view.x - dx * z, y: state.view.y - dy * z });
+}
+
 /** Record the document as it was before a change. */
 function record(before: string) {
   if (undoStack[undoStack.length - 1] === before) return; // an earlier step that changed nothing
   undoStack.push(before);
   undoChars += before.length;
-  while (undoStack.length > MAX_STEPS || (undoChars > MAX_CHARS && undoStack.length > MIN_STEPS))
-    undoChars -= undoStack.shift()!.length;
+  while (undoStack.length > MAX_STEPS || (undoChars > MAX_CHARS && undoStack.length > MIN_STEPS)) {
+    const gone = undoStack.shift()!;
+    undoChars -= gone.length;
+    shifted.delete(gone);
+  }
   redoStack.length = 0;
+  undone.clear();
 }
 
 export function checkpoint() {
@@ -163,6 +188,12 @@ export function undo() {
   undoChars = undoStack.reduce((n, s) => n + s.length, 0);
   redoStack.push(now);
   restore(prev);
+  const shift = shifted.get(prev);
+  if (shift) {
+    shifted.delete(prev);
+    undone.set(now, shift);
+    panBy(-shift[0], -shift[1]);
+  }
 }
 
 export function redo() {
@@ -172,6 +203,12 @@ export function redo() {
   undoStack.push(now);
   undoChars += now.length;
   restore(next);
+  const shift = undone.get(next);
+  if (shift) {
+    undone.delete(next);
+    shifted.set(now, shift);
+    panBy(shift[0], shift[1]);
+  }
 }
 
 /** `origin`: where images come from until the first save (a template's file). */
@@ -188,6 +225,9 @@ export function loadDoc(doc: Doc, path: string | null, origin: string | null = n
   undoStack.length = 0;
   redoStack.length = 0;
   undoChars = 0;
+  shifted.clear();
+  undone.clear();
+  editShift = null;
   setState({
     doc,
     path,
@@ -226,6 +266,12 @@ export interface Placed {
   /** Where to draw it: scene coordinates in canvas view, sheet-local in page view. */
   left: number;
   top: number;
+  /**
+   * Page view: how far left of its document position it is drawn, so that something placed
+   * past the printable column on the canvas still sits on the paper (`pullOnPaper`). The
+   * document keeps its position; 0 when it is drawn where it is.
+   */
+  pulled: number;
 }
 
 /**
@@ -303,9 +349,17 @@ export interface Layout {
   toScene(x: number, y: number): [number, number];
   /** Scene point → document point. */
   fromScene(x: number, y: number): [number, number];
+  /**
+   * Page view: where each page's content area starts, as a visible ("effective") y of the
+   * document, the canvas's own vertical coordinate: page k shows what is at or below
+   * `pageStarts[k]` (and above `pageStarts[k + 1]`). Empty in canvas view.
+   */
+  pageStarts: number[];
 }
 
 const DEFAULT_HEIGHT = 22;
+/** The narrowest a region may be left with at the right edge of the content area (as `availableWidth`). */
+const MIN_ROOM = 120;
 /** A page break's marker: one line, the same in every view so pagination doesn't depend on it. */
 export const PAGE_BREAK_HEIGHT = 2 * GRID;
 
@@ -321,19 +375,32 @@ function isHeading(r: Region, lang?: string): boolean {
   return r.kind === "text" && /^#{1,6}\s/.test(localized(r.text, lang).replace(/^\{[^}\n]*\}\n/, ""));
 }
 
+/**
+ * Page view: where to draw a region `w` px wide that starts `x` px into a column `contentW`
+ * wide, with `margin` px of paper to its right. What would run off the paper, or starts where
+ * page view itself would not place anything (`maxContentX`), is drawn with its right edge on
+ * the column's (its left edge at the latest), as a drag in page view stops it. Everything else
+ * stays where it is, margin overhang included, so documents that fit on paper print as before.
+ */
+export function pullOnPaper(x: number, w: number, contentW: number, margin: number): number {
+  if (x + w <= contentW + margin && x <= contentW - MIN_ROOM) return x;
+  return Math.max(0, Math.min(x, contentW - w));
+}
+
 export function computeLayout(
   doc: Doc,
   measured: Record<string, number>,
   pageView: boolean,
   printing: boolean,
   wanted = 0,
+  measuredWidths: Record<string, number> = {},
 ): Layout {
   const list: Placed[] = [];
   const walk = (regions: Region[], ox: number, oy: number, parent: Region | null, hidden: boolean) => {
     for (const r of regions) {
       const x = ox + r.at[0];
       const y = oy + r.at[1];
-      list.push({ region: r, x, y, shift: 0, hidden, parent, page: 0, left: x, top: y });
+      list.push({ region: r, x, y, shift: 0, hidden, parent, page: 0, left: x, top: y, pulled: 0 });
       if (r.regions) walk(r.regions, x, y, r, hidden || !!r.collapsed);
     }
   };
@@ -413,7 +480,11 @@ export function computeLayout(
         }
       }
       p.page = k;
-      p.left = geom.margins.left + p.x;
+      // an area spans the column
+      const w = p.region.kind === "area" ? geom.contentW : (measuredWidths[p.region.id] ?? 0);
+      const drawn = pullOnPaper(p.x, w, geom.contentW, geom.margins.right);
+      p.pulled = p.x - drawn;
+      p.left = geom.margins.left + drawn;
       p.top = geom.margins.top + y - k * H;
       lastPage = Math.max(lastPage, k);
       prev = { p, y };
@@ -433,6 +504,7 @@ export function computeLayout(
   const needed = pageView && !printing ? Math.max(contentPages, breakTo + 1) : contentPages;
   const pages = Math.max(needed, pageView && !printing ? wanted : 0);
   while (pushAt.length < pages) pushAt.push(push);
+  const pageStarts = pageView ? pushAt.slice(0, pages).map((pk, k) => k * H - pk) : [];
 
   const pageOfEff = (eff: number) => {
     let k = 0;
@@ -479,16 +551,17 @@ export function computeLayout(
     needed,
     toScene,
     fromScene,
+    pageStarts,
   };
 }
 
 export const layout = createRoot(() =>
-  createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing, state.pagesWanted)),
+  createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing, state.pagesWanted, widths)),
 );
 
 /** How the document falls into pages, also while it is shown as a free canvas. */
 export const pagedLayout = createRoot(() =>
-  createMemo(() => (isPageView() ? layout() : computeLayout(state.doc, heights, true, false))),
+  createMemo(() => (isPageView() ? layout() : computeLayout(state.doc, heights, true, false, 0, widths))),
 );
 
 export function contentBottom(): number {
@@ -497,9 +570,6 @@ export function contentBottom(): number {
     if (!p.hidden) bottom = Math.max(bottom, p.y - p.shift + (heights[p.region.id] ?? DEFAULT_HEIGHT));
   return bottom;
 }
-
-/** The narrowest a region may be left with at the right edge of the content area (as `availableWidth`). */
-const MIN_ROOM = 120;
 
 /** In page view, the furthest right a region can start and still sit on the paper; canvas view is free. */
 export function maxContentX(): number {
@@ -527,13 +597,22 @@ export function placeAt(sx: number, sy: number): [number, number] {
     sx = Math.min(margins.left + Math.max(0, contentW - MIN_ROOM), Math.max(margins.left, sx));
   }
   const [x, y] = l.fromScene(sx, sy);
-  return [Math.max(0, snap(x)), Math.max(0, snap(y))];
+  // the free canvas goes on above and left of the start: the document shifts once something
+  // is put there (`normalizeOrigin`)
+  return l.pageView ? [Math.max(0, snap(x)), Math.max(0, snap(y))] : [snap(x), snap(y)];
 }
 
-/** Width available to a region starting at x (text wraps here). */
+/**
+ * Width available to a region starting at x (text wraps here). In page view, up to the
+ * printable column's right edge; on the free canvas there is no edge, so text wraps at the
+ * column's width measured from wherever the box starts, and a box keeps its shape as it moves.
+ */
 export function availableWidth(x: number): number {
   const l = layout();
-  return Math.max(MIN_ROOM, (l.pageView ? l.geom.contentW : PAGE_WIDTH) - x);
+  if (!l.pageView) return l.geom.contentW;
+  // past where the page view places anything, it is drawn pulled onto the paper (`pullOnPaper`)
+  // at the width it has on the canvas, not squeezed into the little room left
+  return x > l.geom.contentW - MIN_ROOM ? l.geom.contentW : l.geom.contentW - x;
 }
 
 /**
@@ -958,19 +1037,29 @@ export function moveTo(origins: Map<string, [number, number]>, dx: number, dy: n
   setState(
     "doc",
     produce((d) => {
+      // page view keeps everything on the paper. The free canvas goes on above and left of
+      // the start (the document shifts back on drop, `normalizeOrigin`); a region in an area
+      // stays within its left edge, and one moved above its top leaves it (`regroup`)
+      const free = !isPageView();
       for (const [id, [ox, oy]] of origins) {
-        const r = findDraft(d, id);
-        if (r) r.at = [Math.max(0, ox + dx), Math.max(0, oy + dy)];
+        const loc = locate(d.regions, id);
+        if (!loc) continue;
+        const top = loc.list === d.regions;
+        loc.list[loc.index].at = [free && top ? ox + dx : Math.max(0, ox + dx), free ? oy + dy : Math.max(0, oy + dy)];
       }
     }),
   );
 }
 
+/**
+ * Where moving regions starts from. A region drawn pulled onto the paper in page view starts
+ * from where it is seen, so it follows the pointer from there (and only then takes that place).
+ */
 export function originsOf(ids: string[]): Map<string, [number, number]> {
   const out = new Map<string, [number, number]>();
   for (const id of movable(ids)) {
     const p = layout().byId.get(id);
-    if (p) out.set(id, [p.region.at[0], p.region.at[1]]);
+    if (p) out.set(id, [p.region.at[0] - p.pulled, p.region.at[1]]);
   }
   return out;
 }
@@ -991,6 +1080,11 @@ export function nudge(ids: string[], dx: number, dy: number) {
  * it along. Collapsed areas take nothing in: their content is out of sight.
  */
 export function regroup(ids: string[]) {
+  regroupInto(ids);
+  normalizeOrigin();
+}
+
+function regroupInto(ids: string[]) {
   const l = layout();
   const moving = movable(ids);
   const inMoved = (p: Placed): boolean => {
@@ -1027,6 +1121,45 @@ export function regroup(ids: string[]) {
       }
     }),
   );
+}
+
+/**
+ * How far to shift a document so nothing in it is above or left of the origin: how far the
+ * topmost and leftmost regions are past it, rounded up to the grid so what is on the grid
+ * stays on it. [0, 0] when everything is at or after the origin.
+ */
+export function originShift(regions: readonly Region[]): [number, number] {
+  if (!regions.length) return [0, 0];
+  const minX = Math.min(...regions.map((r) => r.at[0]));
+  const minY = Math.min(...regions.map((r) => r.at[1]));
+  const up = (v: number) => (v < 0 ? Math.ceil(-v / GRID - 1e-9) * GRID : 0);
+  return [up(minX), up(minY)];
+}
+
+/**
+ * Something was moved or put above or left of the start of the free canvas: shift the whole
+ * document back so nothing is (coordinates on disk stay >= 0), the insertion point with it,
+ * and pan the view by the same amount so nothing moves on screen. Part of the change that
+ * caused it, so one undo step. True when it shifted.
+ */
+export function normalizeOrigin(): boolean {
+  const [dx, dy] = originShift(state.doc.regions);
+  if (!dx && !dy) return false;
+  setState(
+    "doc",
+    produce((d) => {
+      for (const r of d.regions) r.at = [r.at[0] + dx, r.at[1] + dy];
+    }),
+  );
+  if (state.caret) setState("caret", [state.caret[0] + dx, state.caret[1] + dy]);
+  // canvas scene coordinates are document coordinates (collapsed areas move along)
+  panBy(dx, dy);
+  // the step this belongs to: the region being typed (recorded when the edit ends), else the
+  // move or insertion that has just recorded its checkpoint
+  if (editSnapshot !== null) editShift = [(editShift?.[0] ?? 0) + dx, (editShift?.[1] ?? 0) + dy];
+  else if (undoStack.length) addShift(shifted, undoStack[undoStack.length - 1], [dx, dy]);
+  touch();
+  return true;
 }
 
 /** One blank line, as inserted or removed by Enter / Backspace on empty space. */
@@ -1318,8 +1451,12 @@ export function commitEditing() {
     touch();
     setState({ selection: [] });
   }
-  if (editSnapshot !== null && editSnapshot !== snapshot()) record(editSnapshot);
+  if (editSnapshot !== null && editSnapshot !== snapshot()) {
+    record(editSnapshot);
+    if (editShift) addShift(shifted, editSnapshot, editShift);
+  }
   editSnapshot = null;
+  editShift = null;
   setState({ editing: null });
   // its rendering may now be taller than the editor was
   scheduleGrowth();
@@ -1513,7 +1650,14 @@ function boxes(ids: string[]) {
   return movable(ids)
     .map((id) => layout().byId.get(id))
     .filter((p): p is Placed => !!p)
-    .map((p) => ({ id: p.region.id, x: p.x, y: p.y, w: widths[p.region.id] ?? 40, h: heights[p.region.id] ?? 20 }));
+    .map((p) => ({
+      id: p.region.id,
+      x: p.x - p.pulled,
+      pulled: p.pulled,
+      y: p.y,
+      w: widths[p.region.id] ?? 40,
+      h: heights[p.region.id] ?? 20,
+    }));
 }
 
 export function alignRegions(ids: string[], mode: AlignMode) {
@@ -1533,7 +1677,7 @@ export function alignRegions(ids: string[], mode: AlignMode) {
       const dy =
         { top: top - r.y, bottom: bottom - r.h - r.y, vcenter: (top + bottom) / 2 - r.h / 2 - r.y }[mode as string] ??
         0;
-      reg.at = [Math.max(0, Math.round(reg.at[0] + dx)), Math.max(0, Math.round(reg.at[1] + dy))];
+      reg.at = [Math.max(0, Math.round(reg.at[0] - r.pulled + dx)), Math.max(0, Math.round(reg.at[1] + dy))];
     }
   });
 }
@@ -1551,7 +1695,7 @@ export function distributeRegions(ids: string[], axis: "x" | "y") {
       const reg = findDraft(d, r.id);
       if (reg) {
         const delta = Math.round(pos - r[axis]);
-        reg.at = axis === "x" ? [reg.at[0] + delta, reg.at[1]] : [reg.at[0], reg.at[1] + delta];
+        reg.at = axis === "x" ? [reg.at[0] - r.pulled + delta, reg.at[1]] : [reg.at[0], reg.at[1] + delta];
       }
       pos += size(r) + gap;
     }
@@ -1665,6 +1809,7 @@ export function insertPageBreak() {
     d.regions.push({ id, kind: "pagebreak", at: [0, y] });
   });
   setState({ selection: [], caret: [state.caret?.[0] ?? 0, y + PAGE_BREAK_HEIGHT] });
+  normalizeOrigin();
 }
 
 export function selectAll() {

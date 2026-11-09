@@ -103,7 +103,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 |---|---|
 | `main.tsx` | Mounts `App`. |
 | `App.tsx` | The window: layout, live evaluation, open/save/export, `runCommand` (every menu and palette command by id), keyboard shortcuts in a browser, startup. |
-| `store.ts` | The editor state: document, report, selection, editing, viewport, undo history, layout of regions (`computeLayout`), region operations. |
+| `store.ts` | The editor state: document, report, selection, editing, viewport, undo history, layout of regions (`computeLayout`), region operations. The canvas has no page edges: `availableWidth` wraps text at the column's width from the box's own left there, positions may go below 0 while something is moved or typed, and `normalizeOrigin` (run by `regroup`) shifts the document back to 0 and pans the view by the same amount. The page view draws what is past the printable column on the paper (`pullOnPaper`, `Placed.pulled`) without changing the document. |
 | `api.ts` | The bridge to Rust: `call(cmd, args)` invokes a Tauri command, the WebAssembly engine (`isWeb`) or posts to `/api`. Also file dialogs (run by the desktop app through `api.pick`), menus, window close. |
 | `engine.ts` | Loads `quire_web.wasm` and calls it, in the web version. |
 | `latest.ts` | Live evaluation's requests: debounced, and only the newest answer is shown. |
@@ -116,7 +116,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 
 | File | What lives there |
 |---|---|
-| `Canvas.tsx` | Scrolling, zoom, selection frames, dragging, the hidden input that receives typing. |
+| `Canvas.tsx` | Scrolling, zoom, selection frames, dragging, the hidden input that receives typing; the canvas's page guides (the printable column and each page's start, from `pagedLayout().pageStarts`). |
 | `Sheet.tsx`, `pages.ts` | Paper sheets in the page view; page geometry; which content a header or footer shows on a page (first, odd and even pages) and where its row, image and rule sit (`bandLayout`). |
 | `HeaderFooterBand.tsx`, `headerFooter.ts` | Headers and footers on the page: the band in each margin, editing it in place (double-click, Edit Header / Edit Footer) with its toolbar (fields, image, size, bold, colour, rule, first and odd/even pages); fields as chips while editing and as `{page}` text in the document. Print draws the same row. |
 | `Region.tsx` | One region on the page; dispatches on `kind` (`math`, `text`, `image`, `area`, `table`, `toc`, `plot2d`, `plot3d`). |

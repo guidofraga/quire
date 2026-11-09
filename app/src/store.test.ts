@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { pageGeom, SHEET_GAP } from "./pages";
 import {
   AREA_COLLAPSED_HEIGHT,
+  availableWidth,
+  normalizeOrigin,
+  originShift,
+  pullOnPaper,
   commitEditing,
   computeLayout,
   deleteRegions,
@@ -898,3 +902,163 @@ describe("growth after an edit", () => {
     expect(state.doc.regions[1].at).toEqual([0, 27]);
   });
 });
+
+describe("the free canvas", () => {
+  const at = (id: string, x: number, y: number): Region => ({ id, kind: "math", at: [x, y], expr: id });
+  const contentW = pageGeom(doc([])).contentW;
+
+  it("wraps text at the column's width from wherever the box starts", () => {
+    loadDoc(doc([]), null);
+    expect(availableWidth(0)).toBe(contentW);
+    expect(availableWidth(558)).toBe(contentW);
+    // the page view still wraps at the printable column's edge
+    loadDoc(doc([], { view: "pages" }), null);
+    expect(availableWidth(0)).toBe(contentW);
+    expect(availableWidth(400)).toBeCloseTo(contentW - 400);
+    expect(availableWidth(contentW - 120)).toBeCloseTo(120);
+    // past that it is drawn pulled onto the paper, at the width it has on the canvas
+    expect(availableWidth(600)).toBe(contentW);
+  });
+
+  it("puts the insertion point above and left of the start; the page keeps it on the paper", () => {
+    loadDoc(doc([]), null);
+    expect(placeAt(-50, -100)).toEqual([-54, -99]);
+    loadDoc(doc([], { view: "pages" }), null);
+    const [x, y] = placeAt(-50, -100);
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(y).toBeGreaterThanOrEqual(0);
+  });
+
+  it("shifts by the grid steps that bring the topmost and leftmost regions back to the start", () => {
+    expect(originShift([])).toEqual([0, 0]);
+    expect(originShift([at("a", 0, 0), at("b", 90, 30)])).toEqual([0, 0]);
+    expect(originShift([at("a", -90, 18), at("b", 40, -18)])).toEqual([90, 18]);
+    // off the grid (a smart guide): still whole grid steps, so the rest stays on the grid
+    expect(originShift([at("a", -5, -10)])).toEqual([9, 18]);
+  });
+
+  it("moves regions above and left of the start, then shifts the document and the view back as one step", () => {
+    loadDoc(doc([at("a", 0, 0), at("b", 90, 90)]), null);
+    setState({ view: { x: 100, y: 50, zoom: 2 }, caret: [36, 180] });
+    nudge(["b"], -180, -144);
+    // b went to (-90, -54): everything moves right 90 and down 54, and the view the other way
+    expect(state.doc.regions.map((r) => r.at)).toEqual([
+      [90, 54],
+      [0, 0],
+    ]);
+    expect(state.view).toEqual({ x: 100 - 90 * 2, y: 50 - 54 * 2, zoom: 2 });
+    expect(state.caret).toEqual([126, 234]);
+    // on screen nothing but b moved: a is drawn where it was
+    const sx = (x: number) => state.view.x + x * state.view.zoom;
+    expect(sx(layout().byId.get("a")!.left)).toBe(100);
+    // undo and redo pan back with the document, so a stays put on screen through both
+    undo();
+    expect(state.doc.regions.map((r) => r.at)).toEqual([
+      [0, 0],
+      [90, 90],
+    ]);
+    expect(sx(layout().byId.get("a")!.left)).toBe(100);
+    redo();
+    expect(state.doc.regions[0].at).toEqual([90, 54]);
+    expect(sx(layout().byId.get("a")!.left)).toBe(100);
+  });
+
+  it("joins the shift to the step of a line typed above the start", () => {
+    loadDoc(doc([at("a", 0, 0)]), null);
+    setState({ view: { x: 300, y: 300, zoom: 1 }, caret: [-90, -45] });
+    insertAtCaret("math", "c:=3");
+    commitEditing();
+    expect(state.doc.regions.map((r) => r.at)).toEqual([
+      [90, 45],
+      [0, 0],
+    ]);
+    expect(state.view).toEqual({ x: 210, y: 255, zoom: 1 });
+    undo();
+    expect(state.doc.regions.map((r) => r.at)).toEqual([[0, 0]]);
+    expect(state.view).toEqual({ x: 300, y: 300, zoom: 1 });
+  });
+
+  it("keeps a region in an area within the area's left edge, but lets it leave upwards", () => {
+    const area: Region = { id: "ar", kind: "area", at: [0, 90], height: 90, regions: [at("in", 0, 18)] };
+    loadDoc(doc([area]), null);
+    moveTo(originsOf(["in"]), -45, 0);
+    expect(state.doc.regions[0].regions![0].at).toEqual([0, 18]);
+    moveTo(originsOf(["in"]), 0, -54);
+    regroup(["in"]);
+    expect(state.doc.regions.map((r) => r.id)).toEqual(["ar", "in"]);
+    expect(state.doc.regions[1].at).toEqual([0, 54]);
+  });
+
+  it("does nothing to a document that starts at the origin", () => {
+    loadDoc(doc([at("a", 0, 0)]), null);
+    const view = { ...state.view };
+    expect(normalizeOrigin()).toBe(false);
+    expect(state.view).toEqual(view);
+    expect(state.dirty).toBe(false);
+  });
+});
+
+describe("page view keeps what is past the printable column on the paper", () => {
+  const geom = pageGeom(doc([]));
+  const { contentW } = geom;
+  const right = geom.margins.right;
+
+  it("leaves what fits on the paper where it is, margin overhang included", () => {
+    expect(pullOnPaper(0, 200, contentW, right)).toBe(0);
+    expect(pullOnPaper(400, contentW - 400 + right - 1, contentW, right)).toBe(400);
+  });
+
+  it("draws what runs off the paper, or starts past the column, with its right edge on the column's", () => {
+    expect(pullOnPaper(800, 100, contentW, right)).toBe(contentW - 100);
+    expect(pullOnPaper(contentW - 60, 40, contentW, right)).toBe(contentW - 60);
+    expect(pullOnPaper(contentW - 100, 300, contentW, right)).toBe(contentW - 300);
+    // wider than the column: from its left edge
+    expect(pullOnPaper(300, contentW + 50, contentW, right)).toBe(0);
+  });
+
+  it("draws it pulled in without changing the document, and moves it from where it is seen", () => {
+    const d = doc(
+      [
+        { id: "far", kind: "math", at: [900, 0], expr: "far" },
+        { id: "near", kind: "math", at: [36, 0], expr: "near" },
+      ],
+      { view: "pages" },
+    );
+    const l = computeLayout(d, {}, true, false, 0, { far: 100, near: 100 });
+    const far = l.byId.get("far")!;
+    expect(far.left).toBeCloseTo(l.geom.margins.left + contentW - 100);
+    expect(far.pulled).toBeCloseTo(900 - (contentW - 100));
+    expect(l.byId.get("near")!.pulled).toBe(0);
+    expect(d.regions[0].at).toEqual([900, 0]);
+    // canvas view draws it where it is
+    expect(computeLayout(d, {}, false, false, 0, { far: 100 }).byId.get("far")!.left).toBe(900);
+
+    loadDoc(d, null);
+    setWidths({ far: 100 });
+    expect(state.doc.regions[0].at).toEqual([900, 0]);
+    // a drag starts from the place it is drawn at, and only then writes it
+    expect(originsOf(["far"]).get("far")![0]).toBeCloseTo(contentW - 100);
+  });
+
+  it("knows where each page starts, as the canvas's page guides draw it", () => {
+    const H = geom.contentH;
+    const pagebreak: Region = { id: "br", kind: "pagebreak", at: [0, 100] };
+    const l = computeLayout(
+      doc([at2("a", 0), at2("b", H - 10), at2("c", H * 2 + 40), pagebreak]),
+      { b: 30 },
+      true,
+      false,
+    );
+    // a page break: page 2 starts right under its mark
+    expect(l.pageStarts[0]).toBe(0);
+    expect(l.pageStarts[1]).toBe(100 + PAGE_BREAK_HEIGHT);
+    // b doesn't fit at the bottom of page 1, so page 2 starts at b, not at the page's height
+    const plain = computeLayout(doc([at2("a", 0), at2("b", H - 10), at2("c", H + 40)]), { b: 30 }, true, false);
+    expect(plain.pageStarts).toEqual([0, H - 10]);
+    expect(computeLayout(doc([at2("a", 0)]), {}, false, false).pageStarts).toEqual([]);
+  });
+});
+
+function at2(id: string, y: number): Region {
+  return { id, kind: "math", at: [0, y], expr: id };
+}

@@ -572,6 +572,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &sep()?,
             &item(app, "toggle_sidebar", "Show Sidebar", Some("CmdOrCtrl+Backslash"))?,
             &item(app, "page_view", "Page View", Some("CmdOrCtrl+Shift+P"))?,
+            // the printable column and page breaks on the free canvas (an app setting, the UI keeps it)
+            &item(app, "toggle_page_guides", "Show Page Guides", None)?,
             &item(app, "toggle_inspector", "Show Inspector", Some("CmdOrCtrl+Alt+I"))?,
             &sep()?,
             &item(app, "zoom_in", "Zoom In", Some("CmdOrCtrl+="))?,
