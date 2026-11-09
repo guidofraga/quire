@@ -63,6 +63,11 @@ async function shown(page: Page) {
     );
 }
 
+/** ⌘ where the app thinks it is on a Mac (it goes by the user agent, which the Desktop Safari
+ *  device sets to a Mac's on every system), Ctrl elsewhere. */
+const cmd = async (page: Page) =>
+  (await page.evaluate(() => /Mac/.test(navigator.userAgent))) ? ("Meta" as const) : ("Control" as const);
+
 /** The system's Trash, stubbed as the other notebook tests do (the real one hangs here). */
 async function stubTrash(page: Page) {
   await page.route("**/api/notebook", async (route) => {
@@ -165,10 +170,10 @@ test("several notes picked with ⌘/Ctrl and Shift move together, keeping their 
   await name(page, "Optics");
   await row(page, "Euler").click();
   await row(page, "Newton").click({ modifiers: ["Shift"] });
-  await row(page, "Intro").click({ modifiers: ["ControlOrMeta"] });
+  await row(page, "Intro").click({ modifiers: [await cmd(page)] });
   for (const n of ["Euler", "Hooke", "Newton", "Intro"])
     await expect(row(page, n)).toHaveAttribute("aria-selected", "true");
-  await row(page, "Hooke").click({ modifiers: ["ControlOrMeta"] });
+  await row(page, "Hooke").click({ modifiers: [await cmd(page)] });
   await expect(row(page, "Hooke")).toHaveAttribute("aria-selected", "false");
 
   await drag(page, row(page, "Newton"), row(page, "Optics, section"));
@@ -213,7 +218,7 @@ test("Delete asks first, names what goes, and the open note moves on to its neig
   expect(on("Mechanics", "Hooke.quire")).toBe(true);
 
   await row(page, "Newton").click();
-  await row(page, "Hooke").click({ modifiers: ["ControlOrMeta"] });
+  await row(page, "Hooke").click({ modifiers: [await cmd(page)] });
   await page.keyboard.press("Backspace");
   await page.getByRole("alertdialog").getByRole("button", { name: "Move to Trash" }).click();
   await expect.poll(() => on("Mechanics", "Newton.quire") || on("Mechanics", "Hooke.quire")).toBe(false);
