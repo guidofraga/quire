@@ -98,8 +98,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]
-        mode: [base, proxy, netmon, both]
+        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]
+        mode: [base, w500, w2000]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,13 +123,9 @@ jobs:
           MODE: ${{ matrix.mode }}
         run: |
           case "$MODE" in
-            proxy) export GIO_USE_PROXY_RESOLVER=dummy ;;
-            netmon) export GIO_USE_NETWORK_MONITOR=base ;;
-            both) export GIO_USE_PROXY_RESOLVER=dummy GIO_USE_NETWORK_MONITOR=base ;;
+            w500) export QUIRE_WARM_MS=500 ;;
+            w2000) export QUIRE_WARM_MS=2000 ;;
           esac
-          echo "VARIANT $MODE proxy=$GIO_USE_PROXY_RESOLVER netmon=$GIO_USE_NETWORK_MONITOR"
-          env | grep -i proxy || echo "no proxy env"
-          cat /etc/resolv.conf | head -5
           dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report && echo "EXPORT PASS" || { echo "EXPORT FAIL"; exit 1; }
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
