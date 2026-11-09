@@ -57,7 +57,7 @@ test("a title dragged far right on the canvas keeps its full width", async ({ pa
   await page.goto("/");
   await page.getByRole("button", { name: /Simply supported beam/ }).click();
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
-  const title = region(page, "b00");
+  const title = region(page, "bmfnru");
   await expect(title).toContainText("Simply supported steel beam");
   const before = await settled(title);
   await page.mouse.move(before.x + 6, before.y + before.height / 2);
@@ -65,7 +65,7 @@ test("a title dragged far right on the canvas keeps its full width", async ({ pa
   await page.mouse.move(before.x + 300, before.y + before.height / 2, { steps: 5 });
   await page.mouse.move(before.x + 564, before.y + before.height / 2, { steps: 5 });
   await page.mouse.up();
-  await expect.poll(async () => (await positions(page)).b00[0]).toBeGreaterThan(500);
+  await expect.poll(async () => (await positions(page)).bmfnru[0]).toBeGreaterThan(500);
   const after = await settled(title);
   // the box didn't shrink to the room left before a page edge, and nothing in it is cut off
   expect(after.width).toBeGreaterThanOrEqual(before.width - 1);
@@ -288,11 +288,24 @@ test("a table keeps its column widths on the canvas, as on the page", async ({ p
   await page.goto("/");
   await page.getByRole("button", { name: /Simply supported beam/ }).click();
   await page.getByRole("button", { name: "Canvas", exact: true }).click();
-  await expect(region(page, "b08").locator("table")).toBeVisible();
-  const ids = ["b00", "b01", "b02", "b03", "b05", "b08", "b11", "b12", "b12b", "b16", "b17"];
+  await expect(region(page, "bmyvup").locator("table")).toBeVisible();
+  // title, title block, summary of checks, design basis, a heading, L, f.y, Table 1, M.Ed, Figure 1, a heading
+  const ids = [
+    "bmfnru",
+    "bmhfkd",
+    "bmbnvk",
+    "bmykug",
+    "bmgusd",
+    "bmxman",
+    "bmehaz",
+    "bmyvup",
+    "bmdnwh",
+    "bmmjdd",
+    "bmqwpy",
+  ];
   const { canvas, pages } = await bothViews(page, ids);
-  // Table 1's columns are 110 + 110 + 70 + 110 px wide
-  expect(canvas.b08).toBeGreaterThan(400);
+  // Table 1's columns are 130 + 120 + 70 + 120 px wide
+  expect(canvas.bmyvup).toBeGreaterThan(400);
   for (const id of ids)
     expect(
       Math.abs(canvas[id] - pages[id]),

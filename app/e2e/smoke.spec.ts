@@ -227,7 +227,7 @@ test("contents and checks lists keep their rows through an edit elsewhere", asyn
     await page.getByRole("menuitem", { name: item }).click();
   }
   const rows = page.locator(".region.toc .contents-row");
-  await expect(rows.filter({ hasText: "Calculations" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "Internal forces" })).toHaveCount(1);
   await expect(rows.filter({ hasText: /[✓✗]/ }).first()).toBeVisible();
   const count = await rows.count();
   // count every row the lists take out of the page from here on
@@ -242,7 +242,7 @@ test("contents and checks lists keep their rows through an edit elsewhere", asyn
     }).observe(document.body, { childList: true, subtree: true });
   });
   // typing a paragraph elsewhere changes the document, its layout and the report many times over
-  const paragraph = page.locator('[data-region="b01"]');
+  const paragraph = page.locator('[data-region="bmykug"]');
   await paragraph.dblclick();
   await expect(paragraph.locator(".ProseMirror")).toBeFocused();
   await page.keyboard.press("End");

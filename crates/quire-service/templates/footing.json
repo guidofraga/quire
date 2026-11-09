@@ -1,0 +1,185 @@
+{
+  "format": "quire/1",
+  "meta": {"title": "Pad footing", "authors": ["A. Engineer"], "company": "Your Company", "lang": "en"},
+  "settings": {"display": {"decimals": 2, "resultUnits": "working"}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": {"top": "24mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {"left": "{company}", "right": "{title}", "color": "#5f6670", "rule": {}},
+    "footer": {"left": "{date}", "right": "Page {page} of {pages}", "color": "#5f6670", "rule": {}}
+  },
+  "regions": [
+    {"id": "pfisic", "kind": "text", "text": "{.title}\n# Pad footing", "at": [0, 0]},
+    {
+      "id": "pfaymx",
+      "kind": "text",
+      "text": "Bearing pressure, sliding and overturning under service loads · allowable stress method",
+      "at": [0, 34]
+    },
+    {
+      "id": "pfsigv",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 210}],
+      "rows": [
+        ["Project", "Project name"],
+        ["Client", "Client name"],
+        ["Element", "Footing F1, column C1"],
+        ["Prepared by", "A. Engineer"]
+      ],
+      "at": [0, 69]
+    },
+    {
+      "id": "pfrhwb",
+      "kind": "table",
+      "header": {"column": true},
+      "columns": [{"width": 104}, {"width": 210}],
+      "rows": [
+        ["Document no.", "CALC-GEO-006"],
+        ["Revision", "A"],
+        ["Date", "YYYY-MM-DD"],
+        ["Checked by", "—"]
+      ],
+      "at": [328, 69]
+    },
+    {"id": "pfyivt", "kind": "toc", "of": "checks", "title": "Summary of checks", "at": [0, 186]},
+    {"id": "pfuuib", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 344]},
+    {
+      "id": "pfgext",
+      "kind": "text",
+      "text": "Rectangular pad footing under a column, with characteristic (service) loads applied at ground level. The base pressure is linear, with no tension. The allowable bearing pressure and the base friction angle come from the site investigation; the factors of safety are the project's values, stated in [](#ref:pfqbxw). No code is used.",
+      "at": [0, 376]
+    },
+    {"id": "pfqbxw", "kind": "text", "style": {"size": 12}, "text": "# Data", "at": [0, 466]},
+    {"id": "pfumjm", "kind": "math", "expr": "B:=2.0 m", "note": "width", "at": [0, 498]},
+    {"id": "pfusus", "kind": "math", "expr": "L.f:=2.6 m", "note": "length, along M", "at": [220, 498]},
+    {"id": "pfjxwk", "kind": "math", "expr": "h.f:=0.5 m", "note": "thickness", "at": [440, 498]},
+    {"id": "pfabuk", "kind": "math", "expr": "D.f:=1.0 m", "note": "depth of the base", "at": [0, 533]},
+    {"id": "pfrwgu", "kind": "math", "expr": "γ.c:=25 kN/m^3", "note": "concrete", "at": [220, 533]},
+    {"id": "pfqsqp", "kind": "math", "expr": "γ.s:=18 kN/m^3", "note": "backfill", "at": [440, 533]},
+    {"id": "pfrxyt", "kind": "math", "expr": "N.k:=600 kN", "note": "vertical", "at": [0, 571]},
+    {"id": "pfwxdt", "kind": "math", "expr": "H.k:=40 kN", "note": "horizontal", "at": [220, 571]},
+    {"id": "pfyfvv", "kind": "math", "expr": "M.k:=80 kN*m", "note": "moment", "at": [440, 571]},
+    {"id": "pfhwgh", "kind": "math", "expr": "q.a:=200 kPa", "note": "allowable bearing pressure", "at": [0, 606]},
+    {"id": "pffjng", "kind": "math", "expr": "δ.b:=20 deg", "note": "base friction angle", "at": [330, 606]},
+    {"id": "pfgsyx", "kind": "math", "expr": "FS.s:=1.5", "note": "sliding", "at": [0, 644]},
+    {"id": "pfkprw", "kind": "math", "expr": "FS.o:=2.0", "note": "overturning", "at": [330, 644]},
+    {"id": "pfuigp", "kind": "text", "text": "The column is at the centre of the footing; $`H.k` and $`M.k` act along $`L.f`.", "at": [0, 679]},
+    {"id": "pftkft", "kind": "text", "style": {"size": 12}, "text": "# Loads at the base", "at": [0, 725]},
+    {
+      "id": "pfmydn",
+      "kind": "math",
+      "expr": "W.f:=γ.c*B*L.f*h.f",
+      "show": "value",
+      "display": {"unit": "kN", "decimals": 1},
+      "note": "footing",
+      "at": [0, 757]
+    },
+    {
+      "id": "pfhajs",
+      "kind": "math",
+      "expr": "W.s:=γ.s*B*L.f*(D.f-h.f)",
+      "show": "value",
+      "display": {"unit": "kN", "decimals": 1},
+      "note": "soil on the footing",
+      "at": [0, 795]
+    },
+    {"id": "pfnasd", "kind": "math", "expr": "N.b:=N.k+W.f+W.s", "show": "value", "display": {"unit": "kN", "decimals": 1}, "at": [0, 833]},
+    {
+      "id": "pfpktc",
+      "kind": "math",
+      "expr": "M.b:=M.k+H.k*D.f",
+      "show": "value",
+      "display": {"unit": "kN*m", "decimals": 1},
+      "note": "moment about the base",
+      "at": [0, 868]
+    },
+    {
+      "id": "pfdhzx",
+      "kind": "math",
+      "expr": "e.b:=M.b/N.b",
+      "show": "value",
+      "display": {"unit": "m", "decimals": 3},
+      "note": "eccentricity",
+      "at": [0, 903]
+    },
+    {"id": "pfyjyz", "kind": "text", "style": {"size": 12}, "text": "# Bearing pressure", "at": [0, 968]},
+    {"id": "pfxezh", "kind": "math", "expr": "e.b<=L.f/6", "note": "resultant in the middle third: the whole base in contact", "at": [0, 1000]},
+    {"id": "pfrdke", "kind": "math", "expr": "q.avg:=N.b/(B*L.f)", "show": "value", "display": {"unit": "kPa", "decimals": 1}, "at": [0, 1050]},
+    {
+      "id": "pfekpz",
+      "kind": "math",
+      "expr": "q.max:=if(e.b<=L.f/6, q.avg*(1+6*e.b/L.f), 2*N.b/(3*B*(L.f/2-e.b)))",
+      "show": "value",
+      "display": {"unit": "kPa", "decimals": 1},
+      "at": [0, 1103]
+    },
+    {
+      "id": "pfvpek",
+      "kind": "math",
+      "expr": "q.min:=if(e.b<=L.f/6, q.avg*(1-6*e.b/L.f), 0 kPa)",
+      "show": "value",
+      "display": {"unit": "kPa", "decimals": 1},
+      "at": [0, 1188]
+    },
+    {"id": "pfxiqf", "kind": "math", "expr": "q.max<=q.a", "note": "bearing pressure", "at": [0, 1248]},
+    {
+      "id": "pfcqai",
+      "kind": "text",
+      "text": "If the resultant leaves the middle third, the pressure is triangular: the second branch of $`q.max` and of _q_(_x_). The pressure is drawn in [](#ref:pfyzcz) and [](#ref:pfvcma).",
+      "at": [0, 1286]
+    },
+    {
+      "id": "pfmrxe",
+      "kind": "math",
+      "expr": "q(x):=if(e.b<=L.f/6, q.avg*(1+12*e.b*x/L.f^2), max(q.max*(1-(L.f/2-x)/(3*(L.f/2-e.b))), 0 kPa))",
+      "at": [0, 1338]
+    },
+    {
+      "id": "pfyzcz",
+      "kind": "plot2d",
+      "size": [310, 180],
+      "series": [{"y": "q(x)", "x": "x", "range": "-L.f/2..L.f/2", "label": "q"}],
+      "axes": {"x": {"unit": "m", "label": "x"}, "y": {"unit": "kPa", "label": "q", "min": 0}},
+      "grid": true,
+      "extrema": true,
+      "caption": {"text": "Bearing pressure along the footing"},
+      "at": [0, 1423]
+    },
+    {
+      "id": "pfvcma",
+      "kind": "plot3d",
+      "size": [310, 210],
+      "series": [{"surface": "q(x)", "xrange": "-L.f/2..L.f/2", "yrange": "-B/2..B/2", "label": "q"}],
+      "axes": {"x": {"unit": "m"}, "y": {"unit": "m"}, "z": {"unit": "kPa", "label": "q"}},
+      "camera": {"azimuth": -55, "elevation": 25, "distance": 3.4},
+      "caption": {"text": "Bearing pressure under the base"},
+      "at": [332, 1423]
+    },
+    {"id": "pfwpwz", "kind": "text", "style": {"size": 12}, "text": "# Sliding and overturning", "at": [0, 1683]},
+    {
+      "id": "pfkgwf",
+      "kind": "math",
+      "expr": "R.s:=N.b*tan(δ.b)",
+      "show": "value",
+      "display": {"unit": "kN", "decimals": 1},
+      "note": "base friction",
+      "at": [0, 1715]
+    },
+    {
+      "id": "pftgfv",
+      "kind": "math",
+      "expr": "M.r:=N.b*L.f/2",
+      "show": "value",
+      "display": {"unit": "kN*m", "decimals": 1},
+      "note": "about the toe",
+      "at": [330, 1715]
+    },
+    {"id": "pfvpbx", "kind": "math", "expr": "F.s:=R.s/H.k", "show": "value", "display": {"decimals": 2}, "at": [0, 1765]},
+    {"id": "pfcbqt", "kind": "math", "expr": "F.o:=M.r/M.b", "show": "value", "display": {"decimals": 2}, "at": [330, 1765]},
+    {"id": "pftsus", "kind": "math", "expr": "F.s>=FS.s", "note": "sliding", "at": [0, 1818]},
+    {"id": "pfdpbc", "kind": "math", "expr": "F.o>=FS.o", "note": "overturning", "at": [330, 1818]}
+  ]
+}

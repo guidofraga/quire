@@ -193,7 +193,7 @@ test("copies a plot as an image under the desktop app's content security policy"
   });
   await page.goto("/");
   await page.getByRole("button", { name: /Simply supported beam/ }).click();
-  const plot = page.locator(".region.plot2d");
+  const plot = page.locator(".region.plot2d").first();
   await expect(plot.locator(".plot svg")).toBeVisible();
   // the policy is in force: an image from a blob: URL can't load
   const blobLoads = await page.evaluate(async () => {

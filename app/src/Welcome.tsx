@@ -4,11 +4,15 @@ import { createResource, createSignal, For, onCleanup, onMount, Show } from "sol
 import { useModal } from "./a11y";
 import { api, isWeb, type TemplateInfo } from "./api";
 import { recentList } from "./recent";
+import { setTemplates as setTemplatesDialog } from "./TemplatesDialog";
 import { prefs, setPref, type Prefs } from "./settings";
 import { flash } from "./store";
 import type { Doc } from "./types";
 
 export const [welcomeOpen, setWelcomeOpen] = createSignal(false);
+
+/** How many templates the Welcome screen lists before "All templates…". */
+const WELCOME_TEMPLATES = 5;
 
 interface Props {
   openPath: (path: string) => Promise<void>;
@@ -40,6 +44,11 @@ export function Welcome(props: Props) {
 function Screen(props: Props) {
   const recent = recentList().slice(0, 6);
   const [templates] = createResource(() => api.listTemplates().catch(() => [] as TemplateInfo[]));
+  // a few, yours first: the rest are one click away in the Templates dialog
+  const shown = () => {
+    const all = templates() ?? [];
+    return [...all.filter((t) => !t.builtin), ...all.filter((t) => t.builtin)].slice(0, WELCOME_TEMPLATES);
+  };
   const close = () => setWelcomeOpen(false);
   // Esc closes it wherever focus is (at launch nothing in it has focus yet)
   const onKey = (e: KeyboardEvent) => {
@@ -139,7 +148,7 @@ function Screen(props: Props) {
           </section>
           <section>
             <h3>Templates</h3>
-            <For each={templates() ?? []} fallback={<p class="welcome-empty">Loading…</p>}>
+            <For each={shown()} fallback={<p class="welcome-empty">Loading…</p>}>
               {(t) => (
                 <button class="welcome-item" onClick={() => void openTemplate(t)}>
                   <span class="welcome-icon doc" aria-hidden="true">
@@ -152,6 +161,23 @@ function Screen(props: Props) {
                 </button>
               )}
             </For>
+            <Show when={(templates() ?? []).length > shown().length}>
+              <button
+                class="welcome-item"
+                onClick={() => {
+                  close();
+                  setTemplatesDialog("new");
+                }}
+              >
+                <span class="welcome-icon" aria-hidden="true">
+                  ⋯
+                </span>
+                <span>
+                  <b>All templates…</b>
+                  <small>{(templates() ?? []).length} to choose from</small>
+                </span>
+              </button>
+            </Show>
           </section>
         </div>
         <div class="welcome-foot">
