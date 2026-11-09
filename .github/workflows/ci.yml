@@ -118,21 +118,19 @@ jobs:
       - name: Front end
         run: npm ci && npm run build
         working-directory: app
-      - name: Test, 70 times
+      - name: Diagnose
         run: |
           cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
-          pass=0; restarts=0; fails=0
-          echo "HOST $(grep -m1 'model name' /proc/cpuinfo) | cpus=$(nproc) | $(grep MemTotal /proc/meminfo) | $(uname -r) | $(grep -m1 flags /proc/cpuinfo | grep -o -E 'avx512f|avx2' | sort -u | tr '\n' ' ') | $(cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null) $(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null)"
-          for i in $(seq 1 3); do
-            if dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report --nocapture > run.log 2>&1; then
-              pass=$((pass+1))
-            else
-              fails=$((fails+1)); echo "run $i FAILED"; grep -E "APPLOG|Error" run.log | cut -c1-400 | head -20
-            fi
-            if grep -q 'starting the export again' run.log; then restarts=$((restarts+1)); echo "run $i restarted"; grep APPLOG run.log | head -14 | cut -c1-200; fi
-          done
-          echo "RESULT $(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2) pass=$pass fails=$fails restarts=$restarts of 70"
-          [ "$fails" = 0 ]
+          cat > diag.sh <<'EOS'
+          echo "--- userns: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>&1) $(sysctl -n kernel.unprivileged_userns_clone 2>&1) $(sysctl -n user.max_user_namespaces 2>&1)"
+          bwrap --unshare-all --ro-bind / / true && echo "bwrap ok" || echo "bwrap FAILS"
+          if cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report > run.log 2>&1; then echo "EXPORT PASS"; else echo "EXPORT FAIL"; fi
+          echo "--- processes"; ps -eo pid,etimes,args | grep -E "portal|bwrap|dbus|WebKit|Xvfb|quire" | grep -v grep | cut -c1-200
+          echo "--- session bus names"; busctl --user list --no-pager 2>&1 | head -20
+          EOS
+          dbus-run-session -- xvfb-run -a bash diag.sh 2>&1 | tee diag.log
+          echo "HOSTINFO $(uptime) $(cat /proc/loadavg) $(systemctl is-system-running 2>&1)"
+          systemctl list-units --state=running --no-pager 2>&1 | cut -c1-110 | head -40
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
   app-macos-windows:
