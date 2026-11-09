@@ -572,6 +572,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &sep()?,
             &item(app, "toggle_sidebar", "Show Sidebar", Some("CmdOrCtrl+Backslash"))?,
             &item(app, "page_view", "Page View", Some("CmdOrCtrl+Shift+P"))?,
+            // the printable column and page breaks on the free canvas (an app setting, the UI keeps it)
+            &item(app, "toggle_page_guides", "Show Page Guides", None)?,
             &item(app, "toggle_inspector", "Show Inspector", Some("CmdOrCtrl+Alt+I"))?,
             &sep()?,
             &item(app, "zoom_in", "Zoom In", Some("CmdOrCtrl+="))?,
@@ -754,13 +756,7 @@ fn main() {
                 // your templates, and the images they hold until a new document is saved
                 scope.grant_folder(&templates_dir(app.handle())?);
             }
-            let mut config = app.config().app.windows.first().cloned().ok_or("tauri.conf.json has no window")?;
-            let warm: Option<u64> = std::env::var("QUIRE_WARM_MS").ok().and_then(|v| v.parse().ok());
-            if job.is_some() && warm.is_some() {
-                if let Ok(blank) = "about:blank".parse() {
-                    config.url = tauri::WebviewUrl::External(blank);
-                }
-            }
+            let config = app.config().app.windows.first().cloned().ok_or("tauri.conf.json has no window")?;
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some((input, output)) = &job {
                 let job = json!({ "open": input, "pdf": output });
@@ -772,16 +768,7 @@ fn main() {
                     .initialization_script(format!("window.__QUIRE_EXPORT__ = {job};"));
                 headless::watch(app.handle());
             }
-            let built = window.build()?;
-            if let (Some(ms), true) = (warm, job.is_some()) {
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(ms));
-                    eprintln!("quire: opening the app page after {ms} ms");
-                    if let Ok(url) = "tauri://localhost".parse() {
-                        let _ = built.navigate(url);
-                    }
-                });
-            }
+            window.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

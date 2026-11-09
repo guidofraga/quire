@@ -98,8 +98,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]
-        mode: [base, w500, w2000]
+        n: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60]
+        mode: [probe]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,15 +118,39 @@ jobs:
       - name: Front end
         run: npm ci && npm run build
         working-directory: app
-      - name: Test once with the variant
-        env:
-          MODE: ${{ matrix.mode }}
+      - name: Export once, then dump the machine
         run: |
-          case "$MODE" in
-            w500) export QUIRE_WARM_MS=500 ;;
-            w2000) export QUIRE_WARM_MS=2000 ;;
-          esac
-          dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report && echo "EXPORT PASS" || { echo "EXPORT FAIL"; exit 1; }
+          cargo test -p quire-app --features tauri/custom-protocol --locked --no-run
+          if dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored exported_report > run.log 2>&1; then R=PASS; else R=FAIL; fi
+          echo "RESULTLINE $R"
+          probe() { echo "PROBE-BEGIN $1"; shift; "$@" 2>&1 | sed 's/^/PV /' | head -${LINES_MAX:-80}; }
+          probe hosts cat /etc/hosts
+          probe nsswitch cat /etc/nsswitch.conf
+          probe getent getent hosts localhost
+          probe ipaddr ip -o addr
+          probe iproute6 ip -6 route
+          probe ulimit bash -c 'ulimit -a'
+          probe sysctl bash -c 'sysctl vm.overcommit_memory vm.max_map_count vm.swappiness kernel.pid_max fs.inotify.max_user_watches fs.inotify.max_user_instances net.ipv6.conf.all.disable_ipv6 kernel.randomize_va_space kernel.yama.ptrace_scope'
+          probe mounts bash -c 'mount | grep -E " /tmp | /dev/shm | /run/user"'
+          probe df bash -c 'df -h /tmp /dev/shm /home | cut -c1-60'
+          probe free free -m
+          probe cmdline cat /proc/cmdline
+          probe entropy cat /proc/sys/kernel/random/entropy_avail
+          probe units bash -c 'systemctl list-units --state=running --no-pager --plain | awk "{print \$1}"'
+          probe timers bash -c 'systemctl list-timers --no-pager --plain | awk "{print \$NF}"'
+          probe failed bash -c 'systemctl --failed --no-pager --plain'
+          probe procs bash -c 'ps -eo comm | sort | uniq -c | sort -rn | head -40'
+          probe listen bash -c 'ss -lntu | awk "{print \$1,\$5}"'
+          probe tmp bash -c 'ls -la /tmp | head -30'
+          probe hostname bash -c 'hostname; cat /etc/hostname'
+          probe locale bash -c 'locale; echo LANG=$LANG'
+          probe glibc bash -c 'ldd --version | head -1; uname -a'
+          probe fixed bash -c 'cat /etc/os-release | head -3; ls -la ~ | head -20'
+          probe cpuflags bash -c 'grep -m1 flags /proc/cpuinfo | tr " " "\n" | sort | tr "\n" " "'
+          probe hypervisor bash -c 'lscpu | grep -iE "hypervisor|virtualization|model name|stepping|flags" | cut -c1-120; cat /sys/devices/system/clocksource/clocksource0/current_clocksource'
+          probe cgroup bash -c 'cat /proc/self/cgroup; cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max 2>&1'
+          probe time bash -c 'date -u; timedatectl 2>&1 | head -6'
+          [ "$R" = PASS ]
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
   app-macos-windows:
