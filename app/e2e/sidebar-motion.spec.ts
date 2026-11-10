@@ -61,6 +61,7 @@ test("the Inspector slides, then can't be reached, and gives the page its room b
   await expect.poll(() => insp.evaluate((n) => getComputedStyle(n).marginRight)).toBe("0px");
   const open290 = await width(pane);
 
+  await insp.getByRole("tab", { name: "Page" }).click();
   await page.keyboard.press("Alt+Meta+i");
   // part way: still taking room, not yet gone
   await expect.poll(async () => (await width(pane)) > open290).toBe(true);
@@ -68,11 +69,17 @@ test("the Inspector slides, then can't be reached, and gives the page its room b
   await expect(insp).toHaveAttribute("inert", "");
   await expect(insp).toHaveAttribute("aria-hidden", "true");
   await expect(insp).toBeHidden();
+  // once shut, nothing inside is kept up to date
+  await expect(insp.locator("[role=tab]")).toHaveCount(0);
+  await expect(insp.locator(".insp-body")).toHaveCount(0);
   // the page fills the room after the slide
   await expect.poll(async () => (await width(pane)) - open290).toBeGreaterThan(285);
 
   await page.keyboard.press("Alt+Meta+i");
   await expect(insp).toBeVisible();
+  // content is there from the first frame, on the tab that was open
+  await expect(insp.locator("[role=tab]")).toHaveCount(3);
+  await expect(insp.getByRole("tab", { name: "Page" })).toHaveAttribute("aria-selected", "true");
   await expect(insp).not.toHaveAttribute("inert");
   await expect.poll(async () => Math.abs((await width(pane)) - open290)).toBeLessThan(2);
   // the panel kept its width the whole way: nothing squashed
