@@ -1,12 +1,11 @@
 // Updates: a quiet check after launch, a banner when a new version is out, and
 // Quire ▸ Check for Updates…. Updates are signed; the updater refuses anything else.
 import { createSignal, Show } from "solid-js";
-import { isTauri } from "./api";
+import { api, isTauri } from "./api";
 import { flash } from "./store";
 
 interface Available {
   version: string;
-  notes: string;
   install: (progress: (done: number, total: number | undefined) => void) => Promise<void>;
 }
 
@@ -32,7 +31,6 @@ export async function checkForUpdates(manual = false) {
     setDismissed(false);
     setAvailable({
       version: update.version,
-      notes: update.body ?? "",
       install: async (progress) => {
         let done = 0;
         let total: number | undefined;
@@ -56,7 +54,6 @@ export async function checkForUpdates(manual = false) {
 /** The banner: what is new, Update (download, install, restart) or Later. */
 export function UpdateBanner(props: { beforeRestart: () => Promise<boolean> }) {
   const [busy, setBusy] = createSignal<string | null>(null);
-  const [showNotes, setShowNotes] = createSignal(false);
   const update = async () => {
     const a = available();
     if (!a || busy()) return;
@@ -87,11 +84,17 @@ export function UpdateBanner(props: { beforeRestart: () => Promise<boolean> }) {
           <span class="update-text">
             <strong>Quire {available()!.version}</strong> is available.
           </span>
-          <Show when={available()!.notes}>
-            <button class="update-link" aria-expanded={showNotes()} onClick={() => setShowNotes(!showNotes())}>
-              {showNotes() ? "Hide" : "What's new"}
-            </button>
-          </Show>
+          {/* the release page has the notes; the update feed only carries a generic line */}
+          <button
+            class="update-link"
+            onClick={() =>
+              api
+                .openReleaseNotes(available()!.version)
+                .catch((e) => flash(`Could not open the release notes: ${e.message ?? e}`))
+            }
+          >
+            What's new
+          </button>
           <button class="btn primary" disabled={!!busy()} onClick={() => void update()}>
             {busy() ?? "Update and Restart"}
           </button>
@@ -101,9 +104,6 @@ export function UpdateBanner(props: { beforeRestart: () => Promise<boolean> }) {
             </button>
           </Show>
         </div>
-        <Show when={showNotes()}>
-          <div class="update-notes">{available()!.notes}</div>
-        </Show>
       </div>
     </Show>
   );

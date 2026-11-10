@@ -143,6 +143,30 @@ async fn pick(window: WebviewWindow, kind: Pick, suggested: Option<String>) -> C
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
+/// The release page of a version on GitHub (the updater's "What's new"), in the default browser.
+/// Only that page: the version is checked, so nothing else can be opened through this.
+#[tauri::command]
+fn open_release_notes(version: String) -> CmdResult<()> {
+    let ok = !version.is_empty()
+        && version.len() <= 32
+        && version.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    if !ok {
+        return Err(format!("not a version: {version}"));
+    }
+    let url = format!("https://github.com/guidofraga/quire/releases/tag/v{version}");
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(&url).spawn().map(|_| ()).map_err(|e| format!("could not open {url}: {e}"))
+}
+
 #[tauri::command]
 fn report(doc: Json) -> CmdResult<quire_service::Report> {
     quire_service::report(&doc).map_err(err)
@@ -800,7 +824,8 @@ fn main() {
             pick,
             save_recovery,
             take_recovery,
-            clear_recovery
+            clear_recovery,
+            open_release_notes
         ])
         .build(tauri::generate_context!());
     let app = match built {

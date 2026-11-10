@@ -3692,17 +3692,6 @@ a.xref-missing {
   cursor: pointer;
 }
 
-.update-notes {
-  max-height: 220px;
-  margin-top: 8px;
-  overflow-y: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--chrome-border);
-  color: var(--muted);
-  font-size: 12px;
-  white-space: pre-wrap;
-}
-
 .app.printing .update-banner {
   display: none;
 }
