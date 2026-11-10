@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/app-icon.svg" width="112" height="112" alt="Quire's icon: a stack of paper sheets on a blue tile">
+  <img src="app/app-icon.png" width="112" height="112" alt="Quire's icon: a white Q on a dark blue tile">
 </p>
 
 <h1 align="center">Quire</h1>
