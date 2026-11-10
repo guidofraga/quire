@@ -41,7 +41,8 @@ for (const scheme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: /Simply supported beam/ }).click();
       // the rest of the window is inert until the welcome screen has gone
       await expect(page.getByRole("dialog", { name: "Welcome to Quire" })).toBeHidden();
-      await expect(page.locator("[inert]")).toHaveCount(0);
+      // (the closed inspector stays in the page, inert)
+      await expect(page.locator("[inert]:not(.inspector.collapsed)")).toHaveCount(0);
       await expect(page.locator(".region.plot2d").first()).toBeVisible();
       await expect(page.locator(".region.math .res").first()).toBeVisible();
       await audit(page, "beam, pages");

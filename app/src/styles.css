@@ -1335,6 +1335,8 @@ ms.str {
   flex: 1;
   display: flex;
   min-height: 0;
+  /* the hidden inspector waits just outside the right edge */
+  overflow-x: clip;
 }
 
 .canvas-pane {
@@ -1761,8 +1763,9 @@ ms.str {
 /* ================================================================ inspector */
 
 .inspector {
+  --insp-width: 290px;
   flex: none;
-  width: 290px;
+  width: var(--insp-width);
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--chrome-border);
@@ -5335,16 +5338,24 @@ body.resizing-sidebar {
   transition: background-color 80ms ease;
 }
 
-/* the inspector slides in from the right */
+/* the inspector slides away to the right like the notebook sidebar, with the same timing;
+   hidden, it can't be reached. It keeps its width and the page area shrinks around it. */
 .inspector {
-  animation: panel-in-right 200ms var(--ease-out);
+  transition:
+    margin-right 240ms var(--ease-out),
+    opacity 200ms ease,
+    visibility 0s linear 0s;
 }
 
-@keyframes panel-in-right {
-  from {
-    opacity: 0;
-    transform: translateX(14px);
-  }
+.inspector.collapsed {
+  margin-right: calc(-1 * var(--insp-width) - 1px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    margin-right 240ms var(--ease-out),
+    opacity 200ms ease,
+    visibility 0s linear 240ms;
 }
 
 /* messages rise into place */

@@ -1,6 +1,6 @@
 // Inspector: properties of the selected region, the document and its pages.
 import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEditor";
-import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createComputed, createSignal, For, type JSX, Match, Show, Switch, onCleanup } from "solid-js";
 import { arrowFocus } from "./a11y";
 import { pickAsset } from "./actions";
 import {
@@ -863,56 +863,83 @@ function PageTab(props: { onAddBackground: () => void }) {
   );
 }
 
-export function Inspector(props: { onAddBackground: () => void }) {
+export function Inspector(props: { collapsed?: boolean; onAddBackground: () => void }) {
+  // the shell stays for the slide; what is inside is built only while open or sliding shut,
+  // so a closed inspector doesn't follow every keystroke and selection
+  const [rendered, setRendered] = createSignal(!props.collapsed);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settle = () => {
+    clearTimeout(timer);
+    if (props.collapsed) setRendered(false);
+  };
+  createComputed(() => {
+    clearTimeout(timer);
+    if (!props.collapsed) setRendered(true);
+    else if (matchMedia("(prefers-reduced-motion: reduce)").matches) setRendered(false);
+    else timer = setTimeout(settle, 300);
+  });
+  onCleanup(() => clearTimeout(timer));
   return (
-    <aside class="inspector" aria-label="Inspector" onPointerDown={(e) => e.stopPropagation()}>
-      <div
-        class="insp-tabs"
-        role="tablist"
-        aria-label="Properties of"
-        onKeyDown={(e) => {
-          // arrows move between the tabs and open the one they land on
-          const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=tab]")];
-          if (arrowFocus(e, tabs, "horizontal")) (document.activeElement as HTMLElement).click();
-        }}
-      >
-        <For
-          each={
-            [
-              ["region", "Region"],
-              ["document", "Document"],
-              ["page", "Page"],
-            ] as [Tab, string][]
-          }
+    <aside
+      class="inspector"
+      classList={{ collapsed: !!props.collapsed }}
+      aria-label="Inspector"
+      aria-hidden={props.collapsed || undefined}
+      inert={props.collapsed || undefined}
+      onPointerDown={(e) => e.stopPropagation()}
+      onTransitionEnd={(e) => {
+        if (e.target === e.currentTarget && e.propertyName === "margin-right") settle();
+      }}
+    >
+      <Show when={rendered()}>
+        <div
+          class="insp-tabs"
+          role="tablist"
+          aria-label="Properties of"
+          onKeyDown={(e) => {
+            // arrows move between the tabs and open the one they land on
+            const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=tab]")];
+            if (arrowFocus(e, tabs, "horizontal")) (document.activeElement as HTMLElement).click();
+          }}
         >
-          {([t, label]) => (
-            <button
-              classList={{ on: tab() === t }}
-              role="tab"
-              id={`insp-tab-${t}`}
-              aria-selected={tab() === t}
-              aria-controls="insp-panel"
-              tabIndex={tab() === t ? 0 : -1}
-              onClick={() => setTab(t)}
-            >
-              {label}
-            </button>
-          )}
-        </For>
-      </div>
-      <div class="insp-body" id="insp-panel" role="tabpanel" aria-labelledby={`insp-tab-${tab()}`}>
-        <Switch>
-          <Match when={tab() === "region"}>
-            <RegionTab />
-          </Match>
-          <Match when={tab() === "document"}>
-            <DocumentTab />
-          </Match>
-          <Match when={tab() === "page"}>
-            <PageTab onAddBackground={props.onAddBackground} />
-          </Match>
-        </Switch>
-      </div>
+          <For
+            each={
+              [
+                ["region", "Region"],
+                ["document", "Document"],
+                ["page", "Page"],
+              ] as [Tab, string][]
+            }
+          >
+            {([t, label]) => (
+              <button
+                classList={{ on: tab() === t }}
+                role="tab"
+                id={`insp-tab-${t}`}
+                aria-selected={tab() === t}
+                aria-controls="insp-panel"
+                tabIndex={tab() === t ? 0 : -1}
+                onClick={() => setTab(t)}
+              >
+                {label}
+              </button>
+            )}
+          </For>
+        </div>
+        <div class="insp-body" id="insp-panel" role="tabpanel" aria-labelledby={`insp-tab-${tab()}`}>
+          <Switch>
+            <Match when={tab() === "region"}>
+              <RegionTab />
+            </Match>
+            <Match when={tab() === "document"}>
+              <DocumentTab />
+            </Match>
+            <Match when={tab() === "page"}>
+              <PageTab onAddBackground={props.onAddBackground} />
+            </Match>
+          </Switch>
+        </div>
+      </Show>
     </aside>
   );
 }
