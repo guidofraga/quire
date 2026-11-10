@@ -102,3 +102,9 @@ Leave out sections that would be empty. Say if documents written by the new vers
 - **Release stopped at "CI passed on this commit":** CI failed or was still running after an hour. Once CI is green on that commit, re-run the Release workflow.
 - **A bad release is out:** publish a fixed patch version quickly; the updater moves everyone to it. Deleting a published release makes `latest` fall back to the previous one, which is also an option for a release that can't be fixed fast.
 - **Never move a published tag.** Make a new version instead.
+
+## The app icon
+
+- `app/app-icon.png` is the master icon: 1024 × 1024, transparent, with the tile at about 80% of the canvas like other macOS icons. The README shows it.
+- `app/logo.png` is the bare tile, 1024 × 1024 and transparent, for anywhere the logo is needed without the margin. `app/favicon.png` (256 × 256) is the web version's tab icon.
+- To change the icon, replace `app/app-icon.png` and run `npx tauri icon app-icon.png -o /tmp/icons` from `app/`. Copy `32x32.png`, `64x64.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.icns` and `icon.ico` into `app/src-tauri/icons/`. Then regenerate `logo.png` and `favicon.png` from it.
