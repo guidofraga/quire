@@ -77,3 +77,43 @@ test("Save downloads a .quirez, and Open reads it back", async ({ page }) => {
   await expect(regions(page)).toHaveCount(2);
   await expect(regions(page).nth(1)).toContainText(/=21\s*m$/);
 });
+
+test("Ctrl+Z undoes typing inside a math region, and Ctrl+Shift+Z redoes it", async ({ page }) => {
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.mouse.click(700, 250);
+  const math = page.getByRole("textbox", { name: "Math", exact: true });
+  await page.keyboard.type("a:=5");
+  await expect(math).toHaveValue("a:=5");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(math).toHaveValue("a:=");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(math).toHaveValue("a:=5");
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Control+y");
+  await expect(math).toHaveValue("a:=5");
+  // undoing past the start of the edit does nothing, and the editor keeps working
+  for (let i = 0; i < 8; i++) await page.keyboard.press("ControlOrMeta+z");
+  const start = await math.inputValue();
+  expect("a:=5".startsWith(start)).toBe(true);
+  await page.keyboard.type("b");
+  await expect(math).toHaveValue(start + "b");
+});
+
+test("Ctrl+Z also undoes typing in a table cell and in a text region", async ({ page }) => {
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.mouse.click(700, 250);
+  await page.keyboard.type('"hello world');
+  await page.keyboard.press("ControlOrMeta+z");
+  // ProseMirror takes quick typing as one step; the editor is still there to type in
+  await page.keyboard.type("again");
+  await expect(page.locator(".region.text")).toContainText("again");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ControlOrMeta+Alt+t");
+  await page.keyboard.type("12");
+  const cell = page.getByRole("textbox", { name: /^Cell / });
+  await expect(cell).toHaveValue("12");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(cell).toHaveValue("1");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(cell).toHaveValue("12");
+});
