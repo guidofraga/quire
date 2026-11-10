@@ -197,6 +197,12 @@ export function selectInView(id: string) {
  * once). The scene is also kept on a layer of its own: WebKit spaces text slightly
  * differently inside one, and a text field with the caret otherwise moved it on and off
  * a layer, so text that wasn't even being edited shifted on every edit.
+ *
+ * Zoomed out, the scene is scaled with the transform instead (#116): laid out at a small
+ * size, text isn't a scaled-down copy of itself (the system font's tracking follows its size,
+ * and line boxes round to whole screen pixels), so lines got longer, wrapped differently and
+ * overlapped, and the regions' measured heights changed the layout. A scaled-down bitmap
+ * stays sharp, so the blurring that `zoom` avoids zoomed in doesn't arise.
  */
 const zoomKeepsCoordinates = (() => {
   const outer = document.createElement("div");
@@ -212,9 +218,10 @@ const zoomKeepsCoordinates = (() => {
 
 function sceneStyle(): Record<string, string> {
   const { x, y, zoom } = state.view;
-  if (zoomKeepsCoordinates && !state.printing)
+  if (state.printing) return { transform: `translate(${x}px, ${y}px) scale(${zoom})` };
+  if (zoomKeepsCoordinates && zoom >= 1)
     return { transform: `translate(${x / zoom}px, ${y / zoom}px)`, zoom: String(zoom), "will-change": "transform" };
-  return { transform: `translate(${x}px, ${y}px) scale(${zoom})` };
+  return { transform: `translate(${x}px, ${y}px) scale(${zoom})`, "will-change": "transform" };
 }
 
 /** Smart guides shown while dragging: a vertical and/or horizontal line, in scene px. */
