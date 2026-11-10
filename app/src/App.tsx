@@ -32,9 +32,10 @@ import { announce, cyclePanes, fromKeyboard, spoken, spokenNow, toolbarKeys } fr
 import { Canvas, clientToDoc, focusCanvas, reveal, zoomCenter, zoomToFit } from "./Canvas";
 import { describeRegion } from "./describe";
 import { CompletionPopup } from "./Completion";
+import { undoInMath } from "./MathEditor";
 import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
-import { importCsv, insertTable, isSheet, tableCommand, trackEvaluation } from "./TableEditor";
+import { importCsv, insertTable, isSheet, tableCommand, trackEvaluation, undoInCell } from "./TableEditor";
 import { insertPlot } from "./Plot";
 import { insertPlot3d } from "./Plot3D";
 import { findStep, openFind } from "./find";
@@ -689,10 +690,12 @@ function runCommand(id: string) {
     case "undo":
       if (state.hfEditing) return headerFooterUndo();
       if (activeView()) return runText(commands.undo);
+      if (undoInMath() || undoInCell()) return;
       return editingField ? document.execCommand("undo") : undo();
     case "redo":
       if (state.hfEditing) return headerFooterUndo(true);
       if (activeView()) return runText(commands.redo);
+      if (undoInMath(true) || undoInCell(true)) return;
       return editingField ? document.execCommand("redo") : redo();
     case "select_all":
       // a focused text field (the sidebar's search) takes it before the page does

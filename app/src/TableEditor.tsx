@@ -46,6 +46,35 @@ const [draft, setDraft] = createSignal<string | null>(null);
 /** Typing over a cell (arrows commit and move) rather than editing it in place (F2, Enter). */
 let typedOver = false;
 
+// The cell being typed into has its own undo, as the math editor does: the browser keeps one
+// history for the whole page, which a hidden field or another input can leave empty.
+let draftSteps: string[] = [];
+let draftAt = 0;
+
+/** Remember what the cell holds now as a step (or start over when no cell is being typed in). */
+function trackDraft(text: string | null) {
+  if (text === null) {
+    draftSteps = [];
+    draftAt = 0;
+  } else if (text !== draftSteps[draftAt]) {
+    draftSteps = [...draftSteps.slice(0, draftAt + 1), text];
+    draftAt = draftSteps.length - 1;
+  }
+}
+
+/** Undo or redo one step in the cell input that has focus; false when none has. */
+export function undoInCell(redo = false): boolean {
+  const input = document.activeElement;
+  if (!(input instanceof HTMLInputElement) || !input.classList.contains("cell-input") || draft() === null) return false;
+  const to = draftAt + (redo ? 1 : -1);
+  if (to < 0 || to >= draftSteps.length) return true;
+  draftAt = to;
+  setDraft(draftSteps[to]);
+  input.value = draftSteps[to];
+  input.setSelectionRange(input.value.length, input.value.length);
+  return true;
+}
+
 export const activeCell = () => sel();
 
 export const rowsOf = (r: Region): string[][] => (r.rows as string[][] | undefined) ?? [];
@@ -711,7 +740,11 @@ export function SheetGrid(props: { p: Placed }) {
 
   const onInputKey = (e: KeyboardEvent) => {
     e.stopPropagation();
-    if (e.key === "Enter") {
+    const k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (k === "z" || (k === "y" && !e.metaKey))) {
+      e.preventDefault();
+      undoInCell(k === "y" || e.shiftKey);
+    } else if (e.key === "Enter") {
       e.preventDefault();
       commitDraft(e.shiftKey ? -1 : 1, 0);
     } else if (e.key === "Tab") {
@@ -819,6 +852,7 @@ export function SheetGrid(props: { p: Placed }) {
   const onCopy = (e: ClipboardEvent) => copyCells(e, false);
   const onCut = (e: ClipboardEvent) => copyCells(e, true);
   onCleanup(() => setDraft(null));
+  createEffect(() => trackDraft(draft()));
 
   return (
     <div
@@ -961,6 +995,12 @@ export function SheetGrid(props: { p: Placed }) {
                           spellcheck={false}
                           autocomplete="off"
                           onInput={(e) => setDraft(e.currentTarget.value)}
+                          onBeforeInput={(e) => {
+                            // the edit menu and the context menu undo through here
+                            if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
+                            e.preventDefault();
+                            undoInCell(e.inputType === "historyRedo");
+                          }}
                           onKeyDown={onInputKey}
                           onPointerDown={(e) => e.stopPropagation()}
                         />

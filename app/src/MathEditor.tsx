@@ -38,6 +38,20 @@ const GREEK: Record<string, string> = Object.fromEntries(
 const LATIN = Object.fromEntries(Object.entries(GREEK).map(([l, g]) => [g, l]));
 
 let activeMathInput: HTMLInputElement | null = null;
+/** Undo and redo for the math being edited, set while its editor is on the page. */
+let activeMathHistory: ((redo: boolean) => void) | null = null;
+
+/**
+ * Undo (or redo) one step of typing in the math being edited; false when no math is being
+ * edited. The browser's own undo is not used: it keeps one history for the whole page, so
+ * a step typed into the hidden page field or the input before it can take the focus away,
+ * or do nothing. Undoing past the start of the edit does nothing.
+ */
+export function undoInMath(redo = false): boolean {
+  if (!activeMathHistory) return false;
+  activeMathHistory(redo);
+  return true;
+}
 /** After ":" became ":=", an "=" typed out of habit is swallowed. */
 let assignJustTyped = false;
 
@@ -168,15 +182,44 @@ export function MathEditor(props: { r: Region }) {
     if (hole >= 0) input.setSelectionRange(hole, hole + 1);
     else input.setSelectionRange(at, at);
     activeMathInput = input;
+    activeMathHistory = travel;
     traceCaret();
   });
   onCleanup(() => {
-    if (activeMathInput === input) activeMathInput = null;
+    if (activeMathInput === input) {
+      activeMathInput = null;
+      activeMathHistory = null;
+    }
     setCaretName(null);
     hideCompletions();
   });
   const fit = () => {
     input.style.width = `${Math.max(6, input.value.length + 2)}ch`;
+  };
+
+  // every change to the text is a step; `at` is the step shown now
+  type Step = { value: string; from: number; to: number };
+  const steps: Step[] = [{ value: initial, from: initial.length, to: initial.length }];
+  let at = 0;
+  const record = () => {
+    const now = { value: input.value, from: input.selectionStart ?? 0, to: input.selectionEnd ?? 0 };
+    if (now.value === steps[at].value) return;
+    steps.length = at + 1;
+    steps.push(now);
+    if (steps.length > 500) steps.shift();
+    at = steps.length - 1;
+  };
+  const travel = (redo: boolean) => {
+    const to = at + (redo ? 1 : -1);
+    if (to < 0 || to >= steps.length) return;
+    at = to;
+    const step = steps[at];
+    input.value = step.value;
+    input.setSelectionRange(step.from, step.to);
+    fit();
+    setLive(props.r.id, step.value);
+    updateCompletion();
+    traceCaret();
   };
   const atEnd = () => input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
   const latexBefore = () => (prefs.latex ? LATEX_BEFORE.exec(input.value.slice(0, input.selectionStart ?? 0)) : null);
@@ -268,6 +311,13 @@ export function MathEditor(props: { r: Region }) {
       else editNext(props.r.id, e.shiftKey ? -1 : 1);
       return;
     }
+    // ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+⇧Z / Ctrl+Y redo
+    const k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (k === "z" || (k === "y" && !e.metaKey))) {
+      e.preventDefault();
+      travel(k === "y" || e.shiftKey);
+      return;
+    }
     if (e.metaKey || e.altKey) return;
     if (e.key === ":" && !e.ctrlKey) {
       e.preventDefault();
@@ -322,6 +372,7 @@ export function MathEditor(props: { r: Region }) {
       autocapitalize="off"
       onInput={(e) => {
         fit();
+        record();
         setLive(props.r.id, e.currentTarget.value);
         updateCompletion();
         traceCaret();
@@ -333,6 +384,12 @@ export function MathEditor(props: { r: Region }) {
         if (linear === null) return;
         e.preventDefault();
         document.execCommand("insertText", false, linear.split("\n")[0]);
+      }}
+      onBeforeInput={(e) => {
+        // the edit menu and the context menu undo through here
+        if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
+        e.preventDefault();
+        travel(e.inputType === "historyRedo");
       }}
       onKeyDown={(e) => {
         onKeyDown(e);
