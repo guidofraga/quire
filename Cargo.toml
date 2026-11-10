@@ -6,7 +6,7 @@ members = ["crates/*", "app/src-tauri"]
 version = "0.4.1"
 edition = "2024"
 rust-version = "1.90"
-license = "MIT OR Apache-2.0"
+license = "PolyForm-Noncommercial-1.0.0"
 
 [workspace.dependencies]
 quire-ast = { path = "crates/quire-ast" }

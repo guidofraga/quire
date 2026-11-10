@@ -90,7 +90,7 @@ Quire has to work with the keyboard alone and with a screen reader. `app/e2e/a11
 ## 7. Dependencies and licensing
 
 - Add a dependency only when it earns its place: something hard to get right (ZIP, PDF objects, ProseMirror), not something a short function does.
-- **Engine crates** (`crates/`) may only use code compatible with MIT OR Apache-2.0; never GPL. **The app** (`app/`) is GPL-3.0-or-later and may use GPL-compatible code.
+- Quire is licensed under PolyForm Noncommercial 1.0.0 (see [LICENSE](../LICENSE)), with a separate commercial license. Dependencies must be permissive (MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0 and similar); **never GPL, LGPL or AGPL**, and nothing with a noncommercial clause of its own.
 - Don't copy code, unit tables or documents from other programs (SMath Studio and Mathcad included) unless their license allows it. Factors come from primary sources (NIST SP 811, CODATA).
 
 ## 8. Recipes

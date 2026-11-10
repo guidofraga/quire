@@ -79,12 +79,12 @@ SwiftUI gives the most native feel, but:
 - In Rust ourselves: canonicalization, basic simplification, expand/collect, differentiation, substitution, symbolic matrix ops, limits of rational functions. These are well understood, and owning them makes `→` (symbolic eval) fast and deterministic for the common cases.
 - **Default heavy backend: SymEngine** (C++, MIT/BSD, very fast, used by SymPy as a core) via a thin C FFI. It covers series, polynomial factoring, rational simplification, symbolic linear algebra and number theory.
 - **For symbolic integration, `solve` for transcendental systems and ODEs**, SymEngine is weak. These go through a `CasBackend` trait implemented by an **out-of-process plugin**:
-  - **Giac** (the Xcas engine): the strongest integrator of the embeddable options, and fast, but **GPL-3**. Shipping it in-process forces the whole app to be GPL.
+  - **Giac** (the Xcas engine): the strongest integrator of the embeddable options, and fast, but **GPL-3**. Shipping it in-process would force the whole app to be GPL, which Quire's license doesn't allow.
   - **SymPy in a sandboxed Python sidecar**: BSD and very capable, but slow to start (~1 s) and heavy (~40 MB with a bundled Python).
   - Running them as **separate processes over a JSON-RPC pipe** keeps licensing clean and crash isolation free. A Giac crash or a 30-second integral never freezes the UI.
 - ❌ Rejected: **GiNaC** (GPL, C++, no integration either). **Symbolica** (excellent Rust CAS, but its license is source-available/commercial for non-hobby use; re-evaluate if licensing fits). **Pyodide in the WebView** (startup time and memory are too high for a lightweight app).
 
-> ✅ **Licensing:** engine crates are MIT OR Apache-2.0; the desktop app is GPL-3.0-or-later, so a `giac` backend crate can link Giac in-process **in the app tier only**. See README.
+> ✅ **Licensing:** Quire is licensed under PolyForm Noncommercial 1.0.0, so GPL code like Giac can't be linked in-process anywhere; it can only run as a separate process (or under a commercial Giac license). See README.
 >
 > **Status:** symbolic math (`→`) ships as a built-in rewrite engine in `quire-eval` (`symbolic/`): simplification to the shortest of several equivalent forms with fractions cancelled, `factor`, `expand`, `diff`, `int` (table, substitution, by parts, partial fractions, definite integrals through limits), `solve` (exact polynomial roots up to degree four, cleared denominators, isolation through exp/ln/trig, linear systems), `series`/`taylor`, `lim` with L'Hôpital, and `subs`. SymEngine and the out-of-process backends above remain the plan for heavier work (Gröbner bases, nonlinear systems, ODEs, Risch integration).
 

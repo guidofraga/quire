@@ -1,4 +1,4 @@
-// Quire desktop app — GPL-3.0-or-later. The engine crates it calls are MIT OR Apache-2.0.
+// Quire desktop app. Licensed under PolyForm Noncommercial 1.0.0; see LICENSE.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod headless;
@@ -437,7 +437,10 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let sep = || PredefinedMenuItem::separator(app);
     let about = AboutMetadata {
         comments: Some("Free-form math notebook".into()),
-        license: Some("GPL-3.0-or-later (engine: MIT OR Apache-2.0)".into()),
+        license: Some(
+            "Free for noncommercial use (PolyForm Noncommercial 1.0.0). Commercial use needs a license."
+                .into(),
+        ),
         ..Default::default()
     };
     // macOS keeps Settings and Quit in the app menu; elsewhere they live in File

@@ -4,7 +4,7 @@ description = "Quire desktop app (Tauri shell + canvas editor)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "GPL-3.0-or-later"
+license = "PolyForm-Noncommercial-1.0.0"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
