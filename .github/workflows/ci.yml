@@ -1,7 +1,13 @@
 # Engine tests, front-end type check, unit tests, the web version's build and end-to-end tests
-# (the desktop UI against `quire serve`, and the web version with its WebAssembly engine) on
-# every push; and the desktop app itself built, linted and unit-tested on Linux, macOS and
-# Windows, with a real PDF export on Linux, so platform code is checked before a release.
+# (the desktop UI against `quire serve`, and the web version with its WebAssembly engine); and
+# the desktop app itself built, linted and unit-tested on Linux, macOS and Windows, with a real
+# PDF export on Linux, so platform code is checked before a release.
+#
+# Every push to main runs all of it (Pages and the Release workflow depend on that run). A pull
+# request runs only what its changes can break: the desktop builds when Rust, Tauri, dependencies
+# or CI change; nothing when only documentation changes. A new push to a pull request cancels its
+# previous run. On pull requests the Linux PDF export doesn't block (it is flaky on some runners,
+# #93); on main it does.
 #
 # Rust comes from rust-toolchain.toml; `--locked` keeps Cargo.lock as committed. Third-party
 # actions are pinned by commit (Dependabot proposes updates, .github/dependabot.yml).
@@ -15,8 +21,40 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # what a pull request changes: `code` unless it only touches documentation, `desktop` when it
+  # touches what the desktop builds compile or depend on. A push to main sets both.
+  changes:
+    runs-on: ubuntu-22.04
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+      desktop: ${{ steps.paths.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(git diff --name-only "$BASE"...HEAD)
+          printf '%s\n' "$files"
+          code=false; desktop=false
+          if printf '%s\n' "$files" | grep -qvE '^(docs/.*|[^/]*\.md|LICENSE.*|schema/LICENSE.*)$'; then code=true; fi
+          if printf '%s\n' "$files" | grep -qE '^(app/src-tauri/|crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|app/package(-lock)?\.json$|\.github/)'; then desktop=true; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
+          echo "code=$code desktop=$desktop"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,6 +99,8 @@ jobs:
           if-no-files-found: ignore
 
   app-linux:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,11 +122,15 @@ jobs:
         working-directory: app
       - name: Lint the desktop app
         run: cargo clippy -p quire-app --all-targets --locked -- -D warnings
-      # the unit tests (scope.rs, pdf.rs), and the PDF export, which WebKitGTK lays out and
-      # prints in a virtual display. With no session bus, GTK and WebKit wait for D-Bus calls
-      # to time out (30 s per launch), and the export sometimes outran its watchdog (#59)
-      - name: Test the desktop app and export a PDF (Linux)
-        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --include-ignored
+      # the unit tests (scope.rs, pdf.rs)
+      - name: Test the desktop app (Linux)
+        run: cargo test -p quire-app --features tauri/custom-protocol --locked
+      # the PDF export, which WebKitGTK lays out and prints in a virtual display. With no session
+      # bus, GTK and WebKit wait for D-Bus calls to time out (30 s per launch), and the export
+      # sometimes outran its watchdog (#59). Blocking on main only, while #93 is open
+      - name: Export a PDF (Linux)
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
         run: |
@@ -96,6 +140,8 @@ jobs:
 
   # AppKit printing (print.rs), RunEvent::Opened and the Windows branches are only compiled here
   app-macos-windows:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
