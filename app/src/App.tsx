@@ -1111,9 +1111,11 @@ export function App() {
             <Canvas />
             <FindBar />
           </div>
-          <Show when={state.inspector}>
-            <Inspector onAddBackground={() => addBackground().catch((e) => flash(String(e)))} />
-          </Show>
+          {/* stays mounted so hiding and showing it can slide, like the notebook sidebar */}
+          <Inspector
+            collapsed={!state.inspector}
+            onAddBackground={() => addBackground().catch((e) => flash(String(e)))}
+          />
         </div>
       </div>
       <ContextMenu />

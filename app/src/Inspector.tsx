@@ -863,9 +863,16 @@ function PageTab(props: { onAddBackground: () => void }) {
   );
 }
 
-export function Inspector(props: { onAddBackground: () => void }) {
+export function Inspector(props: { collapsed?: boolean; onAddBackground: () => void }) {
   return (
-    <aside class="inspector" aria-label="Inspector" onPointerDown={(e) => e.stopPropagation()}>
+    <aside
+      class="inspector"
+      classList={{ collapsed: !!props.collapsed }}
+      aria-label="Inspector"
+      aria-hidden={props.collapsed || undefined}
+      inert={props.collapsed || undefined}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <div
         class="insp-tabs"
         role="tablist"
