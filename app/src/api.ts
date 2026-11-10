@@ -33,6 +33,7 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
 
 export const api = {
   report: (doc: Doc) => call<Report>("report", { doc }),
+  openReleaseNotes: (version: string) => call<null>("open_release_notes", { version }),
   open: (path: string) => call<Doc>("open_document", { path }),
   save: (path: string, doc: Doc, from: string | null) => call<null>("save_document", { path, doc, from }),
   djotHtml: (src: string) => call<string>("djot_html", { src }),
