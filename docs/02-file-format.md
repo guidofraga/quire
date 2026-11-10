@@ -2,6 +2,7 @@
 
 > An open JSON alternative to SMath's `.sm` XML. Machine schema: [`schema/quire-1.schema.json`](../schema/quire-1.schema.json).
 > Importer: [`crates/quire-smath`](../crates/quire-smath) (`quire import`, or File ▸ Open in the app).
+> This spec and the schema are MIT OR Apache-2.0 ([schema/LICENSE-MIT](../schema/LICENSE-MIT), [schema/LICENSE-APACHE](../schema/LICENSE-APACHE)), unlike the rest of Quire, so any program may read and write `.quire` files.
 
 ## 1. Design goals, measured against a real SMath file
 

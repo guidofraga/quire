@@ -23,7 +23,7 @@
 <p align="center">
   <a href="https://github.com/guidofraga/quire/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/guidofraga/quire/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="https://github.com/guidofraga/quire/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/guidofraga/quire?style=flat-square&label=release&color=3a5f9f"></a>
-  <a href="#license"><img alt="License: engine MIT or Apache-2.0, app GPL-3.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0%20%C2%B7%20GPL--3.0-3a5f9f?style=flat-square"></a>
+  <a href="#license"><img alt="License: free for noncommercial use" src="https://img.shields.io/badge/license-free%20for%20noncommercial%20use-3a5f9f?style=flat-square"></a>
   <img alt="Runs on macOS, Windows, Linux and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20Web-3a5f9f?style=flat-square">
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-3a5f9f?style=flat-square&logo=rust&logoColor=white">
 </p>
@@ -77,7 +77,7 @@ Every picture is a real document, photographed by the app's own test setup (`npm
 - **Your files.** Documents are readable JSON that diffs well in Git; a notebook is an ordinary folder. Nothing is locked in, and every document opens in later versions.
 - **Opens SMath Studio worksheets.** `.sm` files open as Quire documents and compute the same results.
 - **Share a link.** **Share** puts a whole document in a link that opens, live and editable, in anyone's browser. Nothing is uploaded: the document travels inside the link.
-- **Free and open.** The engine is MIT or Apache-2.0, the app GPL-3.0.
+- **Free for personal use, source included.** Students, teachers and hobbyists use Quire free; companies buy a commercial license. The whole source is public.
 
 ## What it does
 
@@ -144,9 +144,13 @@ Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the 
 
 ## Support
 
-Quire is free and stays free. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/guidofraga). Support goes first to code signing, so Windows and macOS stop warning on install, and then to time for new features and fixes.
+Quire is free for personal, educational and other noncommercial use. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/guidofraga). Support goes first to code signing, so Windows and macOS stop warning on install, and then to time for new features and fixes.
 
 ## License
 
-- The engine crates, the file-format spec and the schema: **MIT OR Apache-2.0** ([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)). They never depend on GPL code, so they can be used anywhere.
-- The desktop app (`app/`): **GPL-3.0-or-later** ([app/LICENSE](app/LICENSE)).
+Quire is **source-available**: the code is public and contributions are welcome, but it isn't free for commercial use.
+
+- **Free for noncommercial use.** Personal projects, study, teaching, research, hobby use, and charities, schools, public research and government bodies may use Quire free under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+- **Companies need a commercial license.** Using Quire in paid work (calculations for clients, projects, products) needs a commercial license. To get one, contact [@guidofraga](https://github.com/guidofraga).
+- **Your files stay open.** The file-format spec ([docs/02-file-format.md](docs/02-file-format.md)) and the schema ([schema/](schema/)) are **MIT OR Apache-2.0** ([schema/LICENSE-MIT](schema/LICENSE-MIT), [schema/LICENSE-APACHE](schema/LICENSE-APACHE)), so anyone may read and write `.quire` files.
+- Versions up to 0.4.1 were released under MIT/Apache-2.0 (engine) and GPL-3.0 (app); those releases keep those terms. Later versions are under the terms above.

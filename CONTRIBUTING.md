@@ -100,10 +100,11 @@ Open an issue with:
 
 ## Licensing of contributions
 
-- The engine crates, the file-format spec and the schema are **MIT OR Apache-2.0**.
-- The desktop app (`app/`) is **GPL-3.0-or-later**.
+Quire is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE) and is also sold under commercial licenses. The file-format spec and the schema are MIT OR Apache-2.0.
 
-By contributing, you agree that your contribution is licensed under the terms of the part of the project it changes, and confirm that you have the right to contribute it. Don't copy code, unit tables or documents from other programs (SMath Studio included) unless their license allows it.
+Before a pull request can be merged, you sign the [Contributor License Agreement](CLA.md) once: a bot comments on your first pull request, and you reply with the sentence it gives. The agreement lets the project offer your contribution under both the public and the commercial licenses; you keep the copyright of your work.
+
+By contributing, you also confirm that you have the right to contribute it. Don't copy code, unit tables or documents from other programs (SMath Studio included) unless their license allows it.
 
 ## Be kind
 

@@ -5,14 +5,14 @@ Where things are today and how they fit together. [01-architecture.md](01-archit
 ## 1. The big picture
 
 ```text
-                ┌──────────────────────── app/ (GPL-3.0-or-later) ────────────────────────┐
+                ┌───────────────────────────────── app/ ──────────────────────────────────┐
                 │  app/src: SolidJS UI                    app/src-tauri: desktop shell     │
  keystroke ───▶ │  store.ts ─ mutate ─▶ App.tsx ─ report ─▶ api.ts ──invoke──▶ main.rs     │
                 │      ▲                                     │ (browser: fetch /api)  │      │
                 │      └──────── showReport ◀── Report ──────┘                        │      │
                 └─────────────────────────────────────────────────────────────────────┼──────┘
                                                                                       ▼
-                ┌──────────────────────── crates/ (MIT OR Apache-2.0) ─────────────────────┐
+                ┌────────────────────────────────── crates/ ───────────────────────────────┐
                 │  quire-service: one function per editor call, JSON in and out            │
                 │      ├─ quire-doc     document model, .quire / .quirez on disk           │
                 │      ├─ quire-smath   SMath .sm worksheets → a document (import only)    │
@@ -29,7 +29,7 @@ Three rules hold the layers apart:
 
 - **The app holds no maths.** It keeps the document as the JSON that is on disk, asks the backend for an evaluated `Report` and draws it. Anything that needs units, parsing or numbers is asked of `quire-service`.
 - **The engine holds no UI.** No crate under `crates/` knows about windows, the DOM or Tauri. `quire-service` is the only API the app sees.
-- **The engine stays permissive.** Crates under `crates/` are MIT OR Apache-2.0 and never depend on GPL code; `app/` is GPL-3.0-or-later.
+- **No GPL code anywhere.** Quire is licensed under PolyForm Noncommercial 1.0.0 (see [LICENSE](../LICENSE)), which GPL code can't be combined with. Only the file-format spec and the schema are MIT OR Apache-2.0.
 
 ## 2. One edit, start to finish
 
