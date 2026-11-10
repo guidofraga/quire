@@ -1,6 +1,6 @@
 # 05 — Testing
 
-What is tested where, how to run it, and what a good test looks like. CI (`.github/workflows/ci.yml`) runs every layer below on every push and pull request: the PDF export test on Linux, and the desktop app's lint and unit tests on Linux, macOS and Windows. The SMath corpus is not in the repository, so there the corpus tests check only the fixtures that are.
+What is tested where, how to run it, and what a good test looks like. CI (`.github/workflows/ci.yml`) runs every layer below on every push to main: the PDF export test on Linux, and the desktop app's lint and unit tests on Linux, macOS and Windows. A pull request runs the desktop builds only when it changes Rust, Tauri, dependencies or CI, runs nothing when it changes only documentation, and doesn't block on the Linux PDF export (#93). The SMath corpus is not in the repository, so there the corpus tests check only the fixtures that are.
 
 ## 1. The layers
 
