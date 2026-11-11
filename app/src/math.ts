@@ -25,15 +25,34 @@ function mi(text: string, upright = false) {
 let unitNames: ReadonlySet<string> = new Set();
 let constantNames: ReadonlySet<string> = new Set();
 
-/** A built-in constant: a plain name that resolved to one, or `#G`. */
+/**
+ * Faint marks on names that may not mean what was meant, each with its explanation as a hover
+ * title: the name a definition gives a new meaning to (`T := 300` hides the unit tesla), and
+ * names read as units where a variable is usual (`M/W` with no `W` defined).
+ */
+export interface NameMarks {
+  defines?: { name: string; title: string };
+  units?: ReadonlyMap<string, string>;
+}
+let marks: NameMarks = {};
+
+const markAttrs = (cls: string, title: string) => ` class="${cls}" title="${esc(title)}"`;
+
+/** A built-in constant: a plain name that resolved to one, or `#G`. Upright, in its own ink. */
 function constant(name: string): string {
   const [base, sub] = identParts(name);
   const k = ` class="k" data-k="constant:${esc(name)}"`;
-  return sub === null ? `<mi${k}>${esc(base)}</mi>` : `<msub${k}>${mi(base)}${mi(sub, true)}</msub>`;
+  return sub === null
+    ? `<mi${k} mathvariant="normal">${esc(base)}</mi>`
+    : `<msub${k}>${mi(base, true)}${mi(sub, true)}</msub>`;
 }
 
 function ident(name: string): string {
-  if (unitNames.has(name)) return `<mi class="u" mathvariant="normal" data-k="unit:${esc(name)}">${esc(name)}</mi>`;
+  if (unitNames.has(name)) {
+    const note = marks.units?.get(name);
+    const cls = note ? markAttrs("u asunit", note) : ` class="u"`;
+    return `<mi${cls} mathvariant="normal" data-k="unit:${esc(name)}">${esc(name)}</mi>`;
+  }
   if (constantNames.has(name)) return constant(name);
   // data-v: the name, for tracing where a variable is defined and used
   const [base, sub] = identParts(name);
@@ -280,12 +299,25 @@ function m(e: Expr): string {
       return row(m(e.c[0]), mo(".."), m(e.c[1]));
     case "Define": {
       const op = mo(e.c.global ? "≡" : "≔");
+      const lhs = definedName(e.c.lhs);
       // a block on the right is drawn from its header, so `f(x) :=` sits level with its first statement
       const rhs = e.c.rhs;
-      if (rhs.t === "Call" && rhs.c[0] === "block") return program(rhs.c[1], row(m(e.c.lhs), op));
-      return row(m(e.c.lhs), op, m(e.c.rhs));
+      if (rhs.t === "Call" && rhs.c[0] === "block") return program(rhs.c[1], row(lhs, op));
+      return row(lhs, op, m(e.c.rhs));
     }
   }
+}
+
+/** The left side of a definition; the name it gives a new meaning to is marked (only once). */
+function definedName(lhs: Expr): string {
+  const mark = marks.defines;
+  if (!mark || lhs.t !== "Ident" || lhs.c !== mark.name) return m(lhs);
+  marks = { ...marks, defines: undefined };
+  const [base, sub] = identParts(lhs.c);
+  const attrs = ` data-v="${esc(lhs.c)}"${markAttrs("redef", mark.title)}`;
+  return sub === null
+    ? `<mi${attrs}>${esc(base)}</mi>`
+    : `<msub${attrs}>${mi(base)}${mi(sub, sub.length === 1)}</msub>`;
 }
 
 /** One `<math>` element for an input, optionally followed by `= result`. */
@@ -295,15 +327,27 @@ export function mathml(
   units: readonly string[] = [],
   constants: readonly string[] = [],
   symbolic = false,
+  nameMarks: NameMarks = {},
 ): string {
   unitNames = new Set(units);
   constantNames = new Set(constants);
+  marks = nameMarks;
   grouping = !!(state.doc.settings as { display?: { groupDigits?: boolean } } | undefined)?.display?.groupDigits;
   const parts = [m(input)];
   unitNames = new Set();
   constantNames = new Set();
+  marks = {};
   if (result) parts.push(mo(symbolic ? "→" : "="), `<mrow class="res${symbolic ? " sym" : ""}">${m(result)}</mrow>`);
   return `<math>${row(...parts)}</math>`;
+}
+
+/** A name as the math draws it in its meaning: your variable italic, a unit or constant upright. */
+export function nameHtml(name: string, kind: "variable" | "function" | "unit" | "constant"): string {
+  if (kind === "unit") return `<math>${unit(name)}</math>`;
+  if (kind === "constant") return `<math>${constant(name).replace(/ data-k="[^"]*"/, "")}</math>`;
+  const [base, sub] = identParts(name);
+  const token = sub === null ? `<mi>${esc(base)}</mi>` : `<msub>${mi(base)}${mi(sub, sub.length === 1)}</msub>`;
+  return `<math>${token}</math>`;
 }
 
 /** A single cell (tables): strings as plain text, everything else as math. */

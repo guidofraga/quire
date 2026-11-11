@@ -1,4 +1,4 @@
-// Hover explanations for names in typeset math: what `g` or `kN` means here.
+// Hover explanations for names in typeset math: what `g` or `kN` means here, and why a name is marked.
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { valueText } from "./insert";
 import { prefs } from "./settings";
@@ -8,9 +8,19 @@ export function NameTooltip() {
   const [tip, setTip] = createSignal<{ x: number; y: number; name: string; title: string; value: string } | null>(null);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const over = (e: MouseEvent) => {
-    const el = (e.target as Element).closest?.("[data-k]");
+    const target = e.target as Element;
+    // a marked name (a redefinition, a name read as a unit) explains its mark: MathML has no title tooltips
+    const mark = target.closest?.(".redef, .asunit");
+    const el = mark ?? target.closest?.("[data-k]");
     clearTimeout(timer);
     if (!el || state.editing || !prefs.tooltips) return setTip(null);
+    if (mark) {
+      const rect = mark.getBoundingClientRect();
+      const name = mark.getAttribute("data-v") ?? mark.textContent ?? "";
+      const title = mark.getAttribute("title") ?? "";
+      timer = setTimeout(() => setTip({ x: rect.left, y: rect.bottom + 6, name, title, value: "" }), 350);
+      return;
+    }
     const key = el.getAttribute("data-k")!;
     const g = state.report?.glossary[key];
     if (!g) return setTip(null);

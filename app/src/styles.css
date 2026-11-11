@@ -11,6 +11,9 @@
   --accent-soft: rgba(47, 111, 223, 0.12);
   --error: #d1302a;
   --unit: #1d5fa8;
+  /* built-in constants on the page, and the faint mark on a name that may not mean what was meant */
+  --constant: #7c3aed;
+  --name-mark: rgba(75, 85, 99, 0.75);
   --ink: #1b1d22;
   --muted: #6b7280;
   --trace-name: rgba(234, 179, 8, 0.28);
@@ -30,6 +33,7 @@
   --error-ink: #c62828;
   --ok-ink: #1a7f37;
   --unit-chrome: var(--unit);
+  --constant-chrome: var(--constant);
   /* floating surfaces: menus and popovers, panels, dialogs */
   --radius-menu: 8px;
   --radius-panel: 10px;
@@ -53,6 +57,7 @@
     --error-ink: #ff7a70;
     --ok-ink: #5fd17a;
     --unit-chrome: #78aefc;
+    --constant-chrome: #c4a5ff;
     --shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.45);
     --shadow-dialog: 0 18px 50px rgba(0, 0, 0, 0.55);
     --muted: #9aa0aa;
@@ -2189,7 +2194,7 @@ ms.str {
   }
 
   .gallery-tile .k {
-    color: #c4a5ff;
+    color: var(--constant-chrome);
   }
 }
 
@@ -2322,53 +2327,10 @@ ms.str {
   opacity: 0.6;
 }
 
-/* ================================================================ names: constants, notes, tooltips */
+/* ================================================================ names: constants, tooltips */
 
 .k {
-  color: #7c3aed;
-}
-
-.name-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 5px;
-  font:
-    11.5px -apple-system,
-    system-ui,
-    sans-serif;
-  white-space: nowrap;
-}
-
-.name-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #4b5563;
-}
-
-.name-note b {
-  font: italic 13px var(--math-font);
-  color: var(--ink);
-}
-
-.name-note button {
-  height: 19px;
-  padding: 0 7px;
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  background: var(--paper);
-  color: var(--accent);
-  font:
-    11px -apple-system,
-    system-ui,
-    sans-serif;
-  cursor: pointer;
-}
-
-.name-note button:hover {
-  background: var(--accent);
-  color: #fff;
+  color: var(--constant);
 }
 
 .name-tooltip {
@@ -2445,15 +2407,6 @@ ms.str {
 
 .gallery {
   overflow-x: hidden;
-}
-
-.name-notes {
-  white-space: normal;
-  max-width: 340px;
-}
-
-.name-note {
-  flex-wrap: wrap;
 }
 
 /* ================================================================ settings */
@@ -3143,6 +3096,82 @@ ms.str {
     system-ui,
     sans-serif;
   font-variant-numeric: tabular-nums;
+}
+
+/* the meanings of a name (Ctrl+Space, or by itself after two letters): a glyph for the kind,
+   the name as the math draws it, and its value, muted */
+.completion.names {
+  max-width: min(440px, calc(100vw - 16px));
+  max-height: 288px;
+  overflow-y: auto;
+}
+
+.completion.names .completion-item {
+  align-items: center;
+  gap: 8px;
+}
+
+.kind-glyph {
+  display: inline-flex;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+
+.kind-glyph svg {
+  width: 12px;
+  height: 12px;
+}
+
+.kind-glyph.unit {
+  color: var(--unit-chrome);
+  opacity: 1;
+}
+
+.kind-glyph.constant {
+  color: var(--constant-chrome);
+  opacity: 1;
+}
+
+.completion.names .name-glyph {
+  min-width: 0;
+  font-size: 15px;
+  text-align: left;
+}
+
+.completion.names math {
+  font-size: 1em;
+}
+
+.completion.names .u {
+  color: var(--unit-chrome);
+}
+
+.completion.names .k {
+  color: var(--constant-chrome);
+}
+
+.completion-preview {
+  flex: 1;
+  max-width: 260px;
+  margin-left: auto;
+  padding-left: 14px;
+  overflow: hidden;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.completion-item.on .kind-glyph,
+.completion-item.on .completion-preview,
+.completion-item.on .u,
+.completion-item.on .k {
+  color: inherit;
+  opacity: 1;
 }
 
 /* ⌘K command palette */
@@ -5359,53 +5388,30 @@ body.resizing-sidebar {
   }
 }
 
-/* a name read as a unit where a variable is usual (M/W with no W): a quiet mark, text on hover or focus */
-.unit-mark {
-  position: relative;
-  display: inline-block;
-  margin-left: 6px;
-  width: 14px;
-  height: 14px;
-  border: 1px solid #b45309;
-  border-radius: 50%;
-  color: #b45309;
-  font:
-    600 10px/12px -apple-system,
-    system-ui,
-    sans-serif;
-  text-align: center;
-  vertical-align: middle;
-  opacity: 0.7;
+/* a name that may not mean what was meant: the name a definition gives a new meaning to
+   (T := 300 hides the unit tesla), or a name read as a unit where a variable is usual (M/W with
+   no W defined). A faint dotted underline, the reason on hover; never printed. The page is
+   paper-white in either theme, so one colour serves both. */
+.redef,
+.asunit {
+  /* drawn as a background: WebKit doesn't underline MathML tokens */
+  background-image: radial-gradient(circle, var(--name-mark) 0.6px, transparent 0.8px);
+  background-position: 0 100%;
+  background-repeat: repeat-x;
+  background-size: 3px 2px;
+  /* below the letters, as an underline sits */
+  padding-bottom: 0.2em;
   cursor: help;
 }
 
-.unit-mark:hover,
-.unit-mark:focus-visible {
-  opacity: 1;
-}
-
-.unit-mark:focus-visible::after {
-  content: attr(data-text);
-  position: absolute;
-  left: 0;
-  top: 18px;
-  z-index: 20;
-  width: max-content;
-  max-width: 260px;
-  padding: 4px 8px;
-  border-radius: 5px;
-  background: var(--ink);
-  color: var(--paper);
-  font:
-    400 11.5px -apple-system,
-    system-ui,
-    sans-serif;
-  text-align: left;
-  white-space: pre-line;
-}
-
 @media print {
-  .unit-mark {
-    display: none;
+  .redef,
+  .asunit {
+    background-image: none;
   }
+}
+
+.app.printing .redef,
+.app.printing .asunit {
+  background-image: none !important;
 }

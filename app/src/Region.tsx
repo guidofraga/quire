@@ -1,4 +1,4 @@
-import { MathEditor, NameNotes, unitNoteText } from "./MathEditor";
+import { MathEditor } from "./MathEditor";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
@@ -10,7 +10,6 @@ import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { DEFAULT_SIZE_3D, editPlot3d, Plot3DBody } from "./Plot3D";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
-import { prefs } from "./settings";
 import {
   createEffect,
   createMemo,
@@ -27,7 +26,7 @@ import {
 import { produce } from "solid-js/store";
 import { api, isMac } from "./api";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
-import { mathWords } from "./describe";
+import { mathWords, nameMarks } from "./describe";
 import { spokenMath } from "./speech";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
 import { createEditor, isLiteral, placeCaret, plainText, releaseEditor } from "./richtext";
@@ -267,7 +266,7 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
   const rendered = () => {
     const v = view();
     const result = props.r.show && !comparison() ? v?.result : null;
-    return v?.input ? mathml(v.input, result, v.units, v.constants, props.r.show === "symbolic") : null;
+    return v?.input ? mathml(v.input, result, v.units, v.constants, props.r.show === "symbolic", nameMarks(v)) : null;
   };
   return (
     <>
@@ -294,26 +293,10 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
             {check() ? "✓" : "✗ fails"}
           </span>
         </Show>
-        {/* a finished document shows it too: a forgotten definition is a wrong number */}
-        <Show when={!editing() && prefs.nameNotes && view()?.namesReadAsUnits?.length}>
-          <span
-            class="unit-mark"
-            role="note"
-            tabindex="0"
-            aria-label={view()!.namesReadAsUnits!.map(unitNoteText).join(". ")}
-            data-text={view()!.namesReadAsUnits!.map(unitNoteText).join("\n")}
-            title={view()!.namesReadAsUnits!.map(unitNoteText).join("\n")}
-          >
-            <span aria-hidden="true">?</span>
-          </span>
-        </Show>
         <Show when={props.r.note && !editing()}>
           <Html html={state.report?.html[`${props.r.id}:note`]} class="note" />
         </Show>
       </div>
-      <Show when={editing() && prefs.nameNotes}>
-        <NameNotes id={props.r.id} />
-      </Show>
       <Show when={view()?.error}>
         <div class="err" style={{ "max-width": `${props.noteWidth()}px` }}>
           <span class="err-text">{view()!.error}</span>
