@@ -47,6 +47,9 @@ const UNITS: Row[] = [
   ["m := 25 kg, then 10 m", "250 kg, your variable m; write 10 'm for metres"],
   ["500 g, m*g", "g is grams after a number, gravity elsewhere"],
   ["G := 5, then #G", "the constant G, whatever variable G you defined"],
+  ["Ctrl+Space in math", "what the name at the caret can be here; ↑↓ and Enter pick, Esc closes"],
+  [`${alt}Enter on a name`, "its next meaning: your variable → unit → constant"],
+  ["T := 300 (dotted T)", "a definition that hides a unit or constant; hover it to see which"],
   ["kN, MPa, kgf, tonnef, psi, ksi, ft, in, °C", "SI with prefixes, technical and US units"],
   ["Inspector ▸ Results", "units as written (54 kN·m) or plain SI (54000 J)"],
 ];

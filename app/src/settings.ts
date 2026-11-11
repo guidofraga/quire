@@ -10,7 +10,7 @@ export interface Prefs {
   theme: Theme;
   /** `\Delta` → Δ while typing, with the completion list. */
   latex: boolean;
-  /** Notes under the math being edited when a name could mean something else. */
+  /** The faint mark on a name that may not mean what was meant (a redefinition, a name read as a unit). */
   nameNotes: boolean;
   /** Unit fractions on one line (`80 km/h`), in math and results. */
   flatUnits: boolean;

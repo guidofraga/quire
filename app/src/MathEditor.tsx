@@ -1,14 +1,27 @@
 // Math regions while you type: the linear editor, Greek and LaTeX shortcuts, prose detection
-// (a sentence becomes text) and the notes under a line about names that mean two things.
+// (a sentence becomes text), and the meanings of a name: Ctrl+Space lists them, a list opens by
+// itself after two letters, and ⌥Enter cycles the name at the caret through them.
 import { nameAt, setCaretName } from "./trace";
 import { paletteOpen } from "./Palette";
 import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
 import { editTableAt } from "./TableEditor";
 import { prefs } from "./settings";
-import { createEffect, For, on, onCleanup, Show, untrack } from "solid-js";
-import { completionKey, hideCompletions, showCompletions } from "./Completion";
-import { prettyValue } from "./math";
+import { createEffect, on, onCleanup, untrack } from "solid-js";
+import { announceFirst, completionKey, hideCompletions, type Item, openList, showCompletions } from "./Completion";
+import { nameHtml, prettyValue } from "./math";
+import { announce } from "./a11y";
+import {
+  cycleOrder,
+  currentMeaning,
+  forgetMeanings,
+  KIND_WORD,
+  knownMeanings,
+  meanings,
+  type NameSpan,
+  nameSpan,
+} from "./names";
+import type { Completion } from "./types";
 import { latexToLinear } from "./clipboard";
 import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
 import {
@@ -19,7 +32,6 @@ import {
   editClickPoint,
   editText,
   layout,
-  quietUnitNote,
   runAppCommand,
   setLive,
   setState,
@@ -182,9 +194,12 @@ export function MathEditor(props: { r: Region }) {
     else input.setSelectionRange(at, at);
     activeMathInput = input;
     activeMathHistory = travel;
+    // the regions above may have changed since the last edit
+    forgetMeanings(props.r.id);
     traceCaret();
   });
   onCleanup(() => {
+    clearTimeout(nameTimer);
     if (activeMathInput === input) {
       activeMathInput = null;
       activeMathHistory = null;
@@ -225,13 +240,118 @@ export function MathEditor(props: { r: Region }) {
 
   const traceCaret = () =>
     setCaretName(input.selectionStart === input.selectionEnd ? nameAt(input.value, input.selectionStart ?? 0) : null);
-  const updateCompletion = () => {
+  /** The list for where the caret is: `\name` first, then the units after `=`, then names. */
+  const updateCompletion = (typing = false) => {
     const m = latexBefore();
-    if (!m) return unitSuggestions();
+    if (!m) return inShownUnit() ? unitSuggestions() : nameSuggestions(typing);
     const caret = input.selectionStart ?? 0;
     const items = m[1] ? completions(m[1], 8, "math") : [...commandsFor("math"), ...POPULAR];
     const [x, y] = caretPoint(input);
     showCompletions(x, y, items, (sym) => applySymbol(input, sym, caret - m[0].length, caret));
+  };
+  /** The caret is after the `=` that shows the result, where the unit to show it in goes. */
+  const inShownUnit = () =>
+    splitShow(input.value).show === "value" && (input.selectionStart ?? 0) > input.value.lastIndexOf("=");
+
+  // ---- names: what the name at the caret can mean here ----
+
+  /** Set while this editor rewrites a name itself, so the change opens no list. */
+  let rewriting = false;
+  /** Replace `[from, to)` with `text` as one edit (one undo step). */
+  const rewrite = (from: number, to: number, text: string) => {
+    rewriting = true;
+    input.focus();
+    input.setSelectionRange(from, to);
+    document.execCommand("insertText", false, text);
+    rewriting = false;
+  };
+  const replaceName = (insert: string) => {
+    const caret = input.selectionStart ?? 0;
+    const span = nameSpan(input.value, caret);
+    rewrite(span?.from ?? caret, span?.to ?? caret, insert);
+  };
+  const toItem = (c: Completion): Item => {
+    const preview = prettyValue(c.preview);
+    return {
+      name: c.name,
+      insert: c.insert,
+      note: preview,
+      kind: c.kind,
+      html: nameHtml(c.name, c.kind),
+      speak: `${c.name}, ${KIND_WORD[c.kind]}, ${preview}`,
+    };
+  };
+
+  let nameTimer: ReturnType<typeof setTimeout> | undefined;
+  let nameGen = 0;
+  /**
+   * The meanings of the name at the caret. Asked for (Ctrl+Space), the list lists them all and
+   * Enter takes one; by itself it opens only after two letters that start a name, quietly:
+   * Enter still finishes the line until the arrows move into it. Typing narrows either.
+   */
+  const nameSuggestions = (typing: boolean, ask = false) => {
+    const gen = ++nameGen;
+    clearTimeout(nameTimer);
+    const open = openList();
+    const namesOpen = open?.list === "names";
+    const asked = ask || (namesOpen && !open.soft);
+    const caret = input.selectionStart ?? 0;
+    const span = input.selectionStart === input.selectionEnd ? nameSpan(input.value, caret) : null;
+    // asked for between names: everything there is
+    const here: NameSpan | null = span ?? (ask ? { from: caret, to: caret, name: "", marker: "", typed: "" } : null);
+    const prefix = here ? (asked ? here.typed || here.name : here.typed) : "";
+    const starts = typing && here?.to === caret && /^\p{L}{2}/u.test(prefix) && !KEYWORDS.has(prefix.toLowerCase());
+    if (!here || !(asked || (prefix && (namesOpen || starts)))) {
+      if (open) hideCompletions();
+      return;
+    }
+    if (open && !namesOpen) hideCompletions();
+    const id = props.r.id;
+    const value = input.value;
+    let toSay = ask;
+    const show = (all: Completion[]) => {
+      if (gen !== nameGen || input.value !== value || document.activeElement !== input) return;
+      const fits = (c: Completion) =>
+        c.name.startsWith(prefix) &&
+        (here.marker === "'" ? c.kind === "unit" : here.marker === "#" ? c.kind === "constant" : true);
+      const items = all.filter(fits).slice(0, 100).map(toItem);
+      // a list that would only repeat what is typed stays closed
+      const same = items.length === 1 && items[0].insert === value.slice(here.from, here.to);
+      if (!items.length || (!asked && same)) {
+        if (openList()?.list === "names") hideCompletions();
+        if (toSay) announce(`Nothing named ${prefix || "here"}`);
+        toSay = false;
+        return;
+      }
+      const [x, y] = caretPoint(input);
+      showCompletions(x, y, items, (item) => replaceName(item.insert), !asked, "names");
+      if (toSay) announceFirst();
+      toSay = false;
+    };
+    // what is known answers now; the engine is asked once typing pauses
+    const known = knownMeanings(id, prefix);
+    if (known) show(known.list);
+    if (known?.exact) return;
+    nameTimer = setTimeout(() => void meanings(id, prefix).then(show), asked ? 0 : 150);
+  };
+
+  /** ⌥Enter: the name at the caret takes its next meaning here (yours → unit → constant). */
+  const cycleName = async () => {
+    const value = input.value;
+    const caret = input.selectionStart ?? 0;
+    const span = input.selectionStart === input.selectionEnd ? nameSpan(value, caret) : null;
+    if (!span) return announce("No name at the caret");
+    const order = cycleOrder(await meanings(props.r.id, span.name), span.name);
+    if (input.value !== value || state.editing !== props.r.id) return;
+    if (order.length < 2) {
+      const only = order[0];
+      return announce(
+        only ? `${span.name} is only a ${KIND_WORD[only.kind]} here` : `${span.name} has no other meaning here`,
+      );
+    }
+    const next = order[(currentMeaning(order, span, value) + 1) % order.length];
+    rewrite(span.from, span.to, next.insert);
+    announce(`${next.name}, ${KIND_WORD[next.kind]}, ${prettyValue(next.preview)}`);
   };
 
   // after `=`, the units the result can be shown in, each with the result in it (SMath's
@@ -271,7 +391,7 @@ export function MathEditor(props: { r: Region }) {
   createEffect(
     on(
       () => state.views[props.r.id]?.unitChoices,
-      () => document.activeElement === input && updateCompletion(),
+      () => document.activeElement === input && inShownUnit() && unitSuggestions(),
       { defer: true },
     ),
   );
@@ -280,6 +400,21 @@ export function MathEditor(props: { r: Region }) {
     // only the key right after `:` may be the `=` of `:=`; any other key ends that
     const typedAssign = assignJustTyped;
     assignJustTyped = false;
+    // Ctrl+Space: what the name at the caret can be (after `=`, the units; in `\name`, symbols)
+    if (e.ctrlKey && !e.metaKey && !e.altKey && (e.code === "Space" || e.key === " ")) {
+      e.preventDefault();
+      if (latexBefore()) updateCompletion();
+      else if (inShownUnit()) unitSuggestions();
+      else nameSuggestions(false, true);
+      return;
+    }
+    // ⌥Enter: the name at the caret takes its next meaning
+    if (e.altKey && !e.metaKey && !e.ctrlKey && e.key === "Enter") {
+      e.preventDefault();
+      hideCompletions();
+      void cycleName();
+      return;
+    }
     if (completionKey(e)) {
       e.preventDefault();
       return;
@@ -373,7 +508,11 @@ export function MathEditor(props: { r: Region }) {
         fit();
         record();
         setLive(props.r.id, e.currentTarget.value);
-        updateCompletion();
+        if (rewriting) {
+          // a name this editor put in: no list reopens over it
+          nameGen++;
+          clearTimeout(nameTimer);
+        } else updateCompletion(e.inputType === "insertText" && /\p{L}$/u.test(e.data ?? ""));
         traceCaret();
       }}
       onSelect={traceCaret}
@@ -398,7 +537,10 @@ export function MathEditor(props: { r: Region }) {
         traceCaret();
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") updateCompletion();
       }}
-      onClick={traceCaret}
+      onClick={() => {
+        traceCaret();
+        if (openList()) updateCompletion();
+      }}
       onBlur={(e) => {
         hideCompletions();
         setCaretName(null);
@@ -423,76 +565,4 @@ function editNext(id: string, by: 1 | -1) {
   const kind = layout().byId.get(next)!.region.kind;
   if (kind === "table") editTableAt(next);
   else startEditing(next);
-}
-
-/** Rewrite a plain name as the explicit unit `'name` everywhere in the math being edited. */
-export function forceUnit(name: string) {
-  const input = activeMathInput;
-  if (!input) return;
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // a whole name, also straight after a number (`2g`)
-  const re = new RegExp(`(?<![\\p{L}_.'])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
-  const next = input.value.replace(re, `'${name}`);
-  if (next === input.value) return;
-  input.focus();
-  input.select();
-  document.execCommand("insertText", false, next);
-}
-
-/** `W is the unit watt; if you meant a variable, define it above`. */
-export function unitNoteText(n: { name: string; unit?: string }) {
-  const what = n.unit ? `the unit ${n.unit}` : "a unit";
-  return `${n.name} is ${what}; if you meant a variable, define it above`;
-}
-
-/** What the ambiguous names in this math mean, with a one-click switch where useful. */
-export function NameNotes(props: { id: string }) {
-  const notes = () => {
-    const v = state.views[props.id];
-    const g = state.report?.glossary ?? {};
-    const out: { name: string; text: string; action?: [string, () => void] }[] = [];
-    for (const name of v?.constants ?? []) {
-      const c = g[`constant:${name}`];
-      if (c?.meanings.includes("unit"))
-        out.push({
-          name,
-          text: `${c.title} = ${prettyValue(c.value)}`,
-          action: [`Use unit ${name}`, () => forceUnit(name)],
-        });
-    }
-    for (const name of v?.units ?? []) {
-      const u = g[`unit:${name}`];
-      if (u?.meanings.includes("constant"))
-        out.push({ name, text: `unit, ${prettyValue(u.value)} · *${name} for the constant` });
-    }
-    for (const n of v?.namesReadAsUnits ?? []) {
-      out.push({
-        name: n.name,
-        text: unitNoteText(n),
-        action: [`Dismiss for ${n.name}`, () => quietUnitNote(n.name)],
-      });
-    }
-    for (const name of v?.shadowing ?? []) {
-      const c = g[`constant:${name}`];
-      if (c) out.push({ name, text: `your variable, not ${c.title}` });
-    }
-    return out;
-  };
-  return (
-    <Show when={notes().length}>
-      <div class="name-notes" onMouseDown={(e) => e.preventDefault()}>
-        <For each={notes()}>
-          {(n) => (
-            <div class="name-note">
-              <b>{n.name}</b>
-              <span>{n.text}</span>
-              <Show when={n.action}>
-                <button onClick={() => n.action![1]()}>{n.action![0]}</button>
-              </Show>
-            </div>
-          )}
-        </For>
-      </div>
-    </Show>
-  );
 }
