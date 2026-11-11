@@ -1233,6 +1233,24 @@ fn canonical_text(doc: &Json) -> String {
     canonical::to_string(&doc)
 }
 
+/// A document kept outside a file, in a link (`#doc=`), read as [`open`] reads a file: one
+/// stored by an earlier version computes as it did (`2T` under a variable T opens as `2 'T`).
+pub fn open_json(doc: &Json) -> Result<Json> {
+    let _: Document = serde_json::from_value(doc.clone())?;
+    let mut doc = doc.clone();
+    names::upgrade_names(&mut doc);
+    Ok(doc)
+}
+
+/// A document with its math as a file stores it (`2*T` for your variable T), for keeping it
+/// outside a file, in a link: [`open_json`] then reads it back as it is now.
+pub fn store_json(doc: &Json) -> Result<Json> {
+    let _: Document = serde_json::from_value(doc.clone())?;
+    let mut doc = doc.clone();
+    names::explicit_names(&mut doc);
+    Ok(doc)
+}
+
 /// A document held in memory, for the browser build: a `.quirez` (its images are staged, so
 /// `read_asset` finds them) or a bare `document.json`. The editor now shows it, so images
 /// staged for the document it replaces are released unless this one uses them.

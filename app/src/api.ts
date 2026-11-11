@@ -59,6 +59,10 @@ export const api = {
   /** The web version's files, which travel as base64: a `.quirez` (or `document.json`) in, a `.quirez` out. */
   openBytes: (data: string) => call<Doc>("open_bytes", { data }),
   saveBytes: (doc: Doc) => call<string>("save_bytes", { doc }),
+  /** A document from a link (`#doc=`), read as a file is: one made by an earlier version keeps its numbers. */
+  openJson: (doc: Doc) => call<Doc>("open_json", { doc }),
+  /** A document's math as a file stores it (`2*T` for your variable T), for a link. */
+  storeJson: (doc: Doc) => call<Doc>("store_json", { doc }),
   /** Notebook operations (crates/quire-service/src/notebook.rs). */
   notebook: <T>(op: string, args: Record<string, unknown>) => call<T>("notebook", { op, args }),
   /** Documents the system asked to open before the UI was ready (Finder, Explorer, command line). */

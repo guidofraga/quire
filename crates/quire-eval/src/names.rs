@@ -105,6 +105,30 @@ pub fn marked_constants(e: &Expr) -> Vec<String> {
     out
 }
 
+/// `e` with every unit name in a unit's place quoted, whatever variables are defined: `10 m`
+/// is `10 'm`, `9.81 m/s^2` is `9.81 m/'s^2`. For table cells, which are data entry.
+pub(crate) fn quote_unit_places(e: &Expr, units: &UnitRegistry) -> Expr {
+    fn at(e: &Expr, units: &UnitRegistry, place: bool) -> Expr {
+        match e {
+            Expr::Ident(x) if place && units.lookup_bare(x).is_some() => Expr::Unit(x.clone()),
+            Expr::Binary(BinaryOp::Juxt, a, b) => {
+                Expr::Binary(BinaryOp::Juxt, Box::new(at(a, units, false)), Box::new(at(b, units, true)))
+            }
+            Expr::Binary(BinaryOp::Div, a, b) => Expr::Binary(
+                BinaryOp::Div,
+                Box::new(at(a, units, false)),
+                Box::new(at(b, units, quantity_like(a))),
+            ),
+            Expr::Binary(BinaryOp::Pow, base, exp) if place && matches!(**base, Expr::Ident(_)) => {
+                Expr::Binary(BinaryOp::Pow, Box::new(at(base, units, true)), Box::new(at(exp, units, false)))
+            }
+            Expr::Paren(x) if place => Expr::Paren(Box::new(at(x, units, true))),
+            other => map_children(other, &|x| at(x, units, false)),
+        }
+    }
+    at(e, units, false)
+}
+
 /// `e` as the old rule read it, written so the current rule reads it the same: a variable's
 /// name in a unit's place (`2 T`, `1 m/s^2` with T and s defined above) becomes the quoted
 /// unit (`2 'T`, `1 m/'s^2`).

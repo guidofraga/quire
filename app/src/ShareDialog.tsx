@@ -3,7 +3,7 @@
 import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useModal } from "./a11y";
-import { isTauri } from "./api";
+import { api, isTauri } from "./api";
 import { hasImages, linkFor, WEB_URL } from "./share";
 import { commitEditing, state } from "./store";
 
@@ -25,7 +25,7 @@ function Dialog() {
   const doc = unwrap(state.doc);
   // links made in the desktop app open the web version; in a browser, this page
   const [made] = createResource(() =>
-    linkFor(doc, isTauri ? WEB_URL : location.href).then(
+    linkFor(doc, isTauri ? WEB_URL : location.href, api.storeJson).then(
       (url) => ({ url, error: null }),
       (e: Error) => ({ url: "", error: String(e.message ?? e) }),
     ),

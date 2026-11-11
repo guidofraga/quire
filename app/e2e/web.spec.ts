@@ -1,6 +1,7 @@
 // The web version: the engine as WebAssembly in the page, no server. Documents come from
 // links and files the visitor picks, and leave as links and downloads.
 import { readFileSync } from "node:fs";
+import { deflateRawSync } from "node:zlib";
 import { expect, type Page, test } from "@playwright/test";
 import { audit } from "./axe";
 
@@ -57,6 +58,33 @@ test("the address keeps the document as it is now, so reloading loses nothing", 
   await page.reload();
   await expect(regions(page)).toHaveCount(2);
   await expect(regions(page).nth(1)).toContainText(/=42$/);
+});
+
+test("a link keeps what its names mean: 2T with your variable T stays 2 × T", async ({ page }) => {
+  await page.getByRole("button", { name: /Blank document/ }).click();
+  await page.mouse.click(700, 250);
+  await typeLines(page, "T:=300", "x:=2T=");
+  await expect(regions(page).nth(1)).toContainText(/=600$/);
+  await expect(page).toHaveURL(/#doc=/);
+  await page.reload();
+  await expect(regions(page).nth(1)).toContainText(/=600$/);
+});
+
+test("a link made by an earlier version keeps its numbers", async ({ page }) => {
+  // then, 2T right after a number was the unit tesla
+  const old = {
+    format: "quire/1",
+    meta: { title: "Old link" },
+    regions: [
+      { id: "aaaaaa", kind: "math", at: [0, 0], expr: "T := 300" },
+      { id: "bbbbbb", kind: "math", at: [0, 40], expr: "x := 2T", show: "value" },
+    ],
+  };
+  const encoded = deflateRawSync(Buffer.from(JSON.stringify(old))).toString("base64url");
+  await page.goto(`/#doc=${encoded}`);
+  await page.reload();
+  await expect(page.locator(".toolbar .title")).toHaveText("Old link");
+  await expect(regions(page).nth(1)).toContainText(/=2\s*T$/);
 });
 
 test("Save downloads a .quirez, and Open reads it back", async ({ page }) => {

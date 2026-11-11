@@ -2,7 +2,7 @@
 //! it, everywhere, right after a number too; units and constants are the fallback. `'m` is
 //! always the unit and `#G` always the constant.
 
-use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Outcome, Value, Worksheet};
+use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Outcome, TableInput, Value, Worksheet};
 use quire_units::Dim;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -79,6 +79,51 @@ fn the_constant_marker_reaches_a_hidden_constant() -> TestResult {
     assert!(close(value(&outs, 3)?.0, 2.0 * G));
     let unknown = run(&["#x"]);
     assert!(unknown[0].error.as_deref().is_some_and(|e| e.contains("constant")), "{:?}", unknown[0].error);
+    Ok(())
+}
+
+/// Tables are data entry: a unit name after a number in a cell is the unit, whatever variables
+/// are defined above, in values (`10 m`) and in formulas (`=2 m + A1`).
+#[test]
+fn a_unit_after_a_number_in_a_table_cell_is_the_unit() -> TestResult {
+    let table = TableInput {
+        name: Some("tab".into()),
+        rows: vec![
+            vec!["10 m".into(), "=A1*2".into()],
+            vec!["=2 m + A1".into(), "9.81 m/s^2".into()],
+            vec!["=3 m^2".into(), "4 kN/m^2".into()],
+        ],
+        ..Default::default()
+    };
+    let math = |id: &str, expr: &str| MathInput {
+        id: id.into(),
+        expr: expr.into(),
+        show: true,
+        display: DisplaySpec::default(),
+        table: None,
+        plot: None,
+        symbolic: false,
+    };
+    let regions = vec![
+        math("a", "m := 25 kg"),
+        math("b", "s := 2"),
+        MathInput { table: Some(table), ..math("t", "") },
+        math("c", "tab[2, 1]"),
+    ];
+    let outs = Worksheet::new(DisplaySettings::default()).run(&regions);
+    let shown: Vec<Vec<Option<&str>>> =
+        outs[2].cells.iter().map(|row| row.iter().map(|c| c.shown.as_deref()).collect()).collect();
+    assert_eq!(
+        shown,
+        [
+            [Some("10 'm"), Some("20 'm")],
+            [Some("12 'm"), Some("9.81 'm/'s^2")],
+            [Some("3 'm^2"), Some("4 'kN/'m^2")],
+        ],
+        "{:?}",
+        outs[2].error
+    );
+    assert_eq!(outs[3].shown.as_deref(), Some("12 'm"));
     Ok(())
 }
 

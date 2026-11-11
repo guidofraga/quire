@@ -40,6 +40,8 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             .map_err(err),
         "new_document" => Ok(quire_service::new_document()),
         "library" => serde_json::to_value(quire_service::library()).map_err(|e| e.to_string()),
+        "open_json" => quire_service::open_json(body.get("doc").ok_or("missing \"doc\"")?).map_err(err),
+        "store_json" => quire_service::store_json(body.get("doc").ok_or("missing \"doc\"")?).map_err(err),
         "complete" => {
             let doc = body.get("doc").ok_or("missing \"doc\"")?;
             let found =

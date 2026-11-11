@@ -33,6 +33,8 @@ pub fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
         }
         "new_document" => Ok(quire_service::new_document()),
         "library" => serde_json::to_value(quire_service::library()).map_err(|e| e.to_string()),
+        "open_json" => quire_service::open_json(doc()?).map_err(err),
+        "store_json" => quire_service::store_json(doc()?).map_err(err),
         "complete" => serde_json::to_value(
             quire_service::complete(doc()?, arg(body, "regionId")?, arg(body, "prefix")?).map_err(err)?,
         )
@@ -206,6 +208,25 @@ mod tests {
         let g = g.as_array().ok_or("not a list")?;
         assert!(g.iter().any(|c| c["kind"] == "variable" && c["insert"] == "G"), "{g:?}");
         assert!(g.iter().any(|c| c["kind"] == "constant" && c["insert"] == "#G"), "{g:?}");
+        Ok(())
+    }
+
+    /// A link (`#doc=`) keeps the document outside a file: it is stored and read back as a file is.
+    #[test]
+    fn a_link_keeps_the_meaning_of_its_names() -> Result<(), Box<dyn std::error::Error>> {
+        let mut doc = dispatch("new_document", &json!({}))?;
+        doc["regions"] = json!([
+            { "id": "a", "kind": "math", "at": [0, 0], "expr": "T := 300" },
+            { "id": "b", "kind": "math", "at": [0, 30], "expr": "x := 2T", "show": "value" },
+        ]);
+        // made by an earlier version: 2T was the unit
+        let old = dispatch("open_json", &json!({ "doc": doc }))?;
+        assert_eq!(old["regions"][1]["expr"], "x := 2 'T");
+        // made now: 2T is your variable, and stays so through the link
+        let stored = dispatch("store_json", &json!({ "doc": doc }))?;
+        assert_eq!(stored["regions"][1]["expr"], "x := 2*T");
+        let back = dispatch("open_json", &json!({ "doc": stored }))?;
+        assert_eq!(back["regions"][1]["expr"], "x := 2*T");
         Ok(())
     }
 

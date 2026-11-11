@@ -65,7 +65,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `plot3d.rs` | 3D plots: surfaces `z(x, y)` on a grid, parametric curves and surfaces, matrices of heights and point data, in the axis units. |
 | | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `work.rs` (the work budget and depth limits), `tests.rs`. `bridge.rs`: formulas as values (`Value::Sym`) in SMath documents, where a name with no value is a symbol. |
 | `quire-doc` | `lib.rs`, `lenient.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `lenient.rs` reads what it can of values it doesn't expect, keeps them as written, and turns regions it can't read into placeholders (held for the editor on open, put back on save). `.quirez` (one ZIP file) in `single.rs`. |
-| `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries), `complete` (what a name can mean where it is typed). |
+| `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries), `complete` (what a name can mean where it is typed), `open_json` and `store_json` (a document in a link, read and kept as a file is). |
 | | `names.rs` | Applies `quire-eval`'s `names.rs` to every stored expression of a document, in the order the worksheet runs them: on open (`2 'T`) and on save (`2*T`). |
 | | `canonical.rs` | Canonical `document.json` output: key order and line breaks are fixed, so diffs stay small. |
 | | `assets.rs` | Images, content-addressed (`assets/<sha256:16>.<ext>`), staged in memory until the first save. |

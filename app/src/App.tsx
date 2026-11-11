@@ -299,7 +299,7 @@ async function openUrl(url: string) {
 /** A document carried in the link itself (`#doc=…`). */
 async function openLinked(encoded: string) {
   try {
-    loadDoc(await decodeDoc(encoded), null);
+    loadDoc(await api.openJson(await decodeDoc(encoded)), null);
   } catch (e) {
     flash(`Could not open this link: ${(e as Error).message}`);
   }
@@ -341,7 +341,7 @@ function keepLinkCurrent() {
         () => {
           clearTimeout(timer);
           timer = setTimeout(async () => {
-            const link = await linkFor(unwrap(state.doc), location.href).catch(() => null);
+            const link = await linkFor(unwrap(state.doc), location.href, api.storeJson).catch(() => null);
             if (link) history.replaceState(history.state, "", link);
           }, 800);
         },
