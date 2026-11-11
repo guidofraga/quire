@@ -128,6 +128,8 @@ function t(e: Expr): string {
       return ident(e.c);
     case "Unit":
       return `\\mathrm{${greek(e.c)}}`;
+    case "Const":
+      return ident(e.c);
     case "Str":
       return `\\text{“${e.c}”}`;
     case "Placeholder":

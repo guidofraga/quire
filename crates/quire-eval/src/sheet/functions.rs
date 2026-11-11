@@ -504,7 +504,7 @@ fn criterion(crit: &CV, v: &CV, interp: &mut Interp, scope: &mut Scope) -> Resul
     .iter()
     .find_map(|(p, op)| s.strip_prefix(p).map(|r| (*op, r.trim())))
     .unwrap_or((CmpOp::Eq, s.trim()));
-    let target = match literal(rest, interp.units) {
+    let target = match literal(rest, interp.units, !interp.marked_units) {
         Some(e) => CV::V(interp.eval(scope, &e)?),
         None if rest.is_empty() => CV::Blank,
         None => CV::V(Value::Str(rest.to_string())),

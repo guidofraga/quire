@@ -25,13 +25,16 @@ function mi(text: string, upright = false) {
 let unitNames: ReadonlySet<string> = new Set();
 let constantNames: ReadonlySet<string> = new Set();
 
+/** A built-in constant: a plain name that resolved to one, or `#G`. */
+function constant(name: string): string {
+  const [base, sub] = identParts(name);
+  const k = ` class="k" data-k="constant:${esc(name)}"`;
+  return sub === null ? `<mi${k}>${esc(base)}</mi>` : `<msub${k}>${mi(base)}${mi(sub, true)}</msub>`;
+}
+
 function ident(name: string): string {
   if (unitNames.has(name)) return `<mi class="u" mathvariant="normal" data-k="unit:${esc(name)}">${esc(name)}</mi>`;
-  if (constantNames.has(name)) {
-    const [base, sub] = identParts(name);
-    const k = ` class="k" data-k="constant:${esc(name)}"`;
-    return sub === null ? `<mi${k}>${esc(base)}</mi>` : `<msub${k}>${mi(base)}${mi(sub, true)}</msub>`;
-  }
+  if (constantNames.has(name)) return constant(name);
   // data-v: the name, for tracing where a variable is defined and used
   const [base, sub] = identParts(name);
   const v = ` data-v="${esc(name)}"`;
@@ -246,6 +249,8 @@ function m(e: Expr): string {
       return ident(e.c);
     case "Unit":
       return unit(e.c);
+    case "Const":
+      return constant(e.c);
     case "Str":
       // the quotes are text: pseudo-elements inside a MathML token stack as separate boxes
       return `<ms class="str">"${esc(e.c)}"</ms>`;

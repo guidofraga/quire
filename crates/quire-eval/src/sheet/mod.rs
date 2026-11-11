@@ -144,8 +144,10 @@ fn unit_names(e: &Expr, out: &mut Vec<String>) {
     }
 }
 
-/// A plain cell that reads as a value: `12`, `-1,5`, `1.35`, `12 kN`, `9.81 m/s^2`, `15%`.
-fn literal(text: &str, units: &UnitRegistry) -> Option<Expr> {
+/// A plain cell that reads as a value: `12`, `-1,5`, `1.35`, `12 kN`, `9.81 m/s^2`, `15%`. With
+/// `quote`, a unit name after a number is the unit whatever variables are defined (see
+/// `parse_formula`).
+fn literal(text: &str, units: &UnitRegistry, quote: bool) -> Option<Expr> {
     let t = text.trim();
     if t.is_empty() || !t.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '-' | '+' | '.')) {
         return None;
@@ -165,8 +167,8 @@ fn literal(text: &str, units: &UnitRegistry) -> Option<Expr> {
         let e = parse(p.trim()).ok().filter(plain_number)?;
         return Some(Expr::Binary(BinaryOp::Div, Box::new(e), Box::new(Expr::Num("100".into()))));
     }
-    let e = parse(&t).ok()?;
-    quantity_literal(&e, units).then_some(e)
+    let e = parse(&t).ok().filter(|e| quantity_literal(e, units))?;
+    Some(if quote { crate::names::quote_unit_places(&e, units) } else { e })
 }
 
 fn plain_number(e: &Expr) -> bool {
@@ -241,14 +243,15 @@ pub(crate) fn evaluate(
                     let raw = t.rows.get(r).and_then(|row| row.get(c)).map(String::as_str).unwrap_or("");
                     let trimmed = raw.trim();
                     if let Some(f) = trimmed.strip_prefix('=') {
-                        let parsed = parse_formula(f, (nrows, ncols), interp.units).map_err(|e| e.message);
+                        let parsed = parse_formula(f, (nrows, ncols), interp.units, !interp.marked_units)
+                            .map_err(|e| e.message);
                         if let Ok(f) = &parsed {
                             formula_units(f, &mut written);
                         }
                         Cell::Formula(parsed)
                     } else if trimmed.is_empty() {
                         Cell::Blank
-                    } else if let Some(e) = literal(trimmed, interp.units) {
+                    } else if let Some(e) = literal(trimmed, interp.units, !interp.marked_units) {
                         unit_names(&e, &mut written);
                         Cell::Value(e)
                     } else {
@@ -337,7 +340,7 @@ pub(crate) fn evaluate(
 /// The units cell (r, c) was typed in when it holds a value (`4.5 kN/m` → kN, m);
 /// `None` for formulas, text and blanks.
 fn typed_units(t: &TableInput, r: usize, c: usize, units: &UnitRegistry) -> Option<Vec<WorkingUnit>> {
-    let e = literal(t.rows.get(r)?.get(c)?, units)?;
+    let e = literal(t.rows.get(r)?.get(c)?, units, false)?;
     let mut names = Vec::new();
     unit_names(&e, &mut names);
     let mut out: Vec<WorkingUnit> = Vec::new();
@@ -403,7 +406,7 @@ pub(crate) fn reads(t: &TableInput, units: &UnitRegistry) -> Vec<String> {
     let mut out = Vec::new();
     for cell in t.rows.iter().flatten() {
         if let Some(src) = cell.trim().strip_prefix('=')
-            && let Ok(f) = parse_formula(src, size, units)
+            && let Ok(f) = parse_formula(src, size, units, false)
         {
             walk(&f, &mut out);
         }

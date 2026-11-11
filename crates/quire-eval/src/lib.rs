@@ -12,6 +12,7 @@ mod error;
 mod format;
 mod interp;
 mod linalg;
+pub mod names;
 mod numeric;
 mod ops;
 mod plot;

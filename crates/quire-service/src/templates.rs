@@ -131,7 +131,9 @@ fn yours(dir: &Path, id: &str) -> Result<PathBuf> {
 
 pub fn document(dir: &Path, id: &str) -> Result<TemplateDocument> {
     if let Some(b) = BUILTIN.iter().find(|b| b.id == id) {
-        return Ok(TemplateDocument { doc: serde_json::from_str(b.json)?, origin: None });
+        let mut doc = serde_json::from_str(b.json)?;
+        crate::upgrade_names(&mut doc);
+        return Ok(TemplateDocument { doc, origin: None });
     }
     let path = yours(dir, id)?;
     let mut doc = open(&path)?;

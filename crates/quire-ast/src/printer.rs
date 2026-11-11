@@ -80,6 +80,10 @@ fn write(out: &mut String, e: &Expr) {
             out.push('\'');
             out.push_str(u);
         }
+        Expr::Const(c) => {
+            out.push('#');
+            out.push_str(c);
+        }
         Expr::Str(s) => out.push_str(&quote_str(s)),
         Expr::Placeholder => out.push('?'),
         Expr::Paren(x) => {
@@ -267,6 +271,12 @@ mod tests {
             "(10^2 m)^2",
             "1 m/10^2 s",
             "-10^2 'm",
+            "F := G*#G",
+            "2 #G",
+            "E := #k.B*T",
+            "#g^2",
+            "x := 2*T",
+            "v := (100 km)/h",
         ] {
             roundtrip(src)?;
         }
@@ -339,6 +349,8 @@ mod tests {
         assert!(parse("(1 + 2").err().is_some_and(|e| e.message.contains("')'")));
         assert!(parse("[1, 2; 3]").err().is_some_and(|e| e.message.contains("different lengths")));
         assert!(parse("5 '").is_err());
+        assert!(parse("2 # G").err().is_some_and(|e| e.message.contains("constant name")));
+        assert_eq!(parse("#k.B")?, Expr::Const("k.B".into()));
         Ok(())
     }
 

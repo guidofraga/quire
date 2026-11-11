@@ -33,6 +33,12 @@ pub fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
         }
         "new_document" => Ok(quire_service::new_document()),
         "library" => serde_json::to_value(quire_service::library()).map_err(|e| e.to_string()),
+        "open_json" => quire_service::open_json(doc()?).map_err(err),
+        "store_json" => quire_service::store_json(doc()?).map_err(err),
+        "complete" => serde_json::to_value(
+            quire_service::complete(doc()?, arg(body, "regionId")?, arg(body, "prefix")?).map_err(err)?,
+        )
+        .map_err(|e| e.to_string()),
         "djot_html" => Ok(Json::String(quire_service::render_djot_editable(arg(body, "src")?))),
         "stage_image" => quire_service::assets::stage_base64(arg(body, "data")?, arg(body, "ext")?)
             .map(Json::String)
@@ -172,6 +178,55 @@ mod tests {
         assert!(count(&doc).is_some_and(|n| n > 0));
         assert_eq!(count(&back), count(&doc));
         assert_eq!(back["regions"].as_array().map(Vec::len), doc["regions"].as_array().map(Vec::len));
+        Ok(())
+    }
+
+    #[test]
+    fn completes_a_name_with_each_meaning_it_can_have() -> Result<(), Box<dyn std::error::Error>> {
+        let mut doc = dispatch("new_document", &json!({}))?;
+        doc["regions"] = json!([
+            { "id": "a", "kind": "math", "at": [0, 0], "expr": "T := 300" },
+            { "id": "b", "kind": "math", "at": [0, 30], "expr": "Ts(x) := 2*x" },
+            { "id": "c", "kind": "math", "at": [0, 60], "expr": "G := 5" },
+            { "id": "d", "kind": "math", "at": [0, 90], "expr": "x := 2T", "show": "value" },
+            { "id": "e", "kind": "math", "at": [0, 120], "expr": "Tb := 1" },
+        ]);
+        let found = dispatch("complete", &json!({ "doc": doc, "regionId": "d", "prefix": "T" }))?;
+        let rows: Vec<(&str, &str, &str)> = found
+            .as_array()
+            .ok_or("not a list")?
+            .iter()
+            .filter_map(|c| Some((c["name"].as_str()?, c["kind"].as_str()?, c["insert"].as_str()?)))
+            .collect();
+        assert!(rows.contains(&("T", "variable", "T")), "{rows:?}");
+        assert!(rows.contains(&("Ts", "function", "Ts")), "{rows:?}");
+        assert!(rows.contains(&("T", "unit", "'T")), "{rows:?}");
+        assert!(!rows.iter().any(|r| r.0 == "Tb"), "Tb is defined below: {rows:?}");
+        let first = &found[0];
+        assert_eq!((first["name"].as_str(), first["preview"].as_str()), (Some("T"), Some("300")));
+        let g = dispatch("complete", &json!({ "doc": doc, "regionId": "d", "prefix": "G" }))?;
+        let g = g.as_array().ok_or("not a list")?;
+        assert!(g.iter().any(|c| c["kind"] == "variable" && c["insert"] == "G"), "{g:?}");
+        assert!(g.iter().any(|c| c["kind"] == "constant" && c["insert"] == "#G"), "{g:?}");
+        Ok(())
+    }
+
+    /// A link (`#doc=`) keeps the document outside a file: it is stored and read back as a file is.
+    #[test]
+    fn a_link_keeps_the_meaning_of_its_names() -> Result<(), Box<dyn std::error::Error>> {
+        let mut doc = dispatch("new_document", &json!({}))?;
+        doc["regions"] = json!([
+            { "id": "a", "kind": "math", "at": [0, 0], "expr": "T := 300" },
+            { "id": "b", "kind": "math", "at": [0, 30], "expr": "x := 2T", "show": "value" },
+        ]);
+        // made by an earlier version: 2T was the unit
+        let old = dispatch("open_json", &json!({ "doc": doc }))?;
+        assert_eq!(old["regions"][1]["expr"], "x := 2 'T");
+        // made now: 2T is your variable, and stays so through the link
+        let stored = dispatch("store_json", &json!({ "doc": doc }))?;
+        assert_eq!(stored["regions"][1]["expr"], "x := 2*T");
+        let back = dispatch("open_json", &json!({ "doc": stored }))?;
+        assert_eq!(back["regions"][1]["expr"], "x := 2*T");
         Ok(())
     }
 

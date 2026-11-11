@@ -1,11 +1,11 @@
 //! Built-in constants (CODATA 2018 / SI exact values where defined).
 //!
 //! Name resolution for a plain name, in order:
-//! 1. a variable defined at that point (yours always wins);
-//! 2. right after a number or unit (`2 g`, `100 km/h`): a unit;
+//! 1. a variable defined at that point (yours always wins, right after a number too);
+//! 2. right after a number or unit (`2 g`, `100 km/h`): a unit, then a constant;
 //! 3. otherwise a constant, then a unit (`m*g` uses standard gravity).
 //!
-//! `'g` always means the unit.
+//! `'g` always means the unit, and `#g` always the constant.
 
 use quire_units::Dim;
 

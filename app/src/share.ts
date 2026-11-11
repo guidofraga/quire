@@ -55,9 +55,17 @@ export function docInHash(hash: string): string | null {
   return hash.startsWith(PREFIX) ? hash.slice(PREFIX.length) : null;
 }
 
-/** A link that opens `doc`, on `base` (this page in a browser, the web version from the app). */
-export async function linkFor(doc: Doc, base: string): Promise<string> {
-  return `${base.replace(/#.*$/, "")}${PREFIX}${await encodeDoc(doc)}`;
+/**
+ * A link that opens `doc`, on `base` (this page in a browser, the web version from the app).
+ * `stored` writes the math as a file stores it (`api.storeJson`: `2*T` for your variable T), so
+ * that opening the link (`api.openJson`) reads it as it is now.
+ */
+export async function linkFor(
+  doc: Doc,
+  base: string,
+  stored: (doc: Doc) => Promise<Doc> = async (d) => d,
+): Promise<string> {
+  return `${base.replace(/#.*$/, "")}${PREFIX}${await encodeDoc(await stored(doc))}`;
 }
 
 /** Whether a document uses images (page backgrounds and header logos included), which links leave out. */

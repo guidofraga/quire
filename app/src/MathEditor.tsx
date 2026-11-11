@@ -18,7 +18,6 @@ import {
   definedNames,
   editClickPoint,
   editText,
-  flash,
   layout,
   quietUnitNote,
   runAppCommand,
@@ -440,21 +439,6 @@ export function forceUnit(name: string) {
   document.execCommand("insertText", false, next);
 }
 
-/** `10 m` → `10*m`: the variable m, not the unit, in the math being edited. */
-function useVariable(name: string) {
-  const input = activeMathInput;
-  if (!input) return;
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // a number (or a vector's closing bracket), then the name as a whole word: `10 m`, `10m`
-  const re = new RegExp(`([\\p{N}\\]])\\s*${escaped}(?![\\p{L}\\p{N}_.])`, "gu");
-  const next = input.value.replace(re, `$1*${name}`);
-  // inside a unit (`100 km/h` with a variable h) there is no number to split from
-  if (next === input.value) return flash(`Write *${name} for your variable`);
-  input.focus();
-  input.select();
-  document.execCommand("insertText", false, next);
-}
-
 /** `W is the unit watt; if you meant a variable, define it above`. */
 export function unitNoteText(n: { name: string; unit?: string }) {
   const what = n.unit ? `the unit ${n.unit}` : "a unit";
@@ -480,13 +464,6 @@ export function NameNotes(props: { id: string }) {
       const u = g[`unit:${name}`];
       if (u?.meanings.includes("constant"))
         out.push({ name, text: `unit, ${prettyValue(u.value)} · *${name} for the constant` });
-    }
-    for (const name of v?.unitsOverVariables ?? []) {
-      out.push({
-        name,
-        text: `unit here, not your variable`,
-        action: [`Use variable ${name}`, () => useVariable(name)],
-      });
     }
     for (const n of v?.namesReadAsUnits ?? []) {
       out.push({

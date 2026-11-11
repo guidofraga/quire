@@ -40,6 +40,14 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             .map_err(err),
         "new_document" => Ok(quire_service::new_document()),
         "library" => serde_json::to_value(quire_service::library()).map_err(|e| e.to_string()),
+        "open_json" => quire_service::open_json(body.get("doc").ok_or("missing \"doc\"")?).map_err(err),
+        "store_json" => quire_service::store_json(body.get("doc").ok_or("missing \"doc\"")?).map_err(err),
+        "complete" => {
+            let doc = body.get("doc").ok_or("missing \"doc\"")?;
+            let found =
+                quire_service::complete(doc, arg(body, "regionId")?, arg(body, "prefix")?).map_err(err)?;
+            serde_json::to_value(found).map_err(|e| e.to_string())
+        }
         "djot_html" => Ok(Json::String(quire_service::render_djot_editable(arg(body, "src")?))),
         "import_image" => {
             quire_service::assets::stage_file(Path::new(arg(body, "path")?)).map(Json::String).map_err(err)

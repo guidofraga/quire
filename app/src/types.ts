@@ -7,6 +7,8 @@ export type Expr =
   | { t: "Num"; c: string }
   | { t: "Ident"; c: string }
   | { t: "Unit"; c: string }
+  /** A built-in constant whatever variables are defined: `#G`. */
+  | { t: "Const"; c: string }
   | { t: "Str"; c: string }
   | { t: "Placeholder" }
   | { t: "Paren"; c: Expr }
@@ -36,11 +38,11 @@ export interface RegionView {
   constants: string[];
   /** Your variables here that hide a built-in constant. */
   shadowing: string[];
-  /** Your variables read as a unit here because they follow a number (`10 m`). */
-  unitsOverVariables?: string[];
   /** Plain names read as units where a variable is more usual (`W` in `M/W`, no `W` defined). */
   namesReadAsUnits?: { name: string; unit?: string }[];
   defines: string | null;
+  /** The built-in unit or constant the name this region defines hides below it. */
+  redefines?: Redefines;
   /** A spreadsheet table's cells. */
   cells?: CellView[][];
   /** Units the result can be shown in, with the result in each. */
@@ -51,6 +53,22 @@ export interface RegionView {
   plot?: PlotView;
   /** The result is symbolic (`→`). */
   symbolic?: boolean;
+}
+
+/** quire_service::Redefines: `T := 300` hides the unit tesla. */
+export interface Redefines {
+  name: string;
+  kind: "unit" | "constant";
+  title: string;
+}
+
+/** quire_service::Completion: one meaning a name can have where it is typed. */
+export interface Completion {
+  name: string;
+  kind: "variable" | "function" | "unit" | "constant";
+  /** The text that gives the name this meaning there: `T`, `'T`, `#G`. */
+  insert: string;
+  preview: string;
 }
 
 /** quire_service::PlotView */

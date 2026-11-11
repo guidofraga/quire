@@ -67,6 +67,7 @@ fn describe(t: &Tok) -> String {
         Tok::Num(n) => format!("number {n}"),
         Tok::Ident(n) => format!("name {n}"),
         Tok::Unit(u) => format!("unit '{u}"),
+        Tok::Const(c) => format!("constant #{c}"),
         Tok::Str(_) => "string".to_string(),
         Tok::Sym(s) => format!("'{s}'"),
         Tok::Eof => "end of expression".to_string(),
@@ -360,6 +361,7 @@ impl Parser {
             Tok::Ident(name) if self.eat("(") => self.call(name),
             Tok::Ident(name) => self.quoted_unit_after((Expr::Ident(name), 1)),
             Tok::Unit(u) => Ok((Expr::Unit(u), 1)),
+            Tok::Const(c) => self.quoted_unit_after((Expr::Const(c), 1)),
             Tok::Str(s) => Ok((Expr::Str(s), 1)),
             Tok::Sym("(") => self.paren(),
             Tok::Sym("[") => self.bracket(pos),
@@ -372,7 +374,7 @@ impl Parser {
     #[inline(never)]
     fn number(&mut self, n: String) -> Result<Tree> {
         let num = (Expr::Num(n), 1);
-        if matches!(self.peek(), Tok::Unit(_) | Tok::Ident(_)) && self.takes_unit() {
+        if matches!(self.peek(), Tok::Unit(_) | Tok::Ident(_) | Tok::Const(_)) && self.takes_unit() {
             let unit = self.unit_term()?;
             return self.bin(BinaryOp::Juxt, num, unit);
         }
@@ -437,6 +439,7 @@ impl Parser {
             Tok::Ident(_) if matches!(self.peek2(), Tok::Sym("(" | "[")) => self.postfix()?,
             _ => match self.bump() {
                 Tok::Unit(u) => (Expr::Unit(u), 1),
+                Tok::Const(c) => (Expr::Const(c), 1),
                 Tok::Ident(n) => (Expr::Ident(n), 1),
                 t => return Err(ParseError::new(format!("expected a unit but found {}", describe(&t)), pos)),
             },

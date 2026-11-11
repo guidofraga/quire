@@ -2,7 +2,7 @@
 // in the web version, `quire serve` over /api in a browser while developing.
 import { callEngine } from "./engine";
 import type { PdfInfo } from "./export";
-import type { Doc, Library, Report } from "./types";
+import type { Completion, Doc, Library, Report } from "./types";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -38,6 +38,8 @@ export const api = {
   save: (path: string, doc: Doc, from: string | null) => call<null>("save_document", { path, doc, from }),
   djotHtml: (src: string) => call<string>("djot_html", { src }),
   library: () => call<Library>("library"),
+  /** What a name starting with `prefix` can mean in region `regionId`. */
+  complete: (doc: Doc, regionId: string, prefix: string) => call<Completion[]>("complete", { doc, regionId, prefix }),
   importImage: (path: string) => call<string>("import_image", { path }),
   stageImage: (data: string, ext: string) => call<string>("stage_image", { data, ext }),
   readAsset: (bundle: string, src: string) => call<string>("read_asset", { bundle, src }),
@@ -57,6 +59,10 @@ export const api = {
   /** The web version's files, which travel as base64: a `.quirez` (or `document.json`) in, a `.quirez` out. */
   openBytes: (data: string) => call<Doc>("open_bytes", { data }),
   saveBytes: (doc: Doc) => call<string>("save_bytes", { doc }),
+  /** A document from a link (`#doc=`), read as a file is: one made by an earlier version keeps its numbers. */
+  openJson: (doc: Doc) => call<Doc>("open_json", { doc }),
+  /** A document's math as a file stores it (`2*T` for your variable T), for a link. */
+  storeJson: (doc: Doc) => call<Doc>("store_json", { doc }),
   /** Notebook operations (crates/quire-service/src/notebook.rs). */
   notebook: <T>(op: string, args: Record<string, unknown>) => call<T>("notebook", { op, args }),
   /** Documents the system asked to open before the UI was ready (Finder, Explorer, command line). */

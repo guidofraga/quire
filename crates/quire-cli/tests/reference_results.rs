@@ -25,7 +25,7 @@ fn reproduces_an_smath_reference_when_given() -> Result<(), Box<dyn std::error::
     let Some(path) = std::env::var_os("QUIRE_SMATH_REFERENCE") else {
         return Ok(());
     };
-    let bundle = quire_doc::load(PathBuf::from(path))?;
+    let bundle = quire_cli::load(PathBuf::from(path))?;
     let (count, wrong) = mismatches(&bundle)?;
     assert!(count > 0, "the reference has no results");
     assert!(wrong.is_empty(), "results differ from SMath:\n{}", wrong.join("\n"));

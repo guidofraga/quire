@@ -27,6 +27,12 @@ describe("documents in links", () => {
     expect(docInHash("#section-2")).toBeNull();
   });
 
+  it("hold the math as a file stores it", async () => {
+    const stored = async (d: Doc): Promise<Doc> => ({ ...d, regions: [{ ...d.regions[0], expr: "q:=12*kN/m" }] });
+    const link = await linkFor(doc, "https://example.org/quire/", stored);
+    expect((await decodeDoc(docInHash(new URL(link).hash)!)).regions[0].expr).toBe("q:=12*kN/m");
+  });
+
   it("say so when a link was cut short", async () => {
     const encoded = await encodeDoc(doc);
     await expect(decodeDoc(encoded.slice(0, encoded.length / 2))).rejects.toThrow(/incomplete or damaged/);

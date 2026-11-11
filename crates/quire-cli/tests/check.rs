@@ -33,7 +33,7 @@ fn reference_results_are_reproduced() -> Result<(), Box<dyn std::error::Error>> 
     assert!(!bundles.is_empty(), "no fixtures found");
     let mut failures = Vec::new();
     for path in &bundles {
-        let bundle = quire_doc::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let bundle = quire_cli::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let results =
             bundle.results.as_ref().ok_or_else(|| format!("{}: no results.json", path.display()))?;
         let rows = compare(results, &evaluate(&bundle.document));

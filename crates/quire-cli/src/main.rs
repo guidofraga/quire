@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use quire_ast::{parse, print};
-use quire_cli::{Verdict, compare, evaluate};
+use quire_cli::{Verdict, compare, evaluate, load};
 use quire_eval::{DisplaySettings, DisplaySpec, MathInput, Worksheet};
 use quire_smath::Imported;
 use serde_json::json;
@@ -74,7 +74,7 @@ fn pad(s: &str, w: usize) -> String {
 }
 
 fn cmd_eval(path: &str) -> CmdResult {
-    let bundle = quire_doc::load(path)?;
+    let bundle = load(path)?;
     let ev = evaluate(&bundle.document);
     for (name, msg) in &ev.unit_errors {
         println!("✗ unit {name}: {msg}");
@@ -117,7 +117,7 @@ fn cmd_eval(path: &str) -> CmdResult {
 }
 
 fn cmd_check(path: &str) -> CmdResult {
-    let bundle = quire_doc::load(path)?;
+    let bundle = load(path)?;
     let Some(results) = &bundle.results else {
         return Err(format!("{} has no results.json to check against", bundle.path.display()).into());
     };

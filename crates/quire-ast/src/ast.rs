@@ -7,6 +7,8 @@ pub enum Expr {
     Ident(String),
     /// Unit reference, written `'m` in linear syntax.
     Unit(String),
+    /// A built-in constant, written `#G`: the constant even where a variable `G` is defined.
+    Const(String),
     Str(String),
     /// An empty slot, written `?`: the editor's placeholder for something not yet typed.
     Placeholder,
@@ -124,7 +126,12 @@ impl Expr {
             deepest = deepest.max(d);
             let mut push = |x| stack.push((x, d + 1));
             match e {
-                Expr::Num(_) | Expr::Ident(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => {}
+                Expr::Num(_)
+                | Expr::Ident(_)
+                | Expr::Unit(_)
+                | Expr::Const(_)
+                | Expr::Str(_)
+                | Expr::Placeholder => {}
                 Expr::Paren(x) | Expr::Unary(_, x) | Expr::Factorial(x) => push(x),
                 Expr::Binary(_, a, b) | Expr::Range(a, b) | Expr::Define { lhs: a, rhs: b, .. } => {
                     push(a);

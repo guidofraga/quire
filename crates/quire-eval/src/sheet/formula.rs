@@ -151,6 +151,8 @@ struct Parser<'a> {
     /// Table size: a reference-like name inside it is a cell, outside it a variable (`F1`).
     size: (usize, usize),
     units: &'a UnitRegistry,
+    /// Quote the units written after numbers (see [`parse_formula`]).
+    quote: bool,
 }
 
 impl Parser<'_> {
@@ -282,11 +284,11 @@ impl Parser<'_> {
                         self.i += 1;
                         unit = Expr::Binary(BinaryOp::Pow, Box::new(unit), Box::new(Expr::Num(e)));
                     }
-                    return Ok(F::Quire(Expr::Binary(
-                        BinaryOp::Juxt,
-                        Box::new(Expr::Num(t)),
-                        Box::new(unit),
-                    )));
+                    let quantity = Expr::Binary(BinaryOp::Juxt, Box::new(Expr::Num(t)), Box::new(unit));
+                    if self.quote {
+                        return Ok(F::Quire(crate::names::quote_unit_places(&quantity, self.units)));
+                    }
+                    return Ok(F::Quire(quantity));
                 }
                 Ok(F::Num(v))
             }
@@ -354,12 +356,14 @@ impl Parser<'_> {
     }
 }
 
-pub(super) fn parse_formula(src: &str, size: (usize, usize), units: &UnitRegistry) -> Result<F> {
+/// `quote`: a unit name after a number is the unit whatever variables are defined (`10 m` is
+/// `10 'm`), as in every document but an SMath one, where a bare name is never a unit.
+pub(super) fn parse_formula(src: &str, size: (usize, usize), units: &UnitRegistry, quote: bool) -> Result<F> {
     let toks = tokenize(src)?;
     if toks.is_empty() {
         bail!("the formula is empty");
     }
-    let mut p = Parser { toks, i: 0, size, units };
+    let mut p = Parser { toks, i: 0, size, units, quote };
     let f = p.compare()?;
     if p.i < p.toks.len() {
         bail!("unexpected text after the formula");

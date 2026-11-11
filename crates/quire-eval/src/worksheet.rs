@@ -49,8 +49,6 @@ pub struct Outcome {
     pub constants: Vec<String>,
     /// Your variables here whose names are also a built-in constant.
     pub shadowing: Vec<String>,
-    /// Your variables read as a unit here because they follow a number (`10 m`).
-    pub units_over_variables: Vec<String>,
     /// Plain names read as units where a variable is more usual (`W` in `M/W` with no `W`
     /// defined): worth a note, since a forgotten definition gives a wrong number.
     pub names_read_as_units: Vec<String>,
@@ -87,7 +85,6 @@ impl Outcome {
             units: Vec::new(),
             constants: Vec::new(),
             shadowing: Vec::new(),
-            units_over_variables: Vec::new(),
             names_read_as_units: Vec::new(),
             cells: Vec::new(),
             fix: None,
@@ -189,7 +186,7 @@ fn names(e: &Expr, out: &mut Vec<String>) {
             names(lhs, out);
             names(rhs, out);
         }
-        Expr::Num(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => {}
+        Expr::Num(_) | Expr::Unit(_) | Expr::Const(_) | Expr::Str(_) | Expr::Placeholder => {}
     }
 }
 
@@ -215,7 +212,7 @@ fn substitute(e: &Expr, params: &[String], args: &[Expr]) -> Expr {
         Expr::Define { lhs, rhs, global } => {
             Expr::Define { lhs: boxed(lhs), rhs: boxed(rhs), global: *global }
         }
-        Expr::Num(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => e.clone(),
+        Expr::Num(_) | Expr::Unit(_) | Expr::Const(_) | Expr::Str(_) | Expr::Placeholder => e.clone(),
     }
 }
 
@@ -238,7 +235,7 @@ pub(crate) fn explicit_units(e: &Expr, out: &mut Vec<String>) {
             xs.iter().for_each(|x| explicit_units(x, out));
         }
         Expr::Matrix(rows) => rows.iter().flatten().for_each(|x| explicit_units(x, out)),
-        Expr::Num(_) | Expr::Ident(_) | Expr::Str(_) | Expr::Placeholder => {}
+        Expr::Num(_) | Expr::Ident(_) | Expr::Const(_) | Expr::Str(_) | Expr::Placeholder => {}
     }
 }
 
@@ -246,7 +243,6 @@ pub struct Worksheet {
     used_units: std::collections::BTreeSet<String>,
     used_constants: std::collections::BTreeSet<String>,
     used_shadowing: std::collections::BTreeSet<String>,
-    used_over_variables: std::collections::BTreeSet<String>,
     units: UnitRegistry,
     settings: DisplaySettings,
     globals: Rc<Env>,
@@ -258,7 +254,6 @@ impl Worksheet {
             used_units: Default::default(),
             used_constants: Default::default(),
             used_shadowing: Default::default(),
-            used_over_variables: Default::default(),
             units: UnitRegistry::new(),
             settings,
             globals: Rc::new(Env::new()),
@@ -283,6 +278,28 @@ impl Worksheet {
             .as_num("a unit definition")?;
         self.units.define(name, Unit { factor: q.v, dim: q.dim, offset: 0.0 });
         Ok(())
+    }
+
+    /// What is defined where region `index` sits: the `≡` definitions, then the regions above
+    /// it worked out in order, as [`Worksheet::run`] does.
+    pub fn scope_at(&mut self, regions: &[MathInput], index: usize) -> Rc<Env> {
+        let parsed: Vec<_> = regions.iter().map(|r| parse(&r.expr)).collect();
+        for (r, p) in regions.iter().zip(&parsed) {
+            if let Ok(e @ Expr::Define { global: true, .. }) = p {
+                self.step(r, e);
+            }
+        }
+        for (r, p) in regions.iter().zip(&parsed).take(index) {
+            if let Some(t) = &r.table {
+                self.step_table(r, t);
+            } else if r.plot.is_none()
+                && let Ok(e) = p
+                && !matches!(e, Expr::Define { global: true, .. })
+            {
+                self.step(r, e);
+            }
+        }
+        Rc::clone(&self.globals)
     }
 
     /// Evaluate regions in order: `≡` definitions first, then everything top to bottom.
@@ -514,11 +531,9 @@ impl Worksheet {
         let units = std::mem::take(&mut interp.unit_idents);
         let constants = std::mem::take(&mut interp.constant_idents);
         let shadowing = std::mem::take(&mut interp.shadowing);
-        let over = std::mem::take(&mut interp.units_over_variables);
         self.used_units.extend(units);
         self.used_constants.extend(constants);
         self.used_shadowing.extend(shadowing);
-        self.used_over_variables.extend(over);
         if r.is_ok() {
             let mut writes: Vec<(String, Binding)> = writes.into_iter().collect();
             writes.sort_by(|a, b| a.0.cmp(&b.0));
@@ -703,7 +718,6 @@ impl Worksheet {
         self.used_units.clear();
         self.used_constants.clear();
         self.used_shadowing.clear();
-        self.used_over_variables.clear();
         let result = match e {
             Expr::Define { lhs, rhs, .. } => self.define(&mut out, lhs, rhs),
             _ => self.eval(e).map(Some),
@@ -757,10 +771,7 @@ impl Worksheet {
         out.units = std::mem::take(&mut self.used_units).into_iter().collect();
         out.constants = std::mem::take(&mut self.used_constants).into_iter().collect();
         out.shadowing = std::mem::take(&mut self.used_shadowing).into_iter().collect();
-        out.units_over_variables = std::mem::take(&mut self.used_over_variables).into_iter().collect();
-        let over = &out.units_over_variables;
-        let units: Vec<String> = out.units.iter().filter(|u| !over.contains(u)).cloned().collect();
-        out.names_read_as_units = crate::unit_names::read_as_units(e, &units);
+        out.names_read_as_units = crate::unit_names::read_as_units(e, &out.units);
         out
     }
 
@@ -1328,7 +1339,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_names_are_units_unless_defined_or_after_a_number() {
+    fn plain_names_are_units_unless_defined() {
         let out =
             run(&["L := 2 m", "g := 9.81 m/s^2", "W := 30 cm", "A := L*W", "m := 3 kg", "F := m*g", "2 m"]);
         let shown: Vec<_> =
@@ -1336,8 +1347,8 @@ mod tests {
         assert_eq!(shown[0], "2 'm");
         assert_eq!(shown[3], "0.6 'm^2");
         assert_eq!(shown[5], "29.43 'N");
-        assert_eq!(shown[6], "2 'm", "right after a number, a unit name is the unit");
-        assert_eq!(out[6].units_over_variables, ["m"]);
+        assert_eq!(shown[6], "6 'kg", "right after a number too, the variable m defined above");
+        assert!(out[6].units.is_empty());
         assert_eq!(out[1].units, ["m", "s"]);
         assert!(out[5].units.is_empty());
         assert_eq!(run(&["T := 20 degC"])[0].shown.as_deref(), Some("293.15 'K"));
@@ -1518,18 +1529,34 @@ mod tests {
     }
 
     #[test]
-    fn a_unit_after_a_number_wins_over_a_variable() {
-        let out = run(&["m := 25 'kg", "L := 10 m", "m*g", "10*m", "v(t) := 2 t", "v(3)", "100 km/h"]);
+    fn a_variable_wins_after_a_number_too() {
+        let out = run(&[
+            "m := 25 'kg",
+            "L := 10 m",
+            "m*g",
+            "10*m",
+            "v(t) := 2 t",
+            "v(3)",
+            "100 km/h",
+            "10 'm",
+            "s := 2",
+            "[1; 2] s",
+            "0 'm..2 m",
+        ]);
         let shown = |i: usize| out[i].shown.clone().or(out[i].error.clone()).unwrap_or_default();
-        // 10 metres, not 10 × 25 kg; the editor is told so it can offer the variable
-        assert_eq!(shown(1), "10 'm");
-        assert_eq!(out[1].units_over_variables, ["m"]);
-        // anywhere else the variable still wins
+        // the nearest definition above: 10 × 25 kg, written `10 m` or `10*m`
+        assert_eq!(shown(1), "250 'kg");
         assert_eq!(shown(2), "245.1662 'N");
         assert_eq!(shown(3), "250 'kg");
-        assert!(out[3].units_over_variables.is_empty());
-        // and a function's own parameter is never a unit: t here is not tonnes
+        // a function's own parameter is never a unit: t here is not tonnes
         assert_eq!(shown(5), "6");
+        // with no variable h, the hour
+        assert_eq!(shown(6), "27.7778 'm/'s");
+        // the quoted unit is always the unit
+        assert_eq!(shown(7), "10 'm");
+        assert_eq!(shown(9), "[2; 4]");
+        // in a range too: m is the mass here
+        assert_eq!(shown(10), "cannot make a range from a length (m) and a mass (kg)");
     }
 
     #[test]
