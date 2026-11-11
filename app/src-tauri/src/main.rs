@@ -280,6 +280,11 @@ fn library() -> quire_service::Library {
     quire_service::library()
 }
 
+#[tauri::command]
+fn complete(doc: Json, region_id: String, prefix: String) -> CmdResult<Vec<quire_service::Completion>> {
+    quire_service::complete(&doc, &region_id, &prefix).map_err(err)
+}
+
 /// A table's Export as CSV…: only ever writes a `.csv` file the user picked.
 #[tauri::command]
 fn export_csv(chosen: State<'_, Chosen>, path: PathBuf, contents: String) -> CmdResult<()> {
@@ -810,6 +815,7 @@ fn main() {
             delete_template,
             djot_html,
             library,
+            complete,
             import_image,
             stage_image,
             print_document,

@@ -708,6 +708,12 @@ fn build(e: &Expr, cx: &mut Ctx) -> Res<S> {
             None => sym(name),
         },
         Expr::Unit(u) => S::Unit(u.clone()),
+        // `#G` stays the constant whatever is bound to G; π and e are the symbols they always are
+        Expr::Const(c) => match c.as_str() {
+            "π" | "pi" => sym("π"),
+            "e" => sym("e"),
+            _ => sym(&format!("#{c}")),
+        },
         Expr::Paren(x) => from_expr(x, cx)?,
         Expr::Unary(UnaryOp::Neg, x) => neg(from_expr(x, cx)?),
         Expr::Unary(UnaryOp::Pos, x) => from_expr(x, cx)?,

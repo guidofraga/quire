@@ -68,12 +68,6 @@ impl<'e> Scope<'e> {
         self.frames.iter().rev().find_map(|f| f.get(name)).or_else(|| self.base.get(name))
     }
 
-    /// Bound in this evaluation (a function's parameter, a loop or plot variable) rather
-    /// than defined in the document.
-    fn is_local(&self, name: &str) -> bool {
-        self.frames.iter().any(|f| f.contains_key(name))
-    }
-
     fn set(&mut self, name: &str, b: Binding) {
         if let Some(frame) = self.frames.last_mut() {
             frame.insert(name.to_string(), b);
@@ -133,15 +127,13 @@ pub struct Interp<'u> {
     pub constant_idents: BTreeSet<String>,
     /// Your variables whose names are also a built-in constant (they win, but it's worth saying).
     pub shadowing: BTreeSet<String>,
-    /// Your variables read as a unit because they follow a number (`10 m` with `m := 25 kg`).
-    pub units_over_variables: BTreeSet<String>,
     /// SMath documents (`settings.units.marked`): a bare name is never a unit or a constant,
     /// so only the predefined constants (π, e, ∞) resolve without a definition.
     pub marked_units: bool,
 }
 
 /// `2 m`, `9.81 m/s`, `64 kgf*m`: an expression that reads as a number with units.
-fn quantity_like(e: &Expr) -> bool {
+pub(crate) fn quantity_like(e: &Expr) -> bool {
     match e {
         Expr::Binary(BinaryOp::Juxt, ..) | Expr::Unit(_) => true,
         Expr::Binary(BinaryOp::Mul | BinaryOp::Div, l, _) => quantity_like(l),
@@ -157,6 +149,15 @@ fn apply_unary(op: UnaryOp, v: Value) -> Result<Value> {
         UnaryOp::Pos => Ok(v),
         UnaryOp::Not => Ok(Value::bool(!v.truthy()?)),
         UnaryOp::PlusMinus => bail!("± gives two results; this is not supported yet"),
+    }
+}
+
+/// `#G`: the built-in constant, whatever variables are defined.
+#[inline(never)]
+fn constant_value(name: &str) -> Result<Value> {
+    match constant(name) {
+        Some(c) => Ok(Value::Num(Quantity::new(c.value, c.dim()))),
+        None => bail!("#{name} is not a built-in constant"),
     }
 }
 
@@ -210,7 +211,6 @@ impl<'u> Interp<'u> {
             unit_idents: BTreeSet::new(),
             constant_idents: BTreeSet::new(),
             shadowing: BTreeSet::new(),
-            units_over_variables: BTreeSet::new(),
             marked_units: false,
         }
     }
@@ -262,6 +262,7 @@ impl<'u> Interp<'u> {
             Expr::Num(t) => number(t),
             Expr::Ident(name) => self.lookup(s, name),
             Expr::Unit(name) => self.unit_value(name),
+            Expr::Const(name) => constant_value(name),
             Expr::Str(t) => Ok(Value::Str(t.clone())),
             Expr::Placeholder => Err(placeholder()),
             Expr::Paren(x) => self.eval(s, x),
@@ -406,8 +407,8 @@ impl<'u> Interp<'u> {
             return on_scale(x, u);
         }
         let x = self.eval(s, a)?;
-        // right after a number or unit, a plain name is a unit: `2 g` grams, `100 km/h` hours,
-        // and `10 m` metres even when you have a variable m (`10*m` multiplies by it)
+        // right after a number or unit, a plain name that is not a variable here is a unit
+        // before a constant: `2 g` grams, `100 km/h` hours; a variable m makes `10 m` ten m's
         let y = if op == BinaryOp::Juxt || (op == BinaryOp::Div && quantity_like(a)) {
             self.eval_unit_position(s, b)?
         } else {
@@ -465,14 +466,14 @@ impl<'u> Interp<'u> {
         }
     }
 
-    /// `e` is a unit as written (`'mm`, `kN`, `m^2`). In unit position (after a number, or
-    /// after `/` in a quantity) a unit name wins over a variable; elsewhere a variable wins.
+    /// `e` is a unit as written (`'mm`, `kN`, `m^2`). A plain name is a unit when no variable
+    /// of that name is defined here; in unit position (after a number, or after `/` in a
+    /// quantity) a unit name comes before a constant, elsewhere after it.
     fn is_unit_term(&self, s: &Scope, e: &Expr, unit_position: bool) -> bool {
         match e {
             Expr::Unit(_) => true,
             Expr::Ident(n) => {
-                let unit = !s.is_local(n) && self.unit_named(n).is_some();
-                unit && (unit_position || (s.get(n).is_none() && constant(n).is_none()))
+                s.get(n).is_none() && self.unit_named(n).is_some() && (unit_position || constant(n).is_none())
             }
             Expr::Binary(BinaryOp::Pow, base, _) | Expr::Paren(base) => {
                 self.is_unit_term(s, base, unit_position)
@@ -483,7 +484,7 @@ impl<'u> Interp<'u> {
 
     /// The temperature scale (°C, °F: a unit with an offset) that `b` names when a value is
     /// multiplied by it, as in `20 '°C` or `T*degC`. A plain name counts only where it would be
-    /// read as a unit.
+    /// read as a unit: where no variable of that name is defined.
     #[inline(never)]
     fn offset_unit(&mut self, s: &Scope, op: BinaryOp, b: &Expr) -> Result<Option<Unit>> {
         if !matches!(op, BinaryOp::Juxt | BinaryOp::Mul) {
@@ -491,9 +492,7 @@ impl<'u> Interp<'u> {
         }
         let unit = match b {
             Expr::Unit(name) => Some(self.unit(name)?),
-            Expr::Ident(name) if !s.is_local(name) && (op == BinaryOp::Juxt || s.get(name).is_none()) => {
-                self.unit_named(name)
-            }
+            Expr::Ident(name) if s.get(name).is_none() => self.unit_named(name),
             _ => None,
         };
         let Some(u) = unit.filter(|u| u.offset != 0.0) else { return Ok(None) };
@@ -503,15 +502,13 @@ impl<'u> Interp<'u> {
         Ok(Some(u))
     }
 
+    /// A name right after a number or unit: your variable when one is defined here (a
+    /// function's own parameter too: `v(t) := 9.81 t`), else a unit before a constant.
     fn eval_unit_position(&mut self, s: &mut Scope, e: &Expr) -> Result<Value> {
         match e {
-            // a function's own parameter stays itself: `v(t) := 9.81 t`
-            Expr::Ident(name) if !s.is_local(name) => match self.unit_named(name) {
+            Expr::Ident(name) if s.get(name).is_none() => match self.unit_named(name) {
                 Some(u) => {
                     self.unit_idents.insert(name.clone());
-                    if matches!(s.get(name), Some(Binding::Val(_))) {
-                        self.units_over_variables.insert(name.clone());
-                    }
                     Ok(Value::Num(Quantity::new(u.factor, u.dim)))
                 }
                 None => self.eval(s, e),

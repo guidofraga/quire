@@ -90,6 +90,49 @@ pub fn inline_math(src: &str) -> Vec<String> {
     out
 }
 
+/// `src` with the inline math that `f` rewrites replaced: `f` gets each one's index and text
+/// (as [`inline_math`] gives them) and returns its new text, or `None` to keep it as written.
+/// Everything else is kept byte for byte.
+pub fn rewrite_inline_math(src: &str, mut f: impl FnMut(usize, &str) -> Option<String>) -> String {
+    let mut added = Vec::new();
+    let prepared = quote_colors_at(src, &mut added);
+    let original = |at: usize| at - added.partition_point(|&q| q < at);
+    let mut spans: Vec<(usize, usize, String)> = Vec::new();
+    let mut open: Option<(usize, String)> = None;
+    for (e, range) in jotdown::Parser::new(&prepared).into_offset_iter() {
+        match e {
+            Event::Start(Container::Math { .. }, _) => open = Some((range.end, String::new())),
+            Event::End(Container::Math { .. }) => {
+                if let Some((from, text)) = open.take() {
+                    spans.push((original(from), original(range.start), text));
+                }
+            }
+            Event::Str(s) => {
+                if let Some((_, text)) = open.as_mut() {
+                    text.push_str(&s);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = String::with_capacity(src.len());
+    let mut at = 0;
+    for (i, (from, to, text)) in spans.into_iter().enumerate() {
+        // only where the source holds the math exactly as it reads
+        let (Some(head), Some(written)) = (src.get(at..from), src.get(from..to)) else { continue };
+        if written != text {
+            continue;
+        }
+        if let Some(new) = f(i, &text) {
+            out.push_str(head);
+            out.push_str(&new);
+            at = to;
+        }
+    }
+    out.push_str(src.get(at..).unwrap_or_default());
+    out
+}
+
 pub fn render_djot(src: &str) -> String {
     render(src, None)
 }
@@ -481,6 +524,14 @@ mod tests {
         assert_eq!(super::inline_math(src), ["C := 5.1 'm", "L := 2 'm ="]);
         let h = super::render_djot_with_math(src, "abc");
         assert!(h.contains(r#"<span class="qmath" data-math="abc:m0"></span>  X <span class="qmath" data-math="abc:m1"></span>"#), "{h}");
+    }
+
+    #[test]
+    fn inline_math_is_rewritten_in_place() {
+        let src = "*$`x := 2 T`* [red]{color=#c00} $`y := 3 T =` $`z`\n";
+        let out = super::rewrite_inline_math(src, |i, m| (i != 2).then(|| m.replace(" T", " 'T")));
+        assert_eq!(out, "*$`x := 2 'T`* [red]{color=#c00} $`y := 3 'T =` $`z`\n");
+        assert_eq!(super::rewrite_inline_math(src, |_, _| None), src);
     }
 
     #[test]

@@ -6,6 +6,7 @@
 
 pub mod assets;
 pub mod canonical;
+mod names;
 pub mod notebook;
 pub mod templates;
 mod text;
@@ -24,6 +25,7 @@ use quire_eval::{
 use serde::Serialize;
 use serde_json::{Value as Json, json};
 
+pub use names::{upgrade_document, upgrade_names};
 pub use text::{inline_math, render_djot, render_djot_editable, render_djot_with_math};
 
 #[derive(Debug)]
@@ -427,15 +429,15 @@ pub struct RegionView {
     pub constants: Vec<String>,
     /// Your variables here that hide a built-in constant.
     pub shadowing: Vec<String>,
-    /// Your variables read as a unit here because they follow a number (`10 m`).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub units_over_variables: Vec<String>,
     /// Plain names read as units where a variable is more usual (`W` in `M/W` with no `W`
     /// defined), except those the document dismissed (`settings.units.quietNames`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub names_read_as_units: Vec<NameAsUnit>,
     /// The name this region defines (`L`, `f(x)`), for the editor's knowledge of variables.
     pub defines: Option<String>,
+    /// The built-in unit or constant the name this region defines hides below it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redefines: Option<Redefines>,
     /// A spreadsheet table's cells, row-major.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cells: Option<Vec<Vec<CellView>>>,
@@ -710,6 +712,195 @@ fn unit_gloss(name: &str, units: &quire_units::UnitRegistry) -> Option<Gloss> {
     Some(Gloss { title: title.to_string(), value, meanings: meanings(name, units) })
 }
 
+/// What a definition hides below it: `T := 300` hides the unit tesla.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Redefines {
+    pub name: String,
+    /// `"unit"` or `"constant"`.
+    pub kind: &'static str,
+    /// What the built-in is called: `tesla`, `gravitational constant`.
+    pub title: String,
+}
+
+const PREFIX_WORDS: &[(&str, &str)] = &[
+    ("da", "deca"),
+    ("Y", "yotta"),
+    ("Z", "zetta"),
+    ("E", "exa"),
+    ("P", "peta"),
+    ("T", "tera"),
+    ("G", "giga"),
+    ("M", "mega"),
+    ("k", "kilo"),
+    ("h", "hecto"),
+    ("d", "deci"),
+    ("c", "centi"),
+    ("m", "milli"),
+    ("μ", "micro"),
+    ("u", "micro"),
+    ("n", "nano"),
+    ("p", "pico"),
+    ("f", "femto"),
+];
+
+/// What a unit is called: `tesla`, `kilonewton`, or its name when it has no common word.
+fn unit_title(name: &str) -> String {
+    let word = |n: &str| {
+        unit_word(n).or(match n {
+            "t" => Some("tonne"),
+            "min" => Some("minute"),
+            "kgf" => Some("kilogram-force"),
+            "tf" => Some("tonne-force"),
+            "in" => Some("inch"),
+            "ft" => Some("foot"),
+            "lb" => Some("pound"),
+            "rad" => Some("radian"),
+            "bar" => Some("bar"),
+            "day" => Some("day"),
+            _ => None,
+        })
+    };
+    if let Some(w) = word(name) {
+        return w.to_string();
+    }
+    PREFIX_WORDS
+        .iter()
+        .find_map(|(p, pw)| name.strip_prefix(p).and_then(word).map(|w| format!("{pw}{w}")))
+        .unwrap_or_else(|| name.to_string())
+}
+
+/// The built-in a definition of `name` hides below it. In an SMath document a bare name is
+/// never a unit or a constant, except π, e and ∞.
+fn redefines(name: &str, marked: bool, units: &quire_units::UnitRegistry) -> Option<Redefines> {
+    if name.contains('(') {
+        return None;
+    }
+    let predefined = matches!(name, "π" | "pi" | "e" | "∞");
+    if let Some(c) = quire_eval::constant(name).filter(|_| !marked || predefined) {
+        return Some(Redefines { name: name.to_string(), kind: "constant", title: c.title.to_string() });
+    }
+    if !marked && units.lookup_bare(name).is_some() {
+        return Some(Redefines { name: name.to_string(), kind: "unit", title: unit_title(name) });
+    }
+    None
+}
+
+/// One meaning a name can have where it is typed, for completion.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Completion {
+    pub name: String,
+    /// `"variable"`, `"function"`, `"unit"` or `"constant"`.
+    pub kind: &'static str,
+    /// The text that gives the name this meaning there: `T`, `'T`, `#G`.
+    pub insert: String,
+    /// A short look at the value: `300`, `0.001 'm^3`, `f(x, y)`.
+    pub preview: String,
+}
+
+/// Every meaning a name starting with `prefix` can have in region `region_id`: the variables
+/// and functions defined above it (and the global ones), then constants, then units. A
+/// region that is not in the document (a new one) sees everything.
+pub fn complete(doc_json: &Json, region_id: &str, prefix: &str) -> Result<Vec<Completion>> {
+    let doc: Document = serde_json::from_value(doc_json.clone())?;
+    let settings = settings_of(&doc);
+    let marked = settings.marked_units;
+    let mut ws = Worksheet::new(settings);
+    for (name, def) in &doc.units {
+        let _ = ws.define_unit(name, def);
+    }
+    let inputs = math_inputs(&doc, false);
+    let here = inputs.iter().position(|i| i.id == region_id).unwrap_or(inputs.len());
+    let env = ws.scope_at(&inputs, here);
+    let units = ws.units();
+    let preview_settings = DisplaySettings { decimals: 4, ..ws.settings().clone() };
+    let mut variables = Vec::new();
+    let mut functions = Vec::new();
+    for (key, binding) in env.iter() {
+        match binding {
+            quire_eval::Binding::Val(v) if key.starts_with(prefix) => {
+                let text = quire_eval::format_value(v, &DisplaySpec::default(), &preview_settings, units)
+                    .unwrap_or_default();
+                // short: a matrix shows its start
+                let preview = if text.chars().count() > 40 {
+                    format!("{}…", text.chars().take(39).collect::<String>())
+                } else {
+                    text
+                };
+                variables.push(Completion {
+                    name: key.clone(),
+                    kind: "variable",
+                    insert: key.clone(),
+                    preview,
+                });
+            }
+            quire_eval::Binding::Func(f) if f.name.starts_with(prefix) => functions.push(Completion {
+                name: f.name.clone(),
+                kind: "function",
+                insert: f.name.clone(),
+                preview: format!("{}({})", f.name, f.params.join(", ")),
+            }),
+            _ => {}
+        }
+    }
+    let variable =
+        |n: &str| matches!(env.get(n), Some(quire_eval::Binding::Val(_) | quire_eval::Binding::Failed(_)));
+    let mut constants: Vec<Completion> = quire_eval::CONSTANTS
+        .iter()
+        .filter(|c| c.name.starts_with(prefix))
+        .map(|c| {
+            let bare = !variable(c.name)
+                && if marked {
+                    matches!(c.name, "π" | "pi" | "e" | "∞")
+                } else {
+                    units.lookup_bare(c.name).is_none()
+                };
+            Completion {
+                name: c.name.to_string(),
+                kind: "constant",
+                insert: if bare { c.name.to_string() } else { format!("#{}", c.name) },
+                preview: quantity_text(c.value, c.dim(), units),
+            }
+        })
+        .collect();
+    let mut unit_names: Vec<String> = quire_units::UnitRegistry::builtin()
+        .into_iter()
+        .map(|(n, ..)| n.to_string())
+        .chain(doc.units.keys().cloned())
+        .filter(|n| n.starts_with(prefix))
+        .collect();
+    // a prefixed unit is not listed, but typed in full it is one: `kN`
+    if !prefix.is_empty() && units.lookup_bare(prefix).is_some() {
+        unit_names.push(prefix.to_string());
+    }
+    unit_names.sort();
+    unit_names.dedup();
+    let mut unit_list: Vec<Completion> = unit_names
+        .into_iter()
+        .filter_map(|n| {
+            let u = units.lookup(&n)?;
+            let bare = !marked && !variable(&n) && quire_eval::constant(&n).is_none();
+            let value = quantity_text(u.factor, u.dim, units);
+            let preview = if value == format!("1 '{n}") { unit_title(&n) } else { value };
+            Some(Completion {
+                insert: if bare { n.clone() } else { format!("'{n}") },
+                name: n,
+                kind: "unit",
+                preview,
+            })
+        })
+        .collect();
+    variables.sort_by(|a, b| a.name.cmp(&b.name));
+    functions.sort_by(|a, b| a.name.cmp(&b.name).then(a.preview.cmp(&b.preview)));
+    constants.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut out = variables;
+    out.append(&mut functions);
+    out.append(&mut constants);
+    out.append(&mut unit_list);
+    Ok(out)
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryEntry {
@@ -773,6 +964,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
         .filter_map(|u| quire_eval::parse_unit_spec(u, units).ok().map(|s| (*u, s.dim)))
         .collect();
     let quiet = quiet_names(&doc);
+    let marked = marked_units(&doc);
     let mut regions = Vec::with_capacity(ev.inputs.len());
     let mut error_count = 0;
     for (input, o) in ev.inputs.iter().zip(&ev.outcomes) {
@@ -791,9 +983,9 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 units: o.units.clone(),
                 constants: o.constants.clone(),
                 shadowing: Vec::new(),
-                units_over_variables: Vec::new(),
                 names_read_as_units: Vec::new(),
                 defines: None,
+                redefines: None,
                 cells: None,
                 unit_choices: Vec::new(),
                 fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
@@ -831,9 +1023,9 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 units: o.units.clone(),
                 constants: o.constants.clone(),
                 shadowing: Vec::new(),
-                units_over_variables: Vec::new(),
                 names_read_as_units: Vec::new(),
                 defines: o.defines.clone(),
+                redefines: o.defines.as_deref().and_then(|n| redefines(n, marked, units)),
                 cells: Some(cells),
                 unit_choices: Vec::new(),
                 fix: None,
@@ -858,7 +1050,6 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             units: o.units.clone(),
             constants: o.constants.clone(),
             shadowing: o.shadowing.clone(),
-            units_over_variables: o.units_over_variables.clone(),
             names_read_as_units: o
                 .names_read_as_units
                 .iter()
@@ -866,6 +1057,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 .map(|n| NameAsUnit { name: n.clone(), unit: unit_word(n).map(str::to_string) })
                 .collect(),
             defines: o.defines.clone(),
+            redefines: o.defines.as_deref().and_then(|n| redefines(n, marked, units)),
             cells: None,
             unit_choices: if input.show && o.error.is_none() {
                 unit_choices(o.value.as_ref(), &input.display, ev.worksheet.settings(), units, &candidates)
@@ -905,7 +1097,8 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 glossary.entry(format!("unit:{name}")).or_insert(g);
             }
         }
-        for name in v.constants.iter().chain(&v.shadowing) {
+        let marked = v.input.as_ref().map(quire_eval::names::marked_constants).unwrap_or_default();
+        for name in v.constants.iter().chain(&v.shadowing).chain(&marked) {
             if let Some(g) = constant_gloss(name, units) {
                 glossary.entry(format!("constant:{name}")).or_insert(g);
             }
@@ -961,6 +1154,7 @@ pub fn open(path: &Path) -> Result<Json> {
         serde_json::from_str(&std::fs::read_to_string(dir.join("document.json"))?)?
     };
     quire_doc::hold_unreadable(&mut doc);
+    names::upgrade_names(&mut doc);
     Ok(doc)
 }
 
@@ -1030,9 +1224,11 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
 
 /// The canonical `document.json` text: regions in reading order, then the regions held as
 /// placeholders put back as they were written. Sorting first keeps each where it was shown.
+/// A product with your variable is written explicitly (`2*T`, see [`names`]).
 fn canonical_text(doc: &Json) -> String {
     let mut doc = doc.clone();
     canonical::sort_regions(&mut doc);
+    names::explicit_names(&mut doc);
     quire_doc::restore_unreadable(&mut doc);
     canonical::to_string(&doc)
 }
@@ -1066,6 +1262,7 @@ fn load_bytes(bytes: &[u8]) -> Result<Json> {
     };
     let _: Document = serde_json::from_value(doc.clone())?;
     quire_doc::hold_unreadable(&mut doc);
+    names::upgrade_names(&mut doc);
     Ok(doc)
 }
 

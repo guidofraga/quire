@@ -2,7 +2,7 @@
 // in the web version, `quire serve` over /api in a browser while developing.
 import { callEngine } from "./engine";
 import type { PdfInfo } from "./export";
-import type { Doc, Library, Report } from "./types";
+import type { Completion, Doc, Library, Report } from "./types";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -38,6 +38,8 @@ export const api = {
   save: (path: string, doc: Doc, from: string | null) => call<null>("save_document", { path, doc, from }),
   djotHtml: (src: string) => call<string>("djot_html", { src }),
   library: () => call<Library>("library"),
+  /** What a name starting with `prefix` can mean in region `regionId`. */
+  complete: (doc: Doc, regionId: string, prefix: string) => call<Completion[]>("complete", { doc, regionId, prefix }),
   importImage: (path: string) => call<string>("import_image", { path }),
   stageImage: (data: string, ext: string) => call<string>("stage_image", { data, ext }),
   readAsset: (bundle: string, src: string) => call<string>("read_asset", { bundle, src }),

@@ -308,6 +308,8 @@ function say(e: Expr, cx: Ctx): string {
       return cx.units.has(e.c) ? unitWord(e.c) : spokenName(e.c);
     case "Unit":
       return unitWord(e.c);
+    case "Const":
+      return spokenName(e.c);
     case "Str":
       return `"${e.c}"`;
     case "Placeholder":

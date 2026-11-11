@@ -92,7 +92,7 @@ impl Scan<'_> {
             }
             Expr::Matrix(rows) => rows.iter().flatten().for_each(|x| self.walk(x)),
             Expr::Define { rhs, .. } => self.walk(rhs),
-            Expr::Num(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => {}
+            Expr::Num(_) | Expr::Unit(_) | Expr::Const(_) | Expr::Str(_) | Expr::Placeholder => {}
         }
     }
 }

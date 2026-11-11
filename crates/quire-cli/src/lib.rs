@@ -6,6 +6,14 @@ use quire_doc::Results;
 use quire_eval::{Env, Interp, MathInput, Outcome, Quantity, Scope, Value, Worksheet};
 pub use quire_service::{Evaluated, evaluate};
 
+/// A bundle as `quire eval` and `quire check` open it: like the editor, a document stored with
+/// the earlier rule (`2T` was the unit under a variable T) computes as it did.
+pub fn load(path: impl AsRef<std::path::Path>) -> Result<quire_doc::Bundle, quire_doc::DocError> {
+    let mut bundle = quire_doc::load(path)?;
+    quire_service::upgrade_document(&mut bundle.document);
+    Ok(bundle)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Verdict {
     /// Same text as the reference.
@@ -178,7 +186,12 @@ fn free_names(e: &Expr, out: &mut Vec<(String, bool)>) {
         }
         Expr::Call(_, args) => args.iter().for_each(|a| free_names(a, out)),
         Expr::Matrix(rows) => rows.iter().flatten().for_each(|c| free_names(c, out)),
-        Expr::Num(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder | Expr::Define { .. } => {}
+        Expr::Num(_)
+        | Expr::Unit(_)
+        | Expr::Const(_)
+        | Expr::Str(_)
+        | Expr::Placeholder
+        | Expr::Define { .. } => {}
     }
 }
 

@@ -5,6 +5,8 @@ pub(crate) enum Tok {
     Num(String),
     Ident(String),
     Unit(String),
+    /// `#G`: a built-in constant, whatever variables are defined.
+    Const(String),
     Str(String),
     /// Operators and punctuation, normalized to their canonical spelling.
     Sym(&'static str),
@@ -65,6 +67,20 @@ fn is_ident_continue(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || matches!(c, '′' | '″' | '‴')
 }
 
+/// The end of a name whose first character is the one just before `i`.
+fn name_end(chars: &[char], mut i: usize) -> usize {
+    let at = |i: usize| chars.get(i).copied();
+    loop {
+        if at(i).is_some_and(is_ident_continue) {
+            i += 1;
+        } else if at(i) == Some('.') && at(i + 1).is_some_and(is_ident_continue) {
+            i += 2; // literal subscript: A.net, L.f.2m
+        } else {
+            return i;
+        }
+    }
+}
+
 /// A quoted unit name is a run of these, with dots between them (`'kN`, `'Δ°C`, `'%`,
 /// SMath's `'g.e` and `'lb.m`). A run such as `'%m` is one name, so an unknown one is an
 /// "unknown unit" error rather than two tokens.
@@ -114,17 +130,18 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
             continue;
         }
 
-        if is_ident_start(c) {
-            i += 1;
-            loop {
-                if at(i).is_some_and(is_ident_continue) {
-                    i += 1;
-                } else if at(i) == Some('.') && at(i + 1).is_some_and(is_ident_continue) {
-                    i += 2; // literal subscript: A.net, L.f.2m
-                } else {
-                    break;
-                }
+        // `#G`, `#k.B`: the built-in constant, spelled as its plain name
+        if c == '#' {
+            if !at(i + 1).is_some_and(is_ident_start) {
+                return Err(ParseError::new("expected a constant name after #", start));
             }
+            i = name_end(&chars, i + 2);
+            out.push(Token { tok: Tok::Const(slice_str(start + 1, i)), pos: start });
+            continue;
+        }
+
+        if is_ident_start(c) {
+            i = name_end(&chars, i + 1);
             let word: String = slice_str(start, i);
             let tok = match word.as_str() {
                 "and" => Tok::Sym("and"),

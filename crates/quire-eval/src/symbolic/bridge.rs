@@ -103,7 +103,9 @@ pub(crate) fn rewrite(e: &Expr, f: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
         Expr::Define { lhs, rhs, global } => {
             Expr::Define { lhs: Box::new(go(lhs)), rhs: Box::new(go(rhs)), global: *global }
         }
-        Expr::Num(_) | Expr::Ident(_) | Expr::Unit(_) | Expr::Str(_) | Expr::Placeholder => e.clone(),
+        Expr::Num(_) | Expr::Ident(_) | Expr::Unit(_) | Expr::Const(_) | Expr::Str(_) | Expr::Placeholder => {
+            e.clone()
+        }
     }
 }
 
