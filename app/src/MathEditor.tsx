@@ -7,6 +7,7 @@ import { stepRegion } from "./nav";
 import { selectInView } from "./Canvas";
 import { editTableAt } from "./TableEditor";
 import { prefs } from "./settings";
+import { isMac } from "./api";
 import { createEffect, on, onCleanup, untrack } from "solid-js";
 import { announceFirst, completionKey, hideCompletions, type Item, openList, showCompletions } from "./Completion";
 import { nameHtml, prettyValue } from "./math";
@@ -400,8 +401,12 @@ export function MathEditor(props: { r: Region }) {
     // only the key right after `:` may be the `=` of `:=`; any other key ends that
     const typedAssign = assignJustTyped;
     assignJustTyped = false;
-    // Ctrl+Space: what the name at the caret can be (after `=`, the units; in `\name`, symbols)
-    if (e.ctrlKey && !e.metaKey && !e.altKey && (e.code === "Space" || e.key === " ")) {
+    // Ctrl+Space: what the name at the caret can be (after `=`, the units; in `\name`, symbols).
+    // On a Mac also ⌥Space, as macOS keeps Ctrl+Space for input sources (and ⌥Space would only
+    // type a non-breaking space); not on Windows, where Alt+Space opens the window menu
+    const space = e.code === "Space" || e.key === " ";
+    const listKey = e.ctrlKey ? !e.metaKey && !e.altKey : isMac && e.altKey && !e.metaKey;
+    if (space && listKey) {
       e.preventDefault();
       if (latexBefore()) updateCompletion();
       else if (inShownUnit()) unitSuggestions();

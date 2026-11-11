@@ -51,6 +51,21 @@ test("G is the constant; after G := 5, Ctrl+Space on G offers the constant back 
   await expect(regions(page).nth(2).locator(".k")).toHaveText("G");
 });
 
+test("on a Mac ⌥Space opens the list too, and types nothing", async ({ page }) => {
+  // the test browser reports itself as a Mac
+  await blank(page);
+  await typeLines(page, ["G:=5", "y:=G"], true);
+  await page.keyboard.press("Alt+Space");
+  const list = names(page);
+  await expect(list).toBeVisible();
+  await expect(list.locator('[data-kind="variable"]', { hasText: "G" })).toHaveCount(1);
+  await expect(list.locator('[data-kind="constant"]').filter({ hasText: /^G/ })).toHaveCount(1);
+  await expect(input(page)).toHaveValue("y:=G");
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await expect(input(page)).toHaveValue("y:=G");
+});
+
 test("⌥Enter on a name cycles your variable to the unit, and undo puts it back", async ({ page }) => {
   await blank(page);
   await typeLines(page, ["T:=300", "x:=2T="], true);
