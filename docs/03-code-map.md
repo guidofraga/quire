@@ -57,6 +57,7 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `budget.rs` | Limits on one evaluation: the step budget (which matrix operations charge too) and the largest matrix. With the nesting limits in `interp.rs` and `symbolic/work.rs`, any document gives an error, never a crash or a hang; its tests try each limit on a 1 MB stack, as in WebAssembly. |
 | | `constants.rs` | Built-in constants and the name-resolution order (your variable, then constant, then unit). |
 | | `names.rs` | Names in stored text: the products written `2*T` on save and the old rule's units quoted (`2 'T`) on open, worked out from the text alone. |
+| | `solveblock.rs` | Solve blocks: the find line and constraints taken apart, Levenberg–Marquardt with penalties and deflation for inequalities, `find` and `minerr`. The service turns a `solve` region into lines `<id>:g<n>`, `<id>:c<n>` and `<id>:f` (`solve_inputs`); `worksheet.rs` (`step_find`) runs them in reading order. |
 | | `worksheet.rs` | Worksheet semantics: definitions in reading order, global `≡`, "defined further down", working units. |
 | | `unit_names.rs` | Which bare names read as units sit where a variable is more usual (`M/W`), for the "define it above" note. |
 | | `format.rs` | Result display: rounding, notation, which unit a result is shown in. |
@@ -125,6 +126,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `MathEditor.tsx` | Typing math: linear editing, Greek, LaTeX shortcuts, prose detection, ambiguity notes. |
 | `richtext.ts` | Text regions: ProseMirror in the editor, Djot in the document (`toDjot`). Unchanged blocks are written back as their source; what the editor can't represent is kept as uneditable blocks. `richtext.cases.json` holds round-trip cases shared with the Rust tests in `text.rs`. |
 | `TableEditor.tsx` | The spreadsheet grid. Evaluation is in `quire-eval/src/sheet`. |
+| `SolveBlock.tsx` | Solve blocks (Given … find): the framed block, its lines edited with `MathEditor` (a `MathLine`), Insert ▸ Solve Block. Solving is in `quire-eval/src/solveblock.rs`. |
 | `Plot.tsx` | 2D plots as SVG; the engine samples, this file lays out, plays animation frames. |
 | `plotGeometry.ts` | Plot geometry without the DOM: SMath marker sizes and shapes, equal scales, frame timing. |
 | `Plot3D.tsx` | 3D plots on a canvas: faces painted farthest first, curves, the box with its numbers; turning and zooming the saved camera; Inspector ▸ 3D Plot. |
