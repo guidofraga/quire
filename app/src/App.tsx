@@ -378,7 +378,12 @@ async function withPrintLayout(run: () => Promise<unknown>) {
   commitEditing();
   const g = layout().geom;
   const pageRule = document.createElement("style");
-  pageRule.textContent = `@page { size: ${g.paperW}px ${g.paperH}px; margin: 0; }`;
+  // the printed document is as wide as the paper: the print engine scales the document's width
+  // to the page's, and WebKit on macOS otherwise takes it as 1.25 × the paper's width in points
+  // (744 px for A4, not 794), printing every page about 7% too large
+  pageRule.textContent =
+    `@page { size: ${g.paperW}px ${g.paperH}px; margin: 0; }\n` +
+    `@media print { html, body { width: ${g.paperW}px !important; min-width: ${g.paperW}px !important; } }`;
   document.head.appendChild(pageRule);
   setState({ printing: true, selection: [], caret: null });
   let restoreImages = () => {};
