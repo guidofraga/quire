@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "Faariq-Siddiqui",
+      "id": 153129792,
+      "comment_id": 6835553584,
+      "created_at": "2026-11-12T20:48:56Z",
+      "repoId": 1434844381,
+      "pullRequestNo": 141
+    }
+  ]
 }
