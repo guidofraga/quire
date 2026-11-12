@@ -9,6 +9,7 @@ import { tableFromHtml } from "./clipboard";
 import {
   commitEditing,
   contentBottom,
+  cuts,
   flash,
   insertRegion,
   layout,
@@ -600,8 +601,16 @@ function cellValueHtml(linear: string): string {
   return `<span class="cell-num">${esc(m[1])}</span>${m[2] ? ` <span class="cell-unit">${esc(m[2])}</span>` : ""}`;
 }
 
-export function SheetGrid(props: { p: Placed }) {
+/**
+ * A spreadsheet table. Split across pages (page view), the first part is the whole table with
+ * the rows the later parts show drawn hidden from `ghostFrom` on (so it keeps its size and
+ * column widths), and each later part draws `rows` (first, past last) under a copy of the
+ * header row, at the first part's column widths.
+ */
+export function SheetGrid(props: { p: Placed; ghostFrom?: number; rows?: [number, number] }) {
   const r = () => props.p.region;
+  // a part after the first: the editing state, the draft and focus belong to the first part
+  const later = props.rows !== undefined;
   // a memo: the effect below must run when editing starts or ends, not whenever the table is
   // placed again (a new height measured, say) while it is being edited
   const editing = createMemo(() => state.editing === r().id);
@@ -619,22 +628,23 @@ export function SheetGrid(props: { p: Placed }) {
   const active = (i: number, j: number) => editing() && sel().r === i && sel().c === j;
 
   // a new edit starts on the cell that was double-clicked
-  createEffect(
-    on(editing, (on) => {
-      if (on) {
-        setDraft(null);
-        const hit = untrack(() => pendingCell);
-        pendingCell = null;
-        if (hit) setSel({ r: hit[0], c: hit[1], r2: hit[0], c2: hit[1] });
-        else if (untrack(sel).r >= size()[0] || untrack(sel).c >= size()[1]) setSel({ r: 0, c: 0, r2: 0, c2: 0 });
-        focusGrid();
-      } else if (untrack(draft) !== null) {
-        // only another document opening in its place gets here; commitEditing has already
-        // written the cell otherwise
-        setDraft(null);
-      }
-    }),
-  );
+  if (!later)
+    createEffect(
+      on(editing, (on) => {
+        if (on) {
+          setDraft(null);
+          const hit = untrack(() => pendingCell);
+          pendingCell = null;
+          if (hit) setSel({ r: hit[0], c: hit[1], r2: hit[0], c2: hit[1] });
+          else if (untrack(sel).r >= size()[0] || untrack(sel).c >= size()[1]) setSel({ r: 0, c: 0, r2: 0, c2: 0 });
+          focusGrid();
+        } else if (untrack(draft) !== null) {
+          // only another document opening in its place gets here; commitEditing has already
+          // written the cell otherwise
+          setDraft(null);
+        }
+      }),
+    );
 
   // clicking cells while typing a formula puts their references into it
   let refInsert: { start: number; end: number; from: [number, number] } | null = null;
@@ -851,13 +861,39 @@ export function SheetGrid(props: { p: Placed }) {
 
   const onCopy = (e: ClipboardEvent) => copyCells(e, false);
   const onCut = (e: ClipboardEvent) => copyCells(e, true);
-  onCleanup(() => setDraft(null));
-  createEffect(() => trackDraft(draft()));
+  if (!later) {
+    onCleanup(() => setDraft(null));
+    createEffect(() => trackDraft(draft()));
+  }
+  const ghost = (i: number) => props.ghostFrom !== undefined && i >= props.ghostFrom;
+  const shownRows = createMemo(() => {
+    const span = props.rows;
+    return span ? rowIdx().slice(span[0], span[1]) : rowIdx();
+  });
+  const widthsOf = () => cuts[r().id]?.cols ?? [];
+  /** A row drawn only to be seen (a repeated header) or to keep the table's size (hidden). */
+  const StaticRow = (p: { i: number; class: string }) => (
+    <tr class={p.class} aria-hidden="true">
+      <Show when={editing()}>
+        <th class="row-head">{p.i + 1}</th>
+      </Show>
+      <For each={colIdx()}>
+        {(j) => (
+          <td
+            classList={{ err: !!view(p.i, j)?.error, formula: !!view(p.i, j)?.formula }}
+            style={{ "text-align": align(p.i, j) }}
+          >
+            <span class="cell" innerHTML={cellContent(p.i, j)} />
+          </td>
+        )}
+      </For>
+    </tr>
+  );
 
   return (
     <div
       class="sheet-wrap"
-      tabIndex={editing() ? 0 : -1}
+      tabIndex={editing() && !later ? 0 : -1}
       // while editing, a spreadsheet grid whose active cell (B2) a screen reader follows
       role={editing() ? "group" : undefined}
       aria-label={editing() ? `Table ${(r().name as string | undefined) ?? ""}`.trim() : undefined}
@@ -868,7 +904,7 @@ export function SheetGrid(props: { p: Placed }) {
       onCut={onCut}
       onPaste={pasteCells}
     >
-      <Show when={editing()}>
+      <Show when={editing() && !later}>
         <div class="sheet-bar" aria-hidden="true" onPointerDown={(e) => e.stopPropagation()}>
           <span class="sheet-ref">
             {(() => {
@@ -889,15 +925,29 @@ export function SheetGrid(props: { p: Placed }) {
         aria-label={(r().name as string | undefined) ?? "Table"}
         aria-multiselectable={editing() || undefined}
         onPointerEnter={measureEdges}
+        style={
+          later && widthsOf().length
+            ? { "table-layout": "fixed", width: `${widthsOf().reduce((a, b) => a + b, 0)}px` }
+            : undefined
+        }
       >
-        <colgroup>
-          <Show when={editing()}>
-            <col class="row-head-col" />
-          </Show>
-          <For each={colIdx()}>
-            {(j) => <col style={{ width: cols()[j]?.width ? `${cols()[j]!.width}px` : undefined }} />}
-          </For>
-        </colgroup>
+        <Show
+          when={later && widthsOf().length}
+          fallback={
+            <colgroup>
+              <Show when={editing()}>
+                <col class="row-head-col" />
+              </Show>
+              <For each={colIdx()}>
+                {(j) => <col style={{ width: cols()[j]?.width ? `${cols()[j]!.width}px` : undefined }} />}
+              </For>
+            </colgroup>
+          }
+        >
+          <colgroup>
+            <For each={widthsOf()}>{(w) => <col style={{ width: `${w}px` }} />}</For>
+          </colgroup>
+        </Show>
         <Show when={editing()}>
           <thead>
             <tr>
@@ -930,91 +980,100 @@ export function SheetGrid(props: { p: Placed }) {
           </thead>
         </Show>
         <tbody>
-          <For each={rowIdx()}>
+          <Show when={later && r().header?.row && props.rows![0] > 0}>
+            <StaticRow i={0} class="repeat" />
+          </Show>
+          <For each={shownRows()}>
             {(i) => (
-              <tr>
-                <Show when={editing()}>
-                  <th
-                    class="row-head"
-                    classList={{ on: i >= range(sel()).r0 && i <= range(sel()).r1 }}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      if (draft() !== null) commitDraft();
-                      const w = size()[1] - 1;
-                      if (e.shiftKey) setSel((s) => ({ ...s, c: 0, c2: w, r2: i }));
-                      else setSel({ r: i, c: 0, r2: i, c2: w });
-                      focusGrid();
-                    }}
-                  >
-                    {i + 1}
-                  </th>
-                </Show>
-                <For each={colIdx()}>
-                  {(j) => (
-                    <td
-                      id={`${r().id}-cell-${i}-${j}`}
-                      role={editing() ? "gridcell" : undefined}
-                      aria-selected={editing() ? inSel(i, j) : undefined}
-                      data-r={i}
-                      data-c={j}
-                      classList={{
-                        sel: inSel(i, j),
-                        active: active(i, j),
-                        err: !!view(i, j)?.error,
-                        formula: !!view(i, j)?.formula,
-                        "check-pass": !view(i, j)?.error && verdictOf(view(i, j)?.text) === true,
-                        "check-fail": !view(i, j)?.error && verdictOf(view(i, j)?.text) === false,
-                      }}
-                      style={{ "text-align": align(i, j) }}
-                      title={view(i, j)?.error ?? undefined}
-                      onPointerDown={(e) => onCellDown(e, i, j)}
-                      onDblClick={(e) => {
-                        if (!editing()) return;
-                        e.stopPropagation();
-                        select(i, j);
-                        beginEdit(null, false);
-                      }}
-                      onContextMenu={() => {
-                        if (!editing() || inSel(i, j)) return;
-                        // the cell being typed goes into its own cell before the selection moves
+              <Show
+                when={!ghost(i)}
+                // printed, the first part draws only its own rows: nothing runs on past its page
+                fallback={state.printing ? undefined : <StaticRow i={i} class="ghost" />}
+              >
+                <tr>
+                  <Show when={editing()}>
+                    <th
+                      class="row-head"
+                      classList={{ on: i >= range(sel()).r0 && i <= range(sel()).r1 }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
                         if (draft() !== null) commitDraft();
-                        select(i, j);
+                        const w = size()[1] - 1;
+                        if (e.shiftKey) setSel((s) => ({ ...s, c: 0, c2: w, r2: i }));
+                        else setSel({ r: i, c: 0, r2: i, c2: w });
+                        focusGrid();
                       }}
                     >
-                      <Show when={editing()}>
-                        <span class="sr-only">{cellName(i, j)} </span>
-                      </Show>
-                      <Show
-                        when={active(i, j) && draft() !== null}
-                        fallback={<span class="cell" innerHTML={cellContent(i, j)} />}
+                      {i + 1}
+                    </th>
+                  </Show>
+                  <For each={colIdx()}>
+                    {(j) => (
+                      <td
+                        id={`${r().id}-cell-${i}-${j}`}
+                        role={editing() ? "gridcell" : undefined}
+                        aria-selected={editing() ? inSel(i, j) : undefined}
+                        data-r={i}
+                        data-c={j}
+                        classList={{
+                          sel: inSel(i, j),
+                          active: active(i, j),
+                          err: !!view(i, j)?.error,
+                          formula: !!view(i, j)?.formula,
+                          "check-pass": !view(i, j)?.error && verdictOf(view(i, j)?.text) === true,
+                          "check-fail": !view(i, j)?.error && verdictOf(view(i, j)?.text) === false,
+                        }}
+                        style={{ "text-align": align(i, j) }}
+                        title={view(i, j)?.error ?? undefined}
+                        onPointerDown={(e) => onCellDown(e, i, j)}
+                        onDblClick={(e) => {
+                          if (!editing()) return;
+                          e.stopPropagation();
+                          select(i, j);
+                          beginEdit(null, false);
+                        }}
+                        onContextMenu={() => {
+                          if (!editing() || inSel(i, j)) return;
+                          // the cell being typed goes into its own cell before the selection moves
+                          if (draft() !== null) commitDraft();
+                          select(i, j);
+                        }}
                       >
-                        <input
-                          class="cell-input"
-                          aria-label={`Cell ${cellName(i, j)}`}
-                          value={draft() ?? ""}
-                          spellcheck={false}
-                          autocomplete="off"
-                          onInput={(e) => setDraft(e.currentTarget.value)}
-                          onBeforeInput={(e) => {
-                            // the edit menu and the context menu undo through here
-                            if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
-                            e.preventDefault();
-                            undoInCell(e.inputType === "historyRedo");
-                          }}
-                          onKeyDown={onInputKey}
-                          onPointerDown={(e) => e.stopPropagation()}
-                        />
-                      </Show>
-                    </td>
-                  )}
-                </For>
-              </tr>
+                        <Show when={editing()}>
+                          <span class="sr-only">{cellName(i, j)} </span>
+                        </Show>
+                        <Show
+                          when={active(i, j) && draft() !== null}
+                          fallback={<span class="cell" innerHTML={cellContent(i, j)} />}
+                        >
+                          <input
+                            class="cell-input"
+                            aria-label={`Cell ${cellName(i, j)}`}
+                            value={draft() ?? ""}
+                            spellcheck={false}
+                            autocomplete="off"
+                            onInput={(e) => setDraft(e.currentTarget.value)}
+                            onBeforeInput={(e) => {
+                              // the edit menu and the context menu undo through here
+                              if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
+                              e.preventDefault();
+                              undoInCell(e.inputType === "historyRedo");
+                            }}
+                            onKeyDown={onInputKey}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          />
+                        </Show>
+                      </td>
+                    )}
+                  </For>
+                </tr>
+              </Show>
             )}
           </For>
         </tbody>
       </table>
       {/* outside editing: drag a column's edge to resize it, double-click to fit its contents */}
-      <Show when={!editing() && !state.printing}>
+      <Show when={!editing() && !state.printing && !later}>
         <For each={edges()}>
           {(e) => (
             <div

@@ -272,7 +272,37 @@ export interface Placed {
    * document keeps its position; 0 when it is drawn where it is.
    */
   pulled: number;
+  /**
+   * Page view: a tall table or text region split across pages (`computeLayout`), one part per
+   * page, the first on `page`. Unset when the region is drawn whole.
+   */
+  parts?: Part[];
 }
+
+/** One page's share of a split region: its content from `from` to `to` px below the region's top. */
+export interface Part {
+  page: number;
+  /** Sheet-local, as `Placed.top`. */
+  top: number;
+  from: number;
+  to: number;
+}
+
+/**
+ * Where a tall region may be cut between pages, measured on the page (`Region.tsx`): offsets
+ * below its top, ascending (between table rows, between lines of text).
+ */
+export interface Cuts {
+  at: number[];
+  /** A table's: the row each cut starts, parallel to `at`. */
+  rows?: number[];
+  /** What each part after the first repeats at its top (a table's header row), in px. */
+  head: number;
+  /** A table's column widths, for the parts after the first to keep. */
+  cols?: number[];
+}
+
+export const [cuts, setCuts] = createStore<Record<string, Cuts | undefined>>({});
 
 /**
  * The translation that is shown, and so the one an edit changes: the document's language, else
@@ -370,6 +400,23 @@ function regionHeight(r: Region, measured: Record<string, number>): number {
   return measured[r.id] ?? DEFAULT_HEIGHT;
 }
 
+/**
+ * A region at least this share of a page tall is split where it crosses the bottom of a page
+ * (if it can be cut: tables and text); a shorter one moves to the next page whole.
+ */
+export const SPLIT_SHARE = 0.5;
+
+/** The last cut in `c` above `from` that leaves at most `room` px from `from`. */
+function lastCut(c: Cuts, from: number, room: number): number | undefined {
+  let best: number | undefined;
+  for (const a of c.at) {
+    if (a <= from) continue;
+    if (a > from + room) break;
+    best = a;
+  }
+  return best;
+}
+
 /** A text region that is a heading (`#`…) or a Title. */
 function isHeading(r: Region, lang?: string): boolean {
   return r.kind === "text" && /^#{1,6}\s/.test(localized(r.text, lang).replace(/^\{[^}\n]*\}\n/, ""));
@@ -394,6 +441,7 @@ export function computeLayout(
   printing: boolean,
   wanted = 0,
   measuredWidths: Record<string, number> = {},
+  measuredCuts: Record<string, Cuts | undefined> = {},
 ): Layout {
   const list: Placed[] = [];
   const walk = (regions: Region[], ox: number, oy: number, parent: Region | null, hidden: boolean) => {
@@ -442,13 +490,37 @@ export function computeLayout(
     const lang = doc.meta?.lang;
     // the region placed just before, in reading order: a heading there may move with this one
     let prev: { p: Placed; y: number } | null = null;
+    // the document bands of split regions, with the push in effect on each part: what sits
+    // beside a split region is placed with the part it is beside
+    const spans: { lo: number; hi: number; parts: { from: number; push: number }[] }[] = [];
+    const place = (p: Placed, y: number, k: number) => {
+      p.page = k;
+      // an area spans the column
+      const w = p.region.kind === "area" ? geom.contentW : (measuredWidths[p.region.id] ?? 0);
+      const drawn = pullOnPaper(p.x, w, geom.contentW, geom.margins.right);
+      p.pulled = p.x - drawn;
+      p.left = geom.margins.left + drawn;
+      p.top = geom.margins.top + y - k * H;
+      lastPage = Math.max(lastPage, k);
+    };
     for (const p of list) {
       if (p.hidden) continue;
       const base = p.y - p.shift;
+      const h = regionHeight(p.region, measured);
+      const span = spans.find((s) => base >= s.lo && base < s.hi);
+      if (span) {
+        // beside a split region: on the page of the part it is beside, kept whole there
+        let at = 0;
+        while (at + 1 < span.parts.length && span.parts[at + 1].from <= base - span.lo) at++;
+        let y = base + span.parts[at].push;
+        let k = Math.floor(y / H);
+        if (y - k * H > 0 && y - k * H + h > H && h <= H) y = ++k * H;
+        place(p, y, k);
+        continue;
+      }
       let y = base + push;
       let k = Math.floor(y / H);
       while (pushAt.length <= k) pushAt.push(push);
-      const h = regionHeight(p.region, measured);
       // after a page break, everything starts on the next page
       if (k < breakTo) {
         push += breakTo * H - y;
@@ -459,19 +531,26 @@ export function computeLayout(
       }
       const top = y - k * H;
       const brk = p.region.kind === "pagebreak";
+      // a tall table or text region is split where it crosses a page's bottom, unless it is to
+      // be kept whole (`keep`, SMath's isBreakable=false); its cuts are read once through the
+      // store (a new measurement replaces the whole entry), then plainly
+      const c = brk || p.region.keep === true ? undefined : unwrap(measuredCuts[p.region.id]);
+      const splits = !!c && c.at.length > 0 && h > H * SPLIT_SHARE;
       // keep regions whole: one that would cross the bottom margin starts the next page (not a
-      // page break's mark, which doesn't print: moved on its own, it would leave a blank page)
-      if (top > 0 && top + h > H && h <= H && !brk) {
+      // page break's mark, which doesn't print: moved on its own, it would leave a blank page);
+      // a split one does too when not even its first part fits on what is left of this page
+      if (top > 0 && top + h > H && !brk && (splits ? lastCut(c, 0, H - top) === undefined : h <= H)) {
         push += (k + 1) * H - y;
         y = (k + 1) * H;
         k += 1;
         pushAt[k] = push;
       }
       // keep a heading with what follows: when this region starts the page after a heading,
-      // the heading moves to the top of this page too, with this region at its distance below it
+      // the heading moves to the top of this page too, with this region (or its first part) at
+      // its distance below it
       if (!brk && prev && prev.p.page === k - 1 && prev.y > (k - 1) * H && isHeading(prev.p.region, lang)) {
         const gap = base - (prev.p.y - prev.p.shift);
-        if (gap >= 0 && gap + h <= H) {
+        if (gap >= 0 && gap + (splits ? c.at[0] : h) <= H) {
           push = k * H - (prev.p.y - prev.p.shift);
           pushAt[k] = push;
           prev.p.page = k;
@@ -479,14 +558,38 @@ export function computeLayout(
           y = base + push;
         }
       }
-      p.page = k;
-      // an area spans the column
-      const w = p.region.kind === "area" ? geom.contentW : (measuredWidths[p.region.id] ?? 0);
-      const drawn = pullOnPaper(p.x, w, geom.contentW, geom.margins.right);
-      p.pulled = p.x - drawn;
-      p.left = geom.margins.left + drawn;
-      p.top = geom.margins.top + y - k * H;
-      lastPage = Math.max(lastPage, k);
+      place(p, y, k);
+      p.parts = undefined;
+      if (splits && y - k * H + h > H) {
+        // fill each page up to the last cut that fits; the parts after the first start at the
+        // top of the next page, under the repeated header
+        const parts: Part[] = [];
+        let from = 0;
+        let j = k;
+        let room = H - (y - k * H);
+        while (from + room < h) {
+          const to = lastCut(c, from, room) ?? c.at.find((a) => a > from);
+          if (to === undefined) break;
+          parts.push({ page: j, top: j === k ? p.top : geom.margins.top, from, to });
+          from = to;
+          j += 1;
+          room = H - c.head;
+        }
+        if (parts.length) {
+          parts.push({ page: j, top: geom.margins.top, from, to: h });
+          p.parts = parts;
+          const pushes = [{ from: 0, push }];
+          // what follows each cut is drawn at the top of its page, under the header
+          for (const q of parts.slice(1)) {
+            while (pushAt.length <= q.page) pushAt.push(push);
+            pushAt[q.page] = q.page * H + c.head - (base + q.from);
+            pushes.push({ from: q.from, push: pushAt[q.page] });
+          }
+          push = pushAt[j];
+          lastPage = Math.max(lastPage, j);
+          spans.push({ lo: base, hi: base + h, parts: pushes });
+        }
+      }
       prev = { p, y };
       if (brk) {
         // what follows starts at the top of the next page, keeping its distance from the break
@@ -556,12 +659,12 @@ export function computeLayout(
 }
 
 export const layout = createRoot(() =>
-  createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing, state.pagesWanted, widths)),
+  createMemo(() => computeLayout(state.doc, heights, isPageView(), state.printing, state.pagesWanted, widths, cuts)),
 );
 
 /** How the document falls into pages, also while it is shown as a free canvas. */
 export const pagedLayout = createRoot(() =>
-  createMemo(() => (isPageView() ? layout() : computeLayout(state.doc, heights, true, false, 0, widths))),
+  createMemo(() => (isPageView() ? layout() : computeLayout(state.doc, heights, true, false, 0, widths, cuts))),
 );
 
 export function contentBottom(): number {

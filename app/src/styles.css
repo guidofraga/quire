@@ -853,6 +853,35 @@ ms.str {
     0 2px 10px rgba(20, 30, 50, 0.14);
 }
 
+/* split text being edited shows whole on its first page, over the sheets that follow */
+.sheet.lifted {
+  z-index: 1;
+}
+
+.sheet.lifted > .region.editing {
+  background: var(--paper);
+}
+
+/* a later part of a region split across pages (Region.tsx RegionPart) */
+.region.part.text {
+  padding: 0;
+}
+
+.part-window {
+  overflow: hidden;
+}
+
+/* the region's own padding, inside the shifted text so its lines sit where they do on the first part */
+.part-shift {
+  padding: 2px 3px;
+}
+
+/* rows a split table's first part keeps for its size, drawn on the later pages */
+.sheet tr.ghost,
+.table tr.ghost {
+  visibility: hidden;
+}
+
 .content-box {
   position: absolute;
   outline: 1px dashed rgba(47, 111, 223, 0.13);

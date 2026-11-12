@@ -49,14 +49,12 @@ fn bookmarks(
     Ok(())
 }
 
-#[test]
-#[ignore = "drives the desktop app; see the module comment"]
-fn exported_report_has_details_bookmarks_and_links() -> TestResult {
-    let input = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/report.quire");
-    let out = std::env::temp_dir().join(format!("quire-export-{}.pdf", std::process::id()));
+/// Export `input` with `quire-app --export-pdf` (`name` keeps the tests' files apart) and read it back.
+fn export(input: &Path, name: &str) -> TestResult<Document> {
+    let out = std::env::temp_dir().join(format!("quire-export-{name}-{}.pdf", std::process::id()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_quire-app"))
         .arg("--export-pdf")
-        .arg(&input)
+        .arg(input)
         .arg(&out)
         .stderr(Stdio::piped())
         .spawn()?;
@@ -96,6 +94,14 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     }
     let doc = Document::load(&out)?;
     std::fs::remove_file(&out).ok();
+    Ok(doc)
+}
+
+#[test]
+#[ignore = "drives the desktop app; see the module comment"]
+fn exported_report_has_details_bookmarks_and_links() -> TestResult {
+    let input = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/report.quire");
+    let doc = export(&input, "report")?;
 
     let info = doc.get_dictionary(doc.trailer.get(b"Info")?.as_reference()?)?;
     assert_eq!(text(&doc, info, b"Title")?, "Footbridge deck check");
@@ -141,5 +147,48 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     let expected =
         [(0, 1), (0, 2), (0, 2), (0, 3), (0, 2), (0, 1), (1, 1), (1, 2), (2, 1), (2, 2), (3, 2), (3, 3)];
     assert_eq!(internal, expected);
+    Ok(())
+}
+
+#[test]
+#[ignore = "drives the desktop app; see the module comment"]
+fn a_tall_table_splits_across_pages_with_its_header_on_each() -> TestResult {
+    // 120 rows under a header row: three pages of A4
+    const N: usize = 120;
+    let dir = std::env::temp_dir().join(format!("quire-split-{}", std::process::id()));
+    let input = dir.join("table.quire");
+    std::fs::create_dir_all(&input)?;
+    let mut rows = vec![r#"["Item","Load","Note"]"#.to_string()];
+    rows.extend((1..=N).map(|i| format!(r#"["row{i}","{}","ok"]"#, i * 3)));
+    let json = format!(
+        r#"{{"format":"quire/1","meta":{{"title":"Split"}},"page":{{"view":"pages"}},"regions":[{{"id":"t","kind":"table","at":[0,0],"header":{{"row":true}},"rows":[{}]}}]}}"#,
+        rows.join(",")
+    );
+    std::fs::write(input.join("document.json"), json)?;
+    let doc = export(&input, "split");
+    std::fs::remove_dir_all(&dir).ok();
+    let doc = doc?;
+
+    let mut seen = Vec::new();
+    let mut on = Vec::new();
+    for &k in doc.get_pages().keys() {
+        let text = doc.extract_text(&[k])?;
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let rows: Vec<String> =
+            words.iter().filter(|w| w.starts_with("row")).map(|w| w.to_string()).collect();
+        if rows.is_empty() {
+            continue;
+        }
+        // the header row once on every page the table is on (the text comes out in the order
+        // it is painted, not read, so where on the page isn't checked here)
+        let headers = words.iter().filter(|w| **w == "Item").count();
+        assert_eq!(headers, 1, "the header row on page {k}: {text}");
+        on.push(k);
+        seen.extend(rows);
+    }
+    assert_eq!(on, [1, 2, 3], "the pages the table is on");
+    // every row once, in order, none lost at a page's foot
+    let expected: Vec<String> = (1..=N).map(|i| format!("row{i}")).collect();
+    assert_eq!(seen, expected);
     Ok(())
 }
