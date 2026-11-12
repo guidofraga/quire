@@ -8,7 +8,7 @@ const LONG_NOTE =
   "A long explanation of where this value comes from, which would run off the paper if it stayed on the formula's line, " +
   "so it wraps under the formula instead and keeps within the page.";
 
-const regions = [
+const regions = (size3: [number, number]) => [
   { id: "re", kind: "math", at: [0, 0], expr: "Re:=152180", show: "value", display: { decimals: 0 } },
   {
     id: "wide",
@@ -41,8 +41,8 @@ const regions = [
   {
     id: "plot3",
     kind: "plot3d",
-    at: [340, 400],
-    size: [310, 210],
+    at: size3[0] > 400 ? [0, 1000] : [340, 400],
+    size: size3,
     series: [{ surface: "x*y", xrange: "0..2", yrange: "0..1" }],
     axes: { x: { label: "span" }, y: { label: "width" }, z: { label: "load" } },
   },
@@ -67,7 +67,7 @@ export function closeDoc() {
   dir = "";
 }
 
-export async function openDoc(page: Page) {
+export async function openDoc(page: Page, opts: { size3?: [number, number] } = {}) {
   dir = mkdtempSync(join(tmpdir(), "quire-polish-e2e-"));
   const doc = join(dir, "report.quire");
   mkdirSync(doc);
@@ -78,7 +78,7 @@ export async function openDoc(page: Page) {
       format: "quire/1",
       meta: { title: "Beam report" },
       page: { view: "pages" },
-      regions,
+      regions: regions(opts.size3 ?? [310, 210]),
     }),
   );
   await page.goto(`/?open=${encodeURIComponent(doc)}`);

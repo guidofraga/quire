@@ -211,7 +211,7 @@ describe("the default header and footer colour", () => {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
 
-  it("reads at WCAG AA (4.5:1) on white paper", () => {
-    expect(1.05 / (luminance(HF_DEFAULT_COLOR) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  it("clears WCAG AA (4.5:1) on white paper with room to spare", () => {
+    expect(1.05 / (luminance(HF_DEFAULT_COLOR) + 0.05)).toBeGreaterThanOrEqual(4.7);
   });
 });

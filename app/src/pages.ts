@@ -101,7 +101,7 @@ export interface HeaderFooter extends BandContent {
 
 export const HF_DEFAULT_SIZE = 8;
 /** Header and footer text when no colour is set: 4.5:1 on white paper, the WCAG AA minimum. */
-export const HF_DEFAULT_COLOR = "#727780";
+export const HF_DEFAULT_COLOR = "#6e737c";
 export const HF_DEFAULT_RULE = "0.5pt";
 const PT = 96 / 72;
 /** Between the text (or image) and the rule. */

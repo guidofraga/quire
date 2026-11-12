@@ -369,6 +369,11 @@ export function PlotBody(props: { r: Region }) {
     // over the wheel)
     return r().palette === "smath" ? nodes.reverse() : nodes;
   };
+  /** The legend's dot for a series of points: the colour all its markers share, else the series'. */
+  const dotColor = (s: { i: number; marks?: (PlotMarkView | null)[] }) => {
+    const colours = new Set((s.marks ?? []).filter((m) => m !== null).map((m) => m!.color ?? color(s.i)));
+    return colours.size === 1 ? [...colours][0] : color(s.i);
+  };
   const name = (i: number) => series()[i]?.label || series()[i]?.y || `Series ${i + 1}`;
   const isData = (i: number) => !series()[i]?.range;
 
@@ -717,7 +722,7 @@ export function PlotBody(props: { r: Region }) {
                       {/* a series drawn as points only is shown by a dot, not by a line it does not have */}
                       <Show
                         when={s.connect !== false && drawAs(s.i) !== "points"}
-                        fallback={<circle class="plot-legend-dot" cx={7} cy={0} r={3.5} fill={color(s.i)} />}
+                        fallback={<circle class="plot-legend-dot" cx={7} cy={0} r={3.5} fill={dotColor(s)} />}
                       >
                         <line
                           x1={0}
