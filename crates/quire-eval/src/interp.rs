@@ -609,6 +609,9 @@ impl<'u> Interp<'u> {
             ("root" | "solve", 4) => self.solve_in(s, args),
             ("solve", 2 | 3) if Self::is_system(s, args) => self.solve_system(s, args),
             ("solve", 2 | 3) => self.solve_from(s, args),
+            (name, _) if crate::solveblock::is_find(name) => Err(EvalError::new(format!(
+                "{name} works only as the last line of a solve block: Insert ▸ Solve Block"
+            ))),
             ("rkfixed", 5) => self.rkfixed(s, args),
             ("Rkadapt", 5) => self.rkadapt(s, args),
             ("linfit", 3) => self.linfit(s, args),

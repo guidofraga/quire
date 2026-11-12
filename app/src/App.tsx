@@ -37,6 +37,7 @@ import { ContextMenu } from "./ContextMenu";
 import { FindBar } from "./FindBar";
 import { importCsv, insertTable, isSheet, tableCommand, trackEvaluation, undoInCell } from "./TableEditor";
 import { insertPlot } from "./Plot";
+import { insertSolveBlock } from "./SolveBlock";
 import { insertPlot3d } from "./Plot3D";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
@@ -452,6 +453,7 @@ function openInsertMenu(e: MouseEvent) {
       item("Plot", "insert_plot", "⌥⌘P"),
       item("3D Plot", "insert_plot3d"),
       item("Area", "insert_area"),
+      item("Solve Block", "insert_solve"),
       item("Page Break", "insert_pagebreak", "⌘↩"),
       null,
       item("Contents", "insert_toc"),
@@ -564,10 +566,17 @@ function openChecksMenu(e: MouseEvent) {
 }
 
 function nextError() {
-  const errors = Object.values(state.views).filter((v) => v.error);
+  // a line of a solve block, or math inside text (`<id>:c0`, `<id>:m0`), is its region's error
+  const errors = [
+    ...new Set(
+      Object.values(state.views)
+        .filter((v) => v.error)
+        .map((v) => v.id.split(":")[0]),
+    ),
+  ];
   if (!errors.length) return;
-  const current = errors.findIndex((v) => v.id === state.selection[0]);
-  reveal(errors[(current + 1) % errors.length].id);
+  const current = errors.indexOf(state.selection[0]);
+  reveal(errors[(current + 1) % errors.length]);
 }
 
 const TEXT_FORMAT: Record<string, () => void> = {
@@ -717,6 +726,8 @@ function runCommand(id: string) {
       if (editing?.kind === "math") return convertEditing("text", editText(editing));
       return insertAtCaret("text");
     }
+    case "insert_solve":
+      return insertSolveBlock();
     case "insert_area":
       return insertArea();
     case "insert_pagebreak":

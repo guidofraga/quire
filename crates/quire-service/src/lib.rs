@@ -20,7 +20,8 @@ use quire_ast::{Expr, parse};
 use quire_doc::Document;
 use quire_eval::{
     Animate, DisplaySettings, DisplaySpec, Fix, Marker, MathInput, Notation, Outcome, Plot3Input, PlotInput,
-    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, TableInput, Worksheet,
+    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, SolvePart, TableInput,
+    Worksheet,
 };
 use serde::Serialize;
 use serde_json::{Value as Json, json};
@@ -314,6 +315,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         table: None,
                         plot: None,
                         symbolic,
+                        solve: None,
                     });
                 }
             }
@@ -334,6 +336,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         table: None,
                         plot: None,
                         symbolic,
+                        solve: None,
                     });
                 }
             }
@@ -347,6 +350,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     table: Some(table_input(r)),
                     plot: None,
                     symbolic: false,
+                    solve: None,
                 });
             }
             "plot2d" | "plot3d" => {
@@ -358,6 +362,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     table: None,
                     plot: Some(plot_input(r)),
                     symbolic: false,
+                    solve: None,
                 });
             }
             "table" if tables => {
@@ -370,12 +375,52 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         table: None,
                         plot: None,
                         symbolic: false,
+                        solve: None,
                     });
                 }
             }
+            "solve" => out.extend(solve_inputs(r)),
             _ => {}
         }
     }
+    out
+}
+
+/// The lines of a solve block's list (`guesses`, `given`), as written.
+fn block_lines(r: &quire_doc::Region, key: &str) -> Vec<String> {
+    let cell = |v: &Json| v.as_str().unwrap_or_default().to_string();
+    r.extra.get(key).and_then(Json::as_array).map(|a| a.iter().map(cell).collect()).unwrap_or_default()
+}
+
+/// A solve block's lines (docs/02-file-format.md §4.10), each a math input of its own: the
+/// guesses `<id>:g<n>`, the constraints `<id>:c<n>` and the find line `<id>:f`.
+fn solve_inputs(r: &quire_doc::Region) -> Vec<MathInput> {
+    let line = |id: String, expr: String, solve: Option<SolvePart>| MathInput {
+        id,
+        expr,
+        show: false,
+        display: DisplaySpec::default(),
+        table: None,
+        plot: None,
+        symbolic: false,
+        solve,
+    };
+    let block = r.id.clone();
+    let mut out: Vec<MathInput> = block_lines(r, "guesses")
+        .into_iter()
+        .enumerate()
+        .map(|(n, e)| line(format!("{block}:g{n}"), e, None))
+        .collect();
+    out.extend(block_lines(r, "given").into_iter().enumerate().map(|(n, e)| {
+        let given = Some(SolvePart::Given { block: block.clone() });
+        line(format!("{block}:c{n}"), quire_eval::constraint_text(&e), given)
+    }));
+    let find = r.extra.get("find").and_then(Json::as_str).unwrap_or_default().to_string();
+    out.push(MathInput {
+        show: r.show.as_deref() == Some("value"),
+        display: display_of(r),
+        ..line(format!("{block}:f"), find, Some(SolvePart::Find { block: block.clone() }))
+    });
     out
 }
 

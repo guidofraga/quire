@@ -267,6 +267,8 @@ fn assigned(target: &Expr, out: &mut HashSet<String>) {
             out.insert(n.clone());
         }
         Expr::Index(base, _) => assigned(base, out),
+        // a solve block's `[x; y] := find(x, y)` defines each name
+        Expr::Matrix(rows) => rows.iter().flatten().for_each(|c| assigned(c, out)),
         _ => {}
     }
 }

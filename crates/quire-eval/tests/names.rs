@@ -19,6 +19,7 @@ fn run(lines: &[&str]) -> Vec<Outcome> {
             table: None,
             plot: None,
             symbolic: false,
+            solve: None,
         })
         .collect();
     Worksheet::new(DisplaySettings::default()).run(&regions)
@@ -103,6 +104,7 @@ fn a_unit_after_a_number_in_a_table_cell_is_the_unit() -> TestResult {
         table: None,
         plot: None,
         symbolic: false,
+        solve: None,
     };
     let regions = vec![
         math("a", "m := 25 kg"),

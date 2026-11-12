@@ -1280,7 +1280,7 @@ export function startEditing(id: string, at?: [number, number]) {
   editClickPoint = at ?? null;
   const p = layout().byId.get(id);
   const table = p?.region.kind === "table" && Array.isArray(p.region.rows);
-  if (!p || !(["math", "text"].includes(p.region.kind) || table)) return;
+  if (!p || !(["math", "text", "solve"].includes(p.region.kind) || table)) return;
   if (state.editing && state.editing !== id) commitEditing();
   if (state.editing === id) return;
   // a table records each change to its cells as its own undo step
@@ -1336,9 +1336,11 @@ export function showReport(report: Report) {
   latest = report;
   const editing = state.editing;
   let hidden = 0;
+  const block = !!editing && layout().byId.get(editing)?.region.kind === "solve";
   const views = report.regions.map((v): RegionView => {
     if (!editing || !v.error) return v;
-    if (v.id === editing) {
+    // a solve block's lines are reported as `<id>:c0` and so on
+    if (v.id === editing || (block && v.id.startsWith(`${editing}:`))) {
       if (!typing) return v;
       hidden++;
       return { ...v, error: null, syntaxError: false };
@@ -1363,6 +1365,11 @@ export function releaseErrors() {
   clearTimeout(pauseTimer);
   typing = false;
   if (latest) showReport(latest);
+}
+
+/** Typing in progress (an editor that writes the document itself, as a solve block's lines do). */
+export function noteTyping() {
+  typed();
 }
 
 function typed() {
@@ -1636,7 +1643,9 @@ export function convertRegion(id: string, kind: "math" | "text") {
 /** Names defined anywhere in the document (variables and functions), from the last evaluation. */
 export function definedNames(): Set<string> {
   const names = new Set<string>();
-  for (const v of state.report?.regions ?? []) if (v.defines) names.add(v.defines.replace(/\(.*$/, ""));
+  // a solve block defines `x, y`
+  for (const v of state.report?.regions ?? [])
+    for (const name of v.defines?.split(", ") ?? []) names.add(name.replace(/\(.*$/, ""));
   return names;
 }
 

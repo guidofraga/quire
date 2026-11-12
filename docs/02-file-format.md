@@ -141,7 +141,7 @@ Lengths: bare numbers are **layout px (1/96 in)**, which is identical to SMath's
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string, 6 chars `[a-z2-9]` | Assigned once, never renumbered. Used by `results.json`, cross-references and comments. |
-| `kind` | enum | `math` `text` `image` `table` `plot2d` `plot3d` `data` `area` `pagebreak` `legacy` |
+| `kind` | enum | `math` `text` `image` `table` `plot2d` `plot3d` `data` `toc` `solve` `area` `pagebreak` `legacy` |
 | `at` | `[x, y]` | Top-left in px. **Relative to the parent area** when nested. |
 | `size` / `width` | `[w, h]` / `w` | Only where the *user* sets it (images, plots, tables, fixed-width text). **Auto-sized content never stores its size.** |
 | `style` | object | Overrides of the named style (`{ "font": "Arial Black", "size": 12 }`) or `{ "ref": "h1" }` |
@@ -368,7 +368,39 @@ This defines the matrix variable `loads` (with per-column units). Small datasets
 ```
 `of` is `headings` (table of contents), `figures` or `tables`. The entries, numbers and page numbers are computed when the document is drawn and never stored. A heading styled **Title** (`{.title}` before `#`) is neither numbered nor listed.
 
-### 4.10 `area`, `pagebreak`, `legacy`
+### 4.10 `solve` (solve blocks: Given … find)
+
+A solve block is Mathcad's "Given … Find": guess values, then the constraints the unknowns must meet, then one line that finds them. It is one region, drawn as a framed block with a **Given** header, so its parts stay together and move, copy and print as one.
+
+```json
+{
+  "id": "k3p9qa",
+  "kind": "solve",
+  "at": [36, 400],
+  "guesses": ["r := 400 mm", "t := 10 mm"],
+  "given": ["p*r/t == 150 MPa", "r == 500 mm + t/2"],
+  "find": "[r; t] := find(r, t)",
+  "show": "value",
+  "display": { "decimals": 3 }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `guesses` | Lines above **Given**, each an ordinary math line, usually a guess value (`x := 1 m`). They run like math regions and stay defined below the block. An unknown may also take its guess from a definition anywhere above the block, so this list may be empty or absent. |
+| `given` | The constraints, one per line: an equation `a == b` or an inequality `a < b`, `a ≤ b`, `a > b`, `a ≥ b`; chains (`0 m < x ≤ L`) are one constraint per pair. The two sides may be vectors or matrices of the same size, one constraint per element. `<` and `≤` are treated alike, as in Mathcad. A lone `=` reads as `==`, and the editor writes `==` (drawn as a bold =). |
+| `find` | The last line: `find(x, y, …)` or `minerr(x, y, …)`, the unknowns as names. It may define the result: `[x; y] := find(x, y)` defines each unknown below the block, `s := find(x, y)` a vector (a number for one unknown), or it may only show it (`find(x, y)` with `show`). |
+| `show`, `display` | As on a math region (§4.2), for the `find` line: `"value"` shows the result after it, in `display.unit` or with `display.decimals`. |
+
+**Evaluation.** The block runs where it sits in reading order. Its guess lines run first, as math lines; then the unknowns start from their current values (each a number with units, which fix the unknown's units), and the constraints are evaluated with the unknowns set to trial values. `find` returns values at which every constraint holds (each equation to a relative 10⁻⁷ of the size of its terms, each inequality to the same margin); when it can't reach one, the `find` line is an error that names the constraint left unmet and by how much, and the names it would define are errors below it. `minerr` never fails for want of a solution: it returns the values that come closest, with the equations' differences squared and summed in SI units and the inequalities kept. Constraints and unknowns are all numbers with units; every constraint must compare like with like (a length with a length).
+
+The editor shows, at the values found, whether each constraint holds (✓ or ✗).
+
+The solver is Levenberg–Marquardt with a numerical Jacobian (`crates/quire-eval/src/solveblock.rs`); an inequality is a penalty that grows until it is met, and one still unmet becomes an equation (its bound). It finds a solution near the guesses, not every solution: other guesses can give another one.
+
+`find` and `minerr` outside a solve block are an error that says so. SMath has no solve blocks (it writes `solve` and `roots` calls, which Quire reads as functions), so the importer writes none.
+
+### 4.11 `area`, `pagebreak`, `legacy`
 
 ```jsonc
 { "id": "a9tiey", "kind": "area", "at": [0, 6660], "height": 1008,
@@ -388,7 +420,7 @@ A `pagebreak` is a manual page break. In the page view, in print and in the PDF,
 Every writer (the app, the CLI, the importer) **must** produce byte-identical output for the same model:
 
 1. UTF-8 without BOM, `\n` line endings, 2-space indent, trailing newline.
-2. **Key order is fixed**: `format, meta, settings, units, styles, page, requires, regions` at the top. In a region: `id, kind, at, size, width, height, style, keep, disabled, locked, collapsed, title, expr, show, mode, hideInput, display, note, …, regions`. Nested objects keep their schema-defined order.
+2. **Key order is fixed**: `format, meta, settings, units, styles, page, requires, regions` at the top. In a region: `id, kind, at, size, width, height, style, keep, disabled, locked, collapsed, title, expr, guesses, given, find, show, mode, hideInput, display, note, …, regions`. Nested objects keep their schema-defined order.
 3. Top-level sections and **each region are always expanded**, one key per line. Any other value is written on one line if it fits in 100 columns, otherwise expanded. The result is that changing an expression, moving a region, or toggling `collapsed` changes **exactly one line**.
 4. **Defaults are omitted** (`color` black, `show` none, `keep` false, …).
 5. **No derived data**: no computed sizes, no results, no save counters, no timestamps, no undo history.

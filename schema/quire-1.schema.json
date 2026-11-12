@@ -240,7 +240,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z2-9]{6}$" },
         "kind": {
-          "enum": ["math", "text", "image", "table", "plot2d", "plot3d", "data", "area", "pagebreak", "legacy"]
+          "enum": ["math", "text", "image", "table", "plot2d", "plot3d", "data", "solve", "area", "pagebreak", "legacy"]
         },
         "at": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
         "size": { "type": "array", "items": { "type": "number", "minimum": 0 }, "minItems": 2, "maxItems": 2 },
@@ -405,6 +405,30 @@
               }
             },
             "oneOf": [{ "required": ["src"] }, { "required": ["inline"] }]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "solve" } } },
+          "then": {
+            "required": ["find"],
+            "properties": {
+              "guesses": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "math lines above Given, usually guess values (x := 1 m); they stay defined below the block"
+              },
+              "given": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "constraints: an equation (a == b) or an inequality (<, ≤, >, ≥), one per line"
+              },
+              "find": {
+                "type": "string",
+                "description": "find(x, y, …) or minerr(x, y, …), possibly defining the result: [x; y] := find(x, y)"
+              },
+              "show": { "enum": ["value"] },
+              "display": { "$ref": "#/$defs/display" }
+            }
           }
         },
         {

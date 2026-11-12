@@ -18,6 +18,7 @@ mod ops;
 mod plot;
 mod plot3d;
 mod sheet;
+mod solveblock;
 mod solvers;
 mod special;
 mod stats;
@@ -38,5 +39,6 @@ pub use plot::{
 };
 pub use plot3d::{Plot3Input, Plot3Outcome, Series3Input, Series3Outcome, Shape};
 pub use sheet::{CellOutcome, TableInput, cell_label, column_name, parse_ref};
+pub use solveblock::constraint_text;
 pub use value::{Matrix, Quantity, Value};
-pub use worksheet::{Fix, MathInput, Outcome, Worksheet};
+pub use worksheet::{Fix, MathInput, Outcome, SolvePart, Worksheet};

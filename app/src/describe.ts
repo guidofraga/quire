@@ -48,6 +48,18 @@ export function mathWords(id: string, withError = true): string {
   return `${words}${verdict}${notes.join("")}${error}`;
 }
 
+/** A solve block in words: how many constraints, then its solution or why there is none. */
+export function solveWords(id: string): string {
+  const r = layout().byId.get(id)?.region;
+  if (r?.kind !== "solve") return "";
+  const n = Array.isArray(r.given) ? r.given.length : 0;
+  const head = `Solve block, ${n} ${n === 1 ? "constraint" : "constraints"}`;
+  const f = state.views[`${id}:f`];
+  if (f?.error) return `${head}. Error: ${f.error}`;
+  const result = f?.input ? spokenMath(f.input, r.show === "value" ? f.result : null, f.units, f.constants) : "";
+  return result ? `${head}. ${result}` : head;
+}
+
 /** The selected region, as a screen reader should hear it. */
 export function describeRegion(id: string): string {
   const p = layout().byId.get(id);
@@ -77,6 +89,8 @@ export function describeRegion(id: string): string {
       return `Area${plain(html[`${id}:title`]) ? ` ${plain(html[`${id}:title`])}` : ""}, ${r.collapsed ? "collapsed" : "expanded"}`;
     case "toc":
       return String(r.title ?? (r.of === "checks" ? "Summary of checks" : "Contents"));
+    case "solve":
+      return solveWords(id);
     case "pagebreak":
       return "Page break";
     case "unreadable":

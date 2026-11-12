@@ -29,6 +29,17 @@ pub struct MathInput {
     pub plot: Option<PlotInput>,
     /// Show the expression worked out symbolically (`→`) rather than its value.
     pub symbolic: bool,
+    /// A line of a solve block's constraints or its closing `find` (a guess line is plain math).
+    pub solve: Option<SolvePart>,
+}
+
+/// The part a line plays in a solve block (docs/02-file-format.md §4.10).
+#[derive(Debug, Clone, PartialEq)]
+pub enum SolvePart {
+    /// A constraint after Given, worked out by the block's find line (`block` is its id).
+    Given { block: String },
+    /// The block's last line, `[x; y] := find(x, y)`, which solves the block's constraints.
+    Find { block: String },
 }
 
 #[derive(Debug, Clone)]
@@ -164,7 +175,7 @@ fn unit_in_other_case(name: &str, units: &UnitRegistry) -> Option<String> {
     best.map(|(_, v)| v)
 }
 
-fn names(e: &Expr, out: &mut Vec<String>) {
+pub(crate) fn names(e: &Expr, out: &mut Vec<String>) {
     match e {
         Expr::Ident(n) => out.push(n.clone()),
         Expr::Paren(x) | Expr::Unary(_, x) | Expr::Factorial(x) => names(x, out),
@@ -285,12 +296,18 @@ impl Worksheet {
     pub fn scope_at(&mut self, regions: &[MathInput], index: usize) -> Rc<Env> {
         let parsed: Vec<_> = regions.iter().map(|r| parse(&r.expr)).collect();
         for (r, p) in regions.iter().zip(&parsed) {
-            if let Ok(e @ Expr::Define { global: true, .. }) = p {
+            if let Ok(e @ Expr::Define { global: true, .. }) = p
+                && r.solve.is_none()
+            {
                 self.step(r, e);
             }
         }
-        for (r, p) in regions.iter().zip(&parsed).take(index) {
-            if let Some(t) = &r.table {
+        for (i, (r, p)) in regions.iter().zip(&parsed).enumerate().take(index) {
+            if let Some(SolvePart::Find { block }) = &r.solve {
+                self.step_find(regions, &parsed, i, block);
+            } else if r.solve.is_some() {
+                // a constraint: its find line works it out
+            } else if let Some(t) = &r.table {
                 self.step_table(r, t);
             } else if r.plot.is_none()
                 && let Ok(e) = p
@@ -307,22 +324,40 @@ impl Worksheet {
         let parsed: Vec<_> = regions.iter().map(|r| parse(&r.expr)).collect();
         let mut out: Vec<Option<Outcome>> = vec![None; regions.len()];
         for ((r, p), slot) in regions.iter().zip(&parsed).zip(out.iter_mut()) {
-            if let Ok(e @ Expr::Define { global: true, .. }) = p {
+            if let Ok(e @ Expr::Define { global: true, .. }) = p
+                && r.solve.is_none()
+            {
                 *slot = Some(self.step(r, e));
             }
         }
-        for ((r, p), slot) in regions.iter().zip(&parsed).zip(out.iter_mut()) {
-            if let Some(t) = &r.table {
-                *slot = Some(self.step_table(r, t));
+        for (i, (r, p)) in regions.iter().zip(&parsed).enumerate() {
+            let outcome = if let Some(SolvePart::Find { block }) = &r.solve {
+                let (find, given) = self.step_find(regions, &parsed, i, block);
+                for (j, o) in given {
+                    if let Some(slot) = out.get_mut(j) {
+                        *slot = Some(o);
+                    }
+                }
+                find
+            } else if r.solve.is_some() {
+                // a constraint: its find line, further on, works it out
+                continue;
+            } else if let Some(t) = &r.table {
+                self.step_table(r, t)
             } else if let Some(pl) = &r.plot {
-                *slot = Some(self.step_plot(r, pl));
-            } else if slot.is_none() {
-                *slot = Some(match p {
+                self.step_plot(r, pl)
+            } else if out.get(i).is_some_and(Option::is_none) {
+                match p {
                     Ok(e) => self.step(r, e),
                     Err(err) => {
                         Outcome { error: Some(EvalError::from(err.clone()).message), ..Outcome::new(&r.id) }
                     }
-                });
+                }
+            } else {
+                continue;
+            };
+            if let Some(slot) = out.get_mut(i) {
+                *slot = Some(outcome);
             }
         }
         let mut out: Vec<Outcome> = out
@@ -706,6 +741,188 @@ impl Worksheet {
         out.plot = Some(PlotOutcome { three: Some(three), ..Default::default() });
     }
 
+    /// A solve block's find line (at `index`): solve the constraints of `block` above it, and
+    /// define what the line assigns. Returns its outcome and its constraints' (by index).
+    fn step_find(
+        &mut self,
+        regions: &[MathInput],
+        parsed: &[std::result::Result<Expr, quire_ast::ParseError>],
+        index: usize,
+        block: &str,
+    ) -> (Outcome, Vec<(usize, Outcome)>) {
+        use crate::solveblock::{self, Target};
+        let id = regions.get(index).map_or("", |r| r.id.as_str());
+        let mut out = Outcome::new(id);
+        let lines: Vec<usize> = (0..index)
+            .filter(|&j| {
+                matches!(regions.get(j).and_then(|r| r.solve.as_ref()),
+                    Some(SolvePart::Given { block: b }) if b == block)
+            })
+            .collect();
+        let mut given: Vec<(usize, Outcome)> =
+            lines.iter().map(|&j| (j, Outcome::new(regions.get(j).map_or("", |r| r.id.as_str())))).collect();
+        let line = match parsed.get(index) {
+            Some(Ok(e)) => solveblock::find_line(e),
+            Some(Err(err)) => Err(EvalError::from(err.clone())),
+            None => Err(EvalError::new("the block has no find line")),
+        };
+        // the constraints' relations, and the units and constants they name (to draw them)
+        let mut relations = Vec::new();
+        let mut first_bad = None;
+        for (k, (j, o)) in given.iter_mut().enumerate() {
+            let e = match parsed.get(*j) {
+                Some(Ok(e)) => e,
+                Some(Err(err)) => {
+                    o.error = Some(EvalError::from(err.clone()).message);
+                    first_bad.get_or_insert(k);
+                    continue;
+                }
+                None => continue,
+            };
+            match solveblock::relations(k, e) {
+                Ok(r) => relations.extend(r),
+                Err(err) => {
+                    o.error = Some(err.message);
+                    first_bad.get_or_insert(k);
+                }
+            }
+            let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+            let _ = interp.eval(&mut Scope::new(&self.globals), e);
+            o.units = std::mem::take(&mut interp.unit_idents).into_iter().collect();
+            o.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
+            o.shadowing = std::mem::take(&mut interp.shadowing).into_iter().collect();
+            o.names_read_as_units = crate::unit_names::read_as_units(e, &o.units);
+        }
+        let line = match line {
+            Ok(l) => l,
+            Err(err) => {
+                out.error = Some(err.message);
+                return (out, given);
+            }
+        };
+        let solved = self.solve_block(&line, &relations, lines.len(), first_bad, &mut given);
+        match solved {
+            Ok(v) => {
+                match &line.target {
+                    Target::Nothing => {}
+                    Target::Name(n) => {
+                        out.defines = Some(n.clone());
+                        self.bind(n.clone(), Binding::Val(v.clone()));
+                    }
+                    Target::Each(ns) => {
+                        out.defines = Some(ns.join(", "));
+                        let parts: Vec<Value> = match &v {
+                            Value::Matrix(m) => m.data.clone(),
+                            one => vec![one.clone()],
+                        };
+                        for (n, part) in ns.iter().zip(parts) {
+                            self.bind(n.clone(), Binding::Val(part));
+                        }
+                    }
+                }
+                if let Some(r) = regions.get(index).filter(|r| r.show) {
+                    match crate::format::format_shown(&v, &r.display, &self.settings, &self.units) {
+                        Ok(s) => out.shown = Some(s),
+                        Err(err) => out.error = Some(err.message),
+                    }
+                }
+                out.value = Some(v);
+            }
+            Err((at, message)) => {
+                let message = match at.and_then(|k| given.get_mut(k).map(|g| (k, g))) {
+                    Some((k, (_, o))) => {
+                        o.error = Some(message.clone());
+                        format!("constraint {}: {message}", k + 1)
+                    }
+                    None => message,
+                };
+                let failed = match &line.target {
+                    Target::Nothing => Vec::new(),
+                    Target::Name(n) => vec![n.clone()],
+                    Target::Each(ns) => ns.clone(),
+                };
+                for n in failed {
+                    self.bind(n, Binding::Failed(message.clone()));
+                }
+                out.error = Some(message);
+            }
+        }
+        (out, given)
+    }
+
+    /// The values a solve block finds, or why it finds none (with the constraint, 0-based,
+    /// the message is about). Each constraint's outcome in `given` learns whether it holds.
+    fn solve_block(
+        &self,
+        line: &crate::solveblock::FindLine,
+        relations: &[crate::solveblock::Relation],
+        lines: usize,
+        first_bad: Option<usize>,
+        given: &mut [(usize, Outcome)],
+    ) -> std::result::Result<Value, (Option<usize>, String)> {
+        if let Some(k) = first_bad {
+            return Err((None, format!("constraint {} has an error", k + 1)));
+        }
+        if lines == 0 {
+            return Err((None, "write the constraints under Given, like x + y = 2".into()));
+        }
+        let mut guesses = Vec::new();
+        for n in &line.unknowns {
+            match self.globals.get(n) {
+                Some(Binding::Val(Value::Num(q))) => guesses.push(*q),
+                Some(Binding::Val(v)) => {
+                    return Err((None, format!("{n} is {}: a solve block's unknowns are numbers", v.kind())));
+                }
+                Some(Binding::Failed(_)) => {
+                    return Err((None, format!("{n} has no guess value (its definition has an error)")));
+                }
+                _ => return Err((None, format!("give {n} a guess value above Given, like {n} := 1"))),
+            }
+        }
+        let mut seen = Vec::new();
+        for r in relations {
+            names(&r.lo, &mut seen);
+            names(&r.hi, &mut seen);
+        }
+        if let Some(n) = line.unknowns.iter().find(|n| !seen.contains(n)) {
+            return Err((
+                None,
+                format!("{n} doesn't appear in any constraint, so nothing decides its value"),
+            ));
+        }
+        let globals = Rc::clone(&self.globals);
+        let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        let mut scope = Scope::new(&globals);
+        // an amount in a message: with an SI prefix, as words read it (`14.8 MPa`, not `1.48*10^7 Pa`)
+        let words = DisplaySettings {
+            notation: crate::format::Notation::Prefix,
+            decimals: self.settings.decimals.min(4),
+            ..self.settings.clone()
+        };
+        let fmt = |q: crate::value::Quantity| {
+            crate::format::format_value(&Value::Num(q), &DisplaySpec::default(), &words, &self.units)
+                .map_or_else(|_| q.v.to_string(), |t| t.replace('\'', "").replace('*', "·"))
+        };
+        let sol = crate::solveblock::solve(&mut interp, &mut scope, line, &guesses, relations, lines, &fmt)
+            .map_err(|f| (f.line, f.message))?;
+        for ((_, o), h) in given.iter_mut().zip(&sol.holds) {
+            o.check = Some(*h);
+        }
+        if let Some(err) = sol.error {
+            return Err((None, err));
+        }
+        let values: Vec<Value> = sol
+            .x
+            .iter()
+            .zip(&sol.dims)
+            .map(|(v, d)| Value::Num(crate::value::Quantity::new(*v, *d)))
+            .collect();
+        Ok(match values.as_slice() {
+            [one] => one.clone(),
+            _ => Value::Matrix(crate::value::Matrix::column(values)),
+        })
+    }
+
     fn bind(&mut self, key: String, b: Binding) {
         Rc::make_mut(&mut self.globals).insert(key, b);
     }
@@ -1042,6 +1259,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: l.ends_with(" →"),
+                solve: None,
             })
             .collect();
         Worksheet::new(settings).run(&regions)
@@ -1070,6 +1288,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: false,
+                solve: None,
             })
             .collect();
         Worksheet::new(settings).run(&regions)
@@ -1116,6 +1335,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: i == 5,
+                solve: None,
             })
             .collect();
         let out = ws.run(&inputs);
@@ -1289,6 +1509,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: i == 1,
+                solve: None,
             })
             .collect();
         let outs = Worksheet::new(DisplaySettings { marked_units: true, ..Default::default() }).run(&regions);
@@ -1391,6 +1612,7 @@ mod tests {
             table: None,
             plot: None,
             symbolic: false,
+            solve: None,
         };
         let table = |id: &str, name: &str, rows: &[&[&str]]| MathInput {
             id: id.into(),
@@ -1404,6 +1626,7 @@ mod tests {
             }),
             plot: None,
             symbolic: false,
+            solve: None,
         };
         let regions = [
             math("a", "γ := 1.4"),
@@ -1461,6 +1684,7 @@ mod tests {
             table: None,
             plot: None,
             symbolic: false,
+            solve: None,
         };
         let plot = |id: &str, series: Vec<SeriesInput>, y_unit: Option<&str>| MathInput {
             id: id.into(),
@@ -1470,6 +1694,7 @@ mod tests {
             table: None,
             plot: Some(PlotInput { series, y_unit: y_unit.map(Into::into), ..Default::default() }),
             symbolic: false,
+            solve: None,
         };
         let over = |y: &str, range: &str| SeriesInput { y: y.into(), x: None, range: Some(range.into()) };
         let regions = [
@@ -1511,6 +1736,7 @@ mod tests {
             table: None,
             plot: None,
             symbolic,
+            solve: None,
         };
         let out = Worksheet::new(DisplaySettings::default()).run(&[
             line("q", "q := 10 'kN/'m", false),
@@ -1617,6 +1843,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: false,
+                solve: None,
             })
             .collect();
         let settings = DisplaySettings { working_units: true, ..Default::default() };
@@ -1764,6 +1991,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: false,
+                solve: None,
             },
             MathInput {
                 id: "b".into(),
@@ -1773,6 +2001,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: false,
+                solve: None,
             },
         ];
         let out = ws.run(&regions);
@@ -1794,6 +2023,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: false,
+                solve: None,
             })
             .collect();
         let out = Worksheet::new(DisplaySettings::default()).run(&regions);
@@ -1927,6 +2157,7 @@ mod tests {
             }),
             plot: None,
             symbolic: false,
+            solve: None,
         };
         let cells = |settings: DisplaySettings| -> Vec<Vec<String>> {
             Worksheet::new(settings).run(std::slice::from_ref(&table))[0]
