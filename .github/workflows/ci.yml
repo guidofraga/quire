@@ -131,7 +131,14 @@ jobs:
       # starting together under one virtual display time out (#93). Blocking on main only
       - name: Export a PDF (Linux)
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored --test-threads=1
+        # Xvfb has no GPU: WebKitGTK's DMA-BUF renderer and compositing can leave the page's
+        # process hung before any script runs, depending on the runner (#93), so both are off
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+        run: |
+          grep -m1 'model name' /proc/cpuinfo || true
+          dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored --test-threads=1
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
         run: |
