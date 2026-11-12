@@ -1062,3 +1062,77 @@ describe("page view keeps what is past the printable column on the paper", () =>
 function at2(id: string, y: number): Region {
   return { id, kind: "math", at: [0, y], expr: id };
 }
+
+describe("computeLayout splits tall regions across pages", () => {
+  const H = pageGeom(doc([])).contentH;
+  const { margins } = pageGeom(doc([]));
+  const table = (id: string, y: number): Region => ({ id, kind: "table", at: [0, y], rows: [], header: { row: true } });
+  // a table of 25 px rows under a 30 px header: cuts below every row but the first
+  const rows = (n: number) => Array.from({ length: n - 1 }, (_, i) => 30 + 25 * (i + 1));
+  const cuts = (n: number) => ({ t: { at: rows(n), rows: rows(n).map((_, i) => i + 2), head: 30 } });
+
+  it("fills a page with whole rows, and goes on under the header on the next", () => {
+    const h = 30 + 25 * 80;
+    const l = computeLayout(doc([table("t", 100), at2("after", 100 + h + 18)]), { t: h }, true, false, 0, {}, cuts(80));
+    const parts = l.byId.get("t")!.parts!;
+    expect(parts.length).toBe(3);
+    // the first part ends at a row's bottom that fits on page 1
+    expect(parts[0]).toMatchObject({ page: 0, from: 0 });
+    expect(100 + parts[0].to).toBeLessThanOrEqual(H);
+    expect(100 + parts[0].to + 25).toBeGreaterThan(H);
+    // later parts start where the one before ended, at the top of their page
+    expect(parts[1]).toMatchObject({ page: 1, from: parts[0].to });
+    expect(parts[1].top).toBeCloseTo(margins.top);
+    expect(30 + parts[1].to - parts[1].from).toBeLessThanOrEqual(H);
+    expect(parts[2]).toMatchObject({ page: 2, from: parts[1].to, to: h });
+    // what follows keeps its distance below the last part
+    const after = l.byId.get("after")!;
+    expect(after.page).toBe(2);
+    expect(after.top).toBeCloseTo(margins.top + 30 + (h - parts[2].from) + 18);
+    expect(l.contentPages).toBe(3);
+  });
+
+  it("moves a split region on when not even its first rows fit", () => {
+    const h = 30 + 25 * 80;
+    const l = computeLayout(doc([table("t", H - 40)]), { t: h }, true, false, 0, {}, cuts(80));
+    const p = l.byId.get("t")!;
+    expect(p.page).toBe(1);
+    expect(p.parts![0]).toMatchObject({ page: 1, from: 0 });
+    expect(p.parts![0].top).toBeCloseTo(margins.top);
+  });
+
+  it("keeps a region shorter than half a page whole, and one without cuts as before", () => {
+    const short = computeLayout(doc([table("t", H - 100)]), { t: 300 }, true, false, 0, {}, cuts(11));
+    expect(short.byId.get("t")!.parts).toBeUndefined();
+    expect(short.byId.get("t")!.page).toBe(1);
+    const tall = computeLayout(doc([table("t", 0)]), { t: 2 * H }, true, false);
+    expect(tall.byId.get("t")!.parts).toBeUndefined();
+    // nor one to be kept whole (SMath's isBreakable=false)
+    const kept = computeLayout(doc([{ ...table("t", 100), keep: true }]), { t: 2 * H }, true, false, 0, {}, cuts(80));
+    expect(kept.byId.get("t")!.parts).toBeUndefined();
+    // and nothing splits on the canvas
+    const canvas = computeLayout(doc([table("t", 0)]), { t: 2 * H }, false, false, 0, {}, cuts(80));
+    expect(canvas.byId.get("t")!.parts).toBeUndefined();
+  });
+
+  it("places what sits beside a split region on the page of the part it is beside", () => {
+    const h = 30 + 25 * 80;
+    const beside: Region = { id: "b", kind: "math", at: [400, 100 + 1200], expr: "b" };
+    const l = computeLayout(doc([table("t", 100), beside]), { t: h, b: 20 }, true, false, 0, {}, cuts(80));
+    const parts = l.byId.get("t")!.parts!;
+    const b = l.byId.get("b")!;
+    const part = parts.findIndex((q) => q.from <= 1200 && 1200 < q.to);
+    expect(b.page).toBe(parts[part].page);
+    expect(b.top).toBeCloseTo(margins.top + 30 + 1200 - parts[part].from);
+  });
+
+  it("maps document points inside a split region onto its parts", () => {
+    const h = 30 + 25 * 80;
+    const l = computeLayout(doc([table("t", 100)]), { t: h }, true, false, 0, {}, cuts(80));
+    const q = l.byId.get("t")!.parts![1];
+    const stride = pageGeom(doc([])).paperH + SHEET_GAP;
+    const [, sy] = l.toScene(0, 100 + q.from + 10);
+    expect(sy).toBeCloseTo(stride + margins.top + 30 + 10);
+    expect(l.fromScene(margins.left, sy)[1]).toBeCloseTo(100 + q.from + 10);
+  });
+});

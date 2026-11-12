@@ -695,8 +695,13 @@ export function Canvas() {
   const sheets = createMemo(() => {
     const l = layout();
     if (!l.pageView) return [];
-    const byPage: Placed[][] = Array.from({ length: l.pages }, () => []);
-    for (const p of l.list) if (!p.hidden) byPage[Math.min(p.page, l.pages - 1)].push(p);
+    const byPage = Array.from({ length: l.pages }, () => ({ regions: [] as Placed[], parts: [] as string[] }));
+    for (const p of l.list) {
+      if (p.hidden) continue;
+      byPage[Math.min(p.page, l.pages - 1)].regions.push(p);
+      // the later parts of a region split across pages, keyed by text so they stay mounted
+      p.parts?.forEach((q, i) => i && byPage[Math.min(q.page, l.pages - 1)].parts.push(`${i}:${p.region.id}`));
+    }
     return byPage;
   });
 
@@ -899,7 +904,7 @@ export function Canvas() {
           <div class="pages" style={{ gap: `${SHEET_GAP}px` }}>
             {/* keyed by page number: a sheet stays mounted while its contents change */}
             <Index each={sheets()}>
-              {(regions, k) => <Sheet k={k} regions={regions()} onDragStart={onRegionDown} />}
+              {(sheet, k) => <Sheet k={k} regions={sheet().regions} parts={sheet().parts} onDragStart={onRegionDown} />}
             </Index>
             <Show when={!state.printing}>
               <button

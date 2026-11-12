@@ -151,6 +151,64 @@ fn exported_report_has_details_bookmarks_and_links() -> TestResult {
     Ok(())
 }
 
+#[test]
+#[ignore = "drives the desktop app; see the module comment"]
+fn a_tall_table_splits_across_pages_with_its_header_on_each() -> TestResult {
+    split_table(r#""page":{"view":"pages"},"#, "split")
+}
+
+/// Saved in the canvas view, the document is laid out as pages only once the export starts: the
+/// table is measured then, and split as from the page view.
+#[test]
+#[ignore = "drives the desktop app; see the module comment"]
+fn a_tall_table_saved_in_the_canvas_view_splits_too() -> TestResult {
+    split_table("", "split-canvas")
+}
+
+/// Export a 120-row table under a header row (`page`: the document's page settings, if any):
+/// three pages of A4, the header row on each.
+fn split_table(page: &str, name: &str) -> TestResult {
+    const N: usize = 120;
+    let dir = std::env::temp_dir().join(format!("quire-{name}-{}", std::process::id()));
+    let input = dir.join("table.quire");
+    std::fs::create_dir_all(&input)?;
+    let mut rows = vec![r#"["Item","Load","Note"]"#.to_string()];
+    rows.extend((1..=N).map(|i| format!(r#"["row{i}","{}","ok"]"#, i * 3)));
+    let json = format!(
+        r#"{{"format":"quire/1","meta":{{"title":"Split"}},{page}"regions":[{{"id":"t","kind":"table","at":[0,0],"header":{{"row":true}},"rows":[{}]}}]}}"#,
+        rows.join(",")
+    );
+    std::fs::write(input.join("document.json"), json)?;
+    let doc = export(&input, name);
+    std::fs::remove_dir_all(&dir).ok();
+    let doc = doc?;
+
+    let mut seen = Vec::new();
+    let mut on = Vec::new();
+    for &k in doc.get_pages().keys() {
+        let text = doc.extract_text(&[k])?;
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let rows: Vec<String> =
+            words.iter().filter(|w| w.starts_with("row")).map(|w| w.to_string()).collect();
+        if rows.is_empty() {
+            continue;
+        }
+        // the header row once on every page the table is on (the text comes out in the order
+        // it is painted, not read, so where on the page isn't checked here)
+        let headers = words.iter().filter(|w| **w == "Item").count();
+        assert_eq!(headers, 1, "the header row on page {k}: {text}");
+        on.push(k);
+        seen.extend(rows);
+    }
+    assert_eq!(on, [1, 2, 3], "the pages the table is on");
+    // every row once, in order, none lost at a page's foot
+    let expected: Vec<String> = (1..=N).map(|i| format!("row{i}")).collect();
+    assert_eq!(seen, expected);
+    // with the print scale right (#136), nothing spills onto a fourth page
+    assert_eq!(doc.get_pages().len(), 3, "pages in the export");
+    Ok(())
+}
+
 type Matrix = [f64; 6];
 
 fn times(a: Matrix, b: Matrix) -> Matrix {

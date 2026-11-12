@@ -20,6 +20,7 @@ import {
   Index,
   type JSX,
   Match,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -28,6 +29,7 @@ import {
 } from "solid-js";
 import { produce } from "solid-js/store";
 import { api, isMac } from "./api";
+import { SHEET_GAP } from "./pages";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
 import { mathWords, nameMarks } from "./describe";
 import { spokenMath } from "./speech";
@@ -39,23 +41,29 @@ import {
   checkpoint,
   commitBelow,
   commitEditing,
+  type Cuts,
+  cuts,
   convertEditing,
   editClickPoint,
   editText,
   findDraft,
   GRID,
   heights,
+  isPageView,
   layout,
   localized,
   noteRoom,
+  type Part,
   type Placed,
   renameIn,
   revealRegion,
   scheduleGrowth,
+  setCuts,
   setHeights,
   setLive,
   setState,
   setWidths,
+  SPLIT_SHARE,
   startEditing,
   state,
   toggleArea,
@@ -144,7 +152,8 @@ function editCaptionLabel(e: MouseEvent, kind: "figure" | "table") {
 /** A caption to start editing as soon as it appears (right after Add Caption). */
 export const [captionToEdit, setCaptionToEdit] = createSignal<string | null>(null);
 
-function Caption(props: { p: Placed }) {
+/** `hidden`: kept for the region's size but not shown (a split table's first part), not printed. */
+function Caption(props: { p: Placed; hidden?: boolean }) {
   const r = () => props.p.region;
   const [editing, setEditing] = createSignal(false);
   createEffect(() => {
@@ -163,7 +172,10 @@ function Caption(props: { p: Placed }) {
   };
   return (
     <Show when={r().caption}>
-      <div class="caption">
+      <div
+        class="caption"
+        style={props.hidden ? (state.printing ? { display: "none" } : { visibility: "hidden" }) : undefined}
+      >
         <span
           class="caption-num"
           title="Double-click to rename all"
@@ -322,7 +334,8 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
   );
 }
 
-function TextBody(props: { p: Placed }) {
+/** A text region; `static`: as it reads, also while it is being edited (a later part of it). */
+function TextBody(props: { p: Placed; static?: boolean }) {
   const r = () => props.p.region;
   const style = () => ({
     "font-family": r().style?.font ?? state.doc.styles?.body?.font,
@@ -339,7 +352,7 @@ function TextBody(props: { p: Placed }) {
   });
   return (
     <Show
-      when={state.editing !== r().id}
+      when={state.editing !== r().id || props.static}
       fallback={<RichTextEditor p={props.p} style={{ ...style(), "min-width": "160px", "white-space": "normal" }} />}
     >
       <div style={style()} class="text-wrap" classList={{ fixed: !!r().width }}>
@@ -446,12 +459,48 @@ function AreaBody(props: { p: Placed }) {
   );
 }
 
-function TableBody(props: { p: Placed }) {
+/** The first row a cut at `off` px starts (`Cuts.rows`); `n` (past the last) for the region's end. */
+const rowAt = (c: Cuts | undefined, off: number, n: number) => {
+  const k = c?.at.indexOf(off) ?? -1;
+  return k >= 0 && c?.rows ? c.rows[k] : n;
+};
+
+/**
+ * A table, whole or, split across pages, as one of its parts (`part`, from 0): the first part is
+ * the whole table with the rows of the later parts kept hidden, a later one draws only its own
+ * rows under the header row (`SheetGrid`).
+ */
+function TableBody(props: { p: Placed; part?: number }) {
   const r = () => props.p.region;
   const view = () => state.views[r().id];
   const rows = (): Expr[][] | null => {
     const res = view()?.result;
     return res?.t === "Matrix" ? res.c : null;
+  };
+  const n = () => (isSheet(r()) ? ((r().rows as unknown[] | undefined)?.length ?? 0) : (rows()?.length ?? 0));
+  const parts = () => props.p.parts;
+  const later = props.part !== undefined && props.part > 0;
+  /** A later part's rows: first, past last. */
+  const span = (): [number, number] | undefined => {
+    const q = parts()?.[props.part ?? 0];
+    if (!later || !q) return undefined;
+    const c = cuts[r().id];
+    return [rowAt(c, q.from, n()), rowAt(c, q.to, n())];
+  };
+  /** The first part: the first row the later parts draw (hidden here). */
+  const ghostFrom = () => {
+    const q = parts()?.[1];
+    return !later && q ? rowAt(cuts[r().id], q.from, n()) : undefined;
+  };
+  const isLast = () => !parts() || props.part === parts()!.length - 1;
+  const boundRows = () => {
+    const all = rows()!.map((row, i) => ({ row, i }));
+    const sp = span();
+    // printed, the first part draws only its own rows: nothing runs on past its page
+    const g = ghostFrom();
+    if (!sp) return g !== undefined && state.printing ? all.slice(0, g) : all;
+    const shown = all.slice(sp[0], sp[1]);
+    return r().header?.row && sp[0] > 0 ? [{ ...all[0], repeat: true }, ...shown] : shown;
   };
   const BoundTable = () => (
     <Show
@@ -465,12 +514,28 @@ function TableBody(props: { p: Placed }) {
         </div>
       }
     >
-      <table class="table" classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}>
+      <table
+        class="table"
+        classList={{ "head-row": !!r().header?.row, "head-col": !!r().header?.column }}
+        style={
+          later && cuts[r().id]?.cols?.length
+            ? { "table-layout": "fixed", width: `${cuts[r().id]!.cols!.reduce((a, b) => a + b, 0)}px` }
+            : undefined
+        }
+      >
+        <Show when={later && cuts[r().id]?.cols?.length}>
+          <colgroup>
+            <For each={cuts[r().id]!.cols!}>{(w) => <col style={{ width: `${w}px` }} />}</For>
+          </colgroup>
+        </Show>
         <tbody>
-          <For each={rows()!}>
+          <For each={boundRows()}>
             {(row) => (
-              <tr>
-                <For each={row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
+              <tr
+                classList={{ ghost: (ghostFrom() ?? Infinity) <= row.i, repeat: "repeat" in row }}
+                aria-hidden={(ghostFrom() ?? Infinity) <= row.i || "repeat" in row || undefined}
+              >
+                <For each={row.row}>{(cell) => <td innerHTML={cellHtml(cell)} />}</For>
               </tr>
             )}
           </For>
@@ -480,14 +545,15 @@ function TableBody(props: { p: Placed }) {
   );
   return (
     <figure class="figure">
-      <Show when={r().caption?.position === "above"}>
+      <Show when={r().caption?.position === "above" && !later}>
         <Caption p={props.p} />
       </Show>
       <Show when={isSheet(r())} fallback={BoundTable()}>
-        <SheetGrid p={props.p} />
+        <SheetGrid p={props.p} ghostFrom={ghostFrom()} rows={later ? (span() ?? [0, 0]) : undefined} />
       </Show>
-      <Show when={r().caption?.position !== "above"}>
-        <Caption p={props.p} />
+      {/* below a split table, on its last page; the first part keeps it (hidden) for its size */}
+      <Show when={r().caption?.position !== "above" && (later ? isLast() : true)}>
+        <Caption p={props.p} hidden={!later && !!parts()} />
       </Show>
     </figure>
   );
@@ -773,6 +839,160 @@ const KIND_LABEL: Record<string, string> = {
   unreadable: "A region this version of Quire can't read, kept as it is",
 };
 
+/** Regions that can be split across pages; the others move to the next page whole. */
+const splittable = (r: Region) => (r.kind === "table" || r.kind === "text") && r.keep !== true;
+
+/**
+ * Where a region may be cut between pages, in px below its top at zoom 1 (store.ts `Cuts`):
+ * between table rows (never right under the header row), between lines of text.
+ */
+function measureCuts(el: HTMLElement, r: Region): Cuts | undefined {
+  const box = el.getBoundingClientRect();
+  const z = state.view.zoom || 1;
+  const y = (v: number) => (v - box.top) / z;
+  if (r.kind === "table") {
+    const table = el.querySelector<HTMLTableElement>("table");
+    const body = table?.tBodies[0];
+    if (!table || !body || body.rows.length < 2) return undefined;
+    const rows = [...body.rows];
+    const header = !!r.header?.row;
+    const at: number[] = [];
+    const starts: number[] = [];
+    // below the last row on each page, its border included
+    for (let i = header ? 2 : 1; i < rows.length; i++) {
+      at.push(Math.ceil(y(rows[i - 1].getBoundingClientRect().bottom)));
+      starts.push(i);
+    }
+    const top = table.getBoundingClientRect().top;
+    const headEnd = header
+      ? rows[0].getBoundingClientRect().bottom
+      : (table.tHead?.getBoundingClientRect().bottom ?? top);
+    const pad = parseFloat(getComputedStyle(el).paddingTop) || 0;
+    return {
+      at,
+      rows: starts,
+      head: Math.ceil(pad + (headEnd - top) / z),
+      cols: [...rows[0].cells].map((td) => td.getBoundingClientRect().width / z),
+    };
+  }
+  const root = el.querySelector(".ProseMirror") ?? el.querySelector(".text-body");
+  if (!root) return undefined;
+  // every line's extent: text, inline math and pictures are never cut through
+  const spans: [number, number][] = [];
+  const range = document.createRange();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    range.selectNodeContents(n);
+    for (const rc of range.getClientRects()) if (rc.height > 0) spans.push([y(rc.top), y(rc.bottom)]);
+  }
+  for (const e of root.querySelectorAll("img, math, svg, hr, table, [data-math]")) {
+    const rc = e.getBoundingClientRect();
+    if (rc.height > 0) spans.push([y(rc.top), y(rc.bottom)]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const at: number[] = [];
+  let bottom = -Infinity;
+  for (const [t, b] of spans) {
+    // a new line starts below everything before it (line boxes tighter than the font overlap
+    // by a pixel or two): cut half-way between them
+    if (t >= bottom - 2.5 && bottom > -Infinity) at.push(Math.round((bottom + t) / 2));
+    bottom = Math.max(bottom, b);
+  }
+  return { at: at.filter((a, i) => a > 0 && a !== at[i - 1]), head: 0 };
+}
+
+function sameCuts(a: Cuts | undefined, b: Cuts | undefined): boolean {
+  if (!a || !b) return a === b;
+  const near = (x: number[] = [], y: number[] = []) =>
+    x.length === y.length && x.every((v, i) => Math.abs(v - y[i]) < 0.5);
+  return near(a.at, b.at) && near(a.rows, b.rows) && near(a.cols, b.cols) && Math.abs(a.head - b.head) < 0.5;
+}
+
+/**
+ * A later part of a region split across pages (`Placed.parts`), on its own page: a table's rows
+ * under its header row, or a window onto the lines of text that fall on this page. The first
+ * part is the region's own element (`RegionBox`), clipped.
+ */
+export function RegionPart(props: { id: string; part: number; onDragStart: (id: string, e: PointerEvent) => void }) {
+  const placed = () => layout().byId.get(props.id);
+  const part = () => placed()?.parts?.[props.part];
+  return (
+    <Show when={placed() && part() ? placed() : undefined}>
+      {(p) => {
+        const r = () => p().region;
+        const editing = () => state.editing === r().id;
+        const height = () => part()!.to - part()!.from;
+        return (
+          <div
+            class={`region part ${r().kind}`}
+            classList={{ selected: state.selection.includes(r().id), editing: editing() }}
+            data-part-of={r().id}
+            style={{
+              left: `${p().left}px`,
+              top: `${part()!.top}px`,
+              // text being edited shows whole on its first page
+              display: r().kind === "text" && editing() ? "none" : undefined,
+            }}
+            onPointerDown={(e) => (editing() ? e.stopPropagation() : props.onDragStart(r().id, e))}
+            onDblClick={(e) =>
+              r().kind === "table"
+                ? editTableAt(r().id, [e.clientX, e.clientY])
+                : startEditing(r().id, partPoint(e, p(), part()!))
+            }
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!state.selection.includes(r().id)) setState({ selection: [r().id], caret: null });
+              openRegionMenu(e, r().id);
+            }}
+          >
+            <Show
+              when={r().kind === "table"}
+              fallback={
+                // the lines that fall on this page: the whole text, shifted up, seen through a window;
+                // its width is the text's own (sized as on the first part), so lines wrap at the same words
+                <div class="part-window" style={{ height: `${height()}px` }}>
+                  <div class="part-shift" style={{ "margin-top": `${-part()!.from}px` }}>
+                    <TextBody p={p()} static />
+                  </div>
+                </div>
+              }
+            >
+              <TableBody p={p()} part={props.part} />
+            </Show>
+          </div>
+        );
+      }}
+    </Show>
+  );
+}
+
+/**
+ * Where a double-click on a later part of split text lands in the text being edited, which shows
+ * whole on its first page: the same spot of the text there.
+ */
+function partPoint(e: MouseEvent, p: Placed, q: Part): [number, number] {
+  const first = p.parts?.[0];
+  if (!first) return [e.clientX, e.clientY];
+  const z = state.view.zoom;
+  const stride = layout().geom.paperH + SHEET_GAP;
+  return [e.clientX, e.clientY + (first.top - q.top + q.from - (q.page - first.page) * stride) * z];
+}
+
+/** Every region on the page measuring itself (`RegionBox`), for `measureAll`. */
+const measurers = new Set<() => boolean>();
+
+/**
+ * Measure every region now (heights, widths, where it may be split), rather than when its
+ * ResizeObserver next reports: a hidden window (the headless export) may report late. Whether
+ * anything changed; the layout follows at once, so call again until nothing does.
+ */
+export function measureAll(): boolean {
+  let changed = false;
+  for (const m of [...measurers]) changed = m() || changed;
+  return changed;
+}
+
 export function RegionBox(props: RegionProps) {
   // keyed by the region (a stable store object); its placement is looked up reactively,
   // so layout changes move the element instead of rebuilding it (and losing focus)
@@ -793,21 +1013,87 @@ export function RegionBox(props: RegionProps) {
   const selected = () => state.selection.includes(r().id);
   const editing = () => state.editing === r().id;
   let el!: HTMLDivElement;
+  // a tall table or text region may be split across pages: where it may be cut
+  // while printing, a split region is drawn shorter (`printedHeight`, a table's rows): its cuts
+  // stay as they were; one not split yet is drawn whole, so it is measured (a document exported
+  // from the canvas is first laid out as pages here)
+  const remeasureCuts = (): boolean => {
+    if (!splittable(r()) || (state.printing && !!placed().parts)) return false;
+    const next =
+      isPageView() && el.offsetHeight > layout().geom.contentH * SPLIT_SHARE ? measureCuts(el, r()) : undefined;
+    if (
+      sameCuts(
+        untrack(() => cuts[r().id]),
+        next,
+      )
+    )
+      return false;
+    setCuts(r().id, next);
+    return true;
+  };
   // pagination and spacing need real heights; report them whenever the rendering changes size
-  onMount(() => {
-    const ro = new ResizeObserver(() => {
+  // whether anything changed: the export measures every region itself (`measureAll`)
+  const measure = (): boolean =>
+    untrack(() => {
+      // a split region is drawn shorter while printing (`printedHeight`): its pagination stays
+      if (state.printing && !!placed().parts) return false;
+      let changed = false;
       const h = el.offsetHeight;
-      const before = untrack(() => heights[r().id]) ?? 0;
-      if (h && Math.abs(before - h) > 0.5) {
+      if (h && Math.abs((heights[r().id] ?? 0) - h) > 0.5) {
         setHeights(r().id, h);
         scheduleGrowth();
+        changed = true;
       }
       const w = el.offsetWidth;
-      if (w && Math.abs((untrack(() => widths[r().id]) ?? 0) - w) > 0.5) setWidths(r().id, w);
+      if (w && Math.abs((widths[r().id] ?? 0) - w) > 0.5) {
+        setWidths(r().id, w);
+        changed = true;
+      }
+      return remeasureCuts() || changed;
+    });
+  onMount(() => {
+    const ro = new ResizeObserver(() => {
+      measure();
     });
     ro.observe(el);
-    onCleanup(() => ro.disconnect());
+    measurers.add(measure);
+    onCleanup(() => {
+      measurers.delete(measure);
+      ro.disconnect();
+      if (untrack(() => cuts[r().id])) setCuts(r().id, undefined);
+    });
   });
+  // the same size can wrap differently: measure again when the view or the content changes
+  createEffect(
+    on(
+      () => [
+        isPageView(),
+        state.editing === r().id,
+        r().rows,
+        r().text,
+        state.views[r().id],
+        state.report?.html[r().id],
+      ],
+      () => queueMicrotask(remeasureCuts),
+      { defer: true },
+    ),
+  );
+  // printed, split text is cut to its first part's lines (a table drops the later rows itself):
+  // nothing runs on past its page for the print engine to paginate
+  const printedHeight = () => {
+    const first = placed().parts?.[0];
+    return state.printing && first && r().kind === "text"
+      ? { height: `${first.to}px`, overflow: "hidden", "box-sizing": "border-box" as const }
+      : {};
+  };
+  // split across pages: this element shows the first part; text being edited shows whole
+  const clip = () => {
+    const parts = placed().parts;
+    // printed, the first part is drawn only as tall as it is (`printedHeight`, a table's rows)
+    if (!parts || state.printing || (r().kind === "text" && editing())) return undefined;
+    const below = (heights[r().id] ?? 0) - parts[0].to;
+    return `inset(-48px -4000px ${Math.max(0, below)}px -4000px)`;
+  };
   return (
     <div
       ref={el}
@@ -826,6 +1112,8 @@ export function RegionBox(props: RegionProps) {
         top: `${placed().top}px`,
         display: placed().hidden ? "none" : undefined,
         "font-size": r().kind === "math" ? pt(r().style?.size, state.doc.styles?.math?.size ?? 10) : undefined,
+        "clip-path": clip(),
+        ...printedHeight(),
       }}
       onPointerDown={(e) => {
         // inside the region being edited, clicks belong to the editor, not the canvas
