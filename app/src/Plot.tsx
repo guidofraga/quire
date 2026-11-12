@@ -3,7 +3,7 @@
 // values in the axis units; this file only lays them out.
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { prettyValue } from "./math";
-import { advance, equalSpans, markerDiameter, markerPath } from "./plotGeometry";
+import { advance, equalSpans, fmt, markerDiameter, markerPath, ticks } from "./plotGeometry";
 import { Check, Field, Num, Select, Text } from "./Inspector";
 import { closePopover, openPopover } from "./Popover";
 import { insertPlot3d } from "./Plot3D";
@@ -60,23 +60,6 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
 
 export const seriesOf = (r: Region) => (Array.isArray(r.series) ? (r.series as Series[]) : []);
 export const axesOf = (r: Region) => (r.axes ?? {}) as { x?: AxisSpec; y?: AxisSpec };
-
-/** Round steps (1, 2, 5 × 10ⁿ) covering [lo, hi] with about `count` ticks. */
-function ticks(lo: number, hi: number, count: number): number[] {
-  const raw = (hi - lo) / Math.max(1, count);
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((s) => s >= raw) ?? 10 * mag;
-  const out: number[] = [];
-  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step)
-    out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
-  return out;
-}
-
-/** A tick number: as many decimals as the step needs, no float noise (a point, like results). */
-function fmt(v: number, step = Math.abs(v) / 1000 || 1): string {
-  const decimals = Math.min(10, Math.max(0, -Math.floor(Math.log10(step) + 1e-9)));
-  return String(Number(v.toFixed(decimals)));
-}
 
 /** A readout value: four significant figures. */
 const sig = (v: number) => String(Number(v.toPrecision(4)));
@@ -385,6 +368,11 @@ export function PlotBody(props: { r: Region }) {
     // as with its series, SMath paints a marker matrix's first row on top (the wheel's centre
     // over the wheel)
     return r().palette === "smath" ? nodes.reverse() : nodes;
+  };
+  /** The legend's dot for a series of points: the colour all its markers share, else the series'. */
+  const dotColor = (s: { i: number; marks?: (PlotMarkView | null)[] }) => {
+    const colours = new Set((s.marks ?? []).filter((m) => m !== null).map((m) => m!.color ?? color(s.i)));
+    return colours.size === 1 ? [...colours][0] : color(s.i);
   };
   const name = (i: number) => series()[i]?.label || series()[i]?.y || `Series ${i + 1}`;
   const isData = (i: number) => !series()[i]?.range;
@@ -731,15 +719,21 @@ export function PlotBody(props: { r: Region }) {
                 <For each={rows()}>
                   {(s, k) => (
                     <g transform={`translate(8 ${12 + k() * 16})`} onDblClick={(e) => editSeries(e, r().id, s.i)}>
-                      <line
-                        x1={0}
-                        x2={14}
-                        y1={0}
-                        y2={0}
-                        stroke={color(s.i)}
-                        stroke-width={2.5}
-                        stroke-dasharray={dash(s.i)}
-                      />
+                      {/* a series drawn as points only is shown by a dot, not by a line it does not have */}
+                      <Show
+                        when={s.connect !== false && drawAs(s.i) !== "points"}
+                        fallback={<circle class="plot-legend-dot" cx={7} cy={0} r={3.5} fill={dotColor(s)} />}
+                      >
+                        <line
+                          x1={0}
+                          x2={14}
+                          y1={0}
+                          y2={0}
+                          stroke={color(s.i)}
+                          stroke-width={2.5}
+                          stroke-dasharray={dash(s.i)}
+                        />
+                      </Show>
                       <text x={20} y={4}>
                         {name(s.i)}
                       </text>

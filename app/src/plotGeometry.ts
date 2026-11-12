@@ -69,3 +69,23 @@ export function advance(elapsed: number, fps: number, carry: number): { steps: n
   const steps = Math.floor(total / period);
   return { steps, carry: total - steps * period };
 }
+
+/**
+ * Round steps (1, 2 or 5 × 10ⁿ) covering [lo, hi] with about `count` ticks. A step may be up to a
+ * quarter shorter than the even share, so a 0 to 7 span reads 0, 2, 4, 6 and not 0, 2.5, 5.
+ */
+export function ticks(lo: number, hi: number, count: number): number[] {
+  const raw = (hi - lo) / Math.max(1, count);
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((k) => k * mag).find((s) => s >= raw * 0.8) ?? 10 * mag;
+  const out: number[] = [];
+  const first = Math.ceil(lo / step - 1e-9);
+  for (let i = first; i * step <= hi + step * 1e-9; i++) out.push(Math.abs(i * step) < step * 1e-9 ? 0 : i * step);
+  return out;
+}
+
+/** A tick number: as many decimals as the step needs, no float noise (a point, like results). */
+export function fmt(v: number, step = Math.abs(v) / 1000 || 1): string {
+  const decimals = Math.min(10, Math.max(0, -Math.floor(Math.log10(step) + 1e-9)));
+  return String(Number(v.toFixed(decimals)));
+}

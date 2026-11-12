@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advance, equalSpans, markerDiameter, markerPath } from "./plotGeometry";
+import { advance, equalSpans, fmt, markerDiameter, markerPath, ticks } from "./plotGeometry";
 
 describe("markerDiameter", () => {
   it("draws a dot of size 125 about 50 px across, and an open circle wider than a dot", () => {
@@ -54,5 +54,35 @@ describe("advance", () => {
   it("does nothing for a zero rate or a negative time", () => {
     expect(advance(100, 0, 5)).toEqual({ steps: 0, carry: 5 });
     expect(advance(-4, 20, 0)).toEqual({ steps: 0, carry: 0 });
+  });
+});
+
+describe("ticks", () => {
+  const labels = (lo: number, hi: number, count: number) => {
+    const t = ticks(lo, hi, count);
+    return t.map((v) => fmt(v, t[1] - t[0]));
+  };
+
+  it("steps a 0 to 7 span evenly, as 0, 2, 4, 6 (it was 0, 3, 5)", () => {
+    expect(labels(0, 7, 3)).toEqual(["0", "2", "4", "6"]);
+    expect(labels(0, 7, 7)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7"]);
+  });
+
+  it("keeps to steps of 1, 2 and 5, and labels every tick with its own value", () => {
+    for (const [lo, hi, count] of [
+      [0, 7, 3],
+      [0, 3, 3],
+      [0, 12, 3],
+      [-1, 1, 4],
+      [0, 0.7, 3],
+      [0, 70, 4],
+      [0, 1000, 5],
+    ]) {
+      const t = ticks(lo, hi, count);
+      const step = t[1] - t[0];
+      const unit = step / 10 ** Math.floor(Math.log10(step));
+      expect([1, 2, 5]).toContain(Math.round(unit * 1e6) / 1e6);
+      t.forEach((v, i) => expect(Number(fmt(v, step))).toBeCloseTo(t[0] + i * step, 9));
+    }
   });
 });

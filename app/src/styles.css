@@ -453,6 +453,18 @@ ms.str {
   gap: 14px;
 }
 
+/* notePosition "below": the note under the formula, wrapping at the page edge (Region.tsx) */
+.math-line.note-below {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.math-line.note-below .note {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .math-line.preview {
   margin-top: 4px;
   opacity: 0.9;
