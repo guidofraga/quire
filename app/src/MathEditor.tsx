@@ -183,9 +183,33 @@ function applySymbol(input: HTMLInputElement, sym: Sym, start: number, end: numb
   if (isTemplate(sym) && hole >= 0 && hole < start + sym.insert.length) input.setSelectionRange(hole, hole + 1);
 }
 
-export function MathEditor(props: { r: Region }) {
+/**
+ * A line of math inside another region (a solve block's), edited like a math region: its text
+ * and results are its own, the region being edited (`state.editing`) is its owner.
+ */
+export interface MathLine {
+  /** The id of its results in the report (`<region>:c0`). */
+  view: string;
+  /** The region being edited. */
+  owner: string;
+  text: string;
+  /** A constraint: `=` types the equation sign, `==`. */
+  equation?: boolean;
+  /** Whether this line is still the one being edited (a blur from leaving it ends nothing). */
+  active: () => boolean;
+  onInput: (text: string) => void;
+  onEnter: () => void;
+  /** Tab or ⇧Tab: false when there is no line that way (on to the next region). */
+  onTab: (by: 1 | -1) => boolean;
+}
+
+export function MathEditor(props: { r: Region; line?: MathLine }) {
   let input!: HTMLInputElement;
-  const initial = untrack(() => editText(props.r));
+  // the id of its results and meanings, and the region being edited
+  const viewId = untrack(() => props.line?.view ?? props.r.id);
+  const owner = untrack(() => props.line?.owner ?? props.r.id);
+  const live = (text: string) => (props.line ? props.line.onInput(text) : setLive(props.r.id, text));
+  const initial = untrack(() => props.line?.text ?? editText(props.r));
   assignJustTyped = initial.endsWith(":=");
   createEffect(() => {
     input.focus();
@@ -196,7 +220,7 @@ export function MathEditor(props: { r: Region }) {
     activeMathInput = input;
     activeMathHistory = travel;
     // the regions above may have changed since the last edit
-    forgetMeanings(props.r.id);
+    forgetMeanings(viewId);
     traceCaret();
   });
   onCleanup(() => {
@@ -232,7 +256,7 @@ export function MathEditor(props: { r: Region }) {
     input.value = step.value;
     input.setSelectionRange(step.from, step.to);
     fit();
-    setLive(props.r.id, step.value);
+    live(step.value);
     updateCompletion();
     traceCaret();
   };
@@ -307,7 +331,7 @@ export function MathEditor(props: { r: Region }) {
       return;
     }
     if (open && !namesOpen) hideCompletions();
-    const id = props.r.id;
+    const id = viewId;
     const value = input.value;
     let toSay = ask;
     const show = (all: Completion[]) => {
@@ -342,8 +366,8 @@ export function MathEditor(props: { r: Region }) {
     const caret = input.selectionStart ?? 0;
     const span = input.selectionStart === input.selectionEnd ? nameSpan(value, caret) : null;
     if (!span) return announce("No name at the caret");
-    const order = cycleOrder(await meanings(props.r.id, span.name), span.name);
-    if (input.value !== value || state.editing !== props.r.id) return;
+    const order = cycleOrder(await meanings(viewId, span.name), span.name);
+    if (input.value !== value || state.editing !== owner) return;
     if (order.length < 2) {
       const only = order[0];
       return announce(
@@ -359,7 +383,7 @@ export function MathEditor(props: { r: Region }) {
   // unit placeholder); typing narrows the list, ↑↓ and Tab pick, Enter still finishes
   const unitSuggestions = () => {
     const { show, unit } = splitShow(input.value);
-    const choices = state.views[props.r.id]?.unitChoices ?? [];
+    const choices = state.views[viewId]?.unitChoices ?? [];
     if (show !== "value" || !atEnd() || !choices.length) return hideCompletions();
     const typed = (unit ?? "").toLowerCase();
     const items: Sym[] = choices
@@ -391,7 +415,7 @@ export function MathEditor(props: { r: Region }) {
   // the choices arrive with the next evaluation after `=` is typed
   createEffect(
     on(
-      () => state.views[props.r.id]?.unitChoices,
+      () => state.views[viewId]?.unitChoices,
       () => document.activeElement === input && inShownUnit() && unitSuggestions(),
       { defer: true },
     ),
@@ -446,8 +470,8 @@ export function MathEditor(props: { r: Region }) {
       if (hole < 0) hole = e.shiftKey ? v.lastIndexOf("?") : v.indexOf("?");
       e.preventDefault();
       if (hole >= 0) input.setSelectionRange(hole, hole + 1);
-      // no slots to fill: on to the next region
-      else editNext(props.r.id, e.shiftKey ? -1 : 1);
+      // no slots to fill: on to the next line of the block, or the next region
+      else if (!props.line?.onTab(e.shiftKey ? -1 : 1)) editNext(owner, e.shiftKey ? -1 : 1);
       return;
     }
     // ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+⇧Z / Ctrl+Y redo
@@ -458,6 +482,15 @@ export function MathEditor(props: { r: Region }) {
       return;
     }
     if (e.metaKey || e.altKey) return;
+    if (e.key === "=" && props.line?.equation && !e.ctrlKey && !typedAssign) {
+      // in a constraint `=` is the equation sign (a bold =, stored as `==`); `<=`, `>=`, `!=` as typed
+      const before = input.value.slice(0, input.selectionStart ?? 0);
+      if (/[<>!:≤≥≠]$/.test(before)) return;
+      e.preventDefault();
+      // `==` typed out in full: its second `=` is already there
+      if (!before.endsWith("==")) document.execCommand("insertText", false, "==");
+      return;
+    }
     if (e.key === ":" && !e.ctrlKey) {
       e.preventDefault();
       document.execCommand("insertText", false, ":=");
@@ -468,7 +501,13 @@ export function MathEditor(props: { r: Region }) {
       // SMath's key for a global definition
       e.preventDefault();
       document.execCommand("insertText", false, " ≡ ");
-    } else if (e.key === " " && state.editingFresh && atEnd() && looksLikeProse(input.value, props.r.id)) {
+    } else if (
+      e.key === " " &&
+      !props.line &&
+      state.editingFresh &&
+      atEnd() &&
+      looksLikeProse(input.value, props.r.id)
+    ) {
       // a word and a space, or words ending in a real word: this is prose, not math
       e.preventDefault();
       convertEditing("text", `${input.value} `);
@@ -488,11 +527,12 @@ export function MathEditor(props: { r: Region }) {
     } else if (e.key === "Enter") {
       // like SMath: Enter moves the insertion point below the region
       e.preventDefault();
-      commitBelow(props.r.id);
+      if (props.line) props.line.onEnter();
+      else commitBelow(props.r.id);
     } else if (e.key === "Escape") {
       // done editing; the region stays selected for the keyboard
       e.preventDefault();
-      const id = props.r.id;
+      const id = owner;
       const at = layout().byId.get(id)?.region.at;
       commitEditing();
       if (layout().byId.has(id)) setState({ selection: [id], caret: null });
@@ -512,7 +552,7 @@ export function MathEditor(props: { r: Region }) {
       onInput={(e) => {
         fit();
         record();
-        setLive(props.r.id, e.currentTarget.value);
+        live(e.currentTarget.value);
         if (rewriting) {
           // a name this editor put in: no list reopens over it
           nameGen++;
@@ -549,12 +589,13 @@ export function MathEditor(props: { r: Region }) {
       onBlur={(e) => {
         hideCompletions();
         setCaretName(null);
-        // switching to text unmounts this input: that blur must not end the edit
-        const stillMath = layout().byId.get(props.r.id)?.region.kind === "math";
+        // switching to text unmounts this input: that blur must not end the edit; nor does
+        // moving to another line of the same block
+        const stillMath = props.line ? props.line.active() : layout().byId.get(props.r.id)?.region.kind === "math";
         // nor does the command palette, which puts what it inserts at this caret, nor the
         // format bar reached from the keyboard (F6), whose galleries insert here too
         const toBar = (e.relatedTarget as Element | null)?.closest?.(".formatbar");
-        if (state.editing === props.r.id && stillMath && !paletteOpen() && !toBar) commitEditing();
+        if (state.editing === owner && stillMath && !paletteOpen() && !toBar) commitEditing();
       }}
       style={{ width: `${Math.max(6, initial.length + 2)}ch` }}
     />

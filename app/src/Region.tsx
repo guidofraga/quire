@@ -10,6 +10,7 @@ import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { DEFAULT_SIZE_3D, editPlot3d, Plot3DBody } from "./Plot3D";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
+import { SolveBody } from "./SolveBlock";
 import {
   createEffect,
   createMemo,
@@ -869,6 +870,9 @@ export function RegionBox(props: RegionProps) {
         </Match>
         <Match when={r().kind === "table"}>
           <TableBody p={placed()} />
+        </Match>
+        <Match when={r().kind === "solve"}>
+          <SolveBody r={r()} />
         </Match>
         <Match when={r().kind === "toc" && r().of === "checks"}>
           <ChecksBody p={placed()} />

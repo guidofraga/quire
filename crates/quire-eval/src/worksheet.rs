@@ -893,9 +893,15 @@ impl Worksheet {
         let globals = Rc::clone(&self.globals);
         let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
         let mut scope = Scope::new(&globals);
+        // an amount in a message: with an SI prefix, as words read it (`14.8 MPa`, not `1.48*10^7 Pa`)
+        let words = DisplaySettings {
+            notation: crate::format::Notation::Prefix,
+            decimals: self.settings.decimals.min(4),
+            ..self.settings.clone()
+        };
         let fmt = |q: crate::value::Quantity| {
-            crate::format::format_value(&Value::Num(q), &DisplaySpec::default(), &self.settings, &self.units)
-                .map_or_else(|_| q.v.to_string(), |t| t.replace('\'', ""))
+            crate::format::format_value(&Value::Num(q), &DisplaySpec::default(), &words, &self.units)
+                .map_or_else(|_| q.v.to_string(), |t| t.replace('\'', "").replace('*', "·"))
         };
         let sol = crate::solveblock::solve(&mut interp, &mut scope, line, &guesses, relations, lines, &fmt)
             .map_err(|f| (f.line, f.message))?;
