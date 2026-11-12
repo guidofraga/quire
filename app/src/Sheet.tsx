@@ -1,12 +1,18 @@
 import { For, Show } from "solid-js";
 import { HeaderFooterBand } from "./HeaderFooterBand";
 import { type Background, pageMatches } from "./pages";
-import { RegionBox } from "./Region";
+import { RegionBox, RegionPart } from "./Region";
 import { layout, type Placed, state } from "./store";
 
 const px = (n: number) => `${n}px`;
 
-export function Sheet(props: { k: number; regions: Placed[]; onDragStart: (id: string, e: PointerEvent) => void }) {
+export function Sheet(props: {
+  k: number;
+  regions: Placed[];
+  /** Later parts of regions split across pages, as `part:id` (`Placed.parts`). */
+  parts: string[];
+  onDragStart: (id: string, e: PointerEvent) => void;
+}) {
   const g = () => layout().geom;
   const page = () => state.doc.page ?? {};
   const backgrounds = () =>
@@ -18,7 +24,11 @@ export function Sheet(props: { k: number; regions: Placed[]; onDragStart: (id: s
   return (
     <div
       class="sheet"
-      classList={{ "hf-active": !!state.hfEditing }}
+      classList={{
+        "hf-active": !!state.hfEditing,
+        // split text being edited shows whole, running on over the next sheet
+        lifted: props.regions.some((p) => p.parts && p.region.kind === "text" && state.editing === p.region.id),
+      }}
       style={{ width: px(g().paperW), height: px(g().paperH), "--sheet-h": px(g().paperH) }}
       data-page={props.k + 1}
     >
@@ -61,6 +71,15 @@ export function Sheet(props: { k: number; regions: Placed[]; onDragStart: (id: s
       </Show>
       <For each={props.regions.map((p) => p.region)}>
         {(region) => <RegionBox region={region} onDragStart={props.onDragStart} />}
+      </For>
+      <For each={props.parts}>
+        {(key) => (
+          <RegionPart
+            id={key.slice(key.indexOf(":") + 1)}
+            part={Number(key.slice(0, key.indexOf(":")))}
+            onDragStart={props.onDragStart}
+          />
+        )}
       </For>
     </div>
   );

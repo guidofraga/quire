@@ -145,7 +145,7 @@ Lengths: bare numbers are **layout px (1/96 in)**, which is identical to SMath's
 | `at` | `[x, y]` | Top-left in px. **Relative to the parent area** when nested. |
 | `size` / `width` | `[w, h]` / `w` | Only where the *user* sets it (images, plots, tables, fixed-width text). **Auto-sized content never stores its size.** |
 | `style` | object | Overrides of the named style (`{ "font": "Arial Black", "size": 12 }`) or `{ "ref": "h1" }` |
-| `keep` | bool | Don't split across a page break (SMath `isBreakable=false`) |
+| `keep` | bool | Don't split across a page break (SMath `isBreakable=false`). Only tables and text are ever split, and only when they are at least half a page tall; the split is drawn, never stored |
 | `disabled` | bool | Excluded from evaluation |
 | `color`, `background`, `border` | | Defaults omitted |
 

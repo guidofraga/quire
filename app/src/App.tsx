@@ -31,6 +31,7 @@ import {
 import { announce, cyclePanes, fromKeyboard, spoken, spokenNow, toolbarKeys } from "./a11y";
 import { Canvas, clientToDoc, focusCanvas, reveal, zoomCenter, zoomToFit } from "./Canvas";
 import { describeRegion } from "./describe";
+import { measureAll } from "./Region";
 import { CompletionPopup } from "./Completion";
 import { undoInMath } from "./MathEditor";
 import { ContextMenu } from "./ContextMenu";
@@ -362,14 +363,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function settle() {
   await document.fonts.ready;
   for (let i = 0; i < 100 && (liveReport.pending() || loadingAssets.size > 0); i++) await sleep(50);
-  // pagination reacts to measured heights; give it a few rounds to converge
+  // pagination reacts to measured heights and to where tall regions may be split: measure every
+  // region here rather than wait for its ResizeObserver (a hidden window's may report late, after
+  // the print has begun), until a round of measuring changes nothing
   let last = "";
   for (let i = 0; i < 20; i++) {
     await sleep(80);
+    const moved = measureAll();
     const sig = layout()
-      .list.map((p) => `${p.page}:${Math.round(p.top)}`)
+      .list.map((p) => `${p.page}:${Math.round(p.top)}:${p.parts?.map((q) => `${q.page}/${q.to}`) ?? ""}`)
       .join(",");
-    if (sig === last) break;
+    if (!moved && sig === last) break;
     last = sig;
   }
 }
@@ -378,7 +382,12 @@ async function withPrintLayout(run: () => Promise<unknown>) {
   commitEditing();
   const g = layout().geom;
   const pageRule = document.createElement("style");
-  pageRule.textContent = `@page { size: ${g.paperW}px ${g.paperH}px; margin: 0; }`;
+  // the printed document is as wide as the paper: the print engine scales the document's width
+  // to the page's, and WebKit on macOS otherwise takes it as 1.25 × the paper's width in points
+  // (744 px for A4, not 794), printing every page about 7% too large
+  pageRule.textContent =
+    `@page { size: ${g.paperW}px ${g.paperH}px; margin: 0; }\n` +
+    `@media print { html, body { width: ${g.paperW}px !important; min-width: ${g.paperW}px !important; } }`;
   document.head.appendChild(pageRule);
   setState({ printing: true, selection: [], caret: null });
   let restoreImages = () => {};
