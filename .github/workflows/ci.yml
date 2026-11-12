@@ -127,10 +127,11 @@ jobs:
         run: cargo test -p quire-app --features tauri/custom-protocol --locked
       # the PDF export, which WebKitGTK lays out and prints in a virtual display. With no session
       # bus, GTK and WebKit wait for D-Bus calls to time out (30 s per launch), and the export
-      # sometimes outran its watchdog (#59). Blocking on main only, while #93 is open
+      # sometimes outran its watchdog (#59). One app at a time: several WebKitGTK instances
+      # starting together under one virtual display time out (#93). Blocking on main only
       - name: Export a PDF (Linux)
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored
+        run: dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored --test-threads=1
       # the oldest Rust Cargo.toml promises (`rust-version`) must still build everything
       - name: Minimum supported Rust
         run: |
