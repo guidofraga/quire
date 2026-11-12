@@ -101,7 +101,7 @@ jobs:
   app-linux:
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Linux build dependencies
@@ -131,12 +131,6 @@ jobs:
       # starting together under one virtual display time out (#93). Blocking on main only
       - name: Export a PDF (Linux)
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        # Xvfb has no GPU: WebKitGTK's DMA-BUF renderer and compositing can leave the page's
-        # process hung before any script runs, depending on the runner (#93), so both are off
-        env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
-          JSC_useJIT: "false"
         run: |
           grep -m1 'model name' /proc/cpuinfo || true
           dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored --test-threads=1
