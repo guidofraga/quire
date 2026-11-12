@@ -979,6 +979,20 @@ function partPoint(e: MouseEvent, p: Placed, q: Part): [number, number] {
   return [e.clientX, e.clientY + (first.top - q.top + q.from - (q.page - first.page) * stride) * z];
 }
 
+/** Every region on the page measuring itself (`RegionBox`), for `measureAll`. */
+const measurers = new Set<() => boolean>();
+
+/**
+ * Measure every region now (heights, widths, where it may be split), rather than when its
+ * ResizeObserver next reports: a hidden window (the headless export) may report late. Whether
+ * anything changed; the layout follows at once, so call again until nothing does.
+ */
+export function measureAll(): boolean {
+  let changed = false;
+  for (const m of [...measurers]) changed = m() || changed;
+  return changed;
+}
+
 export function RegionBox(props: RegionProps) {
   // keyed by the region (a stable store object); its placement is looked up reactively,
   // so layout changes move the element instead of rebuilding it (and losing focus)
@@ -1000,35 +1014,51 @@ export function RegionBox(props: RegionProps) {
   const editing = () => state.editing === r().id;
   let el!: HTMLDivElement;
   // a tall table or text region may be split across pages: where it may be cut
-  const remeasureCuts = () => {
-    if (!splittable(r()) || state.printing) return;
+  // while printing, a split region is drawn shorter (`printedHeight`, a table's rows): its cuts
+  // stay as they were; one not split yet is drawn whole, so it is measured (a document exported
+  // from the canvas is first laid out as pages here)
+  const remeasureCuts = (): boolean => {
+    if (!splittable(r()) || (state.printing && !!placed().parts)) return false;
     const next =
       isPageView() && el.offsetHeight > layout().geom.contentH * SPLIT_SHARE ? measureCuts(el, r()) : undefined;
     if (
-      !sameCuts(
+      sameCuts(
         untrack(() => cuts[r().id]),
         next,
       )
     )
-      setCuts(r().id, next);
+      return false;
+    setCuts(r().id, next);
+    return true;
   };
   // pagination and spacing need real heights; report them whenever the rendering changes size
-  onMount(() => {
-    const ro = new ResizeObserver(() => {
+  // whether anything changed: the export measures every region itself (`measureAll`)
+  const measure = (): boolean =>
+    untrack(() => {
       // a split region is drawn shorter while printing (`printedHeight`): its pagination stays
-      if (untrack(() => state.printing && !!placed().parts)) return;
+      if (state.printing && !!placed().parts) return false;
+      let changed = false;
       const h = el.offsetHeight;
-      const before = untrack(() => heights[r().id]) ?? 0;
-      if (h && Math.abs(before - h) > 0.5) {
+      if (h && Math.abs((heights[r().id] ?? 0) - h) > 0.5) {
         setHeights(r().id, h);
         scheduleGrowth();
+        changed = true;
       }
       const w = el.offsetWidth;
-      if (w && Math.abs((untrack(() => widths[r().id]) ?? 0) - w) > 0.5) setWidths(r().id, w);
-      untrack(remeasureCuts);
+      if (w && Math.abs((widths[r().id] ?? 0) - w) > 0.5) {
+        setWidths(r().id, w);
+        changed = true;
+      }
+      return remeasureCuts() || changed;
+    });
+  onMount(() => {
+    const ro = new ResizeObserver(() => {
+      measure();
     });
     ro.observe(el);
+    measurers.add(measure);
     onCleanup(() => {
+      measurers.delete(measure);
       ro.disconnect();
       if (untrack(() => cuts[r().id])) setCuts(r().id, undefined);
     });
