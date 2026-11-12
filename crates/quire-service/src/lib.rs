@@ -20,7 +20,8 @@ use quire_ast::{Expr, parse};
 use quire_doc::Document;
 use quire_eval::{
     Animate, DisplaySettings, DisplaySpec, Fix, Marker, MathInput, Notation, Outcome, Plot3Input, PlotInput,
-    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, TableInput, Worksheet,
+    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, SolvePart, TableInput,
+    Worksheet,
 };
 use serde::Serialize;
 use serde_json::{Value as Json, json};
@@ -314,6 +315,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         table: None,
                         plot: None,
                         symbolic,
+                        solve: None,
                     });
                 }
             }
@@ -334,6 +336,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         table: None,
                         plot: None,
                         symbolic,
+                        solve: None,
                     });
                 }
             }
@@ -347,6 +350,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     table: Some(table_input(r)),
                     plot: None,
                     symbolic: false,
+                    solve: None,
                 });
             }
             "plot2d" | "plot3d" => {
@@ -358,6 +362,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     table: None,
                     plot: Some(plot_input(r)),
                     symbolic: false,
+                    solve: None,
                 });
             }
             "table" if tables => {
@@ -370,12 +375,52 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         table: None,
                         plot: None,
                         symbolic: false,
+                        solve: None,
                     });
                 }
             }
+            "solve" => out.extend(solve_inputs(r)),
             _ => {}
         }
     }
+    out
+}
+
+/// The lines of a solve block's list (`guesses`, `given`), as written.
+fn block_lines(r: &quire_doc::Region, key: &str) -> Vec<String> {
+    let cell = |v: &Json| v.as_str().unwrap_or_default().to_string();
+    r.extra.get(key).and_then(Json::as_array).map(|a| a.iter().map(cell).collect()).unwrap_or_default()
+}
+
+/// A solve block's lines (docs/02-file-format.md §4.10), each a math input of its own: the
+/// guesses `<id>:g<n>`, the constraints `<id>:c<n>` and the find line `<id>:f`.
+fn solve_inputs(r: &quire_doc::Region) -> Vec<MathInput> {
+    let line = |id: String, expr: String, solve: Option<SolvePart>| MathInput {
+        id,
+        expr,
+        show: false,
+        display: DisplaySpec::default(),
+        table: None,
+        plot: None,
+        symbolic: false,
+        solve,
+    };
+    let block = r.id.clone();
+    let mut out: Vec<MathInput> = block_lines(r, "guesses")
+        .into_iter()
+        .enumerate()
+        .map(|(n, e)| line(format!("{block}:g{n}"), e, None))
+        .collect();
+    out.extend(block_lines(r, "given").into_iter().enumerate().map(|(n, e)| {
+        let given = Some(SolvePart::Given { block: block.clone() });
+        line(format!("{block}:c{n}"), quire_eval::constraint_text(&e), given)
+    }));
+    let find = r.extra.get("find").and_then(Json::as_str).unwrap_or_default().to_string();
+    out.push(MathInput {
+        show: r.show.as_deref() == Some("value"),
+        display: display_of(r),
+        ..line(format!("{block}:f"), find, Some(SolvePart::Find { block: block.clone() }))
+    });
     out
 }
 
@@ -644,6 +689,58 @@ pub struct CellView {
     pub text: Option<String>,
     pub error: Option<String>,
     pub formula: bool,
+    /// A cell that reads as pass or fail (`OK`, `FAIL`, `if(…, "OK", "FAIL")`): whether it passes.
+    /// `None` for any other cell, and for one with an error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<bool>,
+}
+
+/// "OK" → pass, "FAIL" → fail, anything else → `None`. The words are the ones the editor reads
+/// as a check (English, Portuguese, Spanish, German), without regard to case or quotes.
+pub fn verdict_of(text: &str) -> Option<bool> {
+    const PASS: &[&str] = &[
+        "ok",
+        "pass",
+        "passes",
+        "passed",
+        "yes",
+        "safe",
+        "satisfied",
+        "sim",
+        "atende",
+        "ok!",
+        "conforme",
+        "cumple",
+        "si",
+        "sí",
+        "erfüllt",
+        "ja",
+    ];
+    const FAIL: &[&str] = &[
+        "fail",
+        "fails",
+        "failed",
+        "no",
+        "not ok",
+        "unsafe",
+        "ng",
+        "falha",
+        "não",
+        "nao",
+        "não atende",
+        "nao atende",
+        "no cumple",
+        "nicht erfüllt",
+        "nein",
+    ];
+    let t = text.trim().trim_matches('"').trim().to_lowercase();
+    if PASS.contains(&t.as_str()) {
+        Some(true)
+    } else if FAIL.contains(&t.as_str()) {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1008,6 +1105,11 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                             text: c.shown.clone(),
                             error: c.error.clone(),
                             formula: c.formula,
+                            verdict: if c.error.is_some() {
+                                None
+                            } else {
+                                c.shown.as_deref().and_then(verdict_of)
+                            },
                         })
                         .collect()
                 })
@@ -1442,6 +1544,34 @@ mod tests {
         // a unit of another kind keeps the rest in SI
         assert_eq!(view("e")?.result_text.as_deref(), Some("10 'kg*'m/'s^2"));
         assert!(view("e")?.unit_choices.iter().any(|c| c.unit == "kN"));
+        Ok(())
+    }
+
+    #[test]
+    fn table_cells_report_pass_and_fail() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                { "id": "s", "kind": "math", "at": [0, 0], "expr": "s := 3" },
+                { "id": "t", "kind": "table", "at": [0, 30], "rows": [
+                    ["Check", "Result"],
+                    ["a", "=if(s > 2, \"OK\", \"FAIL\")"],
+                    ["b", "=if(s < 2, \"OK\", \"FAIL\")"],
+                    ["c", "=s * 2"],
+                    ["d", "OK"]
+                ] }
+            ]
+        });
+        let r = report(&doc)?;
+        let t = r.regions.iter().find(|v| v.id == "t").ok_or("no table")?;
+        let cells = t.cells.as_ref().ok_or("no cells")?;
+        let verdicts: Vec<Option<bool>> = cells.iter().map(|row| row[1].verdict).collect();
+        assert_eq!(verdicts, [None, Some(true), Some(false), None, None]);
+        assert_eq!(cells[1][0].verdict, None, "a name is no verdict");
+        // plain text is not a check, as before: only a worked-out result is
+        assert_eq!(verdict_of("\"Not OK\""), Some(false));
+        assert_eq!(verdict_of("pass"), Some(true));
+        assert_eq!(verdict_of("1.5"), None);
         Ok(())
     }
 

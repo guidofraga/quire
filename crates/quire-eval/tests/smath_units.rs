@@ -318,6 +318,7 @@ fn eval(exprs: &[String]) -> Vec<quire_eval::Outcome> {
             table: None,
             plot: None,
             symbolic: false,
+            solve: None,
         })
         .collect();
     Worksheet::new(DisplaySettings::default()).run(&regions)

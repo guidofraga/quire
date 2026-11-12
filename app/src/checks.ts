@@ -55,7 +55,7 @@ export const checks = createRoot(() =>
         if (m !== null) out.push({ id: r.id, pass: m, page: p.page });
         v?.cells?.forEach((row, i) =>
           row.forEach((cell, j) => {
-            const c = cell.error ? null : verdictOf(cell.text);
+            const c = cell.verdict ?? null;
             const rows = Array.isArray(r.rows) ? (r.rows as string[][]) : [];
             if (c !== null) out.push({ id: r.id, pass: c, cell: [i, j], row: rows[i]?.[0] ?? "", page: p.page });
           }),

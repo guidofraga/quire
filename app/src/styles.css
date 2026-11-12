@@ -453,6 +453,18 @@ ms.str {
   gap: 14px;
 }
 
+/* notePosition "below": the note under the formula, wrapping at the page edge (Region.tsx) */
+.math-line.note-below {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.math-line.note-below .note {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .math-line.preview {
   margin-top: 4px;
   opacity: 0.9;
@@ -4000,6 +4012,72 @@ a.xref-missing {
 .math-line.check-fail .res .str {
   color: #c62828;
   font-weight: 600;
+}
+
+/* solve blocks (SolveBlock.tsx): guess values, a "Given" header, the constraints and the find
+   line in one frame, as in Mathcad. On the page, which stays paper-white in either theme */
+.solve-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 180px;
+  padding: 6px 14px 8px 12px;
+  border: 1px solid #c5cad3;
+  border-left: 3px solid #7f9cc9;
+  border-radius: 4px;
+  background: #fafbfd;
+}
+
+.solve-given {
+  margin: 3px 0 1px;
+  color: #1f2937;
+  font:
+    600 12px -apple-system,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.solve-line {
+  min-height: 1.4em;
+}
+
+.solve-line.find {
+  align-self: stretch;
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px dashed #d3d7de;
+}
+
+/* whether a constraint holds at the values found: quieter than a design check's badge */
+.check-badge.solve-check {
+  margin-left: 0;
+  padding: 0 5px;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.solve-add {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font:
+    11px -apple-system,
+    system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+
+.solve-add:hover {
+  text-decoration: underline;
+}
+
+@media print {
+  .solve-block {
+    background: none;
+  }
 }
 
 .sheet td.check-pass {

@@ -156,6 +156,22 @@ fn slots(doc: &Document) -> Vec<Slot> {
                     plot_slots(&id, "", &r.extra, true, &locals, &mut out);
                 }
             }
+            // a solve block's lines, in the order they run (`math_inputs`)
+            "solve" => {
+                for key in ["guesses", "given"] {
+                    let lines = r.extra.get(key).and_then(Json::as_array).cloned().unwrap_or_default();
+                    for (i, line) in lines.iter().enumerate() {
+                        if let Some(text) = line.as_str() {
+                            let kind = Kind::Expr { text: text.to_string(), locals: Vec::new() };
+                            out.push(Slot { id: id.clone(), pointer: format!("/{key}/{i}"), kind });
+                        }
+                    }
+                }
+                if let Some(text) = r.extra.get("find").and_then(Json::as_str) {
+                    let kind = Kind::Expr { text: text.to_string(), locals: Vec::new() };
+                    out.push(Slot { id, pointer: "/find".into(), kind });
+                }
+            }
             _ => {}
         }
     }
@@ -234,8 +250,9 @@ fn plan(doc: &Document, transform: Transform) -> Option<Plan> {
             continue;
         }
         rewrite(slot, e, &variables);
-        // a plot's expressions define nothing for the regions below
-        let plot = matches!(slot.kind, Kind::Expr { .. }) && slot.pointer != "/expr";
+        // a plot's expressions define nothing for the regions below (a solve block's lines do)
+        let block = slot.pointer == "/find" || slot.pointer.starts_with("/guesses/");
+        let plot = matches!(slot.kind, Kind::Expr { .. }) && slot.pointer != "/expr" && !block;
         if !plot {
             variables.extend(defined_names(e));
         }

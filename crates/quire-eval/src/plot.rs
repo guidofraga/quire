@@ -237,6 +237,17 @@ fn from_value(s: &SeriesInput, v: Value, interp: &mut Interp, scope: &mut Scope)
         }
         return Ok(vec![points(m)?]);
     }
+    // one row with a marker is a single point (`[x, y, ".", size, "Red"]`), not a list of numbers
+    if let Value::Matrix(m) = &v
+        && m.rows == 1
+        && m.cols >= 3
+        && matches!(m.data.get(2), Some(Value::Str(_)))
+    {
+        if x_given {
+            bail!("a matrix has its own x values, in its first column; leave out x");
+        }
+        return Ok(vec![points(m)?]);
+    }
     if let Value::Matrix(m) = &v
         && m.is_vector()
         && m.data.iter().any(|e| matches!(e, Value::Matrix(_)))
@@ -523,6 +534,7 @@ mod tests {
             table: None,
             plot: None,
             symbolic: false,
+            solve: None,
         }
     }
 
@@ -628,6 +640,20 @@ mod tests {
             Some(("o".to_string(), 185.0))
         );
         assert!(line.connect, "a row with no marker keeps the line");
+        Ok(())
+    }
+
+    #[test]
+    fn a_one_row_marker_matrix_is_one_point() -> TestResult {
+        let out = run(&[
+            math("s", "S := [3, 4, \".\", 20, \"Red\"]"),
+            plot("plot", vec![SeriesInput { y: "S".into(), ..Default::default() }]),
+        ]);
+        let (p, error) = plotted(&out, 1)?;
+        assert_eq!(error, None, "a single marker row is a point, not a list of numbers");
+        let s = p.series.first().ok_or("no series")?;
+        assert_eq!(s.marks.iter().flatten().map(|m| m.shape.as_str()).collect::<Vec<_>>(), vec!["."]);
+        assert!(!s.connect);
         Ok(())
     }
 
