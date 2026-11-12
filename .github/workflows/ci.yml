@@ -136,6 +136,7 @@ jobs:
         env:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          JSC_useJIT: "false"
         run: |
           grep -m1 'model name' /proc/cpuinfo || true
           dbus-run-session -- xvfb-run -a cargo test -p quire-app --features tauri/custom-protocol --locked -- --ignored --test-threads=1
