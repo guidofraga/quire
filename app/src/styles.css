@@ -4177,6 +4177,16 @@ a.xref-missing {
   color: var(--accent);
 }
 
+/* reset and keep hang off the left edge of the zoom buttons, so adding them never moves + - */
+.plot-tools-extra {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 2px;
+  display: flex;
+  gap: 2px;
+}
+
 .app.printing .plot-tools,
 .app.printing .plot-anim {
   display: none;

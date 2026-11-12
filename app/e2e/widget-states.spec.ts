@@ -95,6 +95,35 @@ test("Enter on Close closes the find bar and leaves the math alone", async ({ pa
   await expect(regions(page).first()).not.toContainText("zeta");
 });
 
+test("the zoom buttons stay put when Reset and Keep appear", async ({ page }) => {
+  await blank(page);
+  await page.getByRole("button", { name: "Insert" }).click();
+  await page.getByRole("menuitem", { name: /^Plot/ }).click();
+  const plot = page.locator(".region .plot");
+  await expect(plot.locator("svg")).toBeVisible();
+  const zoomIn = plot.getByRole("button", { name: "Zoom in" });
+  const ticks = async () => (await plot.locator(".plot-ticks text").allTextContents()).join(" ");
+  const box = (await zoomIn.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const start = await ticks();
+  // the first click zooms and shows Reset and Keep beside the zoom buttons
+  await page.mouse.click(x, y);
+  await expect(plot.getByRole("button", { name: "Keep this view" })).toBeVisible();
+  await expect.poll(ticks).not.toBe(start);
+  // Reset and Keep must not push + − aside: same coordinates, same button
+  const moved = (await zoomIn.boundingBox())!;
+  expect(Math.abs(moved.x - box.x)).toBeLessThan(1);
+  expect(Math.abs(moved.y - box.y)).toBeLessThan(1);
+  // clicking the same spot again zooms again
+  const once = await ticks();
+  await page.mouse.click(x, y);
+  await expect.poll(ticks).not.toBe(once);
+  const twice = await ticks();
+  await page.mouse.click(x, y);
+  await expect.poll(ticks).not.toBe(twice);
+});
+
 test("a zoom with ⌥ + scroll during a drag is kept when the drag ends", async ({ page }) => {
   await blank(page);
   await page.getByRole("button", { name: "Insert" }).click();
