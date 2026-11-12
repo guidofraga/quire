@@ -232,6 +232,32 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     g.textAlign = "center";
     const names = ["x", "y", "z"];
     const units = v?.units ?? ["", "", ""];
+    // the axes' own labels (`axes.z.label`), else the letter
+    const given = r().axes && typeof r().axes === "object" ? (r().axes as Record<string, { label?: string }>) : {};
+    // every label is kept whole inside the drawing, a small plot too. Tick numbers are placed
+    // first, then each title beyond them (a title never sits on a number); a number that a title
+    // would still touch is left out. The boxes are recorded for the tests.
+    interface Lab {
+      text: string;
+      x: number;
+      y: number;
+      x0: number;
+      x1: number;
+      y0: number;
+      y1: number;
+    }
+    const boxOf = (text: string, x: number, y: number): Lab => {
+      const half = g.measureText(text).width / 2;
+      const px = Math.min(Math.max(x, half + 2), w - half - 2);
+      // the baseline keeps room for letters that hang below it
+      const py = Math.min(Math.max(y, 11), h - 4);
+      return { text, x: px, y: py, x0: px - half, x1: px + half, y0: py - 9, y1: py + 3 };
+    };
+    const touch = (p: Lab, q: Lab, gap = 3) =>
+      p.x0 < q.x1 + gap && q.x0 < p.x1 + gap && p.y0 < q.y1 + gap && q.y0 < p.y1 + gap;
+    const tickLabs: Lab[] = [];
+    const titleLabs: Lab[] = [];
+    const mids: { mx: number; my: number; dx: number; dy: number; text: string }[] = [];
     for (let a = 0; a < 3; a++) {
       const others = [0, 1, 2].filter((k) => k !== a);
       let best: { p0: Vec3; d: number } | null = null;
@@ -256,14 +282,41 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
         const p: Vec3 = [...best.p0];
         p[a] = ((t - lo) / (hi - lo)) * 2 - 1;
         const [tx, ty] = outward(p, [14, 12]);
-        g.fillText(fmt(t), tx, ty + 3);
+        tickLabs.push(boxOf(fmt(t), tx, ty + 3));
       }
       const mid: Vec3 = [...best.p0];
       mid[a] = 0;
-      const [mx, my] = outward(mid, [30, 26]);
-      g.font = "italic 11px -apple-system, system-ui, sans-serif";
-      g.fillText(names[a] + (units[a] ? ` (${prettyValue(units[a])})` : ""), mx, my + 4);
+      const [sx, sy] = screen(mid);
+      const len = Math.hypot(sx - w / 2, sy - h / 2) || 1;
+      mids.push({
+        mx: sx,
+        my: sy,
+        dx: (sx - w / 2) / len,
+        dy: (sy - h / 2) / len,
+        text: (given[names[a]]?.label || names[a]) + (units[a] ? ` (${prettyValue(units[a])})` : ""),
+      });
     }
+    g.font = "italic 11px -apple-system, system-ui, sans-serif";
+    for (const m of mids) {
+      // out from the axis in steps until the title is clear of every number and earlier title
+      let lab = boxOf(m.text, m.mx + m.dx * 30, m.my + m.dy * 26 + 4);
+      for (let k = 1; k <= 14 && [...tickLabs, ...titleLabs].some((o) => touch(lab, o)); k++)
+        lab = boxOf(m.text, m.mx + m.dx * (30 + k * 5), m.my + m.dy * (26 + k * 5) + 4);
+      titleLabs.push(lab);
+    }
+    // a number is also left out when it would sit on one before it (the corner two axes share)
+    const shownTicks: Lab[] = [];
+    for (const t of tickLabs)
+      if (!titleLabs.some((l) => touch(t, l)) && !shownTicks.some((o) => touch(t, o, 1))) shownTicks.push(t);
+    g.font = "10px -apple-system, system-ui, sans-serif";
+    for (const t of shownTicks) g.fillText(t.text, t.x, t.y);
+    g.font = "italic 11px -apple-system, system-ui, sans-serif";
+    for (const t of titleLabs) g.fillText(t.text, t.x, t.y);
+    const rec = (kind: string, l: Lab) =>
+      [kind, l.text, ...[l.x0, l.y0, l.x1, l.y1].map((n) => n.toFixed(1))].join("|");
+    canvas.dataset.labels = [...shownTicks.map((l) => rec("tick", l)), ...titleLabs.map((l) => rec("title", l))].join(
+      ";",
+    );
   };
 
   // at most one drawing per screen frame, however fast the pointer moves; printing draws at once

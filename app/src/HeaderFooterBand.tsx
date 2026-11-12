@@ -4,6 +4,7 @@
 // Print and PDF draw the same row (text, image and rule) without the editing chrome.
 import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { fill, startNumber } from "./fields";
 import { announce, focusables, toolbarKeys } from "./a11y";
 import { pickAsset } from "./actions";
 import { focusCanvas } from "./Canvas";
@@ -25,8 +26,7 @@ import {
   bandLayout,
   contentOn,
   evenPage,
-  type FieldContext,
-  fillFields,
+  HF_DEFAULT_COLOR,
   HF_DEFAULT_RULE,
   HF_DEFAULT_SIZE,
   HF_RULE_GAP,
@@ -40,9 +40,7 @@ import {
   commitEditing,
   flash,
   layout,
-  localized,
   mutate,
-  sectionOn,
   setState,
   snap,
   state,
@@ -50,9 +48,6 @@ import {
   undo,
   undoSession,
 } from "./store";
-
-/** Header and footer text when no colour is set (as on paper). */
-const DEFAULT_COLOR = "#8a8f98";
 
 const NAME: Record<Band, string> = { header: "Header", footer: "Footer" };
 const SLOT_NAME: Record<Slot, string> = { left: "left", center: "centre", right: "right" };
@@ -80,7 +75,6 @@ const RULES: [number, string][] = [
 const IMAGE_HEIGHTS = [6, 9, 12, 15];
 
 const bandOf = (band: Band) => state.doc.page?.[band] as HeaderFooter | undefined;
-const startNumber = () => (state.doc.page?.pageNumber as { start?: number } | undefined)?.start ?? 1;
 const firstPage = () => (state.doc.page?.firstPage as { header?: boolean; footer?: boolean } | undefined) ?? {};
 /** "Different first page": page 1 has its own band, which today's model keeps blank. */
 const firstDiffers = (band: Band) => firstPage()[band] === false;
@@ -94,32 +88,6 @@ const contentOf = (band: Band, k: number): BandContent | undefined =>
 /** What page `k` shows. */
 const shownOn = (band: Band, k: number) => contentOn(bandOf(band), k, startNumber(), firstDiffers(band));
 
-function fileLabel(): string {
-  return state.path?.replace(/\/+$/, "").split("/").pop() ?? "Untitled.quire";
-}
-
-/** The values fields take on page `k` (0-based). */
-function fieldContext(k: number, pages: number): FieldContext {
-  const meta = state.doc.meta ?? {};
-  return {
-    page: startNumber() + k,
-    pages,
-    file: fileLabel(),
-    title: localized(meta.title, meta.lang),
-    author: ((meta.authors as string[] | undefined) ?? []).join(", "),
-    company: String(meta.company ?? ""),
-    lang: meta.lang,
-    now: new Date(),
-  };
-}
-
-function fill(text: string | undefined, k: number, pages: number): string {
-  if (!text) return "";
-  const c = fieldContext(k, pages);
-  if (text.includes("{section}")) c.section = sectionOn(layout(), k, c.lang);
-  return fillFields(text, c);
-}
-
 const px = (n: number) => `${n}px`;
 
 /**
@@ -132,7 +100,7 @@ function rowStyle(band: Band, room: number, content: BandContent | undefined): J
   return {
     [band === "header" ? "top" : "bottom"]: px(l.offset),
     height: px(l.rowH),
-    color: hf?.color ?? DEFAULT_COLOR,
+    color: hf?.color ?? HF_DEFAULT_COLOR,
     "font-size": px(l.fontPx),
     "font-weight": hf?.bold ? "bold" : undefined,
   };
@@ -150,7 +118,7 @@ function Rule(props: { band: Band; room: number; content: BandContent | undefine
         style={{
           [props.band === "header" ? "top" : "bottom"]: px(l().rowH + HF_RULE_GAP),
           height: px(l().ruleW),
-          background: hf()?.rule?.color ?? hf()?.color ?? DEFAULT_COLOR,
+          background: hf()?.rule?.color ?? hf()?.color ?? HF_DEFAULT_COLOR,
         }}
       />
     </Show>
@@ -1018,7 +986,7 @@ function Toolbar(props: { anchor: HTMLElement }) {
           title={`${NAME[band()]} colour`}
           name={`${NAME[band()]} colour`}
           kind="menu"
-          label={<span class="fb-swatch" style={{ background: color() ?? DEFAULT_COLOR }} />}
+          label={<span class="fb-swatch" style={{ background: color() ?? HF_DEFAULT_COLOR }} />}
         >
           {(close) => (
             <div class="fb-swatches hf-swatches">
@@ -1026,7 +994,7 @@ function Toolbar(props: { anchor: HTMLElement }) {
                 {([c, name]) => (
                   <button
                     class="fb-swatch big"
-                    style={{ background: c ?? DEFAULT_COLOR }}
+                    style={{ background: c ?? HF_DEFAULT_COLOR }}
                     title={name}
                     role="menuitemradio"
                     aria-label={name}
@@ -1082,7 +1050,7 @@ function Toolbar(props: { anchor: HTMLElement }) {
                   {([c, name]) => (
                     <button
                       class="fb-swatch big"
-                      style={{ background: c ?? color() ?? DEFAULT_COLOR }}
+                      style={{ background: c ?? color() ?? HF_DEFAULT_COLOR }}
                       title={c ? name : "Same as the text"}
                       role="menuitemradio"
                       aria-label={c ? `Line ${name.toLowerCase()}` : "Line the same colour as the text"}

@@ -689,6 +689,58 @@ pub struct CellView {
     pub text: Option<String>,
     pub error: Option<String>,
     pub formula: bool,
+    /// A cell that reads as pass or fail (`OK`, `FAIL`, `if(…, "OK", "FAIL")`): whether it passes.
+    /// `None` for any other cell, and for one with an error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<bool>,
+}
+
+/// "OK" → pass, "FAIL" → fail, anything else → `None`. The words are the ones the editor reads
+/// as a check (English, Portuguese, Spanish, German), without regard to case or quotes.
+pub fn verdict_of(text: &str) -> Option<bool> {
+    const PASS: &[&str] = &[
+        "ok",
+        "pass",
+        "passes",
+        "passed",
+        "yes",
+        "safe",
+        "satisfied",
+        "sim",
+        "atende",
+        "ok!",
+        "conforme",
+        "cumple",
+        "si",
+        "sí",
+        "erfüllt",
+        "ja",
+    ];
+    const FAIL: &[&str] = &[
+        "fail",
+        "fails",
+        "failed",
+        "no",
+        "not ok",
+        "unsafe",
+        "ng",
+        "falha",
+        "não",
+        "nao",
+        "não atende",
+        "nao atende",
+        "no cumple",
+        "nicht erfüllt",
+        "nein",
+    ];
+    let t = text.trim().trim_matches('"').trim().to_lowercase();
+    if PASS.contains(&t.as_str()) {
+        Some(true)
+    } else if FAIL.contains(&t.as_str()) {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1053,6 +1105,11 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                             text: c.shown.clone(),
                             error: c.error.clone(),
                             formula: c.formula,
+                            verdict: if c.error.is_some() {
+                                None
+                            } else {
+                                c.shown.as_deref().and_then(verdict_of)
+                            },
                         })
                         .collect()
                 })
@@ -1487,6 +1544,34 @@ mod tests {
         // a unit of another kind keeps the rest in SI
         assert_eq!(view("e")?.result_text.as_deref(), Some("10 'kg*'m/'s^2"));
         assert!(view("e")?.unit_choices.iter().any(|c| c.unit == "kN"));
+        Ok(())
+    }
+
+    #[test]
+    fn table_cells_report_pass_and_fail() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                { "id": "s", "kind": "math", "at": [0, 0], "expr": "s := 3" },
+                { "id": "t", "kind": "table", "at": [0, 30], "rows": [
+                    ["Check", "Result"],
+                    ["a", "=if(s > 2, \"OK\", \"FAIL\")"],
+                    ["b", "=if(s < 2, \"OK\", \"FAIL\")"],
+                    ["c", "=s * 2"],
+                    ["d", "OK"]
+                ] }
+            ]
+        });
+        let r = report(&doc)?;
+        let t = r.regions.iter().find(|v| v.id == "t").ok_or("no table")?;
+        let cells = t.cells.as_ref().ok_or("no cells")?;
+        let verdicts: Vec<Option<bool>> = cells.iter().map(|row| row[1].verdict).collect();
+        assert_eq!(verdicts, [None, Some(true), Some(false), None, None]);
+        assert_eq!(cells[1][0].verdict, None, "a name is no verdict");
+        // plain text is not a check, as before: only a worked-out result is
+        assert_eq!(verdict_of("\"Not OK\""), Some(false));
+        assert_eq!(verdict_of("pass"), Some(true));
+        assert_eq!(verdict_of("1.5"), None);
         Ok(())
     }
 

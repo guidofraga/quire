@@ -3,6 +3,7 @@ import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
 import { fillRefs } from "./xref";
+import { fillTextFields } from "./fields";
 import { type Check, checks, failing, isComparison, mathCheck, regionOf, tableName } from "./checks";
 import { captionLabel, defaultLabel, labelKey, labelPattern } from "./labels";
 import { openPopover } from "./Popover";
@@ -17,6 +18,7 @@ import {
   createSignal,
   For,
   Index,
+  type JSX,
   Match,
   onCleanup,
   onMount,
@@ -98,12 +100,14 @@ function fillInlineMath(el: HTMLElement) {
   }
 }
 
-function Html(props: { html: string | undefined; class?: string }) {
+/** `page`: the 0-based page the text is on, for the fields `{page}`, `{date}` … it can hold. */
+function Html(props: { html: string | undefined; class?: string; page?: number; style?: JSX.CSSProperties }) {
   let el!: HTMLDivElement;
   createEffect(() => {
     el.innerHTML = props.html ?? "";
     applyDjotAttributes(el);
     fillInlineMath(el);
+    if (props.page !== undefined) fillTextFields(el, props.page);
     // this effect also reruns when results arrive, and rewriting the HTML empties the
     // references: fill them again here, without making the text depend on the numbering
     untrack(() => fillRefs(el));
@@ -113,7 +117,7 @@ function Html(props: { html: string | undefined; class?: string }) {
     void props.html;
     fillRefs(el);
   });
-  return <div ref={el} class={props.class} />;
+  return <div ref={el} class={props.class} style={props.style} />;
 }
 
 function captionPrefix(r: Region, number: string | undefined): string {
@@ -276,7 +280,12 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
       </Show>
       <div
         class="math-line"
-        classList={{ preview: editing(), "check-pass": check() === true, "check-fail": check() === false }}
+        classList={{
+          preview: editing(),
+          "check-pass": check() === true,
+          "check-fail": check() === false,
+          "note-below": props.r.notePosition === "below",
+        }}
         aria-hidden={editing() || undefined}
       >
         <Show when={rendered()} fallback={<code class="raw">{props.r.expr || " "}</code>}>
@@ -295,7 +304,12 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           </span>
         </Show>
         <Show when={props.r.note && !editing()}>
-          <Html html={state.report?.html[`${props.r.id}:note`]} class="note" />
+          {/* `notePosition: "below"`: under the formula, wrapping within the room it has */}
+          <Html
+            html={state.report?.html[`${props.r.id}:note`]}
+            class="note"
+            style={props.r.notePosition === "below" ? { "max-width": `${props.noteWidth() - 8}px` } : undefined}
+          />
         </Show>
       </div>
       <Show when={view()?.error}>
@@ -333,7 +347,7 @@ function TextBody(props: { p: Placed }) {
           when={state.report?.html[r().id] !== undefined}
           fallback={<div class="text-body">{localized(r().text, state.doc.meta?.lang)}</div>}
         >
-          <Html html={state.report?.html[r().id]} class="text-body" />
+          <Html html={state.report?.html[r().id]} class="text-body" page={props.p.page} />
         </Show>
       </div>
     </Show>

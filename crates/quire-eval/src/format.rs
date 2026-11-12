@@ -191,11 +191,22 @@ pub fn format_number(x: f64, decimals: u32, settings: &DisplaySettings) -> Strin
     let ax = x.abs();
     let scale = 10f64.powi(d as i32);
     let rounded = (ax * scale).round() / scale;
-    if rounded >= 10f64.powi(settings.exponential_threshold)
+    // a whole number kept to 0 decimals is shown whole: as a mantissa it would round to a single
+    // digit (152180 as "2*10^5"), which says less than the number does
+    let whole = settings.sig_figs.is_none() && d == 0 && rounded >= 1.0 && ax < 1e15;
+    if (rounded >= 10f64.powi(settings.exponential_threshold) && !whole)
         || rounded == 0.0
         || ax < 10f64.powi(-settings.exponential_threshold)
     {
         let mut e = ax.log10().floor() as i32;
+        // significant figures apply to the mantissa, not to the whole number
+        let fixed = |v: f64| match settings.sig_figs {
+            Some(n) => {
+                let s = format!("{v:.p$}", p = (n.max(1) as usize - 1).min(15));
+                if settings.trailing_zeros { s } else { trim_zeros(s) }
+            }
+            None => fixed(v),
+        };
         let mut m = fixed(x / 10f64.powi(e));
         if m.trim_start_matches('-').starts_with("10") {
             e += 1;
@@ -433,6 +444,13 @@ mod tests {
         assert_eq!(format_number(-0.0001, 2, &s), "-1*10^-4");
         assert_eq!(format_number(123456.0, 2, &s), "1.23*10^5");
         assert_eq!(format_number(99999.996, 2, &s), "1*10^5");
+        // 0 decimals: a large whole number is not rounded down to one digit
+        assert_eq!(format_number(152180.0, 0, &s), "152180");
+        assert_eq!(format_number(-152180.4, 0, &s), "-152180");
+        assert_eq!(
+            format_number(123456.0, 0, &DisplaySettings { sig_figs: Some(3), ..s.clone() }),
+            "1.23*10^5"
+        );
         let tz = DisplaySettings { trailing_zeros: true, ..s.clone() };
         assert_eq!(format_number(2.0, 2, &tz), "2.00");
         let sig = DisplaySettings { sig_figs: Some(3), ..s.clone() };

@@ -150,6 +150,8 @@ export interface CellView {
   text: string | null;
   error: string | null;
   formula: boolean;
+  /** Pass or fail, for a cell that reads as one (`OK`, `FAIL`); absent for any other. */
+  verdict?: boolean;
 }
 
 /** quire_service::Gloss */
@@ -197,6 +199,8 @@ export interface Region {
   show?: "value" | "symbolic";
   display?: { unit?: string; decimals?: number };
   note?: string;
+  /** Where `note` sits: beside the formula (default) or under it. */
+  notePosition?: "right" | "below" | "left" | "above";
   text?: Localized;
   src?: string;
   source?: string | null;
