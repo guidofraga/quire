@@ -370,6 +370,7 @@ pub(crate) mod tests {
                 table: None,
                 plot: None,
                 symbolic: false,
+                solve: None,
             })
             .collect();
         Worksheet::new(DisplaySettings::default())

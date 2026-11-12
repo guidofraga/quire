@@ -228,8 +228,16 @@ fn cmd_calc(args: &[String]) -> CmdResult {
         }
     }
     let expr = expr.ok_or("missing expression")?;
-    let input =
-        MathInput { id: "calc".into(), expr, show: true, display, table: None, plot: None, symbolic: false };
+    let input = MathInput {
+        id: "calc".into(),
+        expr,
+        show: true,
+        display,
+        table: None,
+        plot: None,
+        symbolic: false,
+        solve: None,
+    };
     let out = Worksheet::new(DisplaySettings::default()).run(&[input]).remove(0);
     match (out.error, out.shown) {
         (Some(e), _) => {

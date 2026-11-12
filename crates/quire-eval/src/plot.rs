@@ -523,6 +523,7 @@ mod tests {
             table: None,
             plot: None,
             symbolic: false,
+            solve: None,
         }
     }
 

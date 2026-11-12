@@ -103,6 +103,7 @@ mod tests {
                 table: None,
                 plot: None,
                 symbolic: l.ends_with(" →"),
+                solve: None,
             })
             .collect();
         let size = if cfg!(debug_assertions) { 8 << 20 } else { 1 << 20 };
@@ -235,6 +236,7 @@ mod tests {
             table: Some(t),
             plot: None,
             symbolic: false,
+            solve: None,
         };
         let out = Worksheet::new(DisplaySettings::default()).run(&[input]);
         let cell = out.first().and_then(|o| o.cells.first()).and_then(|r| r.get(1)).cloned();
