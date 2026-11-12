@@ -4,6 +4,7 @@ import {
   contentOn,
   evenPage,
   fillFields,
+  HF_DEFAULT_COLOR,
   type HeaderFooter,
   mirrored,
   pageAssets,
@@ -200,5 +201,17 @@ describe("headers and footers", () => {
       footer: { left: "x" },
     });
     expect(pageAssets(d)).toEqual(["assets/bg.png", "assets/logo.png", "assets/even.png"]);
+  });
+});
+
+describe("the default header and footer colour", () => {
+  const channel = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => channel(parseInt(hex.slice(i, i + 2), 16)));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  it("reads at WCAG AA (4.5:1) on white paper", () => {
+    expect(1.05 / (luminance(HF_DEFAULT_COLOR) + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 });

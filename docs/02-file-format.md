@@ -122,7 +122,7 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
 |---|---|---|---|
 | `left` `center` `right` | string | empty | The three slots' text, with fields (below). |
 | `image` | `{ src, slot?, height? }` | none | A picture (a logo) in a slot. `src` is an asset (`assets/…`, §2); `slot` is `left` (default), `center` or `right`; `height` is a length, by default half the margin the band sits in, and never taller than that margin. The width follows the picture. In the `right` slot it sits after the text, on the outer edge; elsewhere before it. |
-| `color` | colour | `#8a8f98` | The text colour. |
+| `color` | colour | `#727780` | The text colour. |
 | `size` | number | `8` | Font size in points. |
 | `bold` | boolean | `false` | Bold text. |
 | `rule` | `{ width?, color? }` | none | A line under the header, or over the footer, 3 px from its text across the band's width. Present means drawn: `{}` is a 0.5 pt line in the text's colour. `width` is a length. |

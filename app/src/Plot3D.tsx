@@ -232,6 +232,19 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
     g.textAlign = "center";
     const names = ["x", "y", "z"];
     const units = v?.units ?? ["", "", ""];
+    // the axes' own labels (`axes.z.label`), else the letter
+    const given = r().axes && typeof r().axes === "object" ? (r().axes as Record<string, { label?: string }>) : {};
+    // a label is kept whole inside the drawing, in a small plot too, and recorded for tests
+    const drawn: string[] = [];
+    const put = (text: string, x: number, y: number) => {
+      const half = g.measureText(text).width / 2;
+      const px = Math.min(Math.max(x, half + 2), w - half - 2);
+      // the baseline keeps room for letters that hang below it
+      const py = Math.min(Math.max(y, 11), h - 4);
+      g.fillText(text, px, py);
+      const inside = px - half >= 0 && px + half <= w && py - 9 >= 0 && py + 3 <= h;
+      drawn.push(`${text}|${inside ? "in" : "out"}`);
+    };
     for (let a = 0; a < 3; a++) {
       const others = [0, 1, 2].filter((k) => k !== a);
       let best: { p0: Vec3; d: number } | null = null;
@@ -256,14 +269,15 @@ export function Plot3DBody(props: { r: Region; selected: boolean }) {
         const p: Vec3 = [...best.p0];
         p[a] = ((t - lo) / (hi - lo)) * 2 - 1;
         const [tx, ty] = outward(p, [14, 12]);
-        g.fillText(fmt(t), tx, ty + 3);
+        put(fmt(t), tx, ty + 3);
       }
       const mid: Vec3 = [...best.p0];
       mid[a] = 0;
       const [mx, my] = outward(mid, [30, 26]);
       g.font = "italic 11px -apple-system, system-ui, sans-serif";
-      g.fillText(names[a] + (units[a] ? ` (${prettyValue(units[a])})` : ""), mx, my + 4);
+      put((given[names[a]]?.label || names[a]) + (units[a] ? ` (${prettyValue(units[a])})` : ""), mx, my + 4);
     }
+    canvas.dataset.labels = drawn.join(";");
   };
 
   // at most one drawing per screen frame, however fast the pointer moves; printing draws at once

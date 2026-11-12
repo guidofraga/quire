@@ -3,7 +3,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
 import { api, isTauri } from "./api";
 import { esc, prettyValue } from "./math";
-import { verdictOf } from "./checks";
+import { fillOnPage } from "./fields";
 import { decimalComma, parseCsv, tableNameFrom, toCsv, withDecimalComma } from "./csv";
 import { tableFromHtml } from "./clipboard";
 import {
@@ -839,14 +839,16 @@ export function SheetGrid(props: { p: Placed }) {
 
   const align = (i: number, j: number) => cols()[j]?.align ?? (isNumeric(view(i, j)?.result) ? "right" : "left");
 
+  const page = () => layout().byId.get(r().id)?.page ?? 0;
   const cellContent = (i: number, j: number) => {
     const v = view(i, j);
     if (v?.error) return `<span class="cell-err">#ERROR</span>`;
     // compact like a spreadsheet: 4.5 kN/m on one line, units in their colour
-    if (v?.result?.t === "Str") return esc(v.result.c);
+    // text can hold the fields of a header, `{page}` or `{date}`, filled in as on its page
+    if (v?.result?.t === "Str") return esc(fillOnPage(v.result.c, page()));
     if (v?.text) return cellValueHtml(v.text);
     const text = raw(i, j);
-    return text.startsWith("=") ? "" : esc(text);
+    return text.startsWith("=") ? "" : esc(fillOnPage(text, page()));
   };
 
   const onCopy = (e: ClipboardEvent) => copyCells(e, false);
@@ -962,8 +964,8 @@ export function SheetGrid(props: { p: Placed }) {
                         active: active(i, j),
                         err: !!view(i, j)?.error,
                         formula: !!view(i, j)?.formula,
-                        "check-pass": !view(i, j)?.error && verdictOf(view(i, j)?.text) === true,
-                        "check-fail": !view(i, j)?.error && verdictOf(view(i, j)?.text) === false,
+                        "check-pass": !view(i, j)?.error && view(i, j)?.verdict === true,
+                        "check-fail": !view(i, j)?.error && view(i, j)?.verdict === false,
                       }}
                       style={{ "text-align": align(i, j) }}
                       title={view(i, j)?.error ?? undefined}
