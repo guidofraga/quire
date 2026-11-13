@@ -12,7 +12,8 @@ async function beam(page: Page) {
 test("Export as Word downloads the report with its math as equations and its plots as pictures", async ({ page }) => {
   await beam(page);
   const { name, files } = await exportWord(page);
-  expect(name).toBe("Simply supported beam.docx");
+  // Linux WebKit saves downloads with underscores for spaces
+  expect(name.replace(/_/g, " ")).toBe("Simply supported beam.docx");
   const body = files.get("word/document.xml")!.toString("utf8");
   // the design moment, as an equation with its result in kN·m
   expect(body).toContain("<m:oMath>");

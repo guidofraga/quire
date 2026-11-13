@@ -111,7 +111,8 @@ test("Export as Word downloads a .docx written by the WebAssembly engine, plots 
   await page.getByRole("button", { name: /Simply supported beam/ }).click();
   await expect(page.locator('[data-region="bmdnwh"]')).toContainText(/123\.11\s*kN/);
   const { name, files } = await exportWord(page);
-  expect(name).toBe("Simply supported beam.docx");
+  // Linux WebKit saves downloads with underscores for spaces
+  expect(name.replace(/_/g, " ")).toBe("Simply supported beam.docx");
   const body = files.get("word/document.xml")!.toString("utf8");
   expect(body).toContain("<m:oMath>");
   expect(body).toContain(">123.11</m:t>");
