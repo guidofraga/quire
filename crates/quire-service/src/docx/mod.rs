@@ -38,7 +38,7 @@ use crate::{RegionView, Report, Result, ServiceError, localized, verdict_of};
 use djot::TextCtx;
 use layout::{Flow, Item};
 use omml::{FAIL_COLOR, MathStyle, PASS_COLOR, Shown};
-use xml::{bookmark, emu, esc, half_points, hex_color, length_px, twips};
+use xml::{NUM, REF, TITLE, TOC, bookmark, emu, esc, half_points, hex_color, length_px, twips};
 
 /// Numbering instances in `numbering.xml`: headings, bullets; ordered lists follow.
 pub(crate) const HEADING_NUM: u32 = 1;
@@ -183,7 +183,7 @@ impl RPr {
         format!("<w:r>{}{inner}</w:r>", self.xml())
     }
 
-    /// A field: `instr` (`PAGE`, `REF _Ref_x \h`) showing `cached` until Word updates it.
+    /// A field: `instr` (`PAGE`, `REF Ref_x \h`) showing `cached` until Word updates it.
     pub fn field(&self, instr: &str, cached: &str) -> String {
         let mut s = self.raw("<w:fldChar w:fldCharType=\"begin\"/>");
         s.push_str(&self.raw(&format!("<w:instrText xml:space=\"preserve\"> {} </w:instrText>", esc(instr))));
@@ -630,7 +630,7 @@ impl<'a> Writer<'a> {
             r.color = Some(ERROR_COLOR.into());
             return r.text("missing reference");
         };
-        let mark = bookmark("_Ref_", target);
+        let mark = bookmark(REF, target);
         let title = self.titles.get(target).cloned().unwrap_or_default();
         // without the page view (the CLI) the page is unknown until Word updates the field
         let page = self
@@ -666,11 +666,11 @@ impl<'a> Writer<'a> {
                 }
             }
             (Num::Figure(n) | Num::Table(n), RefStyle::Num) => {
-                rpr.field(&format!("REF {} \\h", bookmark("_Num_", target)), &n.to_string())
+                rpr.field(&format!("REF {} \\h", bookmark(NUM, target)), &n.to_string())
             }
             (Num::Figure(n) | Num::Table(n), RefStyle::Title) => {
                 let cached = if title.is_empty() { n.to_string() } else { title };
-                rpr.field(&format!("REF {} \\h", bookmark("_Title_", target)), &cached)
+                rpr.field(&format!("REF {} \\h", bookmark(TITLE, target)), &cached)
             }
             (Num::Figure(n), RefStyle::Label) => rpr.field(
                 &format!("REF {mark} \\h"),
@@ -813,7 +813,7 @@ impl<'a> Writer<'a> {
             let id = self.next_bookmark();
             content = format!(
                 "<w:bookmarkStart w:id=\"{id}\" w:name=\"{}\"/>{content}<w:bookmarkEnd w:id=\"{id}\"/>",
-                bookmark("_Ref_", &r.id)
+                bookmark(REF, &r.id)
             );
         }
         let note = r.extra.get("note").and_then(Json::as_str).map(str::to_string);
@@ -868,18 +868,22 @@ impl<'a> Writer<'a> {
         let (before, after) = split_pattern(&pattern);
         let rpr = RPr::default();
         let (rf, num, title) = (self.next_bookmark(), self.next_bookmark(), self.next_bookmark());
-        let mut c = format!("<w:bookmarkStart w:id=\"{rf}\" w:name=\"{}\"/>", bookmark("_Ref_", &r.id));
+        // the list of figures (or tables) links to its own bookmark, round the whole caption:
+        // Word deletes the ones a list linked to when it rebuilds it
+        let toc = self.next_bookmark();
+        let mut c = format!("<w:bookmarkStart w:id=\"{toc}\" w:name=\"{}\"/>", bookmark(TOC, &r.id));
+        c.push_str(&format!("<w:bookmarkStart w:id=\"{rf}\" w:name=\"{}\"/>", bookmark(REF, &r.id)));
         c.push_str(&rpr.text(&before));
-        c.push_str(&format!("<w:bookmarkStart w:id=\"{num}\" w:name=\"{}\"/>", bookmark("_Num_", &r.id)));
+        c.push_str(&format!("<w:bookmarkStart w:id=\"{num}\" w:name=\"{}\"/>", bookmark(NUM, &r.id)));
         c.push_str(&rpr.field(&format!("SEQ {seq} \\* ARABIC"), &n.to_string()));
         c.push_str(&format!("<w:bookmarkEnd w:id=\"{num}\"/>"));
         let trimmed = trim_label(&after);
         c.push_str(&rpr.text(&trimmed));
         c.push_str(&format!("<w:bookmarkEnd w:id=\"{rf}\"/>"));
         c.push_str(&rpr.text(&format!("{} ", &after[trimmed.len().min(after.len())..])));
-        c.push_str(&format!("<w:bookmarkStart w:id=\"{title}\" w:name=\"{}\"/>", bookmark("_Title_", &r.id)));
+        c.push_str(&format!("<w:bookmarkStart w:id=\"{title}\" w:name=\"{}\"/>", bookmark(TITLE, &r.id)));
         c.push_str(&djot::runs(self, text, &rpr, &r.id));
-        c.push_str(&format!("<w:bookmarkEnd w:id=\"{title}\"/>"));
+        c.push_str(&format!("<w:bookmarkEnd w:id=\"{title}\"/><w:bookmarkEnd w:id=\"{toc}\"/>"));
         Some(Block::Para(
             PPr { style: Some("Caption".into()), ind_left: ind, ind_right: right, ..PPr::default() },
             c,
@@ -1333,7 +1337,7 @@ impl<'a> Writer<'a> {
             }
             c.push_str(&format!(
                 "<w:hyperlink w:anchor=\"{}\" w:history=\"1\">{}{}{}</w:hyperlink>",
-                bookmark("_Ref_", &id),
+                bookmark(TOC, &id),
                 rpr.text(&label),
                 rpr.raw("<w:tab/>"),
                 rpr.text(&page)
@@ -1435,10 +1439,18 @@ impl<'a> Writer<'a> {
                 ..RPr::default()
             };
             let mut c = mark.text(if pass { "✓\u{2002}" } else { "✗\u{2002}" });
-            c.push_str(&format!(
-                "<w:hyperlink w:anchor=\"{}\" w:history=\"1\">{label}</w:hyperlink>",
-                bookmark("_Ref_", &id)
-            ));
+            // a check line is bookmarked, and so is a table with a caption; a link elsewhere
+            // would point at nothing
+            let target =
+                self.region_by_id(&id).is_some_and(|r| r.kind == "math") || self.numbers.contains_key(&id);
+            if target {
+                c.push_str(&format!(
+                    "<w:hyperlink w:anchor=\"{}\" w:history=\"1\">{label}</w:hyperlink>",
+                    bookmark(REF, &id)
+                ));
+            } else {
+                c.push_str(&label);
+            }
             c.push_str(&RPr::default().raw("<w:tab/>"));
             c.push_str(&RPr::default().text(&page));
             out.push(Block::Para(
@@ -1661,7 +1673,9 @@ fn field_runs(text: &str, rpr: &RPr, w: &Writer) -> String {
             "pages" => out.push_str(&rpr.field("NUMPAGES", &pages)),
             "date" => out.push_str(&rpr.field("DATE", &w.opts.date)),
             "time" => out.push_str(&rpr.field("TIME \\@ \"HH:mm\"", &w.opts.time)),
-            "section" => out.push_str(&rpr.field("STYLEREF \"heading 1\"", "")),
+            // the built-in Heading 1 by its level: a style's name is translated in Word's
+            // language ("Título 1"), so `STYLEREF "heading 1"` fails outside English
+            "section" => out.push_str(&rpr.field("STYLEREF 1", "")),
             "file" => out.push_str(&rpr.text(&w.opts.file)),
             "title" => out.push_str(&rpr.text(&title)),
             "author" => out.push_str(&rpr.text(&author)),

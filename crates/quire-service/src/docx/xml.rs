@@ -73,6 +73,15 @@ pub fn hex_color(css: &str) -> Option<String> {
     Some(six.to_ascii_uppercase())
 }
 
+/// Bookmark prefixes: what a reference reads (the heading, or a caption's label and number),
+/// the number alone, a caption's text, and where a contents list's entry links to. They start
+/// with a letter: Word treats names starting with `_` as its own hidden bookmarks, and deletes
+/// those a contents list linked to when it rebuilds the list.
+pub const REF: &str = "Ref_";
+pub const NUM: &str = "Num_";
+pub const TITLE: &str = "Title_";
+pub const TOC: &str = "Toc_";
+
 /// A name Word accepts for a bookmark: letters, digits and `_`, at most 40 characters.
 pub fn bookmark(prefix: &str, id: &str) -> String {
     let clean: String = id.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
@@ -102,6 +111,6 @@ mod tests {
         assert_eq!(hex_color("#1a7f37").as_deref(), Some("1A7F37"));
         assert_eq!(hex_color("red"), None);
         assert_eq!(esc("a < b & \"c\"\u{1}"), "a &lt; b &amp; &quot;c&quot;");
-        assert_eq!(bookmark("_Ref_", "ab:c"), "_Ref_ab_c");
+        assert_eq!(bookmark(REF, "ab:c"), "Ref_ab_c");
     }
 }

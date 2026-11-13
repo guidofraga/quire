@@ -64,7 +64,7 @@ struct Conv<'w, 'a> {
     skip: u32,
     math_index: usize,
     /// `Some(bookmark id)` while the region's first heading is written.
-    heading_mark: Option<u32>,
+    heading_mark: Option<(u32, u32)>,
     links: Vec<bool>,
     in_code_block: bool,
 }
@@ -237,10 +237,15 @@ impl Conv<'_, '_> {
                     p.mark = Some(mark);
                 }
                 if first {
-                    let id = self.w.next_bookmark();
-                    let name = super::xml::bookmark("_Ref_", &self.ctx.region);
-                    self.content().push_str(&format!("<w:bookmarkStart w:id=\"{id}\" w:name=\"{name}\"/>"));
-                    self.heading_mark = Some(id);
+                    // two bookmarks: one for references, one for the contents list's links (Word
+                    // deletes the bookmarks a contents list linked to when it rebuilds the list)
+                    let (id, toc) = (self.w.next_bookmark(), self.w.next_bookmark());
+                    let name = super::xml::bookmark(super::xml::REF, &self.ctx.region);
+                    let toc_name = super::xml::bookmark(super::xml::TOC, &self.ctx.region);
+                    self.content().push_str(&format!(
+                        "<w:bookmarkStart w:id=\"{id}\" w:name=\"{name}\"/><w:bookmarkStart w:id=\"{toc}\" w:name=\"{toc_name}\"/>"
+                    ));
+                    self.heading_mark = Some((id, toc));
                 }
             }
             Container::Paragraph => {
@@ -383,8 +388,9 @@ impl Conv<'_, '_> {
         match c {
             Container::Heading { .. } => {
                 self.pop_run();
-                if let Some(id) = self.heading_mark.take() {
-                    self.content().push_str(&format!("<w:bookmarkEnd w:id=\"{id}\"/>"));
+                if let Some((id, toc)) = self.heading_mark.take() {
+                    self.content()
+                        .push_str(&format!("<w:bookmarkEnd w:id=\"{toc}\"/><w:bookmarkEnd w:id=\"{id}\"/>"));
                 }
                 self.close();
             }

@@ -105,10 +105,88 @@ fn check_package(files: &BTreeMap<String, Vec<u8>>) -> TestResult {
     Ok(())
 }
 
+/// Bookmarks Word can resolve: every name valid (a letter first, then letters, digits and `_`,
+/// at most 40 characters) and used once, every `w:id` once, every start ended; every `REF`,
+/// `PAGEREF` and in-document link names one of them; `STYLEREF` names a heading by its level,
+/// which works in any language Word runs in.
+fn check_fields(files: &BTreeMap<String, Vec<u8>>) -> TestResult {
+    let xml = text(files, "word/document.xml")?;
+    let doc = Xml::parse(xml)?;
+    let mut names: BTreeMap<String, usize> = BTreeMap::new();
+    let mut ids: BTreeMap<String, usize> = BTreeMap::new();
+    for b in doc.descendants().filter(|n| is(n, W, "bookmarkStart")) {
+        let name = attr(&b, "name").ok_or("a bookmark without a name")?;
+        let valid = name.len() <= 40
+            && name.starts_with(|c: char| c.is_ascii_alphabetic())
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        assert!(valid, "Word can't use the bookmark name {name:?}");
+        *names.entry(name.to_string()).or_default() += 1;
+        *ids.entry(attr(&b, "id").ok_or("a bookmark without an id")?.to_string()).or_default() += 1;
+    }
+    for (name, n) in &names {
+        assert_eq!(*n, 1, "bookmark {name} is set {n} times");
+    }
+    for (id, n) in &ids {
+        assert_eq!(*n, 1, "bookmark id {id} is used {n} times");
+    }
+    let ends: Vec<&str> =
+        doc.descendants().filter(|n| is(n, W, "bookmarkEnd")).filter_map(|n| attr(&n, "id")).collect();
+    assert_eq!(ends.len(), ids.len(), "every bookmark is ended once");
+    assert!(ends.iter().all(|e| ids.contains_key(*e)));
+
+    let mut targets = Vec::new();
+    for instr in doc.descendants().filter(|n| is(n, W, "instrText")).filter_map(|n| n.text()) {
+        let mut words = instr.split_whitespace();
+        if let (Some("REF" | "PAGEREF"), Some(target)) = (words.next(), words.next()) {
+            targets.push(target.to_string());
+        }
+    }
+    for link in doc.descendants().filter(|n| is(n, W, "hyperlink")) {
+        if let Some(anchor) = attr(&link, "anchor") {
+            targets.push(anchor.to_string());
+        }
+    }
+    assert!(!targets.is_empty());
+    for t in &targets {
+        assert_eq!(names.get(t), Some(&1), "{t} names no bookmark");
+    }
+    // the contents lists link to bookmarks of their own, never to the ones references use:
+    // Word deletes the bookmarks a contents list linked to when it rebuilds the list
+    for link in doc.descendants().filter(|n| is(n, W, "hyperlink")) {
+        let inside_toc = link.ancestors().any(|a| {
+            is(&a, W, "p")
+                && a.descendants().any(|d| {
+                    is(&d, W, "pStyle")
+                        && attr(&d, "val").is_some_and(|s| s.starts_with("TOC") || s == "TableofFigures")
+                })
+        });
+        if inside_toc {
+            assert!(
+                attr(&link, "anchor").is_some_and(|a| a.starts_with("Toc_")),
+                "a contents entry links to a reference's bookmark"
+            );
+        }
+    }
+    for (name, data) in files.iter().filter(|(k, _)| k.starts_with("word/") && k.ends_with(".xml")) {
+        let part = Xml::parse(std::str::from_utf8(data)?)?;
+        for instr in part.descendants().filter(|n| is(n, W, "instrText")).filter_map(|n| n.text()) {
+            if instr.trim_start().starts_with("STYLEREF") {
+                let arg = instr.split_whitespace().nth(1).unwrap_or_default();
+                assert!(
+                    arg.parse::<u8>().is_ok_and(|l| (1..=9).contains(&l)),
+                    "{name}: {instr:?} names a style, not a level"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn every_region_kind_comes_through_as_word_content() -> TestResult {
     let files = export_fixture(true)?;
     check_package(&files)?;
+    check_fields(&files)?;
     let xml = text(&files, "word/document.xml")?;
     let doc = Xml::parse(xml)?;
     let paras: Vec<Node> = doc.descendants().filter(|n| is(n, W, "p")).collect();
@@ -221,11 +299,11 @@ fn every_region_kind_comes_through_as_word_content() -> TestResult {
         "TOC \\h \\z \\c \"Figure\"",
         "SEQ Figure \\* ARABIC",
         "SEQ Table \\* ARABIC",
-        "REF _Ref_plot2d \\h",
-        "REF _Num_sheett \\h",
-        "REF _Ref_hdgtwo \\r \\h",
-        "PAGEREF _Ref_hdgtwo \\h",
-        "REF _Title_imagee \\h",
+        "REF Ref_plot2d \\h",
+        "REF Num_sheett \\h",
+        "REF Ref_hdgtwo \\r \\h",
+        "PAGEREF Ref_hdgtwo \\h",
+        "REF Title_imagee \\h",
     ] {
         assert!(instr.iter().any(|i| i == field), "no field {field} in {instr:?}");
     }
@@ -285,7 +363,7 @@ fn every_region_kind_comes_through_as_word_content() -> TestResult {
         .filter(|(k, _)| k.starts_with("word/footer"))
         .map(|(_, v)| String::from_utf8_lossy(v).into_owned())
         .collect();
-    for f in [" PAGE ", " NUMPAGES ", " DATE ", "STYLEREF"] {
+    for f in [" PAGE ", " NUMPAGES ", " DATE ", "STYLEREF 1 "] {
         assert!(footers.contains(f), "the footers have no {f} field");
     }
     assert!(footers.contains(">every-region<"), "{{file}} on even pages");
@@ -303,6 +381,7 @@ fn every_region_kind_comes_through_as_word_content() -> TestResult {
 fn without_the_app_a_plot_is_a_framed_placeholder_of_its_size() -> TestResult {
     let files = export_fixture(false)?;
     check_package(&files)?;
+    check_fields(&files)?;
     let doc = Xml::parse(text(&files, "word/document.xml")?)?;
     let drawings = doc.descendants().filter(|n| is(n, W, "drawing")).count();
     assert_eq!(drawings, 1, "only the image, which the bundle holds");
@@ -321,6 +400,7 @@ fn the_beam_template_exports_with_an_equation_for_every_math_region() -> TestRes
         None,
     )?)?;
     check_package(&files)?;
+    check_fields(&files)?;
     let xml = Xml::parse(text(&files, "word/document.xml")?)?;
     let math = doc["regions"].as_array().map_or(0, |r| r.iter().filter(|r| r["kind"] == "math").count());
     let equations = xml.descendants().filter(|n| is(n, M, "oMath")).count();
@@ -332,6 +412,17 @@ fn the_beam_template_exports_with_an_equation_for_every_math_region() -> TestRes
     assert!(pos("Design basis")? < pos("Ultimate limit state")?);
     // the deflection check fails on purpose
     assert!(all.contains("δtot≤δlim.tot\u{2003}✗ fails"), "{all}");
+    Ok(())
+}
+
+#[test]
+fn every_built_in_template_exports_with_fields_word_can_resolve() -> TestResult {
+    for t in crate::templates::list(Path::new("")).into_iter().filter(|t| t.builtin) {
+        let doc = crate::templates::document(Path::new(""), &t.id)?.doc;
+        let files = unpack(&crate::export_docx(&doc, &DocxOptions::default(), None)?)?;
+        check_package(&files).map_err(|e| format!("{}: {e}", t.id))?;
+        check_fields(&files).map_err(|e| format!("{}: {e}", t.id))?;
+    }
     Ok(())
 }
 
