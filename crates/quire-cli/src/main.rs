@@ -20,6 +20,9 @@ usage:
                                   evaluate one expression, e.g. quire calc \"2 'm + 30 'cm\" --in mm
   quire import <file.sm> [out.quire]
                                   convert an SMath Studio worksheet into a .quire bundle
+  quire export <doc.quire> <out.docx>
+                                  write the report as an editable Word document (plots are
+                                  drawn by the app: here they are framed placeholders)
   quire serve [--port <n>]        editor backend on localhost for UI development (default port 7878)
 ";
 
@@ -32,6 +35,7 @@ fn main() -> ExitCode {
         (Some("fmt"), [flag, paths @ ..]) if flag == "--check" && !paths.is_empty() => cmd_fmt_check(paths),
         (Some("calc"), [_, ..]) => cmd_calc(rest),
         (Some("import"), [_] | [_, _]) => cmd_import(rest),
+        (Some("export"), [input, output]) => cmd_export(input, output),
         (Some("serve"), _) => cmd_serve(rest),
         (Some("--version" | "-V"), _) => {
             println!("quire {}", env!("CARGO_PKG_VERSION"));
@@ -278,6 +282,26 @@ fn cmd_import(args: &[String]) -> CmdResult {
     for w in imported.warnings.iter().chain(skipped.iter()) {
         println!("  warning: {w}");
     }
+    Ok(true)
+}
+
+/// `quire export report.quire report.docx`: the report as a Word document. The app draws plots,
+/// so here each is a framed placeholder of its size naming what it plots.
+fn cmd_export(input: &str, output: &str) -> CmdResult {
+    let out = PathBuf::from(output);
+    if !out.extension().is_some_and(|e| e.eq_ignore_ascii_case("docx")) {
+        return Err("quire export writes Word documents: name the output file .docx".into());
+    }
+    let src = Path::new(input);
+    let doc = quire_service::open(src).map_err(|e| format!("{input}: {e}"))?;
+    let file = quire_service::bundle_dir(src)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let (date, time) = quire_cli::utc_now();
+    let opts = quire_service::DocxOptions { file, date, time, flat_units: true, ..Default::default() };
+    quire_service::export_docx_file(&out, &doc, &opts, Some(src)).map_err(|e| format!("{output}: {e}"))?;
+    println!("{input} -> {output}");
     Ok(true)
 }
 

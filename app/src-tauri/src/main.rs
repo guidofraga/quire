@@ -73,6 +73,7 @@ enum Pick {
     Open,
     Save,
     Pdf,
+    Docx,
     Csv,
     Image,
     Notebook,
@@ -107,6 +108,7 @@ async fn pick(window: WebviewWindow, kind: Pick, suggested: Option<String>) -> C
             .blocking_save_file(),
         Pick::Save => dialog.add_filter("Quire document", &["quirez"]).blocking_save_file(),
         Pick::Pdf => dialog.add_filter("PDF", &["pdf"]).blocking_save_file(),
+        Pick::Docx => dialog.add_filter("Word document", &["docx"]).blocking_save_file(),
         Pick::Csv => dialog.add_filter("CSV", &["csv"]).blocking_save_file(),
         Pick::Image => dialog
             .set_title("Insert image")
@@ -121,6 +123,7 @@ async fn pick(window: WebviewWindow, kind: Pick, suggested: Option<String>) -> C
         Pick::Open => scope::document_path(path),
         Pick::Save => scope::with_ext(path, &["quire", "quirez"], DOC_EXT),
         Pick::Pdf => scope::with_ext(path, &["pdf"], "pdf"),
+        Pick::Docx => scope::with_ext(path, &["docx"], "docx"),
         Pick::Csv => scope::with_ext(path, &["csv"], "csv"),
         Pick::Image | Pick::Notebook | Pick::NewNotebook => path,
     };
@@ -305,6 +308,25 @@ fn export_csv(chosen: State<'_, Chosen>, path: PathBuf, contents: String) -> Cmd
         return Err("a table can only be exported to a .csv file".into());
     }
     std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// File ▸ Export as Word…: only ever writes a `.docx` file the user picked. Images come from
+/// the document's bundle when the app may read it, else from those added since it was opened.
+#[tauri::command]
+fn export_docx(
+    chosen: State<'_, Chosen>,
+    path: PathBuf,
+    doc: Json,
+    bundle: PathBuf,
+    options: Json,
+) -> CmdResult<()> {
+    allowed(&chosen, &path)?;
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("docx")) {
+        return Err("Export as Word writes .docx files".into());
+    }
+    let bundle = Some(bundle).filter(|b| !b.as_os_str().is_empty() && allowed(&chosen, b).is_ok());
+    let options = quire_service::DocxOptions::from_json(&options).map_err(err)?;
+    quire_service::export_docx_file(&path, &doc, &options, bundle.as_deref()).map_err(err)
 }
 
 /// Notebooks: list, create, rename, move, trash and search notes in a folder, which must be a
@@ -510,6 +532,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(app, "save_template", "Save as Template…", None)?,
             &sep()?,
             &item(app, "export_pdf", "Export as PDF…", Some("CmdOrCtrl+E"))?,
+            &item(app, "export_docx", "Export as Word…", None)?,
             &item(app, "share_link", "Share Link…", None)?,
             &item(app, "print", "Print…", Some("CmdOrCtrl+P"))?,
             &sep()?,
@@ -838,6 +861,7 @@ fn main() {
             finish_export,
             headless::export_step,
             export_csv,
+            export_docx,
             notebook,
             take_open_requests,
             set_recent,

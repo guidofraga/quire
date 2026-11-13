@@ -31,6 +31,7 @@ import {
 import { announce, cyclePanes, fromKeyboard, spoken, spokenNow, toolbarKeys } from "./a11y";
 import { Canvas, clientToDoc, focusCanvas, reveal, zoomCenter, zoomToFit } from "./Canvas";
 import { describeRegion } from "./describe";
+import { type DocxOptions, docxOptions, downloadDocx } from "./docx";
 import { measureAll } from "./Region";
 import { CompletionPopup } from "./Completion";
 import { undoInMath } from "./MathEditor";
@@ -417,6 +418,31 @@ async function exportPdf(target?: string) {
   if (isTauri) flash(`Exported ${path.split("/").pop()}`);
 }
 
+/**
+ * File ▸ Export as Word…: the engine writes the file; the page adds its plots drawn to PNG and
+ * where things landed. Laid out for print first, as for a PDF, so plots are drawn at print size.
+ * The desktop app writes where the user picks; a browser downloads it.
+ */
+async function exportWord() {
+  const name = `${docTitle().replace(/[\\/:*?"<>|]/g, "-")}.docx`;
+  const path = isTauri ? await api.pick("docx", name) : null;
+  if (isTauri && !path) return;
+  const taken: { options?: DocxOptions } = {};
+  await withPrintLayout(async () => {
+    taken.options = await docxOptions(docTitle());
+  });
+  const options = taken.options;
+  if (!options) return;
+  const bundle = state.path ?? state.origin ?? "";
+  if (path) {
+    await api.exportDocx(path, unwrap(state.doc), bundle, options);
+    flash(`Exported ${path.split(/[\\/]/).pop()}`);
+  } else {
+    downloadDocx(await api.docxBytes(unwrap(state.doc), bundle, options), name);
+    flash(`Downloaded ${name}`);
+  }
+}
+
 async function printDocument() {
   await withPrintLayout(async () => {
     // Print stays a dialog everywhere; only macOS hands the job to the native print engine
@@ -759,6 +785,8 @@ function runCommand(id: string) {
       return togglePageGuides();
     case "export_pdf":
       return exportPdf().catch((e) => flash(`Could not export: ${e.message ?? e}`));
+    case "export_docx":
+      return exportWord().catch((e) => flash(`Could not export: ${e.message ?? e}`));
     case "print":
       return printDocument().catch((e) => flash(`Could not print: ${e.message ?? e}`));
   }

@@ -1,0 +1,133 @@
+{
+  "format": "quire/1",
+  "meta": {
+    "title": "Every region kind",
+    "authors": ["A. Engineer"],
+    "company": "Example Engineering",
+    "lang": "en"
+  },
+  "settings": {"display": {"decimals": 2, "resultUnits": "working", "groupDigits": true}},
+  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
+  "page": {
+    "view": "pages",
+    "paper": "A4",
+    "margins": {"top": "25mm", "right": "20mm", "bottom": "22mm", "left": "20mm"},
+    "header": {
+      "left": "{company}",
+      "right": "{title}",
+      "color": "#5f6670",
+      "rule": {},
+      "image": {"src": "assets/503d139a61f01ff8.png", "slot": "center", "height": "6mm"}
+    },
+    "footer": {
+      "left": "{date}",
+      "center": "{section}",
+      "right": "Page {page} of {pages}",
+      "color": "#5f6670",
+      "rule": {"width": "0.75pt"},
+      "even": {"left": "Page {page} of {pages}", "right": "{file}"}
+    },
+    "firstPage": {"header": false}
+  },
+  "regions": [
+    {"id": "ttlttl", "kind": "text", "at": [0, 0], "text": "{.title}\n# Every region kind"},
+    {"id": "toctoc", "kind": "toc", "at": [0, 50], "of": "headings", "title": "Contents"},
+    {"id": "figlst", "kind": "toc", "at": [0, 190], "of": "figures", "title": "Figures"},
+    {"id": "chklst", "kind": "toc", "at": [0, 290], "of": "checks", "title": "Summary of checks"},
+    {"id": "hdgone", "kind": "text", "at": [0, 420], "style": {"size": 12}, "text": "# Text and formatting"},
+    {
+      "id": "fmttxt",
+      "kind": "text",
+      "at": [0, 452],
+      "text": "Plain, *bold*, _italic_, [underlined]{.underline}, [struck]{.strike}, {-deleted-}, {+inserted+}, {=marked=}, x^2^ and H~2~O, `code`, [red]{color=\"#c00\"}, [large]{size=14}, a link to <https://example.com> and [another](https://www.example.org/page).\n\nSee [](#ref:plot2d), [](#ref:sheett), table [](#ref:sheett){.num}, [](#ref:hdgtwo) on [](#ref:hdgtwo){.page}, and [](#ref:imagee){.title}.\n\n- first item\n- second item\n\n  - nested item\n\n- third item\n\n1. one\n2. two\n3. three\n\n> A quoted remark."
+    },
+    {"id": "hdgtwo", "kind": "text", "at": [0, 700], "text": "## Math"},
+    {"id": "mathqq", "kind": "math", "at": [0, 730], "expr": "q := 12 kN/m", "note": "uniform load"},
+    {"id": "mathll", "kind": "math", "at": [260, 730], "expr": "L := 6 m"},
+    {"id": "mathbb", "kind": "math", "at": [0, 765], "expr": "b := 300 mm"},
+    {"id": "mathhh", "kind": "math", "at": [260, 765], "expr": "h := 500 mm"},
+    {"id": "mathmm", "kind": "math", "at": [0, 805], "expr": "M := q*L^2/8", "show": "value", "display": {"unit": "kN*m"}},
+    {"id": "inltxt", "kind": "text", "at": [300, 815], "text": "so the moment at midspan is $`M =`."},
+    {"id": "mathan", "kind": "math", "at": [0, 860], "expr": "d.diag := sqrt(b^2 + h^2)", "show": "value", "display": {"unit": "mm"}},
+    {"id": "mathrt", "kind": "math", "at": [0, 915], "expr": "r := root(27, 3)", "show": "value"},
+    {"id": "mathmx", "kind": "math", "at": [0, 960], "expr": "K := [2, -1; -1, 2]", "show": "value"},
+    {"id": "mathfn", "kind": "math", "at": [0, 1030], "expr": "f(x) := max(sin(x), cos(x)) + abs(x)"},
+    {"id": "mathsm", "kind": "math", "at": [0, 1070], "expr": "S := sum(i^2, i, 1, 10)", "show": "value"},
+    {"id": "mathsy", "kind": "math", "at": [0, 1125], "expr": "diff(x^3, x)", "show": "symbolic"},
+    {"id": "mathck", "kind": "math", "at": [0, 1175], "expr": "M <= 60 kN*m", "note": "bending"},
+    {"id": "mathcf", "kind": "math", "at": [0, 1210], "expr": "M <= 40 kN*m", "note": "deliberately failing"},
+    {"id": "mathok", "kind": "math", "at": [0, 1245], "expr": "verdict := if(M < 60 kN*m, \"OK\", \"FAIL\")", "show": "value"},
+    {"id": "matere", "kind": "math", "at": [0, 1280], "expr": "z := undefinedname + 1", "show": "value"},
+    {"id": "hdgthr", "kind": "text", "at": [0, 1330], "style": {"size": 12}, "text": "# Tables and figures"},
+    {
+      "id": "sheett",
+      "kind": "table",
+      "at": [0, 1365],
+      "name": "loads",
+      "header": {"row": true},
+      "caption": {"text": "Loads per metre", "position": "above"},
+      "display": {"decimals": 2},
+      "columns": [{"width": 130}, {"width": 120, "align": "right"}, {"width": 70, "align": "right"}, {"width": 120, "align": "right"}, {"width": 80}],
+      "rows": [
+        ["Load", "Characteristic", "γ", "Design", "Check"],
+        ["Permanent", "6 kN/m", "1.35", "=B2*C2", "=IF(D2<10 kN/m, \"OK\", \"FAIL\")"],
+        ["Variable", "8 kN/m", "1.5", "=B3*C3", "=IF(D3<10 kN/m, \"OK\", \"FAIL\")"],
+        ["Total", "=SUM(B2:B3)", "", "=SUM(D2:D3)", ""]
+      ]
+    },
+    {"id": "bndmat", "kind": "math", "at": [0, 1520], "expr": "R := [1, 2, 3; 4, 5, 6]"},
+    {
+      "id": "boundt",
+      "kind": "table",
+      "at": [0, 1560],
+      "source": "R",
+      "header": {"row": true, "column": true},
+      "caption": {"text": "A bound matrix"}
+    },
+    {
+      "id": "plot2d",
+      "kind": "plot2d",
+      "at": [0, 1680],
+      "size": [320, 190],
+      "series": [{"y": "q*x*(L - x)/2", "x": "x", "range": "0 m..L", "label": "M"}],
+      "axes": {"x": {"unit": "m"}, "y": {"unit": "kN*m"}},
+      "caption": {"text": "Bending moment"}
+    },
+    {
+      "id": "plot3d",
+      "kind": "plot3d",
+      "at": [340, 1680],
+      "size": [300, 220],
+      "series": [{"surface": "sin(x)*cos(y)", "xrange": "-π..π", "yrange": "-π..π"}],
+      "caption": {"text": "A surface"}
+    },
+    {
+      "id": "imagee",
+      "kind": "image",
+      "at": [0, 1940],
+      "size": [192, 128],
+      "src": "assets/503d139a61f01ff8.png",
+      "caption": {"text": "A picture", "position": "below"}
+    },
+    {
+      "id": "solveb",
+      "kind": "solve",
+      "at": [0, 2120],
+      "guesses": ["x := 1", "y := 1"],
+      "given": ["x + y == 10", "x - y == 2"],
+      "find": "[x; y] := find(x, y)",
+      "show": "value"
+    },
+    {
+      "id": "areaaa",
+      "kind": "area",
+      "at": [0, 2330],
+      "height": 80,
+      "title": "Working",
+      "regions": [{"id": "inarea", "kind": "math", "at": [0, 30], "expr": "w := 2*q", "show": "value"}]
+    },
+    {"id": "pgbrkk", "kind": "pagebreak", "at": [0, 2440]},
+    {"id": "hdgfou", "kind": "text", "at": [0, 2470], "style": {"size": 12}, "text": "# After the page break"},
+    {"id": "lsttxt", "kind": "text", "at": [0, 2505], "text": "This paragraph starts a new page."}
+  ]
+}

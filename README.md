@@ -123,7 +123,7 @@ The engine also works on the command line:
 cargo run -q -p quire-cli -- calc "2 m + 30 cm" --in mm
 ```
 
-`quire eval <doc>` prints a document's calculations, `quire check <doc>` compares them with known results, and `quire import file.sm out.quire` converts an SMath worksheet.
+`quire eval <doc>` prints a document's calculations, `quire check <doc>` compares them with known results, `quire import file.sm out.quire` converts an SMath worksheet, and `quire export doc.quire out.docx` writes the report as an editable Word document.
 
 | Crate | What it does |
 |---|---|

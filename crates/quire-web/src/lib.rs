@@ -65,6 +65,11 @@ pub fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
         "save_bytes" => {
             quire_service::save_bytes(doc()?).map(|b| Json::String(BASE64.encode(b))).map_err(err)
         }
+        // Export as Word: the images are staged, as everything is here
+        "docx_bytes" => {
+            let options = body.get("options").cloned().unwrap_or(Json::Null);
+            quire_service::export_docx_base64(doc()?, &options, None).map(Json::String).map_err(err)
+        }
         _ => Err(format!("{command} is not available in the browser")),
     }
 }
@@ -167,6 +172,17 @@ mod tests {
         let Ok(Ok(Ok(report))) = run.map(|h| h.join()) else { std::process::abort() };
         assert!(report.contains("\"resultText\":\"250\""), "{report:.300}");
         assert!(report.contains("too deeply nested"), "{report:.300}");
+    }
+
+    #[test]
+    fn exports_a_template_as_a_word_file() -> Result<(), Box<dyn std::error::Error>> {
+        let doc = dispatch("open_template", &json!({ "id": "builtin:beam" }))?["doc"].clone();
+        let data = dispatch("docx_bytes", &json!({ "doc": doc, "options": { "file": "Beam" } }))?;
+        let bytes = BASE64.decode(data.as_str().ok_or("not base64 text")?)?;
+        // a ZIP package, with the Word body in it
+        assert!(bytes.starts_with(b"PK\x03\x04"));
+        assert!(bytes.windows(17).any(|w| w == b"word/document.xml"));
+        Ok(())
     }
 
     #[test]
