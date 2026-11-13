@@ -801,12 +801,14 @@ export function PlotBody(props: { r: Region }) {
           −
         </button>
         <Show when={zoomed()}>
-          <button title="Back to the whole plot" aria-label="Back to the whole plot" onClick={() => setZoomed(null)}>
-            ⤢
-          </button>
-          <button title="Keep this view as the axis limits" aria-label="Keep this view" onClick={keepView}>
-            Keep
-          </button>
+          <div class="plot-tools-extra">
+            <button title="Back to the whole plot" aria-label="Back to the whole plot" onClick={() => setZoomed(null)}>
+              ⤢
+            </button>
+            <button title="Keep this view as the axis limits" aria-label="Keep this view" onClick={keepView}>
+              Keep
+            </button>
+          </div>
         </Show>
       </div>
       <Show when={readout()}>
