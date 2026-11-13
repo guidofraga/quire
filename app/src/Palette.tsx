@@ -38,6 +38,7 @@ const COMMANDS: [string, string, string][] = [
   ["save_as", "Save As…", `${shift}${mod}S`],
   ["save_template", "Save as Template…", ""],
   ["export_pdf", "Export as PDF…", `${mod}E`],
+  ["export_docx", "Export as Word…", ""],
   ["share_link", "Share Link…", ""],
   ["print", "Print…", `${mod}P`],
   ["document_settings", "Document Settings…", `${alt}${mod},`],

@@ -7,7 +7,7 @@ use jotdown::{AttributeKind, Attributes, Container, Event};
 
 /// Earlier versions wrote text colours unquoted (`[x]{color=#c00}`), which Djot does not
 /// accept as an attribute value; quote them so those documents keep their colours.
-fn quote_colors(src: &str) -> Cow<'_, str> {
+pub(crate) fn quote_colors(src: &str) -> Cow<'_, str> {
     quote_colors_at(src, &mut Vec::new())
 }
 

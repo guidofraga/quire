@@ -17,10 +17,16 @@ serde_json.workspace = true
 jotdown = "0.10"
 base64 = "0.23"
 sha2 = "0.11"
+# Export as Word: the .docx package is a ZIP of hand-written XML (MIT; already used by quire-doc)
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # the system Trash; the browser build (quire-web) has no file system
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 trash = "5"
+
+[dev-dependencies]
+# reads the exported Word files back in tests (MIT OR Apache-2.0; quire-smath uses it too)
+roxmltree = "0.21"
 
 [lints]
 workspace = true

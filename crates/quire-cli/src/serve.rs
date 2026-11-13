@@ -49,6 +49,12 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             serde_json::to_value(found).map_err(|e| e.to_string())
         }
         "djot_html" => Ok(Json::String(quire_service::render_djot_editable(arg(body, "src")?))),
+        "docx_bytes" => {
+            let doc = body.get("doc").ok_or("missing \"doc\"")?;
+            let bundle = body.get("bundle").and_then(Json::as_str).filter(|b| !b.is_empty()).map(Path::new);
+            let options = body.get("options").cloned().unwrap_or(Json::Null);
+            quire_service::export_docx_base64(doc, &options, bundle).map(Json::String).map_err(err)
+        }
         "import_image" => {
             quire_service::assets::stage_file(Path::new(arg(body, "path")?)).map(Json::String).map_err(err)
         }

@@ -6,6 +6,7 @@
 
 pub mod assets;
 pub mod canonical;
+mod docx;
 mod names;
 pub mod notebook;
 pub mod templates;
@@ -26,6 +27,7 @@ use quire_eval::{
 use serde::Serialize;
 use serde_json::{Value as Json, json};
 
+pub use docx::DocxOptions;
 pub use names::{upgrade_document, upgrade_names};
 pub use text::{inline_math, render_djot, render_djot_editable, render_djot_with_math};
 
@@ -1460,6 +1462,45 @@ pub(crate) fn blank_document() -> Json {
         },
         "regions": []
     })
+}
+
+// ---------------------------------------------------------------------------
+// Export as Word
+// ---------------------------------------------------------------------------
+
+/// The document as a Word file (`.docx`), evaluated as the editor shows it. Images are read from
+/// the staging area, else from `bundle` (the document's `.quire` or `.quirez`, when it has one).
+/// See `docx/mod.rs` for what is carried over, and [`DocxOptions`] for what the app adds.
+pub fn export_docx(doc: &Json, opts: &DocxOptions, bundle: Option<&Path>) -> Result<Vec<u8>> {
+    let report = report(doc)?;
+    let read = |src: &str| -> Option<Vec<u8>> {
+        let src = checked_asset(src).ok()?;
+        if let Some(bytes) = assets::staged(src) {
+            return Some(bytes);
+        }
+        let bundle = bundle.filter(|b| !b.as_os_str().is_empty())?;
+        if quire_doc::is_single_file(bundle) {
+            quire_doc::read_entry(bundle, src).ok().flatten()
+        } else {
+            std::fs::read(bundle_dir(bundle).join(src)).ok()
+        }
+    };
+    docx::write(doc, &report, opts, &read)
+}
+
+/// [`export_docx`] written to `path` (replaced whole: a reader never sees half a file).
+pub fn export_docx_file(path: &Path, doc: &Json, opts: &DocxOptions, bundle: Option<&Path>) -> Result<()> {
+    let bytes = export_docx(doc, opts, bundle)?;
+    let tmp = path.with_extension("docx.tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// [`export_docx`] for a browser: the options as the app sends them, the file as base64.
+pub fn export_docx_base64(doc: &Json, opts: &Json, bundle: Option<&Path>) -> Result<String> {
+    let opts = DocxOptions::from_json(opts)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(export_docx(doc, &opts, bundle)?))
 }
 
 /// Asset references are content-addressed names inside the bundle: `assets/<16 hex>.<ext>`.

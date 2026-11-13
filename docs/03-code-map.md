@@ -66,19 +66,20 @@ Saving is the same path in reverse: `api.save` → `quire_service::save`, which 
 | | `plot3d.rs` | 3D plots: surfaces `z(x, y)` on a grid, parametric curves and surfaces, matrices of heights and point data, in the axis units. |
 | | `symbolic/` | `→`: `mod.rs` (the expression tree and rewriting), `simplify.rs`, `poly.rs` (factoring), `solve.rs`, `integrate.rs`, `limit.rs` (limits and series), `work.rs` (the work budget and depth limits), `tests.rs`. `bridge.rs`: formulas as values (`Value::Sym`) in SMath documents, where a name with no value is a symbol. |
 | `quire-doc` | `lib.rs`, `lenient.rs`, `single.rs` | The document model; unknown keys are kept in `extra` maps. `lenient.rs` reads what it can of values it doesn't expect, keeps them as written, and turns regions it can't read into placeholders (held for the editor on open, put back on save). `.quirez` (one ZIP file) in `single.rs`. |
-| `quire-service` | `lib.rs` | `report`, `open`, `save`, `new_document`, `library` (units and constants for the galleries), `complete` (what a name can mean where it is typed), `open_json` and `store_json` (a document in a link, read and kept as a file is). |
+| `quire-service` | `lib.rs` | `report`, `open`, `save`, `export_docx`, `new_document`, `library` (units and constants for the galleries), `complete` (what a name can mean where it is typed), `open_json` and `store_json` (a document in a link, read and kept as a file is). |
 | | `names.rs` | Applies `quire-eval`'s `names.rs` to every stored expression of a document, in the order the worksheet runs them: on open (`2 'T`) and on save (`2*T`). |
 | | `canonical.rs` | Canonical `document.json` output: key order and line breaks are fixed, so diffs stay small. |
 | | `assets.rs` | Images, content-addressed (`assets/<sha256:16>.<ext>`), staged in memory until the first save. |
 | | `text.rs` | Djot → HTML for text regions; documents are untrusted, so raw HTML is dropped. |
 | | `templates.rs`, `templates/*.json` | Built-in templates and the user's own. |
+| | `docx/` | Export as Word (`export_docx`): the `.docx` written by hand as Office Open XML and zipped. `mod.rs` (the writer: one function per region kind, captions as `SEQ` fields, cross-references as `REF` fields, headers and footers, `DocxOptions`: what the app adds), `layout.rs` (reading order; regions side by side become rows of a borderless table; heights measured by the app, or estimated), `omml.rs` (the AST as Word equations, following `app/src/math.ts`), `djot.rs` (text as paragraphs), `package.rs` (styles, numbering, settings, relationships, the ZIP), `tests.rs` (unpacks the file and reads it back; fixture `tests/fixtures/every-region.quire`). |
 | | `notebook.rs` | Notebooks: list, create, rename, move (one item or several at once, `move_items`: all checked before anything moves), duplicate, trash, style, search. The order the user arranged is kept per folder in `.quire-notebook.json` and follows every operation. One entry point, `call(op, args)`. |
 | `quire-web` | `lib.rs` | The service as WebAssembly for the web version: `dispatch` (the calls a browser can make, files as base64) behind a plain `alloc`/`call` interface, no binding generator. Built with `npm --prefix app run wasm` (the `web` profile in `Cargo.toml`, optimised for size). |
 | `quire-smath` | `lib.rs` | `convert` and `convert_file` (the file name sets the document's source): XML in, `Imported` out (document, cached results, assets, warnings). |
 | | `convert.rs` | The importer proper: settings, metadata, page model, and every region kind. |
 | | `math.rs` | SMath's RPN math tokens → AST → Quire's linear syntax. |
 | | `text.rs` | SMath's XHTML-like paragraphs → Djot. |
-| `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`), `quire import <file.sm> [out.quire]`. |
+| `quire-cli` | `main.rs`, `lib.rs` | `quire calc`, `quire eval`, `quire fmt --check`, `quire check` (compare with `results.json`), `quire import <file.sm> [out.quire]`, `quire export <doc> <out.docx>`. |
 | | `serve.rs` | `quire serve`: the service over `127.0.0.1` for UI work. Development only; it checks the Host header and a custom request header. |
 | | `tests/` | Fixtures with independently known results; see [05-testing.md](05-testing.md). |
 
@@ -157,6 +158,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `latex.ts` | AST → LaTeX (Copy as LaTeX). |
 | `csv.ts` | CSV in and out of tables. |
 | `export.ts` | PDF details, image downsampling, link targets for `pdf.rs`. |
+| `docx.ts` | Export as Word: each plot drawn to PNG at 300 dpi (the SVG with its stylesheet written in, the 3D canvas), images Word can't show (SVG, WebP) likewise, and the measured heights and pages, for `quire-service`'s `docx/`. |
 | `share.ts`, `ShareDialog.tsx` | Documents in links (`#doc=`, deflated and base64url) and the Share dialog. |
 
 **Accessibility**

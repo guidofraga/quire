@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import { expect, type Page, test } from "@playwright/test";
 import { audit } from "./axe";
+import { exportWord, pngSize } from "./docx";
 
 const regions = (page: Page) => page.locator(".region");
 
@@ -104,6 +105,20 @@ test("Save downloads a .quirez, and Open reads it back", async ({ page }) => {
   await (await chooser).setFiles({ name: "Untitled.quirez", mimeType: "application/zip", buffer: bytes });
   await expect(regions(page)).toHaveCount(2);
   await expect(regions(page).nth(1)).toContainText(/=21\s*m$/);
+});
+
+test("Export as Word downloads a .docx written by the WebAssembly engine, plots included", async ({ page }) => {
+  await page.getByRole("button", { name: /Simply supported beam/ }).click();
+  await expect(page.locator('[data-region="bmdnwh"]')).toContainText(/123\.11\s*kN/);
+  const { name, files } = await exportWord(page);
+  // Linux WebKit saves downloads with underscores for spaces
+  expect(name.replace(/_/g, " ")).toBe("Simply supported beam.docx");
+  const body = files.get("word/document.xml")!.toString("utf8");
+  expect(body).toContain("<m:oMath>");
+  expect(body).toContain(">123.11</m:t>");
+  const pictures = [...files.keys()].filter((k) => k.startsWith("word/media/"));
+  expect(pictures).toHaveLength(2);
+  for (const p of pictures) expect(pngSize(files.get(p)!)[0]).toBeGreaterThanOrEqual(900);
 });
 
 test("Ctrl+Z undoes typing inside a math region, and Ctrl+Shift+Z redoes it", async ({ page }) => {

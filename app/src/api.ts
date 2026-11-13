@@ -1,6 +1,7 @@
 // Bridge to the Rust backend: Tauri commands in the app, the engine compiled to WebAssembly
 // in the web version, `quire serve` over /api in a browser while developing.
 import { callEngine } from "./engine";
+import type { DocxOptions } from "./docx";
 import type { PdfInfo } from "./export";
 import type { Completion, Doc, Library, Report } from "./types";
 
@@ -56,6 +57,11 @@ export const api = {
   /** A headless export's progress, for the app's watchdog (it ends a run that stops moving). */
   exportStep: (step: string) => call<null>("export_step", { step }),
   exportCsv: (path: string, contents: string) => call<null>("export_csv", { path, contents }),
+  /** Export as Word, in the desktop app: written to `path`, which the user picked. */
+  exportDocx: (path: string, doc: Doc, bundle: string, options: DocxOptions) =>
+    call<null>("export_docx", { path, doc, bundle, options }),
+  /** Export as Word, in a browser: the file's bytes as base64, to download. */
+  docxBytes: (doc: Doc, bundle: string, options: DocxOptions) => call<string>("docx_bytes", { doc, bundle, options }),
   /** The web version's files, which travel as base64: a `.quirez` (or `document.json`) in, a `.quirez` out. */
   openBytes: (data: string) => call<Doc>("open_bytes", { data }),
   saveBytes: (doc: Doc) => call<string>("save_bytes", { doc }),
@@ -84,7 +90,7 @@ export const api = {
   takeOpenRequests: () => (isTauri ? call<string[]>("take_open_requests") : Promise.resolve([] as string[])),
 };
 
-export type PickKind = "open" | "save" | "pdf" | "csv" | "image" | "notebook" | "new_notebook";
+export type PickKind = "open" | "save" | "pdf" | "docx" | "csv" | "image" | "notebook" | "new_notebook";
 
 export interface TemplateInfo {
   id: string;
