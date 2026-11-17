@@ -8,6 +8,6 @@ mod db;
 mod dim;
 mod rational;
 
-pub use db::{Unit, UnitRegistry};
+pub use db::{PREFIXES, Prefix, Unit, UnitInfo, UnitRegistry, catalog, quantity_of, unit_info};
 pub use dim::{BASE_UNITS, Dim, format_product};
 pub use rational::Rational;

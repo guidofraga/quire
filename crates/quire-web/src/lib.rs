@@ -39,6 +39,15 @@ pub fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             quire_service::complete(doc()?, arg(body, "regionId")?, arg(body, "prefix")?).map_err(err)?,
         )
         .map_err(|e| e.to_string()),
+        "complete_units" => serde_json::to_value(
+            quire_service::complete_units(doc()?, arg(body, "regionId")?, arg(body, "query")?)
+                .map_err(err)?,
+        )
+        .map_err(|e| e.to_string()),
+        "show_in" => serde_json::to_value(
+            quire_service::show_in(doc()?, arg(body, "regionId")?, arg(body, "query")?).map_err(err)?,
+        )
+        .map_err(|e| e.to_string()),
         "djot_html" => Ok(Json::String(quire_service::render_djot_editable(arg(body, "src")?))),
         "stage_image" => quire_service::assets::stage_base64(arg(body, "data")?, arg(body, "ext")?)
             .map(Json::String)

@@ -58,8 +58,10 @@ const SYMBOLS: &[(&str, &str)] = &[
     ("?", "?"),
 ];
 
+/// `°` starts a name too, so a temperature or an angle is written as it is printed:
+/// `20 °C`, `-40 °F`, `30°` (the quoted `'°C` always worked).
 fn is_ident_start(c: char) -> bool {
-    c.is_alphabetic() || c == '_' || c == '∞' || c == '…'
+    c.is_alphabetic() || matches!(c, '_' | '∞' | '…' | '°')
 }
 
 fn is_ident_continue(c: char) -> bool {

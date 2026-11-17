@@ -1,6 +1,7 @@
 // Math regions while you type: the linear editor, Greek and LaTeX shortcuts, prose detection
 // (a sentence becomes text), and the meanings of a name: Ctrl+Space lists them, a list opens by
-// itself after two letters, and ⌥Enter cycles the name at the caret through them.
+// itself after two letters (after one where a unit goes, `20 C`, searching the units by symbol,
+// name and quantity), and ⌥Enter cycles the name at the caret through them.
 import { nameAt, setCaretName } from "./trace";
 import { paletteOpen } from "./Palette";
 import { stepRegion } from "./nav";
@@ -18,11 +19,17 @@ import {
   forgetMeanings,
   KIND_WORD,
   knownMeanings,
+  knownShowIn,
+  knownUnitMeanings,
+  looselyIn,
   meanings,
   type NameSpan,
   nameSpan,
+  showInChoices,
+  unitMeanings,
+  unitPosition,
 } from "./names";
-import type { Completion } from "./types";
+import type { Completion, UnitChoice } from "./types";
 import { latexToLinear } from "./clipboard";
 import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
 import {
@@ -143,14 +150,18 @@ const POPULAR = [
 
 const measure = document.createElement("canvas").getContext("2d")!;
 
-/** Screen position just below the caret of a single-line input. */
-function caretPoint(input: HTMLInputElement): [number, number] {
+/** Screen position just below the caret of a single-line input, and the top of its line. */
+function caretPoint(input: HTMLInputElement): [number, number, number] {
   const style = getComputedStyle(input);
   measure.font = style.font;
   const width = measure.measureText(input.value.slice(0, input.selectionStart ?? 0)).width;
   const rect = input.getBoundingClientRect();
   const scale = rect.width / input.offsetWidth || 1;
-  return [rect.left + (parseFloat(style.paddingLeft) + width - input.scrollLeft) * scale, rect.bottom + 4];
+  return [
+    rect.left + (parseFloat(style.paddingLeft) + width - input.scrollLeft) * scale,
+    rect.bottom + 4,
+    rect.top - 4,
+  ];
 }
 
 /** The character offset in a single-line input nearest to screen x. */
@@ -276,8 +287,8 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     if (!m) return inShownUnit() ? unitSuggestions() : nameSuggestions(typing);
     const caret = input.selectionStart ?? 0;
     const items = m[1] ? completions(m[1], 8, "math") : [...commandsFor("math"), ...POPULAR];
-    const [x, y] = caretPoint(input);
-    showCompletions(x, y, items, (sym) => applySymbol(input, sym, caret - m[0].length, caret));
+    const [x, y, top] = caretPoint(input);
+    showCompletions(x, y, items, (sym) => applySymbol(input, sym, caret - m[0].length, caret), false, "symbols", top);
   };
   /** The caret is after the `=` that shows the result, where the unit to show it in goes. */
   const inShownUnit = () =>
@@ -301,14 +312,22 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     rewrite(span?.from ?? caret, span?.to ?? caret, insert);
   };
   const toItem = (c: Completion): Item => {
-    const preview = prettyValue(c.preview);
+    // a unit by what it is called and measures ("degree Celsius · temperature"), a constant by
+    // its name, your variable by its value
+    const about =
+      c.kind === "unit" && c.title
+        ? [c.title, c.quantity].filter(Boolean).join(" · ")
+        : c.kind === "constant" && c.title
+          ? c.title
+          : prettyValue(c.preview);
     return {
       name: c.name,
       insert: c.insert,
-      note: preview,
+      note: about,
       kind: c.kind,
-      html: nameHtml(c.name, c.kind),
-      speak: `${c.name}, ${KIND_WORD[c.kind]}, ${preview}`,
+      // a unit only ever written quoted shows its quote
+      html: `${c.quotedOnly ? "'" : ""}${nameHtml(c.name, c.kind)}`,
+      speak: `${c.name}, ${KIND_WORD[c.kind]}, ${about}`,
     };
   };
 
@@ -317,7 +336,8 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
   /**
    * The meanings of the name at the caret. Asked for (Ctrl+Space), the list lists them all and
    * Enter takes one; by itself it opens only after two letters that start a name, quietly:
-   * Enter still finishes the line until the arrows move into it. Typing narrows either.
+   * Enter still finishes the line until the arrows move into it. Typing narrows either. Where a
+   * unit goes (`20 C`) it opens after one letter, with the units that match best first.
    */
   const nameSuggestions = (typing: boolean, ask = false) => {
     const gen = ++nameGen;
@@ -330,7 +350,12 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     // asked for between names: everything there is
     const here: NameSpan | null = span ?? (ask ? { from: caret, to: caret, name: "", marker: "", typed: "" } : null);
     const prefix = here ? (asked ? here.typed || here.name : here.typed) : "";
-    const starts = typing && here?.to === caret && /^\p{L}{2}/u.test(prefix) && !KEYWORDS.has(prefix.toLowerCase());
+    const unitHere = !!here && here.marker !== "#" && unitPosition(input.value, here.from);
+    const starts =
+      typing &&
+      here?.to === caret &&
+      (unitHere ? /^[\p{L}°]/u.test(prefix) : /^\p{L}{2}/u.test(prefix)) &&
+      !KEYWORDS.has(prefix.toLowerCase());
     if (!here || !(asked || (prefix && (namesOpen || starts)))) {
       if (open) hideCompletions();
       return;
@@ -338,11 +363,13 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     if (open && !namesOpen) hideCompletions();
     const id = viewId;
     const value = input.value;
+    const search = unitHere && !!prefix;
     let toSay = ask;
     const show = (all: Completion[]) => {
       if (gen !== nameGen || input.value !== value || document.activeElement !== input) return;
+      // a unit search is ranked by the engine; names are listed by how they start
       const fits = (c: Completion) =>
-        c.name.startsWith(prefix) &&
+        (search || c.name.startsWith(prefix)) &&
         (here.marker === "'" ? c.kind === "unit" : here.marker === "#" ? c.kind === "constant" : true);
       const items = all.filter(fits).slice(0, 100).map(toItem);
       // a list that would only repeat what is typed stays closed
@@ -353,16 +380,19 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
         toSay = false;
         return;
       }
-      const [x, y] = caretPoint(input);
-      showCompletions(x, y, items, (item) => replaceName(item.insert), !asked, "names");
+      const [x, y, top] = caretPoint(input);
+      showCompletions(x, y, items, (item) => replaceName(item.insert), !asked, "names", top);
       if (toSay) announceFirst();
       toSay = false;
     };
     // what is known answers now; the engine is asked once typing pauses
-    const known = knownMeanings(id, prefix);
+    // with its quote typed (`20 'c`) the units SMath writes only quoted are searched too
+    const query = here.marker === "'" ? `'${prefix}` : prefix;
+    const known = search ? knownUnitMeanings(id, query) : knownMeanings(id, prefix);
     if (known) show(known.list);
     if (known?.exact) return;
-    nameTimer = setTimeout(() => void meanings(id, prefix).then(show), asked ? 0 : 150);
+    const lookUp = () => (search ? unitMeanings(id, query) : meanings(id, prefix));
+    nameTimer = setTimeout(() => void lookUp().then(show), asked ? 0 : 150);
   };
 
   /** ⌥Enter: the name at the caret takes its next meaning here (yours → unit → constant). */
@@ -385,37 +415,54 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
   };
 
   // after `=`, the units the result can be shown in, each with the result in it (SMath's
-  // unit placeholder); typing narrows the list, ↑↓ and Tab pick, Enter still finishes
+  // unit placeholder); typing searches them as a unit is searched (`kn`, `kilo`, `dyn`), ↑↓
+  // and Tab pick, Enter still finishes
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let showGen = 0;
+  onCleanup(() => clearTimeout(showTimer));
   const unitSuggestions = () => {
-    const { show, unit } = splitShow(input.value);
+    const gen = ++showGen;
+    clearTimeout(showTimer);
+    const { expr, show, unit } = splitShow(input.value);
     const choices = state.views[viewId]?.unitChoices ?? [];
     if (show !== "value" || !atEnd() || !choices.length) return hideCompletions();
-    const typed = (unit ?? "").toLowerCase();
-    const items: Sym[] = choices
-      .filter((c) => c.unit.toLowerCase().startsWith(typed))
-      .map((c) => ({
+    const typed = unit ?? "";
+    const value = input.value;
+    const open = (list: UnitChoice[]) => {
+      if (gen !== showGen || input.value !== value || document.activeElement !== input) return;
+      const items: Sym[] = list.map((c) => ({
         name: c.unit,
         insert: c.unit,
         label: prettyValue(`'${c.unit.replace(/\*/g, "*'").replace(/\//g, "/'")}`),
         note: prettyValue(c.text),
+        detail: c.title,
       }));
-    if (!items.length || (items.length === 1 && items[0].name === unit)) return hideCompletions();
-    // below the whole box, so the live result stays in view
-    const [x] = caretPoint(input);
-    const y = (input.closest(".region")?.getBoundingClientRect().bottom ?? caretPoint(input)[1]) + 6;
-    showCompletions(
-      x,
-      y,
-      items,
-      (sym) => {
-        const v = input.value;
-        const start = unit ? v.length - unit.length : v.length;
-        input.focus();
-        input.setSelectionRange(start, v.length);
-        document.execCommand("insertText", false, `${unit || v.endsWith(" ") ? "" : " "}${sym.insert}`);
-      },
-      true,
-    );
+      if (!items.length || (items.length === 1 && items[0].name === unit)) return hideCompletions();
+      // below the whole box, so the live result stays in view
+      const [x, , top] = caretPoint(input);
+      const y = (input.closest(".region")?.getBoundingClientRect().bottom ?? caretPoint(input)[1]) + 6;
+      showCompletions(
+        x,
+        y,
+        items,
+        (sym) => {
+          const v = input.value;
+          const start = unit ? v.length - unit.length : v.length;
+          input.focus();
+          input.setSelectionRange(start, v.length);
+          document.execCommand("insertText", false, `${unit || v.endsWith(" ") ? "" : " "}${sym.insert}`);
+        },
+        true,
+        "units",
+        top,
+      );
+    };
+    if (!typed) return open(choices);
+    // what is known answers now (the usual units, narrowed); the engine is asked once typing pauses
+    const known = knownShowIn(viewId, expr, typed);
+    open(known ? known.list : choices.filter((c) => looselyIn(typed, `${c.unit} ${c.title ?? ""}`)));
+    if (known) return;
+    showTimer = setTimeout(() => void showInChoices(viewId, expr, typed).then(open), 150);
   };
   // the choices arrive with the next evaluation after `=` is typed
   createEffect(
@@ -562,7 +609,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
           // a name this editor put in: no list reopens over it
           nameGen++;
           clearTimeout(nameTimer);
-        } else updateCompletion(e.inputType === "insertText" && /\p{L}$/u.test(e.data ?? ""));
+        } else updateCompletion(e.inputType === "insertText" && /[\p{L}°]$/u.test(e.data ?? ""));
         traceCaret();
       }}
       onSelect={traceCaret}

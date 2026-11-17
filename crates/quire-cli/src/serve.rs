@@ -48,6 +48,18 @@ fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
                 quire_service::complete(doc, arg(body, "regionId")?, arg(body, "prefix")?).map_err(err)?;
             serde_json::to_value(found).map_err(|e| e.to_string())
         }
+        "complete_units" => {
+            let doc = body.get("doc").ok_or("missing \"doc\"")?;
+            let found = quire_service::complete_units(doc, arg(body, "regionId")?, arg(body, "query")?)
+                .map_err(err)?;
+            serde_json::to_value(found).map_err(|e| e.to_string())
+        }
+        "show_in" => {
+            let doc = body.get("doc").ok_or("missing \"doc\"")?;
+            let found =
+                quire_service::show_in(doc, arg(body, "regionId")?, arg(body, "query")?).map_err(err)?;
+            serde_json::to_value(found).map_err(|e| e.to_string())
+        }
         "djot_html" => Ok(Json::String(quire_service::render_djot_editable(arg(body, "src")?))),
         "docx_bytes" => {
             let doc = body.get("doc").ok_or("missing \"doc\"")?;
