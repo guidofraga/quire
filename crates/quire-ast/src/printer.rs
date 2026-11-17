@@ -355,6 +355,18 @@ mod tests {
     }
 
     #[test]
+    fn a_degree_sign_starts_a_plain_name() -> TestResult {
+        for (src, name) in [("20 °C", "°C"), ("20°C", "°C"), ("40 °F", "°F"), ("30°", "°")] {
+            let Expr::Binary(crate::BinaryOp::Juxt, _, unit) = parse(src)? else {
+                return Err(format!("{src}: not a quantity").into());
+            };
+            assert_eq!(*unit, Expr::Ident(name.into()), "{src}");
+        }
+        roundtrip("T := 20 °C")?;
+        Ok(())
+    }
+
+    #[test]
     fn a_quoted_unit_applies_to_a_name_or_parentheses() -> TestResult {
         let Expr::Binary(crate::BinaryOp::Juxt, value, unit) = parse("(-20) '°C")? else {
             return Err("expected a quantity".into());

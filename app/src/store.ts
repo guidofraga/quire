@@ -1500,11 +1500,11 @@ export function setLive(id: string, text: string) {
     if (r.kind === "math") {
       let { expr, show, unit } = splitShow(text);
       typedUnit = { id, unit };
-      // `c` on the way to `cm`: keep the result as it was rather than flash "unknown unit";
-      // what was typed is applied when the edit ends
+      // `c` on the way to `cm`, or `kilo` searching for kN: keep the result as it was rather
+      // than flash "unknown unit" (and lose the units to pick from); what was typed is applied
+      // when the edit ends
       const choices = state.views[id]?.unitChoices ?? [];
-      if (unit && !choices.some((c) => c.unit === unit) && choices.some((c) => c.unit.startsWith(unit!)))
-        unit = r.display?.unit;
+      if (unit && choices.length && !choices.some((c) => c.unit === unit)) unit = r.display?.unit;
       r.expr = expr;
       if (show) r.show = show;
       else delete r.show;

@@ -3320,11 +3320,34 @@ ms.str {
   font-variant-numeric: tabular-nums;
 }
 
-/* the meanings of a name (Ctrl+Space, or by itself after two letters): a glyph for the kind,
-   the name as the math draws it, and its value, muted */
+/* a unit's name beside the result in it, muted */
+.completion-detail {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font:
+    11.5px -apple-system,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+
+.completion-item.on .completion-detail {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.completion.units {
+  max-height: 268px;
+  overflow-y: auto;
+}
+
+/* the meanings of a name (Ctrl+Space, or by itself after two letters, one where a unit goes): a
+   glyph for the kind, the name as the math draws it, and its value or what the unit is called,
+   muted; about eight rows, then it scrolls */
 .completion.names {
   max-width: min(440px, calc(100vw - 16px));
-  max-height: 288px;
+  max-height: 232px;
   overflow-y: auto;
 }
 

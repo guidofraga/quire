@@ -300,6 +300,18 @@ fn complete(doc: Json, region_id: String, prefix: String) -> CmdResult<Vec<quire
     quire_service::complete(&doc, &region_id, &prefix).map_err(err)
 }
 
+/// What can go where a unit is being typed (`20 C|`), best first.
+#[tauri::command]
+fn complete_units(doc: Json, region_id: String, query: String) -> CmdResult<Vec<quire_service::Completion>> {
+    quire_service::complete_units(&doc, &region_id, &query).map_err(err)
+}
+
+/// The units a result can be shown in that match what is typed after `=`.
+#[tauri::command]
+fn show_in(doc: Json, region_id: String, query: String) -> CmdResult<Vec<quire_service::UnitChoice>> {
+    quire_service::show_in(&doc, &region_id, &query).map_err(err)
+}
+
 /// A table's Export as CSV…: only ever writes a `.csv` file the user picked.
 #[tauri::command]
 fn export_csv(chosen: State<'_, Chosen>, path: PathBuf, contents: String) -> CmdResult<()> {
@@ -852,6 +864,8 @@ fn main() {
             djot_html,
             library,
             complete,
+            complete_units,
+            show_in,
             open_json,
             store_json,
             import_image,

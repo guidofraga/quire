@@ -11,6 +11,7 @@ mod names;
 pub mod notebook;
 pub mod templates;
 mod text;
+mod unit_search;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -29,6 +30,7 @@ use serde_json::{Value as Json, json};
 
 pub use docx::DocxOptions;
 pub use names::{upgrade_document, upgrade_names};
+pub use unit_search::{complete_units, show_in};
 pub use text::{inline_math, render_djot, render_djot_editable, render_djot_with_math};
 
 #[derive(Debug)]
@@ -116,38 +118,9 @@ fn quiet_names(doc: &Document) -> Vec<String> {
 #[serde(rename_all = "camelCase")]
 pub struct NameAsUnit {
     pub name: String,
-    /// What the unit is called in words (`watt`), when it has a common name.
+    /// What the unit is called in words (`watt`), for a built-in one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
-}
-
-/// The word for a named SI unit, for the note ("W is the unit watt").
-fn unit_word(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "m" => "metre",
-        "g" => "gram",
-        "s" => "second",
-        "A" => "ampere",
-        "K" => "kelvin",
-        "mol" => "mole",
-        "cd" => "candela",
-        "N" => "newton",
-        "Pa" => "pascal",
-        "J" => "joule",
-        "W" => "watt",
-        "C" => "coulomb",
-        "V" => "volt",
-        "F" => "farad",
-        "Ω" | "ohm" => "ohm",
-        "S" => "siemens",
-        "Wb" => "weber",
-        "T" => "tesla",
-        "H" => "henry",
-        "Hz" => "hertz",
-        "L" | "l" => "litre",
-        "h" => "hour",
-        _ => return None,
-    })
 }
 
 fn display_of(r: &quire_doc::Region) -> DisplaySpec {
@@ -439,7 +412,7 @@ fn now_ms() -> f64 {
     0.0
 }
 
-fn run(doc: &Document, tables: bool) -> Evaluated {
+pub(crate) fn run(doc: &Document, tables: bool) -> Evaluated {
     let start = now_ms();
     let mut worksheet = Worksheet::new(settings_of(doc));
     let unit_errors = doc
@@ -646,11 +619,17 @@ pub struct UnitChoice {
     pub unit: String,
     /// The result in it, linear syntax.
     pub text: String,
+    /// What the unit is called: `kilonewton metre`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// What it measures: `energy, moment`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantity: Option<&'static str>,
 }
 
 /// Units offered for a result, smallest first within each kind; only those of the
 /// result's kind are shown.
-const UNIT_CHOICES: &[&str] = &[
+pub(crate) const UNIT_CHOICES: &[&str] = &[
     "mm", "cm", "m", "km", "in", "ft", "mm^2", "cm^2", "m^2", "ft^2", "mm^3", "cm^3", "L", "m^3", "mm^4",
     "cm^4", "m^4", "g", "kg", "t", "lb", "N", "kN", "MN", "kgf", "tf", "lbf", "kip", "N/m", "kN/m", "kgf/m",
     "tf/m", "N/m^2", "kN/m^2", "kgf/m^2", "tf/m^2", "Pa", "kPa", "MPa", "GPa", "N/mm^2", "kgf/cm^2", "bar",
@@ -659,12 +638,12 @@ const UNIT_CHOICES: &[&str] = &[
     "°F",
 ];
 
-fn unit_choices(
+pub(crate) fn unit_choices(
     value: Option<&quire_eval::Value>,
     spec: &DisplaySpec,
     settings: &DisplaySettings,
     units: &quire_units::UnitRegistry,
-    candidates: &[(&'static str, quire_units::Dim)],
+    candidates: &[(&str, quire_units::Dim)],
 ) -> Vec<UnitChoice> {
     let Some(v @ quire_eval::Value::Num(q)) = value else { return Vec::new() };
     if q.dim.is_dimensionless() {
@@ -677,7 +656,12 @@ fn unit_choices(
             let spec = DisplaySpec { unit: Some((*u).to_string()), decimals: spec.decimals };
             quire_eval::format_value(v, &spec, settings, units)
                 .ok()
-                .map(|text| UnitChoice { unit: (*u).to_string(), text })
+                .map(|text| UnitChoice {
+                    unit: (*u).to_string(),
+                    text,
+                    title: unit_search::compound_title(u).unwrap_or_default(),
+                    quantity: quire_units::quantity_of(q.dim),
+                })
         })
         .collect()
 }
@@ -822,53 +806,6 @@ pub struct Redefines {
     pub title: String,
 }
 
-const PREFIX_WORDS: &[(&str, &str)] = &[
-    ("da", "deca"),
-    ("Y", "yotta"),
-    ("Z", "zetta"),
-    ("E", "exa"),
-    ("P", "peta"),
-    ("T", "tera"),
-    ("G", "giga"),
-    ("M", "mega"),
-    ("k", "kilo"),
-    ("h", "hecto"),
-    ("d", "deci"),
-    ("c", "centi"),
-    ("m", "milli"),
-    ("μ", "micro"),
-    ("u", "micro"),
-    ("n", "nano"),
-    ("p", "pico"),
-    ("f", "femto"),
-];
-
-/// What a unit is called: `tesla`, `kilonewton`, or its name when it has no common word.
-fn unit_title(name: &str) -> String {
-    let word = |n: &str| {
-        unit_word(n).or(match n {
-            "t" => Some("tonne"),
-            "min" => Some("minute"),
-            "kgf" => Some("kilogram-force"),
-            "tf" => Some("tonne-force"),
-            "in" => Some("inch"),
-            "ft" => Some("foot"),
-            "lb" => Some("pound"),
-            "rad" => Some("radian"),
-            "bar" => Some("bar"),
-            "day" => Some("day"),
-            _ => None,
-        })
-    };
-    if let Some(w) = word(name) {
-        return w.to_string();
-    }
-    PREFIX_WORDS
-        .iter()
-        .find_map(|(p, pw)| name.strip_prefix(p).and_then(word).map(|w| format!("{pw}{w}")))
-        .unwrap_or_else(|| name.to_string())
-}
-
 /// The built-in a definition of `name` hides below it. In an SMath document a bare name is
 /// never a unit or a constant, except π, e and ∞.
 fn redefines(name: &str, marked: bool, units: &quire_units::UnitRegistry) -> Option<Redefines> {
@@ -880,7 +817,7 @@ fn redefines(name: &str, marked: bool, units: &quire_units::UnitRegistry) -> Opt
         return Some(Redefines { name: name.to_string(), kind: "constant", title: c.title.to_string() });
     }
     if !marked && units.lookup_bare(name).is_some() {
-        return Some(Redefines { name: name.to_string(), kind: "unit", title: unit_title(name) });
+        return Some(Redefines { name: name.to_string(), kind: "unit", title: unit_search::unit_title(name) });
     }
     None
 }
@@ -896,107 +833,161 @@ pub struct Completion {
     pub insert: String,
     /// A short look at the value: `300`, `0.001 'm^3`, `f(x, y)`.
     pub preview: String,
+    /// What a unit or constant is called: `degree Celsius`, `gravitational constant`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// What it measures: `temperature`, `force`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantity: Option<&'static str>,
+}
+
+/// The names a region sees: the worksheet with the document's own units, and the scope of
+/// the regions above it. A region that is not in the document (a new one) sees everything.
+pub(crate) struct Here {
+    ws: Worksheet,
+    env: std::rc::Rc<quire_eval::Env>,
+    /// An SMath document: every unit is written quoted.
+    pub(crate) marked: bool,
+    /// The document's own units (`"units": { "tf": … }`).
+    pub(crate) custom_units: Vec<String>,
+}
+
+impl Here {
+    pub(crate) fn new(doc_json: &Json, region_id: &str) -> Result<Here> {
+        let doc: Document = serde_json::from_value(doc_json.clone())?;
+        let settings = settings_of(&doc);
+        let marked = settings.marked_units;
+        let mut ws = Worksheet::new(settings);
+        for (name, def) in &doc.units {
+            let _ = ws.define_unit(name, def);
+        }
+        let inputs = math_inputs(&doc, false);
+        let here = inputs.iter().position(|i| i.id == region_id).unwrap_or(inputs.len());
+        let env = ws.scope_at(&inputs, here);
+        Ok(Here { ws, env, marked, custom_units: doc.units.keys().cloned().collect() })
+    }
+
+    pub(crate) fn units(&self) -> &quire_units::UnitRegistry {
+        self.ws.units()
+    }
+
+    /// `n` is a variable here (or would be, but its definition failed).
+    pub(crate) fn variable(&self, n: &str) -> bool {
+        matches!(self.env.get(n), Some(quire_eval::Binding::Val(_) | quire_eval::Binding::Failed(_)))
+    }
+
+    /// The variables, then the functions, defined here whose names pass `keep`, by name.
+    pub(crate) fn yours(&self, keep: impl Fn(&str) -> bool) -> Vec<Completion> {
+        let preview_settings = DisplaySettings { decimals: 4, ..self.ws.settings().clone() };
+        let mut variables = Vec::new();
+        let mut functions = Vec::new();
+        for (key, binding) in self.env.iter() {
+            match binding {
+                quire_eval::Binding::Val(v) if keep(key) => {
+                    let text = quire_eval::format_value(v, &DisplaySpec::default(), &preview_settings, self.units())
+                        .unwrap_or_default();
+                    // short: a matrix shows its start
+                    let preview = if text.chars().count() > 40 {
+                        format!("{}…", text.chars().take(39).collect::<String>())
+                    } else {
+                        text
+                    };
+                    variables.push(Completion {
+                        name: key.clone(),
+                        kind: "variable",
+                        insert: key.clone(),
+                        preview,
+                        title: None,
+                        quantity: None,
+                    });
+                }
+                quire_eval::Binding::Func(f) if keep(&f.name) => functions.push(Completion {
+                    name: f.name.clone(),
+                    kind: "function",
+                    insert: f.name.clone(),
+                    preview: format!("{}({})", f.name, f.params.join(", ")),
+                    title: None,
+                    quantity: None,
+                }),
+                _ => {}
+            }
+        }
+        variables.sort_by(|a, b| a.name.cmp(&b.name));
+        functions.sort_by(|a, b| a.name.cmp(&b.name).then(a.preview.cmp(&b.preview)));
+        variables.append(&mut functions);
+        variables
+    }
+
+    /// The built-in constant `c`, with the text that means it here (`G`, or `#G`).
+    pub(crate) fn constant(&self, c: &quire_eval::Constant) -> Completion {
+        let bare = !self.variable(c.name)
+            && if self.marked {
+                matches!(c.name, "π" | "pi" | "e" | "∞")
+            } else {
+                self.units().lookup_bare(c.name).is_none()
+            };
+        Completion {
+            name: c.name.to_string(),
+            kind: "constant",
+            insert: if bare { c.name.to_string() } else { format!("#{}", c.name) },
+            preview: quantity_text(c.value, c.dim(), self.units()),
+            title: Some(c.title.to_string()),
+            quantity: quire_units::quantity_of(c.dim()),
+        }
+    }
+
+    /// The unit `n`, with the text that means it here (`kN`, or `'kN`). After a number a plain
+    /// name is the unit unless it is your variable; elsewhere a constant of that name wins too.
+    pub(crate) fn unit(&self, n: &str, after_number: bool) -> Option<Completion> {
+        let units = self.units();
+        let u = units.lookup(n)?;
+        let plain = !self.marked
+            && !self.variable(n)
+            && units.lookup_bare(n).is_some()
+            && (after_number || quire_eval::constant(n).is_none())
+            // written bare it must read as one name (`°C` does, `%` does not)
+            && matches!(parse(n), Ok(Expr::Ident(ref s)) if s == n);
+        let value = quantity_text(u.factor, u.dim, units);
+        let info = quire_units::unit_info(n);
+        let title = info.map(|i| i.title.clone());
+        let preview = match &title {
+            Some(t) if value == format!("1 '{n}") => t.clone(),
+            _ => value,
+        };
+        Some(Completion {
+            insert: if plain { n.to_string() } else { format!("'{n}") },
+            name: n.to_string(),
+            kind: "unit",
+            preview,
+            title,
+            quantity: quire_units::quantity_of(u.dim),
+        })
+    }
 }
 
 /// Every meaning a name starting with `prefix` can have in region `region_id`: the variables
 /// and functions defined above it (and the global ones), then constants, then units. A
 /// region that is not in the document (a new one) sees everything.
 pub fn complete(doc_json: &Json, region_id: &str, prefix: &str) -> Result<Vec<Completion>> {
-    let doc: Document = serde_json::from_value(doc_json.clone())?;
-    let settings = settings_of(&doc);
-    let marked = settings.marked_units;
-    let mut ws = Worksheet::new(settings);
-    for (name, def) in &doc.units {
-        let _ = ws.define_unit(name, def);
-    }
-    let inputs = math_inputs(&doc, false);
-    let here = inputs.iter().position(|i| i.id == region_id).unwrap_or(inputs.len());
-    let env = ws.scope_at(&inputs, here);
-    let units = ws.units();
-    let preview_settings = DisplaySettings { decimals: 4, ..ws.settings().clone() };
-    let mut variables = Vec::new();
-    let mut functions = Vec::new();
-    for (key, binding) in env.iter() {
-        match binding {
-            quire_eval::Binding::Val(v) if key.starts_with(prefix) => {
-                let text = quire_eval::format_value(v, &DisplaySpec::default(), &preview_settings, units)
-                    .unwrap_or_default();
-                // short: a matrix shows its start
-                let preview = if text.chars().count() > 40 {
-                    format!("{}…", text.chars().take(39).collect::<String>())
-                } else {
-                    text
-                };
-                variables.push(Completion {
-                    name: key.clone(),
-                    kind: "variable",
-                    insert: key.clone(),
-                    preview,
-                });
-            }
-            quire_eval::Binding::Func(f) if f.name.starts_with(prefix) => functions.push(Completion {
-                name: f.name.clone(),
-                kind: "function",
-                insert: f.name.clone(),
-                preview: format!("{}({})", f.name, f.params.join(", ")),
-            }),
-            _ => {}
-        }
-    }
-    let variable =
-        |n: &str| matches!(env.get(n), Some(quire_eval::Binding::Val(_) | quire_eval::Binding::Failed(_)));
-    let mut constants: Vec<Completion> = quire_eval::CONSTANTS
-        .iter()
-        .filter(|c| c.name.starts_with(prefix))
-        .map(|c| {
-            let bare = !variable(c.name)
-                && if marked {
-                    matches!(c.name, "π" | "pi" | "e" | "∞")
-                } else {
-                    units.lookup_bare(c.name).is_none()
-                };
-            Completion {
-                name: c.name.to_string(),
-                kind: "constant",
-                insert: if bare { c.name.to_string() } else { format!("#{}", c.name) },
-                preview: quantity_text(c.value, c.dim(), units),
-            }
-        })
-        .collect();
+    let here = Here::new(doc_json, region_id)?;
+    let mut out = here.yours(|n| n.starts_with(prefix));
+    let mut constants: Vec<Completion> =
+        quire_eval::CONSTANTS.iter().filter(|c| c.name.starts_with(prefix)).map(|c| here.constant(c)).collect();
+    constants.sort_by(|a, b| a.name.cmp(&b.name));
     let mut unit_names: Vec<String> = quire_units::UnitRegistry::builtin()
         .into_iter()
         .map(|(n, ..)| n.to_string())
-        .chain(doc.units.keys().cloned())
+        .chain(here.custom_units.iter().cloned())
         .filter(|n| n.starts_with(prefix))
         .collect();
     // a prefixed unit is not listed, but typed in full it is one: `kN`
-    if !prefix.is_empty() && units.lookup_bare(prefix).is_some() {
+    if !prefix.is_empty() && here.units().lookup_bare(prefix).is_some() {
         unit_names.push(prefix.to_string());
     }
     unit_names.sort();
     unit_names.dedup();
-    let mut unit_list: Vec<Completion> = unit_names
-        .into_iter()
-        .filter_map(|n| {
-            let u = units.lookup(&n)?;
-            let bare = !marked && !variable(&n) && quire_eval::constant(&n).is_none();
-            let value = quantity_text(u.factor, u.dim, units);
-            let preview = if value == format!("1 '{n}") { unit_title(&n) } else { value };
-            Some(Completion {
-                insert: if bare { n.clone() } else { format!("'{n}") },
-                name: n,
-                kind: "unit",
-                preview,
-            })
-        })
-        .collect();
-    variables.sort_by(|a, b| a.name.cmp(&b.name));
-    functions.sort_by(|a, b| a.name.cmp(&b.name).then(a.preview.cmp(&b.preview)));
-    constants.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut out = variables;
-    out.append(&mut functions);
     out.append(&mut constants);
-    out.append(&mut unit_list);
+    out.extend(unit_names.iter().filter_map(|n| here.unit(n, false)));
     Ok(out)
 }
 
@@ -1158,7 +1149,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 .names_read_as_units
                 .iter()
                 .filter(|n| !quiet.contains(n))
-                .map(|n| NameAsUnit { name: n.clone(), unit: unit_word(n).map(str::to_string) })
+                .map(|n| NameAsUnit { name: n.clone(), unit: quire_units::unit_info(n).map(|i| i.title.clone()) })
                 .collect(),
             defines: o.defines.clone(),
             redefines: o.defines.as_deref().and_then(|n| redefines(n, marked, units)),

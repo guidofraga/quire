@@ -1,6 +1,6 @@
 // The list under the caret shared by the math and text editors: `\name` completion, the units
 // after `=`, and the meanings of a name in math (Ctrl+Space, or by itself after two letters).
-import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { announce } from "./a11y";
 import { KIND_WORD } from "./names";
 import { isTemplate, type Sym } from "./symbols";
@@ -12,6 +12,8 @@ export type Item = Sym & {
   html?: string;
   /** What a screen reader says for the row (`G, constant, 6.674·10⁻¹¹ m³/(kg·s²)`). */
   speak?: string;
+  /** A unit's name, muted beside the result in it (`kilonewton metre`). */
+  detail?: string;
 };
 
 /** `symbols`: `\name`; `units`: the units after `=`; `names`: what a name can mean. */
@@ -20,6 +22,8 @@ export type ListKind = "symbols" | "units" | "names";
 interface Popup {
   x: number;
   y: number;
+  /** The top of the caret's line: the list goes above it when there is no room below. */
+  top?: number;
   items: Item[];
   index: number;
   pick: (s: Item) => void;
@@ -44,6 +48,7 @@ export function showCompletions(
   pick: (s: Item) => void,
   soft = false,
   list: ListKind = soft ? "units" : "symbols",
+  top?: number,
 ) {
   if (!items.length) return hideCompletions();
   const prev = popup();
@@ -51,6 +56,7 @@ export function showCompletions(
   setPopup({
     x,
     y,
+    top,
     items,
     index: same ? Math.min(prev.index, items.length - 1) : 0,
     pick,
@@ -64,7 +70,8 @@ export function hideCompletions() {
   setPopup(null);
 }
 
-const spoken = (item: Item) => item.speak ?? `${item.label ?? item.insert}, ${item.note ?? item.name}`;
+const spoken = (item: Item) =>
+  item.speak ?? `${item.label ?? item.insert}, ${item.note ?? item.name}${item.detail ? `, ${item.detail}` : ""}`;
 
 /** Say the row a list starts on, when it was asked for (the list itself never takes focus). */
 export function announceFirst() {
@@ -172,6 +179,9 @@ function Row(props: { item: Item; i: number; p: Popup }) {
               {isTemplate(props.item) || props.item.note ? (props.item.label ?? props.item.insert) : props.item.insert}
             </span>
             <span class="completion-name">{props.item.note ?? `\\${props.item.name}`}</span>
+            <Show when={props.item.detail}>
+              <span class="completion-detail">{props.item.detail}</span>
+            </Show>
             <Show when={props.item.textOnly}>
               <span class="completion-note">text</span>
             </Show>
@@ -194,16 +204,46 @@ function Row(props: { item: Item; i: number; p: Popup }) {
   );
 }
 
+/**
+ * Where the list goes: below the caret, or above its line when it would run off the bottom of
+ * the window, so it never covers what is being typed; and inside the window sideways.
+ */
+export function placeList(
+  p: { x: number; y: number; top?: number },
+  size: { width: number; height: number },
+  view: { width: number; height: number },
+): { left: number; top: number } {
+  const margin = 8;
+  const below = p.y + size.height <= view.height - margin;
+  const above = p.top !== undefined && p.top - size.height >= margin;
+  const top = below || !above ? p.y : p.top! - size.height;
+  const left = Math.max(margin, Math.min(p.x, view.width - size.width - margin));
+  return { left, top };
+}
+
 export function CompletionPopup() {
+  const [size, setSize] = createSignal({ width: 0, height: 0 });
+  let observer: ResizeObserver | undefined;
+  onCleanup(() => observer?.disconnect());
+  const measure = (el: HTMLDivElement) => {
+    observer?.disconnect();
+    observer = new ResizeObserver(() => setSize({ width: el.offsetWidth, height: el.offsetHeight }));
+    observer.observe(el);
+    setSize({ width: el.offsetWidth, height: el.offsetHeight });
+  };
   return (
     <Show when={popup()}>
       {(p) => (
         <div
+          ref={measure}
           class="completion"
           classList={{ units: p().list === "units", names: p().list === "names" }}
           role="listbox"
           aria-label={{ symbols: "Completions", units: "Show in", names: "Names" }[p().list]}
-          style={{ left: `${p().x}px`, top: `${p().y}px` }}
+          style={(() => {
+            const at = placeList(p(), size(), { width: window.innerWidth, height: window.innerHeight });
+            return { left: `${at.left}px`, top: `${at.top}px` };
+          })()}
           onMouseDown={(e) => e.preventDefault()}
         >
           <Show when={p().list === "units"}>

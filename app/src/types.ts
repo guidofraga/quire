@@ -69,6 +69,10 @@ export interface Completion {
   /** The text that gives the name this meaning there: `T`, `'T`, `#G`. */
   insert: string;
   preview: string;
+  /** What a unit or constant is called: `degree Celsius`. */
+  title?: string;
+  /** What it measures: `temperature`. */
+  quantity?: string;
 }
 
 /** quire_service::PlotView */
@@ -142,6 +146,10 @@ export interface UnitChoice {
   unit: string;
   /** The result in it, linear syntax (`54 'kN*'m`). */
   text: string;
+  /** What the unit is called: `kilonewton metre`. */
+  title?: string;
+  /** What it measures: `energy, moment`. */
+  quantity?: string;
 }
 
 /** quire_service::CellView */

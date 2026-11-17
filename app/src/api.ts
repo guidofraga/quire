@@ -3,7 +3,7 @@
 import { callEngine } from "./engine";
 import type { DocxOptions } from "./docx";
 import type { PdfInfo } from "./export";
-import type { Completion, Doc, Library, Report } from "./types";
+import type { Completion, Doc, Library, Report, UnitChoice } from "./types";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -41,6 +41,11 @@ export const api = {
   library: () => call<Library>("library"),
   /** What a name starting with `prefix` can mean in region `regionId`. */
   complete: (doc: Doc, regionId: string, prefix: string) => call<Completion[]>("complete", { doc, regionId, prefix }),
+  /** What can go where a unit is being typed (`20 C|`), best first: a fuzzy search of the units. */
+  completeUnits: (doc: Doc, regionId: string, query: string) =>
+    call<Completion[]>("complete_units", { doc, regionId, query }),
+  /** The units the result of `regionId` can be shown in that match `query`, best first. */
+  showIn: (doc: Doc, regionId: string, query: string) => call<UnitChoice[]>("show_in", { doc, regionId, query }),
   importImage: (path: string) => call<string>("import_image", { path }),
   stageImage: (data: string, ext: string) => call<string>("stage_image", { data, ext }),
   readAsset: (bundle: string, src: string) => call<string>("read_asset", { bundle, src }),
