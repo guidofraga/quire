@@ -2,7 +2,7 @@
   "format": "quire/1",
   "meta": {"title": "Load combinations", "authors": ["A. Engineer"], "company": "Your Company", "lang": "en"},
   "settings": {"display": {"decimals": 2, "resultUnits": "working"}},
-  "styles": {"numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
+  "styles": {"typography": 2, "numbering": {"headings": "1.1", "figures": "Figure {n} –", "tables": "Table {n} –"}},
   "page": {
     "view": "pages",
     "paper": "A4",
@@ -12,7 +12,7 @@
   },
   "regions": [
     {"id": "lchgmh", "kind": "text", "text": "{.title}\n# Load combinations", "at": [0, 0]},
-    {"id": "lcpjis", "kind": "text", "text": "Ultimate and serviceability combinations · EN 1990, 6.4.3.2 and 6.5.3", "at": [0, 34]},
+    {"id": "lcpjis", "kind": "text", "text": "Ultimate and serviceability combinations · EN 1990, 6.4.3.2 and 6.5.3", "at": [0, 36]},
     {
       "id": "lcyhip",
       "kind": "table",
@@ -24,7 +24,7 @@
         ["Element", "Column C1, axial force"],
         ["Prepared by", "A. Engineer"]
       ],
-      "at": [0, 69]
+      "at": [0, 74]
     },
     {
       "id": "lcgwtq",
@@ -37,22 +37,22 @@
         ["Date", "YYYY-MM-DD"],
         ["Checked by", "—"]
       ],
-      "at": [328, 69]
+      "at": [328, 74]
     },
     {
       "id": "lcnabf",
       "kind": "text",
       "text": "The governing design values are in [](#ref:lcrfvs): the highest combination of each set is picked automatically, and _set_ chooses between expression (6.10) and expressions (6.10a) and (6.10b) as the national annex requires. Change the actions or the factors in [](#ref:lcwhfn) and every value follows.",
-      "at": [0, 186]
+      "at": [0, 195]
     },
-    {"id": "lcgfvh", "kind": "text", "style": {"size": 12}, "text": "# Design basis", "at": [0, 261]},
+    {"id": "lcgfvh", "kind": "text", "text": "# Design basis", "at": [0, 269]},
     {
       "id": "lcsbjr",
       "kind": "text",
       "text": "Effects of one permanent and two independent variable actions on one member, all of the same sign, so the permanent action is always unfavourable. Each variable action is taken as leading in turn. National annex values are taken as the recommended values (EN 1990, Tables A1.1 and A1.2(B)).",
-      "at": [0, 293]
+      "at": [0, 317]
     },
-    {"id": "lcxwtf", "kind": "text", "style": {"size": 12}, "text": "# Actions", "at": [0, 368]},
+    {"id": "lcxwtf", "kind": "text", "text": "# Actions", "at": [0, 391]},
     {
       "id": "lcwhfn",
       "kind": "table",
@@ -69,16 +69,16 @@
         ["ψ1", "", "0.5", "0.2"],
         ["ψ2", "", "0.3", "0"]
       ],
-      "at": [0, 400]
+      "at": [0, 439]
     },
     {
       "id": "lcsrmd",
       "kind": "text",
       "text": "¹ Snow on sites at H ≤ 1000 m a.s.l., remainder of CEN member states (EN 1990, Table A1.1).",
-      "at": [0, 593]
+      "at": [0, 643]
     },
-    {"id": "lcavyb", "kind": "math", "expr": "ξ:=0.85", "note": "reduction factor for permanent actions in (6.10b)", "at": [0, 620]},
-    {"id": "lcihbk", "kind": "text", "style": {"size": 12}, "text": "# Ultimate limit state", "at": [0, 667]},
+    {"id": "lcavyb", "kind": "math", "expr": "ξ:=0.85", "note": "reduction factor for permanent actions in (6.10b)", "at": [0, 673]},
+    {"id": "lcihbk", "kind": "text", "text": "# Ultimate limit state", "at": [0, 710]},
     {
       "id": "lcdpqp",
       "kind": "table",
@@ -94,9 +94,9 @@
         ["Q1 leading", "(6.10b)", "=ξ*actions!B4", "=actions!C4", "=actions!D4*actions!D5", "=SUMPRODUCT(C5:E5, actions!B3:D3)"],
         ["Q2 leading", "(6.10b)", "=ξ*actions!B4", "=actions!C4*actions!C5", "=actions!D4", "=SUMPRODUCT(C6:E6, actions!B3:D3)"]
       ],
-      "at": [0, 699]
+      "at": [0, 758]
     },
-    {"id": "lcsgms", "kind": "text", "style": {"size": 12}, "text": "# Governing design values", "at": [0, 882]},
+    {"id": "lcsgms", "kind": "text", "text": "# Governing design values", "at": [0, 940]},
     {
       "id": "lcrfvs",
       "kind": "table",
@@ -109,18 +109,18 @@
         ["(6.10)", "=MAX(uls!F2:F3)", "=INDEX(uls!A2:A3, MATCH(B2, uls!F2:F3, 0))&\" \"&INDEX(uls!B2:B3, MATCH(B2, uls!F2:F3, 0))"],
         ["(6.10a) and (6.10b)", "=MAX(uls!F4:F6)", "=INDEX(uls!A4:A6, MATCH(B3, uls!F4:F6, 0))&\" \"&INDEX(uls!B4:B6, MATCH(B3, uls!F4:F6, 0))"]
       ],
-      "at": [0, 914]
+      "at": [0, 988]
     },
-    {"id": "lchvef", "kind": "math", "expr": "E.d.610:=gov[2, 2]", "show": "value", "display": {"decimals": 1}, "at": [0, 1019]},
-    {"id": "lcnxsi", "kind": "math", "expr": "E.d.610ab:=gov[3, 2]", "show": "value", "display": {"decimals": 1}, "at": [330, 1019]},
+    {"id": "lchvef", "kind": "math", "expr": "E.d.610:=gov[2, 2]", "show": "value", "display": {"decimals": 1}, "at": [0, 1100]},
+    {"id": "lcnxsi", "kind": "math", "expr": "E.d.610ab:=gov[3, 2]", "show": "value", "display": {"decimals": 1}, "at": [330, 1100]},
     {
       "id": "lcyrew",
       "kind": "math",
       "expr": "E.d.610ab<=E.d.610",
       "note": "(6.10a) and (6.10b) are never more onerous than (6.10)",
-      "at": [0, 1058]
+      "at": [0, 1137]
     },
-    {"id": "lcevqf", "kind": "math", "expr": "set:=1", "note": "1: expression (6.10); 2: expressions (6.10a) and (6.10b)", "at": [0, 1093]},
+    {"id": "lcevqf", "kind": "math", "expr": "set:=1", "note": "1: expression (6.10); 2: expressions (6.10a) and (6.10b)", "at": [0, 1173]},
     {
       "id": "lczvch",
       "kind": "math",
@@ -128,9 +128,9 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "design effect carried forward",
-      "at": [0, 1127]
+      "at": [0, 1209]
     },
-    {"id": "lcdhyd", "kind": "text", "style": {"size": 12}, "text": "# Serviceability limit state", "at": [0, 1176]},
+    {"id": "lcdhyd", "kind": "text", "text": "# Serviceability limit state", "at": [0, 1246]},
     {
       "id": "lcbigp",
       "kind": "table",
@@ -146,7 +146,7 @@
         ["Frequent, Q2 leading", "(6.15b)", "1", "=actions!C7", "=actions!D6", "=SUMPRODUCT(C5:E5, actions!B3:D3)"],
         ["Quasi-permanent", "(6.16b)", "1", "=actions!C7", "=actions!D7", "=SUMPRODUCT(C6:E6, actions!B3:D3)"]
       ],
-      "at": [0, 1208]
+      "at": [0, 1294]
     },
     {
       "id": "lcufue",
@@ -155,7 +155,7 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "characteristic",
-      "at": [0, 1379]
+      "at": [0, 1475]
     },
     {
       "id": "lckqbs",
@@ -164,7 +164,7 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "frequent",
-      "at": [0, 1416]
+      "at": [0, 1511]
     },
     {
       "id": "lcvwrp",
@@ -173,7 +173,7 @@
       "show": "value",
       "display": {"decimals": 1},
       "note": "quasi-permanent",
-      "at": [0, 1454]
+      "at": [0, 1548]
     }
   ]
 }

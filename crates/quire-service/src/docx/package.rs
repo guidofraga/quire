@@ -8,7 +8,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use super::xml::{esc, twips};
-use super::{BULLET_NUM, DEFAULT_FONT, HEADING_NUM, Rel, Writer};
+use super::{BULLET_NUM, DEFAULT_FONT, HEADING_NUM, Rel, TYPESET_FONT, Writer};
 use crate::{Result, ServiceError, localized};
 
 pub(super) const NAMESPACES: &str = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"";
@@ -39,27 +39,63 @@ fn rels_xml(rels: &[Rel]) -> String {
     s
 }
 
-fn styles_xml(font: &str, size: u32) -> String {
+/// Typeset documents' heading scale (styles.css `.typeset`), as multiples of the body size:
+/// levels 1 to 3, with the space above and below in twips at a 10.5 pt body (scaled with it).
+/// Deeper levels are at the body size, in italics.
+const TYPESET_HEADINGS: [(f64, f64, f64); 3] =
+    [(14.0 / 10.5, 170.0, 80.0), (12.0 / 10.5, 140.0, 60.0), (1.0, 110.0, 40.0)];
+/// The typeset title's size over the body's (20 pt at 10.5 pt).
+pub(crate) const TYPESET_TITLE: f64 = 20.0 / 10.5;
+
+/// A typeset heading's size over the body's, by level (1 is the largest).
+pub(crate) fn typeset_heading_scale(level: impl Into<usize>) -> f64 {
+    TYPESET_HEADINGS.get(level.into().saturating_sub(1)).map_or(1.0, |h| h.0)
+}
+
+/// Document defaults and styles. `size`: the body size in half-points. `typeset`: the second
+/// typography's line spacing, heading scale and caption face.
+fn styles_xml(font: &str, size: u32, typeset: bool) -> String {
     let font = esc(font);
+    // CSS line-height 1.3 over Cambria's own line height (1.17 em); before, 1.12 over Arial's
+    let line = if typeset { 266 } else { 269 };
     let mut s = format!(
-        "{XML_DECL}<w:styles {}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:eastAsia=\"{font}\" w:cs=\"{font}\"/><w:sz w:val=\"{size}\"/><w:szCs w:val=\"{size}\"/><w:lang w:val=\"en-GB\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after=\"0\" w:line=\"269\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>",
+        "{XML_DECL}<w:styles {}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:eastAsia=\"{font}\" w:cs=\"{font}\"/><w:sz w:val=\"{size}\"/><w:szCs w:val=\"{size}\"/><w:lang w:val=\"en-GB\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after=\"0\" w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>",
         super::package::NAMESPACES
     );
     s.push_str("<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>");
     s.push_str("<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\"><w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/><w:unhideWhenUsed/></w:style>");
     s.push_str("<w:style w:type=\"table\" w:default=\"1\" w:styleId=\"TableNormal\"><w:name w:val=\"Normal Table\"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w=\"0\" w:type=\"dxa\"/><w:tblCellMar><w:top w:w=\"0\" w:type=\"dxa\"/><w:left w:w=\"108\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"108\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr></w:style>");
     s.push_str("<w:style w:type=\"numbering\" w:default=\"1\" w:styleId=\"NoList\"><w:name w:val=\"No List\"/><w:semiHidden/><w:unhideWhenUsed/></w:style>");
-    for level in 1..=6 {
+    let scaled = |k: f64| (f64::from(size) * k).round() as u32;
+    let sz = |hp: u32| format!("<w:sz w:val=\"{hp}\"/><w:szCs w:val=\"{hp}\"/>");
+    let body = f64::from(size) / 21.0;
+    for level in 1..=6usize {
+        let (spacing, run) = match TYPESET_HEADINGS.get(level - 1) {
+            Some(&(k, before, after)) if typeset => (
+                format!("<w:spacing w:before=\"{:.0}\" w:after=\"{:.0}\"/>", before * body, after * body),
+                sz(scaled(k)),
+            ),
+            None if typeset => {
+                ("<w:spacing w:before=\"80\" w:after=\"30\"/>".into(), "<w:i/><w:iCs/>".into())
+            }
+            _ => (String::new(), String::new()),
+        };
         s.push_str(&format!(
-            "<w:style w:type=\"paragraph\" w:styleId=\"Heading{level}\"><w:name w:val=\"heading {level}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val=\"{}\"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>",
+            "<w:style w:type=\"paragraph\" w:styleId=\"Heading{level}\"><w:name w:val=\"heading {level}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/>{spacing}<w:outlineLvl w:val=\"{}\"/></w:pPr><w:rPr><w:b/><w:bCs/>{run}</w:rPr></w:style>",
             level - 1
         ));
     }
     s.push_str(&format!(
-        "<w:style w:type=\"paragraph\" w:styleId=\"Title\"><w:name w:val=\"Title\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"10\"/><w:qFormat/><w:pPr><w:keepNext/></w:pPr><w:rPr><w:b/><w:bCs/><w:sz w:val=\"{0}\"/><w:szCs w:val=\"{0}\"/></w:rPr></w:style>",
-        size * 9 / 5
+        "<w:style w:type=\"paragraph\" w:styleId=\"Title\"><w:name w:val=\"Title\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"10\"/><w:qFormat/><w:pPr><w:keepNext/></w:pPr><w:rPr><w:b/><w:bCs/>{}</w:rPr></w:style>",
+        sz(if typeset { scaled(TYPESET_TITLE) } else { size * 9 / 5 })
     ));
-    s.push_str("<w:style w:type=\"paragraph\" w:styleId=\"Caption\"><w:name w:val=\"caption\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"35\"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:spacing w:before=\"60\" w:after=\"120\"/><w:jc w:val=\"center\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/><w:sz w:val=\"16\"/><w:szCs w:val=\"16\"/></w:rPr></w:style>");
+    // captions: 8 pt Arial in the first typography; typeset, the body face at 9 pt of 10.5
+    let caption = if typeset {
+        sz(scaled(9.0 / 10.5))
+    } else {
+        format!("<w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/>{}", sz(16))
+    };
+    s.push_str(&format!("<w:style w:type=\"paragraph\" w:styleId=\"Caption\"><w:name w:val=\"caption\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"35\"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:spacing w:before=\"60\" w:after=\"120\"/><w:jc w:val=\"center\"/></w:pPr><w:rPr>{caption}</w:rPr></w:style>"));
     s.push_str("<w:style w:type=\"paragraph\" w:styleId=\"TOCHeading\"><w:name w:val=\"TOC Heading\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"39\"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:after=\"80\"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>");
     for level in 1..=6 {
         s.push_str(&format!(
@@ -257,7 +293,7 @@ pub(super) fn assemble(w: &mut Writer, body: String) -> Result<Vec<u8>> {
         .and_then(|s| s.get("body"))
         .and_then(|b| b.get("font"))
         .and_then(Json::as_str)
-        .unwrap_or(DEFAULT_FONT)
+        .unwrap_or(if w.typeset { TYPESET_FONT } else { DEFAULT_FONT })
         .to_string();
     doc_rels.push(Rel {
         id: "rIdStyles".into(),
@@ -338,7 +374,7 @@ pub(super) fn assemble(w: &mut Writer, body: String) -> Result<Vec<u8>> {
         ("docProps/app.xml".into(), app.into_bytes()),
         ("word/document.xml".into(), document.into_bytes()),
         ("word/_rels/document.xml.rels".into(), rels_xml(&doc_rels).into_bytes()),
-        ("word/styles.xml".into(), styles_xml(&font, w.body_size).into_bytes()),
+        ("word/styles.xml".into(), styles_xml(&font, w.body_size, w.typeset).into_bytes()),
         ("word/numbering.xml".into(), numbering_xml(&w.ordered).into_bytes()),
         ("word/settings.xml".into(), settings_xml(even_odd).into_bytes()),
     ];

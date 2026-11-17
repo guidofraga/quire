@@ -133,6 +133,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `Plot3D.tsx` | 3D plots on a canvas: faces painted farthest first, curves, the box with its numbers; turning and zooming the saved camera; Inspector ▸ 3D Plot. |
 | `geom3d.ts` | 3D plot geometry without the DOM: the data's box, the orthographic camera, faces of a grid, height colours, round ticks. |
 | `math.ts` | AST → MathML. |
+| `typography.ts` | The document's built-in typography (`styles.typography`): whether it is typeset, and the text and math sizes where its styles say nothing. `Canvas.tsx` marks the scene `.typeset`, and the `typeset documents` block of `styles.css` does the rest. |
 | `trace.ts`, `xref.ts`, `checks.ts`, `labels.ts` | Where a variable comes from; cross-references; pass/fail checks; caption words per language. |
 | `nav.ts`, `find.ts` | Keyboard movement between regions; find and replace. |
 
@@ -181,6 +182,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 | `docs/` | This documentation; see [README.md](README.md). |
 | `schema/quire-1.schema.json` | JSON Schema for `document.json`. |
 | `tools/build-math-font.py` | Builds `app/src/fonts/QuireMath.woff` from STIX Two Math. |
+| `tools/build-text-font.py` | Builds `app/src/fonts/QuireText-*.woff` (Regular, Italic, Bold, Bold Italic) from STIX Two Text, the text face of typeset documents. Both fonts are under the SIL Open Font License (`app/src/fonts/OFL.txt`). |
 | `app/e2e/` | Playwright tests. |
 | `.github/workflows/ci.yml` | Tests on every push and pull request. |
 | `.github/workflows/release.yml` | Installers and update packages for a `v*` tag. |

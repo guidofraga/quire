@@ -28,7 +28,7 @@ export interface Prefs {
   exportDpi: number;
   /** Store photos in exported PDFs as JPEG (macOS export; drawings stay lossless). */
   compressPhotos: boolean;
-  // Defaults for new documents
+  // Defaults for new documents: empty font and size 0 leave the document's own (typography.ts)
   font: string;
   size: number;
   decimals: number;
@@ -50,7 +50,7 @@ const DEFAULTS: Prefs = {
   exportDpi: 300,
   compressPhotos: true,
   font: "",
-  size: 10,
+  size: 0,
   decimals: 4,
   paper: "A4",
   view: "pages",
@@ -61,7 +61,11 @@ const KEY = "quire.prefs";
 
 function load(): Prefs {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    const stored = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    // 10 pt was the default before documents were typeset, stored with every other preference:
+    // it meant "the default", not a choice
+    if (stored.size === 10) stored.size = 0;
+    return stored;
   } catch {
     return { ...DEFAULTS };
   }
@@ -112,7 +116,7 @@ export function withDefaults(doc: Doc): Doc {
   };
   d.page = { ...(d.page ?? {}), paper: prefs.paper, view: prefs.view };
   if (prefs.lang) d.meta = { ...(d.meta ?? {}), lang: prefs.lang };
-  const body = { ...(prefs.font ? { font: prefs.font } : {}), ...(prefs.size !== 10 ? { size: prefs.size } : {}) };
+  const body = { ...(prefs.font ? { font: prefs.font } : {}), ...(prefs.size > 0 ? { size: prefs.size } : {}) };
   if (Object.keys(body).length) d.styles = { ...(d.styles ?? {}), body: { ...(d.styles?.body ?? {}), ...body } };
   return d;
 }

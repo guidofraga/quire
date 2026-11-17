@@ -13,6 +13,7 @@ import { focusPlot3d } from "./Plot3D";
 import { Sheet } from "./Sheet";
 import { welcomeOpen } from "./Welcome";
 import { prefs } from "./settings";
+import { bodySize, typeset } from "./typography";
 import {
   checkpoint,
   commitEditing,
@@ -868,7 +869,11 @@ export function Canvas() {
         openRegionMenu(e, null);
       }}
     >
-      <div class="scene" style={sceneStyle()}>
+      <div
+        class="scene"
+        classList={{ typeset: typeset(state.doc) }}
+        style={{ ...sceneStyle(), "--doc-size": `${bodySize(state.doc)}pt` }}
+      >
         <Show when={guidesShown()}>
           {/* on screen only: hidden while printing, and not part of the document */}
           <div class="page-guides" aria-hidden="true">

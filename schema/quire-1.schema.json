@@ -65,6 +65,11 @@
     "styles": {
       "type": "object",
       "properties": {
+        "typography": {
+          "description": "The built-in typography where the styles say nothing: absent or 1, the original (system sans text, math at 1.2 times its size); 2, typeset (Quire Text at 10.5 pt, math at the text's size, a heading scale).",
+          "type": "integer",
+          "minimum": 1
+        },
         "numbering": {
           "type": "object",
           "properties": {

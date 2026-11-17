@@ -1448,12 +1448,17 @@ pub fn new_document() -> Json {
     blank_document()
 }
 
+/// The built-in typography new documents get (`styles.typography`, 02-file-format.md §3): Quire
+/// Text and math at one size, a heading scale. Documents without the key keep the look of 1.
+pub const TYPOGRAPHY: u32 = 2;
+
 /// A blank document, without touching the staging area (saving a new note to disk uses it).
 pub(crate) fn blank_document() -> Json {
     json!({
         "format": quire_doc::FORMAT_MAJOR,
         "meta": { "title": "Untitled" },
         "settings": { "display": { "decimals": 4 } },
+        "styles": { "typography": TYPOGRAPHY },
         "page": {
             "view": "pages",
             "paper": "A4",
@@ -1714,6 +1719,17 @@ mod tests {
         // a new blank document uses no images
         let _ = new_document();
         assert!(!assets::is_staged(&kept));
+        Ok(())
+    }
+
+    #[test]
+    fn new_documents_and_built_in_templates_are_typeset()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(blank_document()["styles"]["typography"], json!(TYPOGRAPHY));
+        for t in templates::list(&std::env::temp_dir()).iter().filter(|t| t.builtin) {
+            let doc = templates::document(&std::env::temp_dir(), &t.id)?;
+            assert_eq!(doc.doc["styles"]["typography"], json!(TYPOGRAPHY), "{}", t.id);
+        }
         Ok(())
     }
 

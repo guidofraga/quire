@@ -224,6 +224,8 @@ export interface Doc {
   styles?: {
     body?: TextStyle;
     math?: TextStyle;
+    /** Which built-in typography applies where the styles say nothing: absent = 1 (typography.ts). */
+    typography?: number;
     numbering?: { headings?: string; figures?: string; tables?: string; sections?: string };
     [key: string]: unknown;
   };

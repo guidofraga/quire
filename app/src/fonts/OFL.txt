@@ -1,5 +1,7 @@
 Quire Math is a modified version of STIX Two Math (converted to TrueType outlines and
 subset by tools/build-math-font.py).
+Quire Text is a modified version of STIX Two Text (cut into static Regular and Bold
+instances, subset and renamed by tools/build-text-font.py).
 
 Copyright 2001-2021 The STIX Fonts Project Authors (https://github.com/stipub/stixfonts)
 

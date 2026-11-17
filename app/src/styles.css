@@ -6,6 +6,36 @@
   font-display: block;
 }
 
+/* STIX Two Text, the text face designed with the math font (tools/build-text-font.py): the text
+   of typeset documents (typography.ts). Blocking, like the math: region heights are measured. */
+@font-face {
+  font-family: "Quire Text";
+  src: url("./fonts/QuireText-Regular.woff") format("woff");
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Quire Text";
+  src: url("./fonts/QuireText-Italic.woff") format("woff");
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Quire Text";
+  src: url("./fonts/QuireText-Bold.woff") format("woff");
+  font-weight: 600 700;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Quire Text";
+  src: url("./fonts/QuireText-BoldItalic.woff") format("woff");
+  font-weight: 600 700;
+  font-style: italic;
+  font-display: block;
+}
+
 :root {
   --accent: #2f6fdf;
   --accent-soft: rgba(47, 111, 223, 0.12);
@@ -1804,6 +1834,130 @@ ms.str {
 .contents-empty {
   color: #9aa3af;
   font-style: italic;
+}
+
+/* ================================================================ typeset documents */
+
+/* `styles.typography` 2 (typography.ts): one typeface for text and math, STIX Two Text beside
+   STIX Two Math, so their x-heights match at one size (--doc-size, the body size), and a heading
+   scale. Documents without it keep the rules above, which set their look. */
+.typeset {
+  /* what the text face lacks (≤, ≈, →) from the math face, drawn with it */
+  --doc-font: "Quire Text", "Quire Math", "STIX Two Text", Georgia, serif;
+}
+
+.typeset .region {
+  font-family: var(--doc-font);
+  font-size: var(--doc-size);
+  font-variant-numeric: lining-nums;
+}
+
+/* math at the region's size: the math style's size is the size its letters print at */
+.typeset math,
+.typeset .checks-summary .contents-label math,
+.typeset .sheet td math {
+  font-size: 1em;
+}
+
+.typeset .note {
+  color: #5b616d;
+  font: 0.92em var(--doc-font);
+}
+
+.typeset .text-body p,
+.typeset .rich-editor p {
+  margin: 0 0 0.45em;
+  line-height: 1.3;
+}
+
+.typeset .text-body ul,
+.typeset .text-body ol {
+  margin: 0 0 0.45em;
+  line-height: 1.3;
+}
+
+/* the heading scale at a 10.5 pt body: title 20 pt, 1: 14 pt, 2: 12 pt, 3: 10.5 pt. Space above
+   even at a region's top (headings are usually regions of their own), less below: a heading
+   belongs to what follows it. */
+.typeset .text-body h1,
+.typeset .text-body h2,
+.typeset .text-body h3,
+.typeset .text-body h4,
+.typeset .text-body h5,
+.typeset .text-body h6,
+.typeset .rich-editor h1,
+.typeset .rich-editor h2,
+.typeset .rich-editor h3,
+.typeset .rich-editor h4,
+.typeset .rich-editor h5,
+.typeset .rich-editor h6 {
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.typeset .text-body h1,
+.typeset .rich-editor h1 {
+  margin: 0.6em 0 0.3em;
+  font-size: 1.3333em;
+}
+
+.typeset .text-body h2,
+.typeset .rich-editor h2 {
+  margin: 0.55em 0 0.25em;
+  font-size: 1.1429em;
+}
+
+.typeset .text-body h3,
+.typeset .rich-editor h3 {
+  margin: 0.5em 0 0.2em;
+  font-size: 1em;
+}
+
+.typeset .text-body :is(h4, h5, h6),
+.typeset .rich-editor :is(h4, h5, h6) {
+  margin: 0.4em 0 0.15em;
+  font-size: 1em;
+  font-style: italic;
+}
+
+/* the report's first line */
+.typeset .text-body h1.title,
+.typeset .text-body .title h1,
+.typeset .rich-editor h1.title {
+  margin: 0 0 0.2em;
+  font-size: 1.9048em;
+  line-height: 1.12;
+  letter-spacing: -0.005em;
+}
+
+.typeset .text-body > :last-child,
+.typeset .text-body section > :last-child {
+  margin-bottom: 0;
+}
+
+.typeset .caption {
+  padding: 3px 0 5px;
+  font: 0.8571em/1.3 var(--doc-font);
+}
+
+.typeset .region .sheet {
+  font: 0.9048em var(--doc-font);
+}
+
+.typeset .contents {
+  font: 0.9524em/1.3 var(--doc-font);
+}
+
+.typeset .contents-title {
+  font-size: 1.2em;
+}
+
+.typeset .checks-total {
+  font: 700 1em var(--doc-font);
+}
+
+.typeset .page-hf {
+  font-family: var(--doc-font);
 }
 
 /* ================================================================ inspector */
