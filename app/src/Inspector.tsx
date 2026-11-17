@@ -28,6 +28,7 @@ import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import { DEFAULT_SIZE_3D, Plot3DFields } from "./Plot3D";
 import { defaultLabel } from "./labels";
 import type { Doc, Region } from "./types";
+import { bodySize } from "./typography";
 
 type Tab = "region" | "document" | "page";
 const [tab, setTab] = createSignal<Tab>("region");
@@ -301,7 +302,7 @@ function RegionTab() {
                 <Field label="Font size (pt)">
                   <Num
                     value={r().style?.size}
-                    placeholder={String(state.doc.styles?.body?.size ?? 10)}
+                    placeholder={String(bodySize(state.doc))}
                     step={0.5}
                     onCommit={(v) =>
                       updateRegion(r().id, (d) => {

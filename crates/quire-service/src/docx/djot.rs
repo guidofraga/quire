@@ -224,11 +224,20 @@ impl Conv<'_, '_> {
                 if first {
                     self.heading_numbered = true;
                 }
-                let size = self.rpr().size.unwrap_or(self.w.body_size);
+                let own = self.rpr().size;
+                let size = own.unwrap_or(self.w.body_size);
+                // the title's size; typeset, also a heading's in a region with a size of its own
+                // (the heading styles hold the scale at the document's size)
+                let scale = match (title, self.w.typeset) {
+                    (true, false) => Some(1.8),
+                    (true, true) => Some(super::package::TYPESET_TITLE),
+                    (false, true) if own.is_some() => Some(super::package::typeset_heading_scale(level)),
+                    _ => None,
+                };
                 self.push_run(|r| {
                     r.bold = true;
-                    if title {
-                        r.size = Some((f64::from(size) * 1.8).round() as u32);
+                    if let Some(k) = scale {
+                        r.size = Some((f64::from(size) * k).round() as u32);
                     }
                 });
                 // the heading's number is set in the paragraph mark's font

@@ -119,10 +119,14 @@ function Dialog() {
             </div>
             <div class="insp-row">
               <Field label="Text font">
-                <Text value={prefs.font} placeholder="System" onCommit={(v) => setPref("font", v)} />
+                <Text value={prefs.font} placeholder="Quire Text" onCommit={(v) => setPref("font", v)} />
               </Field>
               <Field label="Size (pt)">
-                <Num value={prefs.size} onCommit={(v) => setPref("size", v && v > 0 ? v : 10)} />
+                <Num
+                  value={prefs.size || undefined}
+                  placeholder="10.5"
+                  onCommit={(v) => setPref("size", v && v > 0 ? v : 0)}
+                />
               </Field>
             </div>
             <div class="insp-row">

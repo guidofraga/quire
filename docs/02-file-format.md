@@ -92,6 +92,7 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
   },
   "units":  { "tf": "1000 'kgf", "crane_load": "1.4 'tonnef" },   // custom unit definitions
   "styles": {
+    "typography": 2,                   // the built-in look where styles say nothing (below)
     "body": { "font": "Arial", "size": 8 },
     "math": { "font": "STIX Two Math", "size": 8 },
     "h1":   { "size": 10, "bold": true },
@@ -115,6 +116,15 @@ A document can also travel in a link: `https://guidofraga.github.io/quire/#doc=<
   "regions": [ /* §4, sorted by (y, x) */ ]
 }
 ```
+
+`styles` sets the document's type. `body` and `math` take a `font` (a family name) and a `size` in points; `h1` and the other heading keys are kept for readers that use them. What a document doesn't set comes from its **typography**, `styles.typography`, so a change of defaults never changes how an existing document looks:
+
+| `typography` | Text | Math | Headings |
+|---|---|---|---|
+| absent or `1` | the system's sans-serif, 10 pt | drawn at 1.2 times `math.size` (10 pt) | bold, at the text's size; a `{.title}` heading 1.8 times it |
+| `2` (typeset) | Quire Text (STIX Two Text, bundled), 10.5 pt, line height 1.3 | at its size, which is the text's size unless `math.size` says otherwise: STIX Two Text and STIX Two Math share their x-height, so the two line up | title 20 pt, level 1 14 pt, level 2 12 pt, level 3 10.5 pt, deeper levels italic, each with space above and less below; captions 9 pt, tables 9.5 pt, header and footer in the text face. Sizes are for a 10.5 pt body; all but the header's and footer's follow `body.size` |
+
+New documents, notes and the built-in templates are written with `"typography": 2`. Documents without the key, everything saved before it existed and SMath imports among them, keep the first typography. Explicit `body`, `math` and region `style` values win in either. Readers that don't know a typography above the ones they have use their highest. In a Word export, typeset text is set in Cambria beside Cambria Math, since Word can't carry the bundled face; the first typography stays in Arial.
 
 `header` and `footer` take the same keys, all optional; a key left out keeps the behaviour documents had before it existed:
 

@@ -458,3 +458,67 @@ fn headings_are_read_as_the_page_reads_them() {
     assert_eq!(pretty_value("1.5*10^-3 'm"), "1.5·10⁻³ m");
     assert_eq!(trim_label("Figure 3 –"), "Figure 3");
 }
+
+/// One style of `styles.xml`, by id: its XML up to the end of the element.
+fn style<'a>(styles: &'a str, id: &str) -> &'a str {
+    let at = styles.find(&format!("w:styleId=\"{id}\"")).unwrap_or(styles.len());
+    let rest = &styles[at..];
+    &rest[..rest.find("</w:style>").unwrap_or(rest.len())]
+}
+
+fn small_document(styles: Json) -> Json {
+    serde_json::json!({
+        "format": "quire/1",
+        "styles": styles,
+        "regions": [
+            {"id": "ttl", "kind": "text", "text": "{.title}\n# Beam design", "at": [0, 0]},
+            {"id": "hda", "kind": "text", "text": "# Data", "at": [0, 60]},
+            {"id": "mth", "kind": "math", "expr": "a := 2", "at": [0, 100]}
+        ]
+    })
+}
+
+#[test]
+fn typeset_documents_export_in_cambria_with_the_heading_scale() -> TestResult {
+    let doc = small_document(serde_json::json!({ "typography": 2 }));
+    let files = unpack(&crate::export_docx(&doc, &DocxOptions::default(), None)?)?;
+    let styles = text(&files, "word/styles.xml")?;
+    // body: Cambria (the serif beside Cambria Math) at 10.5 pt, in half-points
+    assert!(styles.contains("<w:rFonts w:ascii=\"Cambria\""), "{styles}");
+    assert!(styles.contains("<w:sz w:val=\"21\"/>"), "{styles}");
+    // title 20 pt, headings 14 and 12 pt with space above, level 3 at the body size
+    assert!(style(styles, "Title").contains("<w:sz w:val=\"40\"/>"));
+    assert!(style(styles, "Heading1").contains("<w:sz w:val=\"28\"/>"));
+    assert!(style(styles, "Heading1").contains("w:before=\"170\""));
+    assert!(style(styles, "Heading2").contains("<w:sz w:val=\"24\"/>"));
+    assert!(style(styles, "Heading3").contains("<w:sz w:val=\"21\"/>"));
+    // captions in the body face at 9 pt
+    assert!(style(styles, "Caption").contains("<w:sz w:val=\"18\"/>"));
+    assert!(!style(styles, "Caption").contains("Arial"));
+    // math at the text's size, so their x-heights match
+    let body = text(&files, "word/document.xml")?;
+    assert!(
+        body.contains("<w:rFonts w:ascii=\"Cambria Math\" w:hAnsi=\"Cambria Math\"/><w:sz w:val=\"21\"/>"),
+        "{body}"
+    );
+    // the title's run carries its size, as before
+    assert!(body.contains("<w:sz w:val=\"40\"/>"));
+    Ok(())
+}
+
+#[test]
+fn documents_without_a_typography_keep_arial_at_10_pt() -> TestResult {
+    let doc = small_document(serde_json::json!({}));
+    let files = unpack(&crate::export_docx(&doc, &DocxOptions::default(), None)?)?;
+    let styles = text(&files, "word/styles.xml")?;
+    assert!(styles.contains("<w:rFonts w:ascii=\"Arial\""), "{styles}");
+    assert!(styles.contains("<w:sz w:val=\"20\"/>"));
+    assert!(style(styles, "Title").contains("<w:sz w:val=\"36\"/>"));
+    assert!(!style(styles, "Heading1").contains("<w:sz "));
+    assert!(style(styles, "Caption").contains("Arial"));
+    let body = text(&files, "word/document.xml")?;
+    assert!(
+        body.contains("<w:rFonts w:ascii=\"Cambria Math\" w:hAnsi=\"Cambria Math\"/><w:sz w:val=\"20\"/>")
+    );
+    Ok(())
+}

@@ -44,7 +44,11 @@ use xml::{NUM, REF, TITLE, TOC, bookmark, emu, esc, half_points, hex_color, leng
 pub(crate) const HEADING_NUM: u32 = 1;
 pub(crate) const BULLET_NUM: u32 = 2;
 const MONO_FONT: &str = "Courier New";
+/// Body text where the document names no font: Arial in the first typography, Cambria in typeset
+/// documents. Word can't carry the bundled STIX Two Text (Quire Text); Cambria is the serif drawn
+/// to sit beside Cambria Math, as STIX Two Text beside STIX Two Math.
 const DEFAULT_FONT: &str = "Arial";
+const TYPESET_FONT: &str = "Cambria";
 const NOTE_COLOR: &str = "6B7280";
 const ERROR_COLOR: &str = "D1302A";
 const TABLE_BORDER: &str = "9AA3AF";
@@ -544,6 +548,8 @@ pub(crate) struct Writer<'a> {
     geom: Geom,
     pub(crate) body_size: u32,
     math_size: u32,
+    /// `styles.typography` 2: the typeset defaults and heading scale (02-file-format.md §3).
+    pub(crate) typeset: bool,
     group_digits: bool,
     headings_numbered: bool,
     patterns: [String; 3],
@@ -1020,7 +1026,14 @@ impl<'a> Writer<'a> {
         let sheet = r.extra.get("rows").is_some_and(Json::is_array);
         // rows of (cell content, alignment, verdict)
         let mut rows: Vec<Vec<Cell>> = Vec::new();
-        let size = if sheet { 18 } else { 16 };
+        // typeset: 9.5 pt of a 10.5 pt body, as on the page (styles.css `.typeset .region .sheet`)
+        let size = if self.typeset {
+            (f64::from(self.body_size) * 9.5 / 10.5).round() as u32
+        } else if sheet {
+            18
+        } else {
+            16
+        };
         if sheet {
             let raw: Vec<Vec<String>> = r
                 .extra
@@ -1825,6 +1838,10 @@ pub(crate) fn write(
             .filter(|s| !s.is_empty())
             .map_or_else(|| default_label(lang.as_deref().unwrap_or("en"), kind).to_string(), str::to_string)
     };
+    // as typography.ts: typeset text is 10.5 pt and math follows it; the first typography is 10 pt
+    let typeset = styles.and_then(|s| s.get("typography")).and_then(Json::as_f64).is_some_and(|t| t >= 2.0);
+    let body_size =
+        style_num("body", "size").and_then(Json::as_f64).unwrap_or(if typeset { 10.5 } else { 10.0 });
     let group_digits = doc.settings.display.extra.get("groupDigits").and_then(Json::as_bool).unwrap_or(false);
     let mut w = Writer {
         doc: &doc,
@@ -1833,8 +1850,13 @@ pub(crate) fn write(
         asset,
         lang: lang.clone(),
         geom: geometry(doc.extra.get("page")),
-        body_size: half_points(style_num("body", "size").and_then(Json::as_f64).unwrap_or(10.0)),
-        math_size: half_points(style_num("math", "size").and_then(Json::as_f64).unwrap_or(10.0)),
+        body_size: half_points(body_size),
+        math_size: half_points(style_num("math", "size").and_then(Json::as_f64).unwrap_or(if typeset {
+            body_size
+        } else {
+            10.0
+        })),
+        typeset,
         group_digits,
         headings_numbered: numbering.and_then(|n| n.get("headings")).and_then(Json::as_str) != Some(""),
         patterns: [pattern("figures", "figure"), pattern("tables", "table"), pattern("sections", "section")],

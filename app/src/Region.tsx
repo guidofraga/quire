@@ -73,6 +73,7 @@ import {
   withLocalized,
 } from "./store";
 import type { Expr, Fix, Region } from "./types";
+import { bodySize, mathSize } from "./typography";
 
 export interface RegionProps {
   region: Region;
@@ -339,7 +340,7 @@ function TextBody(props: { p: Placed; static?: boolean }) {
   const r = () => props.p.region;
   const style = () => ({
     "font-family": r().style?.font ?? state.doc.styles?.body?.font,
-    "font-size": pt(r().style?.size, state.doc.styles?.body?.size ?? 10),
+    "font-size": pt(r().style?.size, bodySize(state.doc)),
     // aligned text needs the full width to align within; plain text hugs its content
     width: r().width
       ? `${r().width}px`
@@ -1111,7 +1112,7 @@ export function RegionBox(props: RegionProps) {
         left: `${placed().left}px`,
         top: `${placed().top}px`,
         display: placed().hidden ? "none" : undefined,
-        "font-size": r().kind === "math" ? pt(r().style?.size, state.doc.styles?.math?.size ?? 10) : undefined,
+        "font-size": r().kind === "math" ? pt(r().style?.size, mathSize(state.doc)) : undefined,
         "clip-path": clip(),
         ...printedHeight(),
       }}
