@@ -658,7 +658,7 @@ pub(crate) fn unit_choices(
                 unit: (*u).to_string(),
                 text,
                 title: unit_search::compound_title(u).unwrap_or_default(),
-                quantity: quire_units::quantity_of(q.dim),
+                quantity: unit_search::compound_quantity(u, q.dim),
             })
         })
         .collect()
@@ -841,6 +841,9 @@ pub struct Completion {
     /// What it measures: `temperature`, `force`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantity: Option<&'static str>,
+    /// A unit that is only ever written quoted (SMath's `'c`, `'%`): listed only when a `'` is typed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub quoted_only: bool,
 }
 
 /// The names a region sees: the worksheet with the document's own units, and the scope of
@@ -902,6 +905,7 @@ impl Here {
                         preview,
                         title: None,
                         quantity: None,
+                        quoted_only: false,
                     });
                 }
                 quire_eval::Binding::Func(f) if keep(&f.name) => functions.push(Completion {
@@ -911,6 +915,7 @@ impl Here {
                     preview: format!("{}({})", f.name, f.params.join(", ")),
                     title: None,
                     quantity: None,
+                    quoted_only: false,
                 }),
                 _ => {}
             }
@@ -936,6 +941,7 @@ impl Here {
             preview: quantity_text(c.value, c.dim(), self.units()),
             title: Some(c.title.to_string()),
             quantity: quire_units::quantity_of(c.dim()),
+            quoted_only: false,
         }
     }
 
@@ -963,7 +969,8 @@ impl Here {
             kind: "unit",
             preview,
             title,
-            quantity: quire_units::quantity_of(u.dim),
+            quantity: info.and_then(|i| i.quantity).or_else(|| quire_units::quantity_of(u.dim)),
+            quoted_only: info.is_some_and(|i| i.quoted) && units.lookup_bare(n).is_none(),
         })
     }
 }

@@ -73,6 +73,8 @@ export interface Completion {
   title?: string;
   /** What it measures: `temperature`. */
   quantity?: string;
+  /** A unit only ever written quoted (`'c`, `'%`): listed only after a `'`. */
+  quotedOnly?: boolean;
 }
 
 /** quire_service::PlotView */

@@ -37,6 +37,8 @@ test("after a number, C offers °C; ↓ and Enter put it in, and T is 20 °C", a
   await expect(list.getByRole("option").first()).toContainText("coulomb");
   const celsius = list.getByRole("option").filter({ hasText: "degree Celsius · temperature" });
   await expect(celsius).toHaveCount(1);
+  // units written only quoted (the curie, SMath's c) wait for a quote
+  await expect(list.getByRole("option").filter({ hasText: "curie" })).toHaveCount(0);
   await audit(page, "the unit list after 20 C");
   await arrowTo(page, list, /°C/);
   await page.keyboard.press("Enter");
@@ -49,6 +51,18 @@ test("after a number, C offers °C; ↓ and Enter put it in, and T is 20 °C", a
   await expect(regions(page)).toHaveCount(2);
   await expect(page.locator(".region .err")).toHaveCount(0);
   await expect(regions(page).nth(1).locator(".res")).toContainText("293.15");
+});
+
+test("with a quote typed, the units written only quoted are listed, quote and all", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.type("A:=5 'C");
+  const list = names(page);
+  const curie = list.getByRole("option").filter({ hasText: "curie · activity" });
+  await expect(curie).toHaveCount(1);
+  await expect(curie.locator(".name-glyph")).toContainText("'Ci");
+  await arrowTo(page, list, /'Ci/);
+  await page.keyboard.press("Enter");
+  await expect(input(page)).toHaveValue("A:=5 'Ci");
 });
 
 test("°C typed directly is the unit", async ({ page }) => {

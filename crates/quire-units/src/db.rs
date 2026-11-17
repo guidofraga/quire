@@ -20,6 +20,9 @@ struct Def {
     names: &'static [&'static str],
     /// What the unit is called, in words: `degree Celsius`, `kilogram-force`.
     title: &'static str,
+    /// What it measures, where its dimension alone doesn't say (1/s is a frequency for Hz, an
+    /// activity for Bq, a rotational speed for rpm); otherwise the dimension's quantity.
+    quantity: Option<&'static str>,
     factor: f64,
     dim: [i8; 7],
     prefixable: bool,
@@ -36,13 +39,20 @@ const fn u(
     dim: [i8; 7],
     prefixable: bool,
 ) -> Def {
-    Def { names, title, factor, dim, prefixable, offset: 0.0, quoted: false }
+    Def { names, title, quantity: None, factor, dim, prefixable, offset: 0.0, quoted: false }
 }
 
 /// A unit or constant SMath Studio writes in its files (`entries/Units.xml`, `Constants.xml`),
 /// for the names Quire had no unit for; quoted only.
 const fn sm(names: &'static [&'static str], title: &'static str, factor: f64, dim: [i8; 7]) -> Def {
-    Def { names, title, factor, dim, prefixable: false, offset: 0.0, quoted: true }
+    Def { names, title, quantity: None, factor, dim, prefixable: false, offset: 0.0, quoted: true }
+}
+
+impl Def {
+    /// The quantity it measures, where the dimension is shared by several (see [`Def::quantity`]).
+    const fn measures(self, quantity: &'static str) -> Def {
+        Def { quantity: Some(quantity), ..self }
+    }
 }
 
 //                         L  M  T  I  Θ  N  J
@@ -102,7 +112,7 @@ static DEFS: &[Def] = &[
     u(&["Wb"], "weber", 1.0, FLUX, true),
     u(&["T"], "tesla", 1.0, FLUX_DENSITY, true),
     u(&["H"], "henry", 1.0, INDUCTANCE, true),
-    u(&["Hz"], "hertz", 1.0, FREQUENCY, true),
+    u(&["Hz"], "hertz", 1.0, FREQUENCY, true).measures("frequency"),
     // length
     u(&["Å"], "ångström", 1e-10, LEN, false),
     u(&["in", "inch"], "inch", INCH, LEN, false),
@@ -130,7 +140,7 @@ static DEFS: &[Def] = &[
     // velocity, frequency
     u(&["mph"], "mile per hour", 63360.0 * INCH / 3600.0, VELOCITY, false),
     u(&["knot"], "knot", 1852.0 / 3600.0, VELOCITY, false),
-    u(&["rpm"], "revolution per minute", 1.0 / 60.0, FREQUENCY, false),
+    u(&["rpm"], "revolution per minute", 1.0 / 60.0, FREQUENCY, false).measures("rotational speed"),
     // force (gravitational units are first-class: kgf = k + gf)
     u(&["gf"], "gram-force", G0 * 1e-3, FORCE, true),
     u(&["tonnef", "tf"], "tonne-force", G0 * 1e3, FORCE, false),
@@ -141,7 +151,7 @@ static DEFS: &[Def] = &[
     u(&["bar"], "bar", 1e5, PRESSURE, true),
     u(&["atm"], "standard atmosphere", 101325.0, PRESSURE, false),
     u(&["psi"], "pound-force per square inch", LBF / (INCH * INCH), PRESSURE, false),
-    u(&["ksi"], "kip per square inch", LBF * 1e3 / (INCH * INCH), PRESSURE, false),
+    u(&["ksi"], "kip per square inch", LBF * 1e3 / (INCH * INCH), PRESSURE, false).measures("stress"),
     u(&["psf"], "pound-force per square foot", LBF / (144.0 * INCH * INCH), PRESSURE, false),
     u(&["mmHg"], "millimetre of mercury", 133.322387415, PRESSURE, false),
     u(&["torr"], "torr", 101325.0 / 760.0, PRESSURE, false),
@@ -153,22 +163,22 @@ static DEFS: &[Def] = &[
     u(&["erg"], "erg", 1e-7, ENERGY, false),
     u(&["hp"], "horsepower", 745.699_871_582_270_2, POWER, false),
     // angle (dimensionless)
-    u(&["rad"], "radian", 1.0, NONE, true),
-    u(&["deg", "°"], "degree", PI / 180.0, NONE, false),
-    u(&["rev"], "revolution", 2.0 * PI, NONE, false),
+    u(&["rad"], "radian", 1.0, NONE, true).measures("plane angle"),
+    u(&["deg", "°"], "degree", PI / 180.0, NONE, false).measures("plane angle"),
+    u(&["rev"], "revolution", 2.0 * PI, NONE, false).measures("plane angle"),
     // temperature
     Def { offset: 273.15, ..u(&["°C", "degC"], "degree Celsius", 1.0, TEMP, false) },
     Def { offset: 459.67 * 5.0 / 9.0, ..u(&["°F", "degF"], "degree Fahrenheit", 5.0 / 9.0, TEMP, false) },
     u(&["°R", "degR"], "degree Rankine", 5.0 / 9.0, TEMP, false),
     // SMath Studio's units: factors as SMath defines them
-    sm(&["%"], "percent", 0.01, NONE),
-    sm(&["‰"], "per mille", 0.001, NONE),
-    sm(&["ppm"], "part per million", 1e-06, NONE),
-    sm(&["ppb"], "part per billion", 1e-09, NONE),
-    sm(&["arcmin"], "minute of arc", 0.0002908882086657216, NONE),
-    sm(&["arcsec"], "second of arc", 4.84813681109536e-06, NONE),
-    sm(&["grad", "gon"], "gon", 0.015707963267948967, NONE),
-    sm(&["rph"], "revolution per hour", 0.0017453292519943296, FREQUENCY),
+    sm(&["%"], "percent", 0.01, NONE).measures("ratio"),
+    sm(&["‰"], "per mille", 0.001, NONE).measures("ratio"),
+    sm(&["ppm"], "part per million", 1e-06, NONE).measures("ratio"),
+    sm(&["ppb"], "part per billion", 1e-09, NONE).measures("ratio"),
+    sm(&["arcmin"], "minute of arc", 0.0002908882086657216, NONE).measures("plane angle"),
+    sm(&["arcsec"], "second of arc", 4.84813681109536e-06, NONE).measures("plane angle"),
+    sm(&["grad", "gon"], "gon", 0.015707963267948967, NONE).measures("plane angle"),
+    sm(&["rph"], "revolution per hour", 0.0017453292519943296, FREQUENCY).measures("rotational speed"),
     sm(&["barn"], "barn", 1e-28, AREA),
     sm(&["a"], "are", 100.0, AREA),
     sm(&["ca"], "centiare", 1.0, AREA),
@@ -177,14 +187,15 @@ static DEFS: &[Def] = &[
     sm(&["kat", "katal"], "katal", 1.0, CATALYTIC),
     sm(&["Fr", "statC"], "statcoulomb", 3.3356409500000003e-10, CHARGE),
     sm(&["Fd", "faraday"], "faraday", 96485.3328959, CHARGE),
-    sm(&["Gy", "Sv"], "gray", 1.0, DOSE),
-    sm(&["Gi"], "gilbert", 0.7957747154594768, CURRENT),
+    sm(&["Gy"], "gray", 1.0, DOSE),
+    sm(&["Sv"], "sievert", 1.0, DOSE).measures("equivalent dose"),
+    sm(&["Gi"], "gilbert", 0.7957747154594768, CURRENT).measures("magnetomotive force"),
     sm(&["joule"], "joule", 1.0, ENERGY),
     sm(&["dyne"], "dyne", 1e-05, FORCE),
     sm(&["tonf"], "ton-force (short)", 8896.443230521, FORCE),
-    sm(&["radpm"], "radian per minute", 0.016666666666666666, FREQUENCY),
-    sm(&["lx"], "lux", 1.0, ILLUMINANCE),
-    sm(&["klx"], "kilolux", 1000.0, ILLUMINANCE),
+    sm(&["radpm"], "radian per minute", 0.016666666666666666, FREQUENCY).measures("rotational speed"),
+    sm(&["lx"], "lux", 1.0, ILLUMINANCE).measures("illuminance"),
+    sm(&["klx"], "kilolux", 1000.0, ILLUMINANCE).measures("illuminance"),
     sm(&["henry"], "henry", 1.0, INDUCTANCE),
     sm(&["micron"], "micrometre", 1e-06, LEN),
     sm(&["Angstrom"], "ångström", 1e-10, LEN),
@@ -205,9 +216,9 @@ static DEFS: &[Def] = &[
     sm(&["watt"], "watt", 1.0, POWER),
     sm(&["hhp"], "hydraulic horsepower", 746.043, POWER),
     sm(&["inHg"], "inch of mercury", 3386.3889999999997, PRESSURE),
-    sm(&["kpsi"], "kilopound-force per square inch", 6894757.293168359, PRESSURE),
+    sm(&["kpsi"], "kilopound-force per square inch", 6894757.293168359, PRESSURE).measures("stress"),
     sm(&["ksf"], "kip per square foot", 47880.2589803358, PRESSURE),
-    sm(&["dpi"], "dot per inch", 39.37007874015748, [-1, 0, 0, 0, 0, 0, 0]),
+    sm(&["dpi"], "dot per inch", 39.37007874015748, [-1, 0, 0, 0, 0, 0, 0]).measures("resolution"),
     sm(&["atom"], "atom", 1.6605391e-24, AMOUNT),
     sm(&["lbmol"], "pound-mole", 453.59236999999996, AMOUNT),
     sm(&["°Ra"], "degree Rankine", 0.5555555555555556, TEMP),
@@ -223,22 +234,22 @@ static DEFS: &[Def] = &[
     sm(&["kn"], "knot", 0.514444, VELOCITY),
     sm(&["P", "poise"], "poise", 0.1, [-1, 1, -1, 0, 0, 0, 0]),
     sm(&["St", "stokes"], "stokes", 0.0001, [2, 0, -1, 0, 0, 0, 0]),
-    sm(&["Bq"], "becquerel", 1.0, FREQUENCY),
-    sm(&["kBq"], "kilobecquerel", 1000.0, FREQUENCY),
-    sm(&["MBq"], "megabecquerel", 1000000.0, FREQUENCY),
-    sm(&["GBq"], "gigabecquerel", 1000000000.0, FREQUENCY),
-    sm(&["Ci"], "curie", 37000000000.0, FREQUENCY),
-    sm(&["μCi"], "microcurie", 37000.0, FREQUENCY),
-    sm(&["mCi"], "millicurie", 37000000.0, FREQUENCY),
-    sm(&["sr"], "steradian", 1.0, NONE),
-    sm(&["lm"], "lumen", 1.0, LUMINOUS),
-    sm(&["klm"], "kilolumen", 1000.0, LUMINOUS),
+    sm(&["Bq"], "becquerel", 1.0, FREQUENCY).measures("activity"),
+    sm(&["kBq"], "kilobecquerel", 1000.0, FREQUENCY).measures("activity"),
+    sm(&["MBq"], "megabecquerel", 1000000.0, FREQUENCY).measures("activity"),
+    sm(&["GBq"], "gigabecquerel", 1000000000.0, FREQUENCY).measures("activity"),
+    sm(&["Ci"], "curie", 37000000000.0, FREQUENCY).measures("activity"),
+    sm(&["μCi"], "microcurie", 37000.0, FREQUENCY).measures("activity"),
+    sm(&["mCi"], "millicurie", 37000000.0, FREQUENCY).measures("activity"),
+    sm(&["sr"], "steradian", 1.0, NONE).measures("solid angle"),
+    sm(&["lm"], "lumen", 1.0, LUMINOUS).measures("luminous flux"),
+    sm(&["klm"], "kilolumen", 1000.0, LUMINOUS).measures("luminous flux"),
     sm(&["Mx"], "maxwell", 1e-08, FLUX),
     sm(&["D"], "debye", 3.3356409500000006e-30, [1, 0, 1, 1, 0, 0, 0]),
     sm(&["den"], "denier", 1.11e-07, [-1, 1, 0, 0, 0, 0, 0]),
     sm(&["Oe"], "oersted", 79.5775, [-1, 0, 0, 1, 0, 0, 0]),
-    sm(&["sb"], "stilb", 10000.0, ILLUMINANCE),
-    sm(&["nt"], "nit", 1.0, ILLUMINANCE),
+    sm(&["sb"], "stilb", 10000.0, ILLUMINANCE).measures("luminance"),
+    sm(&["nt"], "nit", 1.0, ILLUMINANCE).measures("luminance"),
     // SMath's 'cal and 'kcal: the International Table calorie ('cal here is the thermochemical one)
     sm(&["cal.IT"], "calorie (International Table)", 4.1868, ENERGY),
     sm(&["kcal.IT"], "kilocalorie (International Table)", 4186.8, ENERGY),
@@ -276,8 +287,8 @@ const fn kind(dim: [i8; 7], quantity: &'static str, si: Option<&'static str>) ->
 /// The named units first, in the order results prefer them.
 static KINDS: &[Kind] = &[
     kind(FORCE, "force", Some("N")),
-    kind(PRESSURE, "pressure, stress", Some("Pa")),
-    kind(ENERGY, "energy, moment", Some("J")),
+    kind(PRESSURE, "pressure", Some("Pa")),
+    kind(ENERGY, "energy", Some("J")),
     kind(POWER, "power", Some("W")),
     kind(CHARGE, "electric charge", Some("C")),
     kind(VOLTAGE, "voltage", Some("V")),
@@ -308,7 +319,7 @@ static KINDS: &[Kind] = &[
     kind([2, 0, -1, 0, 0, 0, 0], "kinematic viscosity", None),
     kind(CATALYTIC, "catalytic activity", None),
     kind(DOSE, "absorbed dose", None),
-    kind(ILLUMINANCE, "illuminance, luminance", None),
+    kind(ILLUMINANCE, "illuminance", None),
     kind([1, 0, 1, 1, 0, 0, 0], "electric dipole moment", None),
     kind([-1, 0, 0, 1, 0, 0, 0], "magnetic field strength", None),
     kind([-1, 0, 0, 0, 0, 0, 0], "per length", None),
@@ -428,7 +439,7 @@ pub fn catalog() -> &'static [UnitInfo] {
                 symbol: d.names[0].to_string(),
                 aliases: d.names[1..].iter().map(|n| n.to_string()).collect(),
                 title: d.title.to_string(),
-                quantity: quantity_of(Dim::from_ints(d.dim)),
+                quantity: d.quantity.or_else(|| quantity_of(Dim::from_ints(d.dim))),
                 unit: d.unit(),
                 prefixable: d.prefixable,
                 quoted: d.quoted,
@@ -455,7 +466,7 @@ pub fn catalog() -> &'static [UnitInfo] {
                     symbol,
                     aliases,
                     title: format!("{}{}", p.word, d.title),
-                    quantity: quantity_of(Dim::from_ints(d.dim)),
+                    quantity: d.quantity.or_else(|| quantity_of(Dim::from_ints(d.dim))),
                     unit: Unit { factor: d.factor * p.factor, ..d.unit() },
                     prefixable: false,
                     quoted: false,
@@ -591,6 +602,28 @@ mod tests {
         assert!(catalog().iter().all(|i| !i.title.is_empty()));
     }
 
+    /// Quantities joined with a comma on purpose: none so far.
+    const SHARED: &[&str] = &[];
+
+    #[test]
+    fn each_unit_measures_one_quantity() {
+        let joined: Vec<String> = catalog()
+            .iter()
+            .filter_map(|i| {
+                i.quantity
+                    .filter(|q| q.contains(',') && !SHARED.contains(q))
+                    .map(|q| format!("{}: {q}", i.symbol))
+            })
+            .chain(
+                KINDS
+                    .iter()
+                    .filter(|k| k.quantity.contains(',') && !SHARED.contains(&k.quantity))
+                    .map(|k| k.quantity.to_string()),
+            )
+            .collect();
+        assert!(joined.is_empty(), "labels with two quantities: {joined:?}");
+    }
+
     #[test]
     fn prefixed_units_are_named_from_their_parts() -> Result<(), String> {
         let title = |n: &str| unit_info(n).map(|i| i.title.clone()).ok_or(format!("no {n}"));
@@ -617,9 +650,21 @@ mod tests {
         let q = |n: &str| unit_info(n).and_then(|i| i.quantity);
         assert_eq!(q("°C"), Some("temperature"));
         assert_eq!(q("kgf"), Some("force"));
-        assert_eq!(q("psi"), Some("pressure, stress"));
+        assert_eq!(q("psi"), Some("pressure"));
+        assert_eq!(q("ksi"), Some("stress"));
+        assert_eq!(q("Hz"), Some("frequency"));
+        assert_eq!(q("Ci"), Some("activity"));
+        assert_eq!(q("MBq"), Some("activity"));
+        assert_eq!(q("rpm"), Some("rotational speed"));
+        assert_eq!(q("cal"), Some("energy"));
+        assert_eq!(q("lm"), Some("luminous flux"));
+        assert_eq!(q("lx"), Some("illuminance"));
+        assert_eq!(q("nt"), Some("luminance"));
+        assert_eq!(q("Gy"), Some("absorbed dose"));
+        assert_eq!(q("Sv"), Some("equivalent dose"));
+        assert_eq!(q("sr"), Some("solid angle"));
         assert_eq!(q("C"), Some("electric charge"));
-        assert_eq!(q("rad"), None, "angles are dimensionless");
+        assert_eq!(q("rad"), Some("plane angle"), "said by the unit: angles are dimensionless");
         let named: Vec<&str> = UnitRegistry::named_si().iter().map(|(n, _)| *n).collect();
         assert_eq!(named, ["N", "Pa", "J", "W", "C", "V", "F", "Ω", "S", "Wb", "T", "H"]);
     }

@@ -148,6 +148,23 @@ pub(crate) fn unit_title(name: &str) -> String {
     unit_info(name).map_or_else(|| name.to_string(), |i| i.title.clone())
 }
 
+/// What a unit written in linear syntax measures: a unit's own quantity (`Ci`: activity), a
+/// force times a length a moment (`kN*m`), else what its dimension measures.
+pub(crate) fn compound_quantity(spec: &str, dim: quire_units::Dim) -> Option<&'static str> {
+    if let Some(i) = unit_info(spec.trim()) {
+        return i.quantity;
+    }
+    let parts: Vec<Option<&str>> = spec
+        .split(['*', '/'])
+        .map(|p| unit_info(p.trim_matches(['(', ')']).trim()).and_then(|i| i.quantity))
+        .collect();
+    let product = !spec.contains('/') && parts.len() == 2;
+    if product && parts.contains(&Some("force")) && parts.contains(&Some("length")) {
+        return Some("moment");
+    }
+    quantity_of(dim)
+}
+
 /// What a unit written in linear syntax is called, from its parts: `kN*m` → `kilonewton
 /// metre`, `N/mm^2` → `newton per square millimetre`, `m/s^2` → `metre per second squared`.
 pub(crate) fn compound_title(spec: &str) -> Option<String> {
@@ -181,9 +198,16 @@ pub(crate) fn compound_title(spec: &str) -> Option<String> {
 /// What can go where a unit is being typed in region `region_id`, best first: the units
 /// `query` matches (by symbol, other spellings, full name or quantity), and your variables and
 /// the constants it matches, scored the same way. Each comes with the text to insert there
-/// (`°C`, or `'°C` where a plain name would mean something else).
+/// (`°C`, or `'°C` where a plain name would mean something else). Units only ever written
+/// quoted (SMath's `'c`, `'%`) are listed only when `query` starts with `'`.
 pub fn complete_units(doc_json: &Json, region_id: &str, query: &str) -> Result<Vec<Completion>> {
     let here = Here::new(doc_json, region_id)?;
+    // a unit SMath writes only quoted (`'c`, `'Ci`) is listed only when the `'` is typed: next
+    // to the constant c and the units people mean, it is a second "c" that confuses
+    let (quoted, query) = match query.strip_prefix('\'') {
+        Some(rest) => (true, rest),
+        None => (false, query),
+    };
     let units = catalog();
     let custom: Vec<(String, u8)> = here.custom_units.iter().map(|n| (n.clone(), CONSTANT_CLASS)).collect();
     // every candidate, with what to make of it when it is kept
@@ -194,7 +218,7 @@ pub fn complete_units(doc_json: &Json, region_id: &str, query: &str) -> Result<V
     }
     let yours = here.yours(|_| true);
     let mut ranked: Vec<(Rank, Of)> = Vec::new();
-    for (order, i) in units.iter().enumerate() {
+    for (order, i) in units.iter().enumerate().filter(|(_, i)| quoted || !i.quoted) {
         if let Some(r) = rank(query, &unit_candidate(i, order)) {
             ranked.push((r, Of::Unit(&i.symbol)));
         }
@@ -288,7 +312,7 @@ pub fn show_in(doc_json: &Json, region_id: &str, query: &str) -> Result<Vec<Unit
                 symbol: u,
                 aliases: Vec::new(),
                 title,
-                quantity: quantity_of(dim),
+                quantity: compound_quantity(u, dim),
                 class: 0,
                 quoted: false,
                 prefix: "",
@@ -347,6 +371,8 @@ mod tests {
         assert!(place(&list, "°C").is_some_and(|i| i < 3), "{list:?}");
         // and other units that start that way
         assert!(place(&list, "cd").is_some() && place(&list, "cal").is_some(), "{list:?}");
+        // C, °C, the constant c, cd, cal: nothing SMath-only
+        assert_eq!(&list[..5], ["C", "°C", "c", "cd", "cal"]);
         Ok(())
     }
 
@@ -367,14 +393,41 @@ mod tests {
     }
 
     #[test]
-    fn smath_only_units_come_last() -> TestResult {
-        let list = complete_units(&doc(&[]), "new", "c")?;
-        let quoted = |c: &Completion| c.insert.starts_with('\'');
-        let names: Vec<&str> = list.iter().map(|c| c.insert.as_str()).collect();
-        let first_quoted = list.iter().position(quoted).ok_or(format!("no quoted unit for c: {names:?}"))?;
-        assert!(list[first_quoted..].iter().all(|c| c.kind == "unit" && quoted(c)), "{list:?}");
-        // `'c`, the speed of light as SMath writes it, is listed but quoted
-        assert!(list.iter().any(|c| c.insert == "'c"));
+    fn smath_only_units_are_listed_only_after_a_quote_and_last() -> TestResult {
+        // no second "c" (SMath's speed of light), no curie or centiare beside the constant c
+        let plain = complete_units(&doc(&[]), "new", "c")?;
+        assert!(plain.iter().all(|c| !c.quoted_only), "{plain:?}");
+        assert!(!plain.iter().any(|c| matches!(c.name.as_str(), "Ci" | "ca" | "ct")), "{plain:?}");
+        assert_eq!(plain.iter().filter(|c| c.name == "c").count(), 1, "only the constant: {plain:?}");
+        // typed with its quote, they are there, quoted, after the rest
+        let quoted = complete_units(&doc(&[]), "new", "'c")?;
+        let first = quoted.iter().position(|c| c.quoted_only).ok_or("no SMath unit for 'c")?;
+        assert!(quoted[first..].iter().all(|c| c.quoted_only && c.insert.starts_with('\'')), "{quoted:?}");
+        assert!(quoted.iter().any(|c| c.insert == "'c" && c.quoted_only));
+        assert!(quoted.iter().any(|c| c.insert == "'Ci"));
+        Ok(())
+    }
+
+    #[test]
+    fn rows_say_what_each_unit_measures() -> TestResult {
+        let about =
+            |q: &str, name: &str| -> std::result::Result<Option<&'static str>, Box<dyn std::error::Error>> {
+                let list = complete_units(&doc(&[]), "new", q)?;
+                Ok(list.iter().find(|c| c.name == name).ok_or(format!("no {name}"))?.quantity)
+            };
+        assert_eq!(about("cal", "cal")?, Some("energy"));
+        assert_eq!(about("Hz", "Hz")?, Some("frequency"));
+        assert_eq!(about("rpm", "rpm")?, Some("rotational speed"));
+        assert_eq!(about("'Ci", "Ci")?, Some("activity"));
+        assert_eq!(about("'lm", "lm")?, Some("luminous flux"));
+        assert_eq!(
+            compound_quantity("kN*m", quire_units::unit_info("J").ok_or("no J")?.unit.dim),
+            Some("moment")
+        );
+        assert_eq!(
+            compound_quantity("kW*h", quire_units::unit_info("J").ok_or("no J")?.unit.dim),
+            Some("energy")
+        );
         Ok(())
     }
 

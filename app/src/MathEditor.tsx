@@ -325,7 +325,8 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
       insert: c.insert,
       note: about,
       kind: c.kind,
-      html: nameHtml(c.name, c.kind),
+      // a unit only ever written quoted shows its quote
+      html: `${c.quotedOnly ? "'" : ""}${nameHtml(c.name, c.kind)}`,
       speak: `${c.name}, ${KIND_WORD[c.kind]}, ${about}`,
     };
   };
@@ -385,10 +386,12 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
       toSay = false;
     };
     // what is known answers now; the engine is asked once typing pauses
-    const known = search ? knownUnitMeanings(id, prefix) : knownMeanings(id, prefix);
+    // with its quote typed (`20 'c`) the units SMath writes only quoted are searched too
+    const query = here.marker === "'" ? `'${prefix}` : prefix;
+    const known = search ? knownUnitMeanings(id, query) : knownMeanings(id, prefix);
     if (known) show(known.list);
     if (known?.exact) return;
-    const lookUp = () => (search ? unitMeanings(id, prefix) : meanings(id, prefix));
+    const lookUp = () => (search ? unitMeanings(id, query) : meanings(id, prefix));
     nameTimer = setTimeout(() => void lookUp().then(show), asked ? 0 : 150);
   };
 
