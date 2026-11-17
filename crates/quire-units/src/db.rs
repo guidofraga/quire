@@ -29,7 +29,13 @@ struct Def {
     quoted: bool,
 }
 
-const fn u(names: &'static [&'static str], title: &'static str, factor: f64, dim: [i8; 7], prefixable: bool) -> Def {
+const fn u(
+    names: &'static [&'static str],
+    title: &'static str,
+    factor: f64,
+    dim: [i8; 7],
+    prefixable: bool,
+) -> Def {
     Def { names, title, factor, dim, prefixable, offset: 0.0, quoted: false }
 }
 
@@ -434,7 +440,9 @@ pub fn catalog() -> &'static [UnitInfo] {
             for p in PREFIXES.iter().filter(|p| !p.spelling) {
                 let symbol = format!("{}{}", p.symbol, d.names[0]);
                 // a defined name (`min`) or one that reads as another unit is not a prefixed form
-                let same = |n: &str| reg.lookup(n).is_some_and(|u| u.dim == d.unit().dim && !defined.contains_key(n));
+                let same = |n: &str| {
+                    reg.lookup(n).is_some_and(|u| u.dim == d.unit().dim && !defined.contains_key(n))
+                };
                 if !same(&symbol) {
                     continue;
                 }
@@ -533,9 +541,7 @@ impl UnitRegistry {
     /// Named coherent SI units used when displaying results without an explicit unit.
     pub fn named_si() -> &'static [(&'static str, Dim)] {
         static NAMED: OnceLock<Vec<(&'static str, Dim)>> = OnceLock::new();
-        NAMED.get_or_init(|| {
-            KINDS.iter().filter_map(|k| k.si.map(|n| (n, Dim::from_ints(k.dim)))).collect()
-        })
+        NAMED.get_or_init(|| KINDS.iter().filter_map(|k| k.si.map(|n| (n, Dim::from_ints(k.dim)))).collect())
     }
 }
 
@@ -579,7 +585,8 @@ mod tests {
 
     #[test]
     fn every_unit_has_a_full_name() {
-        let unnamed: Vec<&str> = DEFS.iter().filter(|d| d.title.trim().is_empty()).map(|d| d.names[0]).collect();
+        let unnamed: Vec<&str> =
+            DEFS.iter().filter(|d| d.title.trim().is_empty()).map(|d| d.names[0]).collect();
         assert!(unnamed.is_empty(), "units without a full name: {unnamed:?}");
         assert!(catalog().iter().all(|i| !i.title.is_empty()));
     }

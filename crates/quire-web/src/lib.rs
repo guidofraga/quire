@@ -40,7 +40,8 @@ pub fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
         )
         .map_err(|e| e.to_string()),
         "complete_units" => serde_json::to_value(
-            quire_service::complete_units(doc()?, arg(body, "regionId")?, arg(body, "query")?).map_err(err)?,
+            quire_service::complete_units(doc()?, arg(body, "regionId")?, arg(body, "query")?)
+                .map_err(err)?,
         )
         .map_err(|e| e.to_string()),
         "show_in" => serde_json::to_value(

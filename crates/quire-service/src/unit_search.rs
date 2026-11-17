@@ -83,7 +83,8 @@ pub(crate) fn rank(query: &str, c: &Candidate) -> Option<Rank> {
     } else if plains.iter().any(|p| p == q) {
         1
     } else if any_case
-        && (names.iter().any(|n| n.to_lowercase() == lower) || plains.iter().any(|p| p.to_lowercase() == lower))
+        && (names.iter().any(|n| n.to_lowercase() == lower)
+            || plains.iter().any(|p| p.to_lowercase() == lower))
     {
         2
     } else if beyond && (names.iter().any(|n| n.starts_with(q)) || plains.iter().any(|p| p.starts_with(q))) {
@@ -166,7 +167,10 @@ pub(crate) fn compound_title(spec: &str) -> Option<String> {
         })
     };
     let group = |g: &str| -> Option<String> {
-        g.split('*').map(|p| part(p.trim_matches(|c| c == '(' || c == ')'))).collect::<Option<Vec<_>>>().map(|v| v.join(" "))
+        g.split('*')
+            .map(|p| part(p.trim_matches(|c| c == '(' || c == ')')))
+            .collect::<Option<Vec<_>>>()
+            .map(|v| v.join(" "))
     };
     match spec.split_once('/') {
         Some((num, den)) => Some(format!("{} per {}", group(num)?, group(den)?)),
@@ -301,7 +305,7 @@ pub fn show_in(doc_json: &Json, region_id: &str, query: &str) -> Result<Vec<Unit
             let c = Candidate { class: c.class.max(1), ..c };
             ranked.extend(rank(query, &c).map(|r| (r, i.symbol.clone())));
         }
-        ranked.sort_by(|a, b| a.0.cmp(&b.0));
+        ranked.sort_by_key(|(r, _)| *r);
         ranked.into_iter().map(|(_, u)| u).take(LIMIT).collect()
     };
     let candidates: Vec<(&str, quire_units::Dim)> = picked.iter().map(|u| (u.as_str(), dim)).collect();

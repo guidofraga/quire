@@ -30,8 +30,8 @@ use serde_json::{Value as Json, json};
 
 pub use docx::DocxOptions;
 pub use names::{upgrade_document, upgrade_names};
-pub use unit_search::{complete_units, show_in};
 pub use text::{inline_math, render_djot, render_djot_editable, render_djot_with_math};
+pub use unit_search::{complete_units, show_in};
 
 #[derive(Debug)]
 pub struct ServiceError(pub String);
@@ -654,14 +654,12 @@ pub(crate) fn unit_choices(
         .filter(|(_, d)| *d == q.dim)
         .filter_map(|(u, _)| {
             let spec = DisplaySpec { unit: Some((*u).to_string()), decimals: spec.decimals };
-            quire_eval::format_value(v, &spec, settings, units)
-                .ok()
-                .map(|text| UnitChoice {
-                    unit: (*u).to_string(),
-                    text,
-                    title: unit_search::compound_title(u).unwrap_or_default(),
-                    quantity: quire_units::quantity_of(q.dim),
-                })
+            quire_eval::format_value(v, &spec, settings, units).ok().map(|text| UnitChoice {
+                unit: (*u).to_string(),
+                text,
+                title: unit_search::compound_title(u).unwrap_or_default(),
+                quantity: quire_units::quantity_of(q.dim),
+            })
         })
         .collect()
 }
@@ -817,7 +815,11 @@ fn redefines(name: &str, marked: bool, units: &quire_units::UnitRegistry) -> Opt
         return Some(Redefines { name: name.to_string(), kind: "constant", title: c.title.to_string() });
     }
     if !marked && units.lookup_bare(name).is_some() {
-        return Some(Redefines { name: name.to_string(), kind: "unit", title: unit_search::unit_title(name) });
+        return Some(Redefines {
+            name: name.to_string(),
+            kind: "unit",
+            title: unit_search::unit_title(name),
+        });
     }
     None
 }
@@ -884,8 +886,9 @@ impl Here {
         for (key, binding) in self.env.iter() {
             match binding {
                 quire_eval::Binding::Val(v) if keep(key) => {
-                    let text = quire_eval::format_value(v, &DisplaySpec::default(), &preview_settings, self.units())
-                        .unwrap_or_default();
+                    let text =
+                        quire_eval::format_value(v, &DisplaySpec::default(), &preview_settings, self.units())
+                            .unwrap_or_default();
                     // short: a matrix shows its start
                     let preview = if text.chars().count() > 40 {
                         format!("{}…", text.chars().take(39).collect::<String>())
@@ -971,8 +974,11 @@ impl Here {
 pub fn complete(doc_json: &Json, region_id: &str, prefix: &str) -> Result<Vec<Completion>> {
     let here = Here::new(doc_json, region_id)?;
     let mut out = here.yours(|n| n.starts_with(prefix));
-    let mut constants: Vec<Completion> =
-        quire_eval::CONSTANTS.iter().filter(|c| c.name.starts_with(prefix)).map(|c| here.constant(c)).collect();
+    let mut constants: Vec<Completion> = quire_eval::CONSTANTS
+        .iter()
+        .filter(|c| c.name.starts_with(prefix))
+        .map(|c| here.constant(c))
+        .collect();
     constants.sort_by(|a, b| a.name.cmp(&b.name));
     let mut unit_names: Vec<String> = quire_units::UnitRegistry::builtin()
         .into_iter()
@@ -1149,7 +1155,10 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 .names_read_as_units
                 .iter()
                 .filter(|n| !quiet.contains(n))
-                .map(|n| NameAsUnit { name: n.clone(), unit: quire_units::unit_info(n).map(|i| i.title.clone()) })
+                .map(|n| NameAsUnit {
+                    name: n.clone(),
+                    unit: quire_units::unit_info(n).map(|i| i.title.clone()),
+                })
                 .collect(),
             defines: o.defines.clone(),
             redefines: o.defines.as_deref().and_then(|n| redefines(n, marked, units)),
