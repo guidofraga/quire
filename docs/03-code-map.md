@@ -141,12 +141,14 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 
 | File | What lives there |
 |---|---|
-| `FormatBar.tsx` | The ribbon: Text, Paragraph, Equation, Arrange. |
+| `FormatBar.tsx` | The format bar: Text and Paragraph for text, Equation (the Structures and Symbols galleries) for math, Arrange for several regions; only what applies to the region being edited or selected (`context`), empty with nothing selected, always the same height. |
 | `Inspector.tsx` | Region, document and page properties. |
 | `Sidebar.tsx` | The notebook sidebar: switcher, tree, search, the note title in the toolbar. Dragging is done with pointer events (not HTML drag and drop, which the desktop webview hands to the system on some platforms): a drop line between rows, a filled section to drop into, sections that open when held over, scrolling near the edges. |
 | `SidebarDialogs.tsx` | The sidebar's confirmation before items go to the Trash, and the Move to… picker of sections. |
-| `Palette.tsx` | ⌘K: commands, variables, symbols and notes. |
-| `Welcome.tsx`, `TemplatesDialog.tsx`, `SettingsDialog.tsx`, `HelpDialog.tsx`, `RefPicker.tsx`, `Updates.tsx` | Dialogs and banners. |
+| `Palette.tsx`, `commands.ts` | ⌘K: commands (by area, with icons), variables, symbols and notes. `commands.ts` orders them: recent commands first (kept in `localStorage`), then the areas in the menus' order, a notebook's commands first in a notebook and last outside one, fuzzy matching. |
+| `Welcome.tsx`, `thumbnail.ts` | The Welcome screen; each template's first page in miniature, drawn from the template's JSON alone (no evaluation or rendering, so it is cheap and works offline and on the web). |
+| `TemplatesDialog.tsx`, `SettingsDialog.tsx`, `HelpDialog.tsx`, `RefPicker.tsx`, `Updates.tsx` | Dialogs and banners. |
+| `icons.tsx` | The chrome's 16 px line icons, inline SVG (the palette, the Welcome screen). |
 | `ContextMenu.tsx`, `menu.ts`, `Popover.tsx`, `Tooltip.tsx`, `Completion.tsx`, `FindBar.tsx` | Small floating UI. |
 | `symbols.ts`, `insert.ts` | The symbol and structure catalogue behind the galleries and `\name` shortcuts. |
 

@@ -8,7 +8,7 @@ import { selectInView } from "./Canvas";
 import { editTableAt } from "./TableEditor";
 import { prefs } from "./settings";
 import { isMac } from "./api";
-import { createEffect, on, onCleanup, untrack } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, untrack } from "solid-js";
 import { announceFirst, completionKey, hideCompletions, type Item, openList, showCompletions } from "./Completion";
 import { nameHtml, prettyValue } from "./math";
 import { announce } from "./a11y";
@@ -50,6 +50,9 @@ const GREEK: Record<string, string> = Object.fromEntries(
 const LATIN = Object.fromEntries(Object.entries(GREEK).map(([l, g]) => [g, l]));
 
 let activeMathInput: HTMLInputElement | null = null;
+/** Whether math is being typed: the format bar shows the galleries meanwhile. */
+const [mathActive, setMathActive] = createSignal(false);
+export { mathActive };
 /** Undo and redo for the math being edited, set while its editor is on the page. */
 let activeMathHistory: ((redo: boolean) => void) | null = null;
 
@@ -219,6 +222,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     else input.setSelectionRange(at, at);
     activeMathInput = input;
     activeMathHistory = travel;
+    setMathActive(true);
     // the regions above may have changed since the last edit
     forgetMeanings(viewId);
     traceCaret();
@@ -228,6 +232,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     if (activeMathInput === input) {
       activeMathInput = null;
       activeMathHistory = null;
+      setMathActive(false);
     }
     setCaretName(null);
     hideCompletions();
