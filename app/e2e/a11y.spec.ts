@@ -22,6 +22,8 @@ for (const scheme of ["light", "dark"] as const) {
 
     test("format bar galleries and menus", async ({ page }) => {
       await blankButton(page).click();
+      // the galleries are in the format bar while math is typed
+      await page.keyboard.type("a:=1");
       await page.getByRole("button", { name: "Symbols" }).click();
       await expect(page.getByRole("dialog", { name: "Symbols" })).toBeVisible();
       await audit(page, "symbols gallery");
@@ -86,6 +88,8 @@ test.describe("keyboard", () => {
   });
 
   test("insert a symbol from the Symbols gallery, and Esc returns to the button", async ({ page }) => {
+    // math typed, then F6 away from it: still selected, so the format bar offers its galleries
+    await page.keyboard.type("a:=1");
     // F6 from the page: the toolbar (its first control is the sidebar button), then the format bar
     await page.keyboard.press("F6");
     await expect(page.getByRole("button", { name: "Show the sidebar" })).toBeFocused();
@@ -108,7 +112,7 @@ test.describe("keyboard", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog", { name: "Symbols" })).toBeHidden();
     await expect(page.locator(".math-input")).toBeFocused();
-    await expect(page.locator(".math-input")).toHaveValue("β");
+    await expect(page.locator(".math-input")).toHaveValue("a:=1β");
   });
 
   test("Tab stays inside a dialog and Esc gives focus back", async ({ page }) => {

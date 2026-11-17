@@ -1,10 +1,25 @@
-// The ribbon under the toolbar: one stable layout (Text · Paragraph · Equation · Arrange),
-// each group enabled by context instead of swapping controls in and out.
+// The format bar: a small bar floating over the top of the page area with only what applies to
+// what you are working on. Text and Paragraph while text is edited or a text region is
+// selected, Equation (the galleries) for math, Arrange for several regions; with nothing
+// selected it is hidden. It takes no room, so the page never moves, and it moves to the foot
+// of the page area when the caret would be under it. Every control is also in the menus and ⌘K.
 import { AllSelection, type Command } from "prosemirror-state";
-import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  For,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { arrowFocus, focusables, fromKeyboard, toolbarKeys } from "./a11y";
 import { focusCanvas } from "./Canvas";
 import { insertSnippet, library, loadLibrary, loadPreviews, previews, valueText } from "./insert";
+import { insertIntoMath, mathActive } from "./MathEditor";
 import {
   activeView,
   type Align,
@@ -294,8 +309,38 @@ const selectedText = () =>
       : null
     : null;
 
-const textEnabled = () => !!activeView() || !!selectedText();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const kindOf = (id: string | null | undefined) => (id ? layout().byId.get(id)?.region.kind : undefined);
+
+/**
+ * What the format bar offers now. It holds while a command briefly starts editing a selected
+ * region (`applyText`, `applyMath`), so the controls, and the focus on one of them, stay put.
+ */
+const context = createRoot(() =>
+  createMemo(() => {
+    const editing = kindOf(state.editing);
+    const selected = !state.editing && state.selection.length === 1 ? kindOf(state.selection[0]) : undefined;
+    return {
+      text: !!activeView() || editing === "text" || selected === "text",
+      math: mathActive() || editing === "math" || editing === "solve" || selected === "math",
+      arrange: !state.editing && state.selection.length > 1,
+    };
+  }),
+);
+
+/** The math region the galleries insert into when it is selected rather than edited. */
+const selectedMath = () =>
+  !state.editing && state.selection.length === 1 && kindOf(state.selection[0]) === "math" ? state.selection[0] : null;
+
+/** Insert from a gallery: at the caret of the math being typed, or at the end of the selected math. */
+async function applyMath(text: string, template = false) {
+  const id = !mathActive() && !activeView() ? selectedMath() : null;
+  if (!id) return insertSnippet(text, { template });
+  startEditing(id);
+  for (let i = 0; i < 60 && !mathActive(); i++) await sleep(10);
+  if (!insertIntoMath(text)) insertSnippet(text, { template });
+}
 
 /** Run a text command; with a text box selected (not being edited), apply it to the whole box. */
 async function applyText(cmd: Command) {
@@ -320,7 +365,6 @@ function TextGroup() {
         title="Paragraph style"
         name={`Paragraph style${editing() ? `: ${STYLES.find(([s]) => s === currentStyle())?.[1] ?? ""}` : ""}`}
         kind="menu"
-        disabled={!textEnabled()}
         label={<span class="fb-style">{editing() ? STYLES.find(([s]) => s === currentStyle())?.[1] : "Style"}</span>}
       >
         {(close) => (
@@ -342,61 +386,29 @@ function TextGroup() {
           </For>
         )}
       </Dropdown>
-      <Btn
-        title="Bold  ⌘B"
-        disabled={!textEnabled()}
-        active={markActive("strong")}
-        onClick={() => applyText(commands.bold)}
-      >
+      <Btn title="Bold  ⌘B" active={markActive("strong")} onClick={() => applyText(commands.bold)}>
         <b>B</b>
       </Btn>
-      <Btn
-        title="Italic  ⌘I"
-        disabled={!textEnabled()}
-        active={markActive("em")}
-        onClick={() => applyText(commands.italic)}
-      >
+      <Btn title="Italic  ⌘I" active={markActive("em")} onClick={() => applyText(commands.italic)}>
         <i class="serif">I</i>
       </Btn>
-      <Btn
-        title="Underline  ⌘U"
-        disabled={!textEnabled()}
-        active={markActive("underline")}
-        onClick={() => applyText(commands.underline)}
-      >
+      <Btn title="Underline  ⌘U" active={markActive("underline")} onClick={() => applyText(commands.underline)}>
         <u>U</u>
       </Btn>
-      <Btn
-        title="Strikethrough"
-        disabled={!textEnabled()}
-        active={markActive("strike")}
-        onClick={() => applyText(commands.strike)}
-      >
+      <Btn title="Strikethrough" active={markActive("strike")} onClick={() => applyText(commands.strike)}>
         <s>S</s>
       </Btn>
-      <Btn
-        title="Superscript"
-        hiddenLabel
-        disabled={!textEnabled()}
-        active={markActive("sup")}
-        onClick={() => applyText(commands.sup)}
-      >
+      <Btn title="Superscript" hiddenLabel active={markActive("sup")} onClick={() => applyText(commands.sup)}>
         <span aria-hidden="true">
           x<sup>2</sup>
         </span>
       </Btn>
-      <Btn
-        title="Subscript"
-        hiddenLabel
-        disabled={!textEnabled()}
-        active={markActive("sub")}
-        onClick={() => applyText(commands.sub)}
-      >
+      <Btn title="Subscript" hiddenLabel active={markActive("sub")} onClick={() => applyText(commands.sub)}>
         <span aria-hidden="true">
           x<sub>2</sub>
         </span>
       </Btn>
-      <Btn title="Code" disabled={!textEnabled()} active={markActive("code")} onClick={() => applyText(commands.code)}>
+      <Btn title="Code" active={markActive("code")} onClick={() => applyText(commands.code)}>
         {icon("M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5")}
       </Btn>
       <LinkButton />
@@ -404,7 +416,6 @@ function TextGroup() {
         title="Text colour"
         name="Text colour"
         kind="menu"
-        disabled={!textEnabled()}
         label={<span class="fb-swatch" style={{ background: (currentMarkAttr("color") as string) ?? "#1b1d22" }} />}
       >
         {(close) => (
@@ -432,7 +443,6 @@ function TextGroup() {
         title="Font size"
         name={`Font size${currentMarkAttr("size") ? `: ${currentMarkAttr("size")} pt` : ""}`}
         kind="menu"
-        disabled={!textEnabled()}
         label={<span class="fb-num">{(currentMarkAttr("size") as number | null) ?? "Size"}</span>}
       >
         {(close) => (
@@ -535,7 +545,6 @@ function ParagraphGroup() {
         {(a) => (
           <Btn
             title={{ left: "Align left", center: "Centre", right: "Align right", justify: "Justify" }[a]}
-            disabled={!textEnabled()}
             active={!!activeView() && currentAlign() === a}
             onClick={() => applyText(commands.align(a))}
           >
@@ -543,20 +552,10 @@ function ParagraphGroup() {
           </Btn>
         )}
       </For>
-      <Btn
-        title="Bulleted list"
-        disabled={!textEnabled()}
-        active={listActive("bullet")}
-        onClick={() => applyText(commands.bulletList)}
-      >
+      <Btn title="Bulleted list" active={listActive("bullet")} onClick={() => applyText(commands.bulletList)}>
         {icon("M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5M2.5 4h.1M2.5 8h.1M2.5 12h.1")}
       </Btn>
-      <Btn
-        title="Numbered list"
-        disabled={!textEnabled()}
-        active={listActive("ordered")}
-        onClick={() => applyText(commands.orderedList)}
-      >
+      <Btn title="Numbered list" active={listActive("ordered")} onClick={() => applyText(commands.orderedList)}>
         {icon("M6 4h8M6 8h8M6 12h8M2 3.2l.9-.7v3M1.9 7.3c.3-.5 1.6-.5 1.6.3 0 .6-1.6 1.3-1.6 1.9h1.7")}
       </Btn>
     </div>
@@ -582,7 +581,7 @@ function StructuresGallery(props: { close: () => void }) {
                     title={`${item.label}  \\${item.name}`}
                     onClick={() => {
                       props.close();
-                      insertSnippet(item.insert, { template: true });
+                      void applyMath(item.insert, true);
                     }}
                   >
                     <Show when={previews()[item.name]} fallback={<code>{item.insert}</code>}>
@@ -612,11 +611,11 @@ const panel = (id: string) => ({ id: `sympanel-${id}`, role: "tabpanel" as const
 function SymbolsGallery(props: { close: () => void }) {
   const pick = (sym: Sym) => {
     props.close();
-    insertSnippet(sym.insert);
+    void applyMath(sym.insert);
   };
   const pickName = (name: string) => {
     props.close();
-    insertSnippet(name);
+    void applyMath(name);
   };
   return (
     <div class="gallery symbols">
@@ -759,45 +758,128 @@ function ArrangeGroup() {
   );
 }
 
-const GROUPS: { id: string; title: string; Group: () => JSX.Element }[] = [
-  { id: "text", title: "Text", Group: TextGroup },
-  { id: "paragraph", title: "Paragraph", Group: ParagraphGroup },
-  { id: "equation", title: "Equation", Group: EquationGroup },
-  { id: "arrange", title: "Arrange", Group: ArrangeGroup },
+const GROUPS: { id: string; title: string; when: keyof ReturnType<typeof context>; Group: () => JSX.Element }[] = [
+  { id: "text", title: "Text", when: "text", Group: TextGroup },
+  { id: "paragraph", title: "Paragraph", when: "text", Group: ParagraphGroup },
+  { id: "equation", title: "Equation", when: "math", Group: EquationGroup },
+  { id: "arrange", title: "Arrange", when: "arrange", Group: ArrangeGroup },
 ];
 /** When the window is too narrow, groups move into the ⋯ menu in this order. */
 const OVERFLOW_ORDER = ["arrange", "paragraph", "equation", "text"];
 const MORE_WIDTH = 44;
 
 export function FormatBar() {
+  const applies = (id: string) => context()[GROUPS.find((g) => g.id === id)!.when];
+  const live = () => GROUPS.filter((g) => applies(g.id));
   // natural widths, measured while each group is in the bar
   const widths: Record<string, number> = {};
   const [hidden, setHidden] = createSignal<string[]>([]);
   let bar!: HTMLDivElement;
   const fit = () => {
     for (const el of bar.querySelectorAll<HTMLElement>(":scope > .fb-slot")) widths[el.dataset.group!] = el.offsetWidth;
-    if (GROUPS.some((g) => !widths[g.id])) return;
+    // a group not measured yet goes in the bar first, to be measured on the next frame
+    if (live().some((g) => !widths[g.id])) {
+      if (hidden().length) {
+        setHidden([]);
+        requestAnimationFrame(fit);
+      }
+      return;
+    }
+    // as wide as the page area lets it be (its max-width), less its own padding and border
     const style = getComputedStyle(bar);
-    const room = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const shown = new Set(GROUPS.map((g) => g.id));
-    const need = () => [...shown].reduce((n, id) => n + widths[id], 0) + (shown.size < GROUPS.length ? MORE_WIDTH : 0);
+    const room =
+      bar.parentElement!.clientWidth -
+      32 -
+      parseFloat(style.paddingLeft) -
+      parseFloat(style.paddingRight) -
+      parseFloat(style.borderLeftWidth) -
+      parseFloat(style.borderRightWidth);
+    const shown = new Set(live().map((g) => g.id));
+    const all = shown.size;
+    const need = () => [...shown].reduce((n, id) => n + widths[id], 0) + (shown.size < all ? MORE_WIDTH : 0);
     for (const id of OVERFLOW_ORDER) {
       if (need() <= room) break;
       shown.delete(id);
     }
-    const next = GROUPS.filter((g) => !shown.has(g.id)).map((g) => g.id);
+    const next = live()
+      .filter((g) => !shown.has(g.id))
+      .map((g) => g.id);
     if (next.join() !== hidden().join()) setHidden(next);
   };
   onMount(() => {
     const ro = new ResizeObserver(fit);
-    ro.observe(bar);
+    ro.observe(bar.parentElement!);
     // web fonts change the widths once they load
     void document.fonts.ready.then(fit);
     onCleanup(() => ro.disconnect());
   });
-  const inBar = (id: string) => !hidden().includes(id);
+  // what applies changed: fit the new groups once they are drawn
+  createEffect(
+    on(
+      () =>
+        live()
+          .map((g) => g.id)
+          .join(),
+      () => requestAnimationFrame(fit),
+      { defer: true },
+    ),
+  );
+  const inBar = (id: string) => applies(id) && !hidden().includes(id);
+  // empty, it is hidden, no toolbar to a screen reader, and F6 passes it by
+  const empty = () => !live().length;
+
+  // The bar never covers the caret: when the caret would be under it at the top of the page
+  // area, it sits at the foot instead (and goes back up once the caret has moved away).
+  const [low, setLow] = createSignal(false);
+  const caret = (): DOMRect | null => {
+    const el = document.activeElement;
+    if (el instanceof HTMLInputElement && el.classList.contains("math-input")) return el.getBoundingClientRect();
+    const view = activeView();
+    if (!view) return null;
+    try {
+      const c = view.coordsAtPos(view.state.selection.head);
+      return new DOMRect(c.left, c.top, Math.max(1, c.right - c.left), c.bottom - c.top);
+    } catch {
+      return null;
+    }
+  };
+  let placing = 0;
+  const place = () => {
+    cancelAnimationFrame(placing);
+    placing = requestAnimationFrame(() => {
+      const at = caret();
+      if (empty() || !at) return setLow(false);
+      const pane = bar.parentElement!.getBoundingClientRect();
+      const [w, h] = [bar.offsetWidth, bar.offsetHeight];
+      // where it is at the top, with a little room around it
+      const left = pane.left + (pane.width - w) / 2 - 8;
+      const top = pane.top + 10 - 8;
+      const under = at.right > left && at.left < left + w + 16 && at.bottom > top && at.top < top + h + 16;
+      setLow(under);
+    });
+  };
+  onMount(() => {
+    const events = ["selectionchange", "keyup", "pointerup"] as const;
+    for (const e of events) document.addEventListener(e, place, true);
+    // the page scrolled or zoomed under the caret
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    onCleanup(() => {
+      for (const e of events) document.removeEventListener(e, place, true);
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    });
+  });
+  createEffect(on([live, hidden, () => state.editing], place, { defer: true }));
   return (
-    <div class="formatbar" ref={bar} role="toolbar" aria-label="Format" onKeyDown={(e) => toolbarKeys(e, focusCanvas)}>
+    <div
+      class="formatbar"
+      classList={{ empty: empty(), "at-bottom": low() }}
+      ref={bar}
+      role={empty() ? undefined : "toolbar"}
+      aria-label={empty() ? undefined : "Format"}
+      onKeyDown={(e) => toolbarKeys(e, focusCanvas)}
+    >
       <For each={GROUPS}>
         {(g) => (
           <Show when={inBar(g.id)}>
@@ -807,7 +889,7 @@ export function FormatBar() {
           </Show>
         )}
       </For>
-      <Show when={hidden().length}>
+      <Show when={live().some((g) => hidden().includes(g.id))}>
         <Dropdown
           label={
             <span class="fb-more" aria-hidden="true">
@@ -819,7 +901,7 @@ export function FormatBar() {
           class="wide fb-more-pop"
         >
           {() => (
-            <For each={GROUPS.filter((g) => !inBar(g.id))}>
+            <For each={live().filter((g) => !inBar(g.id))}>
               {(g) => (
                 <div class="fb-more-row" role="group" aria-label={g.title}>
                   <span class="fb-more-title">{g.title}</span>

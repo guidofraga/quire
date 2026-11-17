@@ -113,7 +113,7 @@ Units go in the table in `quire-units/src/db.rs`, constants in `quire-eval/src/c
 
 1. Handle its id in `runCommand` in `App.tsx`.
 2. Add it to the native menu in `app/src-tauri/src/main.rs` (`menu()`), with an accelerator if it has one.
-3. Add it to `COMMANDS` in `Palette.tsx` so ⌘K finds it.
+3. Add it to `COMMANDS` in `Palette.tsx`, in its area and with an icon from `icons.tsx`, so ⌘K finds it.
 4. If it has a shortcut, map it in `browserShortcuts` in `App.tsx` too, so the browser setup and the e2e tests can use it.
 
 ### Add a backend call

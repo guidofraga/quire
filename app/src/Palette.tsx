@@ -1,7 +1,9 @@
-// ⌘K: one box for every command, variable and symbol.
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+// ⌘K: one box for every command, variable and symbol. The order is commands.ts's.
+import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { useModal } from "./a11y";
 import { isMac, isWeb } from "./api";
+import { type Area, arrange, type Command, type Item, recentCommands, rememberCommand } from "./commands";
+import { Icon, type IconName } from "./icons";
 import { insertSnippet } from "./insert";
 import { activeView } from "./richtext";
 import { layout, revealRegion, state } from "./store";
@@ -11,76 +13,87 @@ import { nb, notes, openNote, trail } from "./notebook";
 
 export const [paletteOpen, setPaletteOpen] = createSignal(false);
 
-interface Item {
-  label: string;
-  /** Shortcut or what kind of item this is, shown on the right. */
-  hint: string;
-  group: "Commands" | "Go to" | "Insert";
-  run: () => void;
-}
-
 const mod = isMac ? "⌘" : "Ctrl+";
 const shift = isMac ? "⇧" : "Shift+";
 const alt = isMac ? "⌥" : "Alt+";
 
-/** Menu commands: id, label, shortcut. Formatting and arranging appear only when they apply. */
-const COMMANDS: [string, string, string][] = [
-  ["new", "New Note", `${mod}N`],
-  ["new_document", "New Document", ""],
-  ["new_section", "New Section", `${alt}${mod}N`],
-  ["new_notebook", "New Notebook…", ""],
-  ["open_notebook", "Open Notebook…", `${shift}${mod}O`],
-  ["search_notebook", "Search Notebook…", `${shift}${mod}F`],
-  ["toggle_sidebar", "Show or Hide Sidebar", `${mod}\\`],
-  ["new_from_template", "New from Template…", `${shift}${mod}N`],
-  ["open", "Open…", `${mod}O`],
-  ["save", "Save", `${mod}S`],
-  ["save_as", "Save As…", `${shift}${mod}S`],
-  ["save_template", "Save as Template…", ""],
-  ["export_pdf", "Export as PDF…", `${mod}E`],
-  ["export_docx", "Export as Word…", ""],
-  ["share_link", "Share Link…", ""],
-  ["print", "Print…", `${mod}P`],
-  ["document_settings", "Document Settings…", `${alt}${mod},`],
-  ["page_setup", "Page Setup…", ""],
-  ["edit_header", "Edit Header", ""],
-  ["edit_footer", "Edit Footer", ""],
-  ["settings", "Settings…", `${mod},`],
-  ["undo", "Undo", `${mod}Z`],
-  ["redo", "Redo", `${shift}${mod}Z`],
-  ["duplicate", "Duplicate", `${mod}D`],
-  ["select_all", "Select All", `${mod}A`],
-  ["find", "Find…", `${mod}F`],
-  ["find_replace", "Find and Replace…", `${alt}${mod}F`],
-  ["insert_math", "Insert Math", `${shift}${mod}M`],
-  ["insert_text", "Insert Text Region", `${shift}${mod}T`],
-  ["insert_image", "Insert Image…", `${shift}${mod}I`],
-  ["insert_table", "Insert Table", `${alt}${mod}T`],
-  ["import_csv", "Insert Table from CSV…", ""],
-  ["insert_plot", "Insert Plot", `${alt}${mod}P`],
-  ["insert_plot3d", "Insert 3D Plot", ""],
-  ["insert_area", "Insert Area", ""],
-  ["insert_solve", "Insert Solve Block", ""],
-  ["insert_pagebreak", "Insert Page Break", `${mod}↩`],
-  ["insert_ref", "Insert Cross-Reference…", `${shift}${mod}R`],
-  ["insert_toc", "Insert Table of Contents", ""],
-  ["insert_figures", "Insert List of Figures", ""],
-  ["insert_tables", "Insert List of Tables", ""],
-  ["insert_checks", "Insert Summary of Checks", ""],
-  ["page_view", "Toggle Page View", `${shift}${mod}P`],
-  ["toggle_page_guides", "Show or Hide Page Guides", ""],
-  ["toggle_inspector", "Show Inspector", `${alt}${mod}I`],
-  ["region_properties", "Region Properties", ""],
-  ["zoom_in", "Zoom In", `${mod}=`],
-  ["zoom_out", "Zoom Out", `${mod}-`],
-  ["zoom_reset", "Actual Size", `${mod}0`],
-  ["zoom_fit_width", "Zoom to Width", ""],
-  ["zoom_fit_page", "Zoom to Page", ""],
-  ["next_error", "Next Error", `${mod}'`],
-  ["help", "Quire Help", isMac ? "⌘?" : "F1"],
-  ["welcome", "Welcome Screen", ""],
-  ["check_updates", "Check for Updates…", ""],
+type Row = [id: string, label: string, keys: string, icon: IconName];
+const area = (a: Area, rows: Row[]): Command[] =>
+  rows.map(([id, label, keys, icon]) => ({ id, label, keys, icon, area: a }));
+
+/** Menu commands by area, as the menus have them. Formatting and arranging appear only when they apply. */
+const COMMANDS: Command[] = [
+  ...area("File", [
+    ["new_document", "New Document", "", "newDoc"],
+    ["new_from_template", "New from Template…", `${shift}${mod}N`, "template"],
+    ["open", "Open…", `${mod}O`, "folder"],
+    ["save", "Save", `${mod}S`, "save"],
+    ["save_as", "Save As…", `${shift}${mod}S`, "save"],
+    ["save_template", "Save as Template…", "", "template"],
+    ["export_pdf", "Export as PDF…", `${mod}E`, "export"],
+    ["export_docx", "Export as Word…", "", "export"],
+    ["share_link", "Share Link…", "", "link"],
+    ["print", "Print…", `${mod}P`, "print"],
+    ["document_settings", "Document Settings…", `${alt}${mod},`, "doc"],
+    ["page_setup", "Page Setup…", "", "page"],
+    ["edit_header", "Edit Header", "", "header"],
+    ["edit_footer", "Edit Footer", "", "footer"],
+    ["settings", "Settings…", `${mod},`, "settings"],
+  ]),
+  ...area("Edit", [
+    ["undo", "Undo", `${mod}Z`, "undo"],
+    ["redo", "Redo", `${shift}${mod}Z`, "redo"],
+    ["duplicate", "Duplicate", `${mod}D`, "duplicate"],
+    ["select_all", "Select All", `${mod}A`, "selectAll"],
+    ["find", "Find…", `${mod}F`, "find"],
+    ["find_replace", "Find and Replace…", `${alt}${mod}F`, "find"],
+  ]),
+  ...area("Insert", [
+    ["insert_math", "Insert Math", `${shift}${mod}M`, "math"],
+    ["insert_text", "Insert Text Region", `${shift}${mod}T`, "text"],
+    ["insert_image", "Insert Image…", `${shift}${mod}I`, "image"],
+    ["insert_table", "Insert Table", `${alt}${mod}T`, "table"],
+    ["import_csv", "Insert Table from CSV…", "", "table"],
+    ["insert_plot", "Insert Plot", `${alt}${mod}P`, "plot"],
+    ["insert_plot3d", "Insert 3D Plot", "", "plot3d"],
+    ["insert_area", "Insert Area", "", "area"],
+    ["insert_solve", "Insert Solve Block", "", "solve"],
+    ["insert_pagebreak", "Insert Page Break", `${mod}↩`, "pageBreak"],
+    ["insert_ref", "Insert Cross-Reference…", `${shift}${mod}R`, "ref"],
+    ["insert_toc", "Insert Table of Contents", "", "list"],
+    ["insert_figures", "Insert List of Figures", "", "list"],
+    ["insert_tables", "Insert List of Tables", "", "list"],
+    ["insert_checks", "Insert Summary of Checks", "", "check"],
+  ]),
+  ...area("View", [
+    ["page_view", "Toggle Page View", `${shift}${mod}P`, "page"],
+    ["toggle_page_guides", "Show or Hide Page Guides", "", "guides"],
+    ["toggle_inspector", "Show Inspector", `${alt}${mod}I`, "inspector"],
+    ["region_properties", "Region Properties", "", "inspector"],
+    ["zoom_in", "Zoom In", `${mod}=`, "zoomIn"],
+    ["zoom_out", "Zoom Out", `${mod}-`, "zoomOut"],
+    ["zoom_reset", "Actual Size", `${mod}0`, "find"],
+    ["zoom_fit_width", "Zoom to Width", "", "fitWidth"],
+    ["zoom_fit_page", "Zoom to Page", "", "fitPage"],
+    ["next_error", "Next Error", `${mod}'`, "error"],
+  ]),
+  ...area("Notebook", [
+    ["new_section", "New Section", `${alt}${mod}N`, "newFolder"],
+    ["new_notebook", "New Notebook…", "", "notebook"],
+    ["open_notebook", "Open Notebook…", `${shift}${mod}O`, "notebook"],
+    ["search_notebook", "Search Notebook…", `${shift}${mod}F`, "find"],
+    ["toggle_sidebar", "Show or Hide Sidebar", `${mod}\\`, "sidebar"],
+  ]),
+  ...area("Help", [
+    ["help", "Quire Help", isMac ? "⌘?" : "F1", "help"],
+    ["welcome", "Welcome Screen", "", "home"],
+    ["check_updates", "Check for Updates…", "", "update"],
+  ]),
 ];
+
+/** ⌘N: a new note in a notebook, else a new document (where New Document is then the same). */
+const NEW_NOTE: Command = { id: "new", label: "New Note", keys: `${mod}N`, area: "Notebook", icon: "note" };
+const NEW_DOC: Command = { id: "new", label: "New Document", keys: `${mod}N`, area: "File", icon: "newDoc" };
 
 /** Commands that need files on disk: notebooks and templates of your own. */
 const WEB_HIDDEN = new Set([
@@ -92,43 +105,55 @@ const WEB_HIDDEN = new Set([
   "save_template",
 ]);
 
-const TEXT_COMMANDS: [string, string, string][] = [
-  ["fmt_bold", "Bold", `${mod}B`],
-  ["fmt_italic", "Italic", `${mod}I`],
-  ["fmt_underline", "Underline", `${mod}U`],
-  ["fmt_strike", "Strikethrough", ""],
-  ["fmt_bullets", "Bulleted List", ""],
-  ["fmt_numbers", "Numbered List", ""],
-  ["fmt_align_left", "Align Text Left", ""],
-  ["fmt_align_center", "Center Text", ""],
-  ["fmt_align_right", "Align Text Right", ""],
-  ["fmt_align_justify", "Justify Text", ""],
-];
+const TEXT_COMMANDS: Command[] = area("Format", [
+  ["fmt_bold", "Bold", `${mod}B`, "format"],
+  ["fmt_italic", "Italic", `${mod}I`, "format"],
+  ["fmt_underline", "Underline", `${mod}U`, "format"],
+  ["fmt_strike", "Strikethrough", "", "format"],
+  ["fmt_bullets", "Bulleted List", "", "list"],
+  ["fmt_numbers", "Numbered List", "", "list"],
+  ["fmt_align_left", "Align Text Left", "", "align"],
+  ["fmt_align_center", "Center Text", "", "align"],
+  ["fmt_align_right", "Align Text Right", "", "align"],
+  ["fmt_align_justify", "Justify Text", "", "align"],
+]);
 
-const ARRANGE_COMMANDS: [string, string, string][] = [
-  ["arrange_left", "Align Left Edges", ""],
-  ["arrange_hcenter", "Align Centres", ""],
-  ["arrange_right", "Align Right Edges", ""],
-  ["arrange_top", "Align Tops", ""],
-  ["arrange_vcenter", "Align Middles", ""],
-  ["arrange_bottom", "Align Bottoms", ""],
-  ["distribute_x", "Distribute Horizontally", ""],
-  ["distribute_y", "Distribute Vertically", ""],
-];
+const ARRANGE_COMMANDS: Command[] = area("Format", [
+  ["arrange_left", "Align Left Edges", "", "arrange"],
+  ["arrange_hcenter", "Align Centres", "", "arrange"],
+  ["arrange_right", "Align Right Edges", "", "arrange"],
+  ["arrange_top", "Align Tops", "", "arrange"],
+  ["arrange_vcenter", "Align Middles", "", "arrange"],
+  ["arrange_bottom", "Align Bottoms", "", "arrange"],
+  ["distribute_x", "Distribute Horizontally", "", "arrange"],
+  ["distribute_y", "Distribute Vertically", "", "arrange"],
+]);
 
 const SNIPPETS = [...SYMBOLS, ...STRUCTURES].flatMap((c) =>
   c.items.filter((x) => !x.textOnly).map((x) => ({ x, category: c.title })),
 );
 
 function items(runCommand: (id: string) => void): Item[] {
+  const book = !!nb.book;
   const cmds = [
-    ...COMMANDS.filter(([id]) => !(isWeb && WEB_HIDDEN.has(id))),
+    book ? NEW_NOTE : NEW_DOC,
+    ...COMMANDS.filter(({ id }) => !(isWeb && WEB_HIDDEN.has(id)) && !(id === "new_document" && !book)),
     ...(activeView() ? TEXT_COMMANDS : []),
     ...(state.selection.length > 1 ? ARRANGE_COMMANDS : []),
   ];
-  const out: Item[] = cmds.map(([id, label, hint]) => ({ label, hint, group: "Commands", run: () => runCommand(id) }));
+  const out: Item[] = cmds.map((c) => ({
+    label: c.label,
+    hint: c.keys,
+    group: c.area,
+    icon: c.icon,
+    command: c.id,
+    run: () => {
+      rememberCommand(c.id);
+      runCommand(c.id);
+    },
+  }));
   // every note of the notebook, with its section ("Kinematics — Mechanics")
-  for (const n of nb.book ? notes() : []) {
+  for (const n of book ? notes() : []) {
     const where = trail(n.rel)
       .map((s) => s.name)
       .join(" › ");
@@ -136,6 +161,7 @@ function items(runCommand: (id: string) => void): Item[] {
       label: where ? `${n.name} — ${where}` : n.name,
       hint: "note",
       group: "Go to",
+      icon: "note",
       run: () => void openNote(n.rel),
     });
   }
@@ -146,32 +172,20 @@ function items(runCommand: (id: string) => void): Item[] {
     if (!name || seen.has(name) || p.hidden) continue;
     seen.add(name);
     const id = p.region.id;
-    out.push({ label: name, hint: "definition", group: "Go to", run: () => revealRegion(id) });
+    out.push({ label: name, hint: "definition", group: "Go to", icon: "variable", run: () => revealRegion(id) });
   }
   for (const { x, category } of SNIPPETS) {
     const shown = x.label ?? x.insert.replace(/\?/g, "□");
     out.push({
       label: `${shown}  ${x.name}`,
       hint: category,
-      group: "Insert",
+      group: "Symbols",
+      icon: "math",
       run: () => insertSnippet(x.insert, { template: isTemplate(x) }),
     });
   }
   return out;
 }
-
-/** Lower is better; null when it doesn't match. */
-function score(label: string, query: string): number | null {
-  const l = label.toLowerCase();
-  if (l.startsWith(query)) return 0;
-  if (new RegExp(`(^|[\\s(—-])${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(l)) return 1;
-  if (l.includes(query)) return 2;
-  let i = 0;
-  for (const ch of l) if (ch === query[i]) i++;
-  return i === query.length ? 3 : null;
-}
-
-const GROUPS = ["Commands", "Go to", "Insert"] as const;
 
 export function Palette(props: { runCommand: (id: string) => void }) {
   return (
@@ -187,22 +201,13 @@ function Dialog(props: { runCommand: (id: string) => void }) {
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
   const all = createMemo(() => items(props.runCommand));
-  const results = createMemo(() => {
-    const q = query().trim().toLowerCase();
-    if (!q)
-      return all()
-        .filter((i) => i.group !== "Insert")
-        .slice(0, 60);
-    const scored = all().flatMap((item, order) => {
-      const s = score(item.label, q);
-      return s === null ? [] : [{ item, s, order }];
-    });
-    // groups stay together, the best-matching group first
-    const best = new Map<string, number>();
-    for (const x of scored) best.set(x.item.group, Math.min(best.get(x.item.group) ?? 9, x.s));
-    const rank = (x: (typeof scored)[number]) => best.get(x.item.group)! * 10 + GROUPS.indexOf(x.item.group);
-    scored.sort((a, b) => rank(a) - rank(b) || a.s - b.s || a.order - b.order);
-    return scored.slice(0, 60).map((x) => x.item);
+  const recent = recentCommands();
+  const sections = createMemo(() => arrange(all(), query(), recent, !!nb.book));
+  // every row in order, and where each section's rows start
+  const rows = createMemo(() => sections().flatMap((s) => s.items));
+  const starts = createMemo(() => {
+    let n = 0;
+    return sections().map((s) => ((n += s.items.length), n - s.items.length));
   });
   let input!: HTMLInputElement;
   let list!: HTMLDivElement;
@@ -213,11 +218,11 @@ function Dialog(props: { runCommand: (id: string) => void }) {
     then?.();
   };
   const choose = (i: number) => {
-    const item = results()[i];
+    const item = rows()[i];
     if (item) close(item.run);
   };
   const move = (by: number) => {
-    const n = results().length;
+    const n = rows().length;
     if (!n) return;
     setActive((active() + by + n) % n);
     list.querySelector(`[data-i="${active()}"]`)?.scrollIntoView({ block: "nearest" });
@@ -240,51 +245,66 @@ function Dialog(props: { runCommand: (id: string) => void }) {
   return (
     <div class="modal-backdrop palette-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette" ref={el}>
-        <input
-          ref={input}
-          class="palette-input"
-          role="combobox"
-          aria-label="Command, variable or symbol"
-          aria-expanded="true"
-          aria-controls="palette-list"
-          aria-autocomplete="list"
-          aria-activedescendant={results().length ? `palette-item-${active()}` : undefined}
-          placeholder="Search commands, variables and symbols"
-          value={query()}
-          spellcheck={false}
-          autocomplete="off"
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setActive(0);
-          }}
-          onKeyDown={onKey}
-        />
+        <div class="palette-search">
+          <Icon name="find" class="palette-search-icon" />
+          <input
+            ref={input}
+            class="palette-input"
+            role="combobox"
+            aria-label="Command, variable or symbol"
+            aria-expanded="true"
+            aria-controls="palette-list"
+            aria-autocomplete="list"
+            aria-activedescendant={rows().length ? `palette-item-${active()}` : undefined}
+            placeholder="Search commands, variables and symbols"
+            value={query()}
+            spellcheck={false}
+            autocomplete="off"
+            onInput={(e) => {
+              setQuery(e.currentTarget.value);
+              setActive(0);
+              list.scrollTop = 0;
+            }}
+            onKeyDown={onKey}
+          />
+        </div>
         <div class="palette-list" ref={list} role="listbox" id="palette-list" aria-label="Results">
-          <For each={results()} fallback={<div class="palette-empty">Nothing matches</div>}>
-            {(item, i) => (
-              <>
-                <Show when={i() === 0 || results()[i() - 1].group !== item.group}>
+          <Show when={rows().length} fallback={<div class="palette-empty">Nothing matches</div>}>
+            <For each={sections()}>
+              {(section, k) => (
+                // a group a screen reader names as it moves into it
+                <div class="palette-section" role="group" aria-label={section.group}>
                   <div class="palette-group" aria-hidden="true">
-                    {item.group}
+                    {section.group}
                   </div>
-                </Show>
-                <div
-                  class="palette-item"
-                  classList={{ active: i() === active() }}
-                  id={`palette-item-${i()}`}
-                  data-i={i()}
-                  role="option"
-                  aria-selected={i() === active()}
-                  onPointerMove={() => setActive(i())}
-                  onPointerDown={(e) => e.preventDefault()}
-                  onClick={() => choose(i())}
-                >
-                  <span class="palette-label">{item.label}</span>
-                  <span class="palette-hint">{item.hint}</span>
+                  <Index each={section.items}>
+                    {(item, j) => {
+                      const i = () => starts()[k()] + j;
+                      return (
+                        <div
+                          class="palette-item"
+                          classList={{ active: i() === active() }}
+                          id={`palette-item-${i()}`}
+                          data-i={i()}
+                          role="option"
+                          aria-selected={i() === active()}
+                          onPointerMove={() => setActive(i())}
+                          onPointerDown={(e) => e.preventDefault()}
+                          onClick={() => choose(i())}
+                        >
+                          <span class="palette-icon">
+                            <Icon name={item().icon} />
+                          </span>
+                          <span class="palette-label">{item().label}</span>
+                          <span class="palette-hint">{item().hint}</span>
+                        </div>
+                      );
+                    }}
+                  </Index>
                 </div>
-              </>
-            )}
-          </For>
+              )}
+            </For>
+          </Show>
         </div>
       </div>
     </div>

@@ -1,8 +1,12 @@
-// The welcome screen at launch: a blank document, recent documents and templates.
+// The welcome screen at launch: a blank document, recent documents and templates, each
+// template with a miniature of its first page.
 import { guardUnsaved, newNotebookDialog, openNotebookDialog } from "./Sidebar";
-import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { useModal } from "./a11y";
-import { api, isWeb, type TemplateInfo } from "./api";
+import { createResource, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { arrowFocus, useModal } from "./a11y";
+import { api, isMac, isWeb, type TemplateInfo } from "./api";
+import { Icon, type IconName } from "./icons";
+import logoUrl from "./assets/logo-mark.png";
+import { type Shape, thumbnail, type Thumbnail } from "./thumbnail";
 import { recentList } from "./recent";
 import { setTemplates as setTemplatesDialog } from "./TemplatesDialog";
 import { prefs, setPref, type Prefs } from "./settings";
@@ -32,6 +36,78 @@ const folderOf = (path: string) => {
   const folder = parts.join("/");
   return folder.replace(/^\/Users\/[^/]+/, "~");
 };
+
+const mod = isMac ? "⌘" : "Ctrl+";
+const shift = isMac ? "⇧" : "Shift+";
+
+/** First pages of the templates, drawn once per session (a template rarely changes meanwhile). */
+const thumbs = new Map<string, Promise<Thumbnail | null>>();
+const thumbOf = (t: TemplateInfo) => {
+  const key = `${t.id}\n${t.name}`;
+  if (!thumbs.has(key))
+    thumbs.set(
+      key,
+      api.openTemplate(t.id).then(
+        ({ doc }) => thumbnail(doc),
+        () => null,
+      ),
+    );
+  return thumbs.get(key)!;
+};
+
+/** One shape of a miniature page; the page is paper-white in either theme, as on the canvas. */
+function ThumbShape(props: { s: Shape }) {
+  const s = props.s;
+  if (s.kind === "rule") return <line class="t-rule" x1={s.x} y1={s.y} x2={s.x + s.w} y2={s.y} />;
+  if (s.kind === "curve") {
+    const d = `M${s.x} ${s.y + s.h * 0.8}C${s.x + s.w * 0.3} ${s.y - s.h * 0.2} ${s.x + s.w * 0.55} ${s.y + s.h * 1.1} ${s.x + s.w} ${s.y + s.h * 0.15}`;
+    return <path class="t-curve" d={d} />;
+  }
+  return (
+    <rect
+      class={`t-${s.kind}`}
+      x={s.x}
+      y={s.y}
+      width={s.w}
+      height={s.h}
+      rx={s.kind === "box" || s.kind === "fill" ? 0 : s.h / 2}
+    />
+  );
+}
+
+/** A template's first page in miniature; a plain sheet until it is drawn. */
+function TemplateThumb(props: { t: TemplateInfo }) {
+  const [thumb] = createResource(() => props.t, thumbOf);
+  // A4 until the document says otherwise, so the row doesn't change height
+  const w = () => thumb()?.width ?? 794;
+  const h = () => thumb()?.height ?? 1123;
+  return (
+    <svg
+      class="welcome-thumb"
+      viewBox={`0 0 ${w()} ${h()}`}
+      width="40"
+      height={Math.round((40 * h()) / w())}
+      aria-hidden="true"
+    >
+      <rect class="t-paper" x="0" y="0" width={w()} height={h()} />
+      <For each={thumb()?.shapes ?? []}>{(s) => <ThumbShape s={s} />}</For>
+    </svg>
+  );
+}
+
+/** A row's square icon. */
+const tile = (name: IconName) => (
+  <span class="welcome-icon" aria-hidden="true">
+    <Icon name={name} />
+  </span>
+);
+
+/** A shortcut on the right of a row, as a menu shows it; the button's name leaves it out. */
+const key = (keys: string): JSX.Element => (
+  <kbd class="welcome-key" aria-hidden="true">
+    {keys}
+  </kbd>
+);
 
 export function Welcome(props: Props) {
   return (
@@ -78,64 +154,70 @@ function Screen(props: Props) {
       flash(`Could not open the template: ${(e as Error).message}`);
     }
   };
+  // ↑/↓ within a column, ←/→ to the row beside it in the other one
+  const onArrows = (e: KeyboardEvent) => {
+    const cols = [...(e.currentTarget as HTMLElement).querySelectorAll("section")].map((sec) => [
+      ...sec.querySelectorAll<HTMLElement>(".welcome-item"),
+    ]);
+    const at = cols.findIndex((c) => c.includes(document.activeElement as HTMLElement));
+    if (at < 0) return;
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return void arrowFocus(e, cols[at], "vertical");
+    const other = cols[at + (e.key === "ArrowRight" ? 1 : -1)];
+    if (!other?.length || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    const mid = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return r.top + r.height / 2;
+    };
+    const y = mid(document.activeElement!);
+    other.reduce((a, b) => (Math.abs(mid(b) - y) < Math.abs(mid(a) - y) ? b : a)).focus();
+  };
   return (
     <div class="welcome-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div class="welcome" role="dialog" aria-modal="true" aria-label="Welcome to Quire" ref={el}>
         <div class="welcome-head">
-          <div class="welcome-title">Quire</div>
+          <img class="welcome-mark" src={logoUrl} alt="" width="40" height="40" draggable={false} />
+          <h2 class="welcome-title">Quire</h2>
         </div>
-        <div class="welcome-cols">
+        <div class="welcome-cols" onKeyDown={onArrows}>
           <section>
             <h3>Start</h3>
             <button class="welcome-item primary" onClick={close} autofocus>
-              <span class="welcome-icon" aria-hidden="true">
-                ＋
-              </span>
+              {tile("newDoc")}
               <span>
                 <b>Blank document</b>
               </span>
+              {key(`${mod}N`)}
             </button>
             <Show when={!isWeb}>
               <button class="welcome-item" onClick={() => void run(newNotebookDialog)}>
-                <span class="welcome-icon" aria-hidden="true">
-                  <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2">
-                    <path
-                      d="M2.5 2.2h7.2a1.3 1.3 0 0 1 1.3 1.3v8.3H3.8a1.3 1.3 0 0 1-1.3-1.3z"
-                      stroke-linejoin="round"
-                    />
-                    <path d="M2.5 10.5a1.3 1.3 0 0 1 1.3-1.3H11" />
-                  </svg>
-                </span>
+                {tile("newFolder")}
                 <span>
                   <b>New notebook…</b>
                 </span>
               </button>
             </Show>
             <button class="welcome-item" onClick={() => void run(props.openDialog)}>
-              <span class="welcome-icon" aria-hidden="true">
-                ⌘O
-              </span>
+              {tile("folder")}
               <span>
                 <b>Open…</b>
               </span>
+              {key(`${mod}O`)}
             </button>
             <Show when={!isWeb}>
               <button class="welcome-item" onClick={() => void run(openNotebookDialog)}>
-                <span class="welcome-icon" aria-hidden="true">
-                  ⇧⌘O
-                </span>
+                {tile("notebook")}
                 <span>
                   <b>Open notebook…</b>
                 </span>
+                {key(`${shift}${mod}O`)}
               </button>
               <h3>Recent</h3>
               <Show when={recent.length} fallback={<p class="welcome-empty">No recent documents</p>}>
                 <For each={recent}>
                   {(path) => (
                     <button class="welcome-item" title={path} onClick={() => void openRecent(path)}>
-                      <span class="welcome-icon doc" aria-hidden="true">
-                        ▤
-                      </span>
+                      {tile("doc")}
                       <span>
                         <b>{nameOf(path)}</b>
                         <small>{folderOf(path)}</small>
@@ -150,10 +232,8 @@ function Screen(props: Props) {
             <h3>Templates</h3>
             <For each={shown()} fallback={<p class="welcome-empty">Loading…</p>}>
               {(t) => (
-                <button class="welcome-item" onClick={() => void openTemplate(t)}>
-                  <span class="welcome-icon doc" aria-hidden="true">
-                    {t.builtin ? "◧" : "★"}
-                  </span>
+                <button class="welcome-item template" onClick={() => void openTemplate(t)}>
+                  <TemplateThumb t={t} />
                   <span>
                     <b>{t.name}</b>
                     <small>{t.description || "Your template"}</small>
@@ -169,9 +249,7 @@ function Screen(props: Props) {
                   setTemplatesDialog("new");
                 }}
               >
-                <span class="welcome-icon" aria-hidden="true">
-                  ⋯
-                </span>
+                {tile("template")}
                 <span>
                   <b>All templates…</b>
                   <small>{(templates() ?? []).length} to choose from</small>
@@ -203,7 +281,9 @@ function Screen(props: Props) {
               </select>
             </label>
           </Show>
-          <span class="welcome-hint">⌘K Commands · F1 Help</span>
+          <span class="welcome-hint">
+            {mod}K Commands · {isMac ? "⌘?" : "F1"} Help
+          </span>
         </div>
       </div>
     </div>

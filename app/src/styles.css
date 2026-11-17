@@ -1437,17 +1437,56 @@ ms.str {
 
 /* ================================================================ format bar */
 
+/* It floats over the top of the page area, centred, and takes no room: the page starts right
+   under the toolbar whether it shows or not. Empty, it is hidden; it slides in when something
+   to format is in context. When the caret would be under it, it moves to the foot of the page
+   area (`.at-bottom`, set in FormatBar.tsx), its popovers opening upwards. */
 .formatbar {
-  flex: none;
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 36px;
-  padding: 0 10px;
-  overflow: hidden;
+  gap: 0;
+  height: 38px;
+  max-width: calc(100% - 32px);
+  padding: 0 2px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius-panel);
   background: var(--chrome);
-  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-ink);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   white-space: nowrap;
+  transform: translateX(-50%);
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms var(--ease-out);
+}
+
+.formatbar.empty {
+  visibility: hidden;
+  opacity: 0;
+  transform: translate(-50%, -6px);
+  transition: none;
+}
+
+.formatbar.at-bottom {
+  top: auto;
+  /* above the page number pill */
+  bottom: 52px;
+}
+
+.formatbar.at-bottom .fb-pop {
+  top: auto;
+  bottom: 30px;
+  transform-origin: bottom left;
+}
+
+@media (prefers-color-scheme: dark) {
+  .formatbar {
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  }
 }
 
 .fb-btn {
@@ -2236,12 +2275,6 @@ ms.str {
 
 /* ================================================================ ribbon (v2) */
 
-.formatbar {
-  gap: 0;
-  height: 38px;
-  padding: 0 8px;
-}
-
 .fb-group {
   display: flex;
   align-items: center;
@@ -2584,13 +2617,7 @@ ms.str {
   animation: pop-in 160ms ease-out;
 }
 
-/* popovers must escape the ribbon */
-.formatbar {
-  overflow: visible;
-  position: relative;
-  z-index: 40;
-}
-
+/* popovers sit above the format bar */
 .fb-pop {
   z-index: 60;
 }
@@ -3392,10 +3419,24 @@ ms.str {
     sans-serif;
 }
 
-.palette-input {
-  padding: 12px 14px;
-  border: none;
+.palette-search {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 14px;
   border-bottom: 1px solid var(--chrome-border);
+}
+
+.palette-search-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.palette-input {
+  flex: 1;
+  min-width: 0;
+  padding: 13px 14px 13px 8px;
+  border: none;
   outline: none;
   background: transparent;
   color: inherit;
@@ -3410,6 +3451,10 @@ ms.str {
   padding: 4px 0 6px;
 }
 
+.palette-section + .palette-section {
+  margin-top: 4px;
+}
+
 .palette-group {
   padding: 8px 14px 3px;
   color: var(--muted);
@@ -3420,13 +3465,26 @@ ms.str {
 
 .palette-item {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+  gap: 10px;
   margin: 0 6px;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 6px;
   cursor: default;
+}
+
+.palette-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.palette-item.active .palette-icon {
+  color: #fff;
 }
 
 .palette-item.active {
@@ -3435,6 +3493,8 @@ ms.str {
 }
 
 .palette-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: pre;
   text-overflow: ellipsis;
@@ -3444,6 +3504,7 @@ ms.str {
   flex: none;
   color: var(--muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .palette-item.active .palette-hint {
@@ -4015,11 +4076,24 @@ a.xref-missing {
 }
 
 .welcome-head {
-  padding: 26px 28px 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 28px 6px;
+}
+
+/* the app's tile, as the Dock shows it */
+.welcome-mark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
+  user-select: none;
 }
 
 .welcome-title {
-  font-size: 26px;
+  margin: 0;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -4084,8 +4158,81 @@ a.xref-missing {
   white-space: nowrap;
 }
 
-.welcome-item > span:last-child {
+.welcome-item > span:not(.welcome-icon) {
+  flex: 1;
   min-width: 0;
+}
+
+/* a shortcut on the right, as native menus show it */
+.welcome-key {
+  flex: none;
+  color: var(--muted);
+  font:
+    12px -apple-system,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* a template's first page in miniature; paper-white in either theme, as on the canvas */
+.welcome-thumb {
+  flex: none;
+  margin: 0 -3px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.22),
+    0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.welcome-item.template {
+  padding-block: 6px;
+}
+
+.welcome-thumb .t-paper {
+  fill: #fff;
+}
+
+.welcome-thumb .t-title {
+  fill: #23272e;
+}
+
+.welcome-thumb .t-heading {
+  fill: #4a505a;
+}
+
+.welcome-thumb .t-line {
+  fill: #c3c7ce;
+}
+
+.welcome-thumb .t-math {
+  fill: #59647d;
+}
+
+.welcome-thumb .t-note {
+  fill: #d6d9de;
+}
+
+.welcome-thumb .t-fill {
+  fill: #eceef2;
+}
+
+.welcome-thumb .t-box {
+  fill: none;
+  stroke: #aeb4bd;
+  stroke-width: 5;
+}
+
+.welcome-thumb .t-rule {
+  stroke: #c3c7ce;
+  stroke-width: 4;
+}
+
+.welcome-thumb .t-curve {
+  fill: none;
+  stroke: #2f6fdf;
+  stroke-width: 10;
+  stroke-linecap: round;
 }
 
 .welcome-icon {
@@ -4103,7 +4250,6 @@ a.xref-missing {
 .welcome-item.primary .welcome-icon {
   background: var(--accent);
   color: #fff;
-  font-size: 18px;
 }
 
 .welcome-empty {
@@ -4474,10 +4620,18 @@ input[type="radio"]:focus-visible,
 
 .insp-input:focus-visible,
 .findbar input:focus-visible,
-.palette-input:focus-visible,
 .caption-input:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 0;
+}
+
+/* the palette's search row, icon and all, shows the focus */
+.palette-input:focus-visible {
+  outline: none;
+}
+
+.palette-search:focus-within {
+  box-shadow: inset 0 -2px 0 var(--focus-ring);
 }
 
 /* menu items and gallery tiles look chosen when focused, as when hovered */
@@ -5645,6 +5799,11 @@ body.resizing-sidebar {
     margin-right 240ms var(--ease-out),
     opacity 200ms ease,
     visibility 0s linear 240ms;
+}
+
+/* within the format bar, a group that comes to apply fades in */
+.fb-slot {
+  animation: fade-in 140ms ease-out;
 }
 
 /* messages rise into place */
