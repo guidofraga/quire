@@ -1,7 +1,8 @@
-// The format bar under the toolbar: only what applies to what you are working on. Text and
-// Paragraph while text is edited or a text region is selected, Equation (the galleries) for
-// math, Arrange for several regions; with nothing selected it stays empty and keeps its height,
-// so the page never moves. Every control is also in the menus and in ⌘K.
+// The format bar: a small bar floating over the top of the page area with only what applies to
+// what you are working on. Text and Paragraph while text is edited or a text region is
+// selected, Equation (the galleries) for math, Arrange for several regions; with nothing
+// selected it is hidden. It takes no room, so the page never moves, and it moves to the foot
+// of the page area when the caret would be under it. Every control is also in the menus and ⌘K.
 import { AllSelection, type Command } from "prosemirror-state";
 import {
   createEffect,
@@ -784,8 +785,15 @@ export function FormatBar() {
       }
       return;
     }
+    // as wide as the page area lets it be (its max-width), less its own padding and border
     const style = getComputedStyle(bar);
-    const room = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const room =
+      bar.parentElement!.clientWidth -
+      32 -
+      parseFloat(style.paddingLeft) -
+      parseFloat(style.paddingRight) -
+      parseFloat(style.borderLeftWidth) -
+      parseFloat(style.borderRightWidth);
     const shown = new Set(live().map((g) => g.id));
     const all = shown.size;
     const need = () => [...shown].reduce((n, id) => n + widths[id], 0) + (shown.size < all ? MORE_WIDTH : 0);
@@ -800,7 +808,7 @@ export function FormatBar() {
   };
   onMount(() => {
     const ro = new ResizeObserver(fit);
-    ro.observe(bar);
+    ro.observe(bar.parentElement!);
     // web fonts change the widths once they load
     void document.fonts.ready.then(fit);
     onCleanup(() => ro.disconnect());
@@ -817,11 +825,56 @@ export function FormatBar() {
     ),
   );
   const inBar = (id: string) => applies(id) && !hidden().includes(id);
-  // empty, it is no toolbar to a screen reader, and F6 passes it by
+  // empty, it is hidden, no toolbar to a screen reader, and F6 passes it by
   const empty = () => !live().length;
+
+  // The bar never covers the caret: when the caret would be under it at the top of the page
+  // area, it sits at the foot instead (and goes back up once the caret has moved away).
+  const [low, setLow] = createSignal(false);
+  const caret = (): DOMRect | null => {
+    const el = document.activeElement;
+    if (el instanceof HTMLInputElement && el.classList.contains("math-input")) return el.getBoundingClientRect();
+    const view = activeView();
+    if (!view) return null;
+    try {
+      const c = view.coordsAtPos(view.state.selection.head);
+      return new DOMRect(c.left, c.top, Math.max(1, c.right - c.left), c.bottom - c.top);
+    } catch {
+      return null;
+    }
+  };
+  let placing = 0;
+  const place = () => {
+    cancelAnimationFrame(placing);
+    placing = requestAnimationFrame(() => {
+      const at = caret();
+      if (empty() || !at) return setLow(false);
+      const pane = bar.parentElement!.getBoundingClientRect();
+      const [w, h] = [bar.offsetWidth, bar.offsetHeight];
+      // where it is at the top, with a little room around it
+      const left = pane.left + (pane.width - w) / 2 - 8;
+      const top = pane.top + 10 - 8;
+      const under = at.right > left && at.left < left + w + 16 && at.bottom > top && at.top < top + h + 16;
+      setLow(under);
+    });
+  };
+  onMount(() => {
+    const events = ["selectionchange", "keyup", "pointerup"] as const;
+    for (const e of events) document.addEventListener(e, place, true);
+    // the page scrolled or zoomed under the caret
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    onCleanup(() => {
+      for (const e of events) document.removeEventListener(e, place, true);
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    });
+  });
+  createEffect(on([live, hidden, () => state.editing], place, { defer: true }));
   return (
     <div
       class="formatbar"
+      classList={{ empty: empty(), "at-bottom": low() }}
       ref={bar}
       role={empty() ? undefined : "toolbar"}
       aria-label={empty() ? undefined : "Format"}

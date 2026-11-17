@@ -1153,10 +1153,11 @@ export function App() {
             </button>
           </div>
         </header>
-        <FormatBar />
         <div class="workspace">
           <div class="canvas-pane">
             <Canvas />
+            {/* floats over the top of the page, so it never moves it */}
+            <FormatBar />
             <FindBar />
           </div>
           {/* stays mounted so hiding and showing it can slide, like the notebook sidebar */}

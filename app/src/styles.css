@@ -1437,17 +1437,56 @@ ms.str {
 
 /* ================================================================ format bar */
 
+/* It floats over the top of the page area, centred, and takes no room: the page starts right
+   under the toolbar whether it shows or not. Empty, it is hidden; it slides in when something
+   to format is in context. When the caret would be under it, it moves to the foot of the page
+   area (`.at-bottom`, set in FormatBar.tsx), its popovers opening upwards. */
 .formatbar {
-  flex: none;
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 36px;
-  padding: 0 10px;
-  overflow: hidden;
+  gap: 0;
+  height: 38px;
+  max-width: calc(100% - 32px);
+  padding: 0 2px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius-panel);
   background: var(--chrome);
-  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-ink);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   white-space: nowrap;
+  transform: translateX(-50%);
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms var(--ease-out);
+}
+
+.formatbar.empty {
+  visibility: hidden;
+  opacity: 0;
+  transform: translate(-50%, -6px);
+  transition: none;
+}
+
+.formatbar.at-bottom {
+  top: auto;
+  /* above the page number pill */
+  bottom: 52px;
+}
+
+.formatbar.at-bottom .fb-pop {
+  top: auto;
+  bottom: 30px;
+  transform-origin: bottom left;
+}
+
+@media (prefers-color-scheme: dark) {
+  .formatbar {
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  }
 }
 
 .fb-btn {
@@ -2236,12 +2275,6 @@ ms.str {
 
 /* ================================================================ ribbon (v2) */
 
-.formatbar {
-  gap: 0;
-  height: 38px;
-  padding: 0 8px;
-}
-
 .fb-group {
   display: flex;
   align-items: center;
@@ -2584,13 +2617,7 @@ ms.str {
   animation: pop-in 160ms ease-out;
 }
 
-/* popovers must escape the ribbon */
-.formatbar {
-  overflow: visible;
-  position: relative;
-  z-index: 40;
-}
-
+/* popovers sit above the format bar */
 .fb-pop {
   z-index: 60;
 }
@@ -5774,7 +5801,7 @@ body.resizing-sidebar {
     visibility 0s linear 240ms;
 }
 
-/* the format bar's groups fade in as they come to apply; the bar keeps its height */
+/* within the format bar, a group that comes to apply fades in */
 .fb-slot {
   animation: fade-in 140ms ease-out;
 }

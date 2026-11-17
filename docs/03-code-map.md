@@ -141,7 +141,7 @@ SolidJS with fine-grained signals and stores, plain CSS, no component library. F
 
 | File | What lives there |
 |---|---|
-| `FormatBar.tsx` | The format bar: Text and Paragraph for text, Equation (the Structures and Symbols galleries) for math, Arrange for several regions; only what applies to the region being edited or selected (`context`), empty with nothing selected, always the same height. |
+| `FormatBar.tsx` | The format bar, floating over the top of the page area (in `.canvas-pane`, so it takes no room and the page never moves): Text and Paragraph for text, Equation (the Structures and Symbols galleries) for math, Arrange for several regions; only what applies to the region being edited or selected (`context`), hidden with nothing selected. When the caret would be under it, it sits at the foot of the page area instead (`place`). |
 | `Inspector.tsx` | Region, document and page properties. |
 | `Sidebar.tsx` | The notebook sidebar: switcher, tree, search, the note title in the toolbar. Dragging is done with pointer events (not HTML drag and drop, which the desktop webview hands to the system on some platforms): a drop line between rows, a filled section to drop into, sections that open when held over, scrolling near the edges. |
 | `SidebarDialogs.tsx` | The sidebar's confirmation before items go to the Trash, and the Move to… picker of sections. |
