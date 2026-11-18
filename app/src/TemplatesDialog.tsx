@@ -2,7 +2,7 @@
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useModal } from "./a11y";
-import { api, type TemplateInfo } from "./api";
+import { api, confirmDeleteTemplate, isWeb, type TemplateInfo } from "./api";
 import { flash, localized, state } from "./store";
 import type { Doc } from "./types";
 
@@ -70,7 +70,7 @@ function Chooser(props: Props & { close: () => void }) {
     }
   };
   const remove = async (t: TemplateInfo) => {
-    if (!window.confirm(`Delete the template “${t.name}”?`)) return;
+    if (!(await confirmDeleteTemplate(t.name))) return;
     await api.deleteTemplate(t.id).catch((e) => flash(String(e)));
     void refetch();
   };
@@ -97,31 +97,33 @@ function Chooser(props: Props & { close: () => void }) {
           )}
         </For>
       </div>
-      <h3 class="templates-heading">Your templates</h3>
-      <Show
-        when={group(false).length}
-        fallback={<p class="templates-empty">Save any document with File ▸ Save as Template…</p>}
-      >
-        <div class="template-grid">
-          <For each={group(false)}>
-            {(t) => (
-              <div class="template-card mine">
-                <button class="template-open" onClick={() => void open(t)} disabled={busy()}>
-                  <span class="template-name">{t.name}</span>
-                  <span class="template-desc">{t.description || "Your template"}</span>
-                </button>
-                <button
-                  class="template-delete"
-                  title="Delete this template"
-                  aria-label={`Delete ${t.name}`}
-                  onClick={() => void remove(t)}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-          </For>
-        </div>
+      <Show when={!isWeb}>
+        <h3 class="templates-heading">Your templates</h3>
+        <Show
+          when={group(false).length}
+          fallback={<p class="templates-empty">Save any document with File ▸ Save as Template…</p>}
+        >
+          <div class="template-grid">
+            <For each={group(false)}>
+              {(t) => (
+                <div class="template-card mine">
+                  <button class="template-open" onClick={() => void open(t)} disabled={busy()}>
+                    <span class="template-name">{t.name}</span>
+                    <span class="template-desc">{t.description || "Your template"}</span>
+                  </button>
+                  <button
+                    class="template-delete"
+                    title="Delete this template"
+                    aria-label={`Delete ${t.name}`}
+                    onClick={() => void remove(t)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
       </Show>
     </div>
   );

@@ -197,6 +197,42 @@ export interface Report {
 
 export type Localized = string | Record<string, string>;
 
+export interface PlotStyle {
+  color?: string;
+  width?: number;
+  dash?: "dashed" | "dotted";
+  draw?: "line" | "points" | "line+points";
+}
+
+export interface PlotSeries {
+  y?: string;
+  x?: string;
+  range?: string;
+  label?: string;
+  style?: PlotStyle;
+  surface?: string;
+  parametric?: [string, string, string];
+  xrange?: string;
+  yrange?: string;
+  urange?: string;
+  vrange?: string;
+}
+
+export interface PlotAxis {
+  unit?: string;
+  label?: string;
+  min?: number;
+  max?: number;
+  log?: boolean;
+}
+
+export interface PlotAxes {
+  visible?: boolean;
+  x?: PlotAxis;
+  y?: PlotAxis;
+  z?: PlotAxis;
+}
+
 /** A region of document.json (docs/02-file-format.md §4). Unknown keys are preserved. */
 export interface Region {
   id: string;
@@ -205,41 +241,136 @@ export interface Region {
   size?: [number, number];
   width?: number;
   height?: number;
+  style?: TextStyle;
+  keep?: boolean;
+  disabled?: boolean;
+  locked?: boolean;
+  collapsed?: boolean;
+  of?: "headings" | "figures" | "tables" | "checks";
+  title?: Localized;
+  name?: string;
   expr?: string;
+  guesses?: string[];
+  given?: string[];
+  find?: string;
   show?: "value" | "symbolic";
-  display?: { unit?: string; decimals?: number };
+  mode?: "numeric" | "symbolic";
+  hideInput?: boolean;
+  display?: { unit?: string; decimals?: number; notation?: "auto" | "sci" | "eng" | "fixed" };
   note?: string;
   /** Where `note` sits: beside the formula (default) or under it. */
   notePosition?: "right" | "below" | "left" | "above";
   text?: Localized;
   src?: string;
+  alt?: Localized;
   source?: string | null;
-  title?: Localized;
-  collapsed?: boolean;
-  caption?: { text: Localized; position?: "above" | "below" };
   header?: { row?: boolean; column?: boolean };
-  style?: { font?: string; size?: number };
+  columns?: { width?: number; align?: "left" | "center" | "right" | "decimal"; unit?: string; decimals?: number }[];
+  rows?: string[][];
+  series?: PlotSeries[];
+  surface?: string;
+  parametric?: [string, string, string];
+  xrange?: string;
+  yrange?: string;
+  range?: string;
+  urange?: string;
+  vrange?: string;
+  axes?: boolean | PlotAxes;
+  grid?: boolean;
+  aspect?: "auto" | "equal";
+  animate?: { var: string; over: string; fps?: number };
+  extrema?: boolean;
+  /** `false` / `"none"` or `"top-left" | "top-right" | "bottom-left" | "bottom-right"`. */
+  legend?: boolean | string;
+  palette?: "default" | "smath";
+  render?: string;
+  camera?: { azimuth?: number; elevation?: number; distance?: number };
+  caption?: { text: Localized; position?: "above" | "below"; numbered?: boolean };
+  color?: string;
+  background?: string;
+  border?: boolean;
   regions?: Region[];
   [key: string]: unknown;
 }
 
 export interface TextStyle {
+  ref?: string;
   font?: string;
   size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  color?: string;
+}
+
+export type Length = number | string;
+
+export interface DocSettings {
+  display?: {
+    decimals?: number;
+    exponentialThreshold?: number;
+    approxEqualDigits?: number;
+    trailingZeros?: boolean;
+    resultUnits?: "si" | "working";
+    notation?: "auto" | "engineering" | "prefix";
+    sigFigs?: number;
+    groupDigits?: boolean;
+    fractions?: "decimal" | "fraction" | "mixed";
+    decimalSeparator?: "auto" | "." | ",";
+    [key: string]: unknown;
+  };
+  calc?: { angle?: "rad" | "deg" | "grad"; precision?: "double" | "arbitrary"; [key: string]: unknown };
+  units?: {
+    system?: "SI" | "US" | "Imperial" | "CGS";
+    prefer?: Record<string, string>;
+    quietNames?: string[];
+    marked?: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 }
 
 export interface Doc {
   format: string;
-  meta?: { title?: Localized; lang?: string; [key: string]: unknown };
+  meta?: {
+    title?: Localized;
+    authors?: string[];
+    company?: string;
+    subject?: Localized;
+    keywords?: string | string[];
+    id?: string;
+    lang?: string;
+    source?: Record<string, unknown>;
+    templateDescription?: string;
+    [key: string]: unknown;
+  };
+  settings?: DocSettings;
+  units?: Record<string, string>;
   styles?: {
     body?: TextStyle;
     math?: TextStyle;
     /** Which built-in typography applies where the styles say nothing: absent = 1 (typography.ts). */
     typography?: number;
-    numbering?: { headings?: string; figures?: string; tables?: string; sections?: string };
+    numbering?: {
+      headings?: string | null;
+      figures?: string | null;
+      tables?: string | null;
+      sections?: string | null;
+    };
     [key: string]: unknown;
   };
-  page?: { paper?: string | [string, string]; margins?: Record<string, string | number>; [key: string]: unknown };
+  page?: {
+    view?: "pages" | "canvas";
+    paper?: string | [Length, Length];
+    orientation?: "portrait" | "landscape";
+    margins?: Record<string, Length>;
+    header?: object;
+    footer?: object;
+    firstPage?: { header?: boolean; footer?: boolean };
+    backgrounds?: { pages?: string; src: string; fit?: "page" | "margins" }[];
+    pageNumber?: { start?: number; style?: "arabic" | "roman" | "ROMAN" };
+    [key: string]: unknown;
+  };
+  requires?: string[];
   regions: Region[];
   [key: string]: unknown;
 }

@@ -2707,7 +2707,6 @@ dependencies = [
  "quire-eval",
  "quire-service",
  "quire-smath",
- "quire-units",
  "serde_json",
 ]
 

@@ -55,7 +55,6 @@ const PATHS = {
   align: "M2 3h12M2 6.5h8M2 10h12M2 13.5h8",
   arrange: "M2 2v12M4 4h8M4 8h5M4 12h9",
   variable: "M3 6h.01M3 10h.01M6 6h7M6 10h7",
-  clock: "M8 4.5V8l2.3 1.5M14.5 8a6.5 6.5 0 1 1-13 0a6.5 6.5 0 1 1 13 0",
   command: "M6 4l4 4-4 4",
 } as const;
 

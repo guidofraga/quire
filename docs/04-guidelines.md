@@ -127,10 +127,10 @@ Notebook operations skip steps 2 and 3: add an `op` to `notebook::call` and both
 
 ### Add a region kind
 
-1. Specify it in [02-file-format.md §4](02-file-format.md) and the schema.
-2. Evaluate or render it in `quire-service` if the engine is involved (`math_inputs`, `report`), and mirror the view in `types.ts`.
-3. A `<Match>` in `Region.tsx`, and an insert command (recipe above).
-4. Make it travel: `clipboard.ts` (between documents and to other apps), `describe.ts` (screen readers), print and PDF (check the page view), find if it holds text.
+1. Specify it in [02-file-format.md §4](02-file-format.md), `schema/quire-1.schema.json`, and `crates/quire-service/src/canonical.rs` (`REGION_ORDER`).
+2. Evaluate or render it in `quire-service` if the engine is involved (`math_inputs`, `report`), and mirror the view in `app/src/types.ts`.
+3. A `<Match>` in `Region.tsx`, fields in `Inspector.tsx`, and an insert command (recipe above).
+4. Make it travel: `clipboard.ts` / `actions.ts` (`exportRegion`, between documents and to other apps), `docx/` + `app/src/docx.ts` (Word export), `describe.ts` (screen readers), `thumbnail.ts` (template previews), `find.ts` / `trace.ts` if it holds text or math, and print/PDF (check the page view).
 5. Tests: Rust for the engine part, Vitest for logic, one e2e step that inserts it.
 
 ### Change the file format

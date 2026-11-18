@@ -141,7 +141,7 @@ export const DOC_EXT = isMac ? "quire" : "quirez";
 
 /** `…/x.quire/document.json` (picked in a file dialog) means the `x.quire` bundle. */
 export function documentPath(p: string): string {
-  return p.replace(/[\\/]document\.json$/i, "");
+  return p.replace(/([\\/][^\\/]+\.quire)[\\/]document\.json$/i, "$1");
 }
 
 /** An SMath Studio worksheet (`.sm`, XML). It opens as an untitled document, never over the file. */
@@ -174,6 +174,15 @@ export async function confirmDiscard(): Promise<boolean> {
   if (isTauri) {
     const { ask } = await import("@tauri-apps/plugin-dialog");
     return ask(msg, { title: "Quire", kind: "warning", okLabel: "Discard", cancelLabel: "Cancel" });
+  }
+  return window.confirm(msg);
+}
+
+export async function confirmDeleteTemplate(name: string): Promise<boolean> {
+  const msg = `Delete the template “${name}”?`;
+  if (isTauri) {
+    const { ask } = await import("@tauri-apps/plugin-dialog");
+    return ask(msg, { title: "Delete template", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" });
   }
   return window.confirm(msg);
 }

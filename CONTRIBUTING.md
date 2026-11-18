@@ -17,12 +17,14 @@ If something here is unclear or out of date, fixing it is a welcome first contri
 | `crates/quire-units` | Dimensions and the unit table |
 | `crates/quire-eval` | The engine: evaluation, worksheets, spreadsheet tables, plots, symbolic math |
 | `crates/quire-doc` | Loading `.quire` and `.quirez` documents |
-| `crates/quire-service` | What the app asks the engine for; templates; notebooks |
+| `crates/quire-smath` | Importing SMath Studio `.sm` worksheets |
+| `crates/quire-service` | What the app asks the engine for; templates; notebooks; Word export |
+| `crates/quire-web` | The engine compiled to WebAssembly, for the web version |
 | `crates/quire-cli` | The `quire` command, and `quire serve` for UI work in a browser |
 | `app/` | The desktop app: SolidJS front end in `app/src`, Tauri shell in `app/src-tauri`, Playwright tests in `app/e2e` |
 | `docs/` | Architecture, file format, code map, guidelines, testing, releasing |
 | `schema/` | JSON Schema for `document.json` |
-| `tools/` | The SMath importer and the math-font build script |
+| `tools/` | Build scripts for the bundled `QuireMath` and `QuireText` fonts |
 
 ## Getting set up
 
@@ -57,6 +59,7 @@ CI runs these on every push; run them first:
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
+cargo clippy -p quire-web --target wasm32-unknown-unknown -- -D warnings
 cargo test --workspace --exclude quire-app
 cd app && npm run format:check && npx tsc --noEmit && npm test && npm run e2e
 ```

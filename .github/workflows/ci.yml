@@ -82,6 +82,9 @@ jobs:
       - name: Front-end unit tests
         run: npm test
         working-directory: app
+      - name: Build the desktop front end
+        run: npm run build
+        working-directory: app
       # what pages.yml publishes, so a change that breaks it fails here and not after merging
       - name: Build the web version
         run: npm run build:web

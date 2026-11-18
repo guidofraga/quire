@@ -15,7 +15,8 @@ import {
   tableHtml,
   tsv,
 } from "./clipboard";
-import type { Region } from "./types";
+import { exportRegion } from "./actions";
+import type { Region, RegionView } from "./types";
 
 // the app's rule with no variables defined: a word of two letters or more is prose
 const isProse = (s: string) =>
@@ -214,5 +215,45 @@ describe("LaTeX to linear math", () => {
     expect(t("M := \\frac{q \\cdot {L}^{2}}{8}")).toBe("M := q*L^2/8");
     expect(t("\\mathit{span} = 54 \\cdot \\mathrm{kN}\\,\\mathrm{m}")).toBe("span := 54*kN*m");
     expect(t("\\int_{0}^{1} f\\,\\mathrm{d}x")).toBe("int(f, x, 0, 1)");
+  });
+});
+
+describe("exportRegion", () => {
+  it("exports solve blocks with Given and find lines", () => {
+    const view = (id: string, input: RegionView["input"], result: RegionView["result"] = null): RegionView => ({
+      id,
+      input,
+      result,
+      resultText: null,
+      error: null,
+      syntaxError: false,
+      units: [],
+      constants: [],
+      shadowing: [],
+      defines: null,
+    });
+    const r: Region = {
+      id: "s1",
+      kind: "solve",
+      at: [0, 0],
+      guesses: ["x := 1"],
+      given: ["x^2 == 4"],
+      find: "x := find(x)",
+      show: "value",
+    };
+    const out = exportRegion(
+      {
+        html: {},
+        views: {
+          "s1:g0": view("s1:g0", { t: "Ident", c: "x" }),
+          "s1:c0": view("s1:c0", { t: "Ident", c: "x" }),
+          "s1:f": view("s1:f", { t: "Ident", c: "x" }, { t: "Num", c: "2" }),
+        },
+      },
+      r,
+    );
+    expect(out.text).toBe("x := 1\nGiven\nx^2 == 4\nx := find(x) =");
+    expect(out.html).toContain("<p><b>Given</b></p>");
+    expect(out.html).toContain("<mn>2</mn>");
   });
 });

@@ -1,6 +1,6 @@
-// AST → MathML. WebKit and Chromium both implement MathML Core, which gives real
-// fractions, radicals, stretchy fences and matrices. This is the interim renderer
-// until the Rust typesetter (quire-layout) lands; see docs/01-architecture.md §3.
+// AST → MathML, rendered with the bundled QuireMath (STIX Two Math) font so
+// fractions, radicals, stretchy fences and matrices read directly in WebKit and
+// Chromium and copy/speak cleanly; see docs/01-architecture.md §3.
 import { prefs } from "./settings";
 import { state } from "./store";
 import type { BinaryOp, CmpOp, Expr } from "./types";

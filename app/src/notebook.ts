@@ -568,9 +568,6 @@ export async function moveItems(
   return moved;
 }
 
-/** Move into section `to` (`""` is the notebook itself) at `index` there. */
-export const moveTo = (rel: string, to: string, index?: number) => moveItems([rel], to, index);
-
 /** Put the last move back (⌘Z in the sidebar, or Undo on its message). */
 export async function undoMove() {
   const last = undoMoves.pop();

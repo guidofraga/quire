@@ -133,7 +133,7 @@ function captionHtml(shown: Shown, r: Region): string {
 }
 
 /** One region for other apps: HTML, and plain text lines. */
-function exportRegion(shown: Shown, r: Region): { html: string; text: string } {
+export function exportRegion(shown: Shown, r: Region): { html: string; text: string } {
   const lang = state.doc.meta?.lang;
   switch (r.kind) {
     case "math": {
@@ -143,6 +143,25 @@ function exportRegion(shown: Shown, r: Region): { html: string; text: string } {
         ? mathParagraph(mathml(v.input, v.error ? null : v.result, v.units, v.constants, v.symbolic), line)
         : `<p>${escapeHtml(line)}</p>`;
       return { html, text: line };
+    }
+    case "solve": {
+      const guesses = Array.isArray(r.guesses) ? r.guesses : [];
+      const given = Array.isArray(r.given) ? r.given : [];
+      const find =
+        String(r.find ?? "") + (r.show === "value" ? ` =${r.display?.unit ? ` ${r.display.unit}` : ""}` : "");
+      const lineHtml = (viewId: string, raw: string, showResult = false) => {
+        const v = shown.views[viewId];
+        return v?.input
+          ? mathParagraph(mathml(v.input, showResult && !v.error ? v.result : null, v.units, v.constants), raw)
+          : `<p>${escapeHtml(raw)}</p>`;
+      };
+      const html = [
+        ...guesses.map((g, i) => lineHtml(`${r.id}:g${i}`, g)),
+        "<p><b>Given</b></p>",
+        ...given.map((c, i) => lineHtml(`${r.id}:c${i}`, c)),
+        lineHtml(`${r.id}:f`, find, r.show === "value"),
+      ].join("");
+      return { html, text: [...guesses, "Given", ...given, find].join("\n") };
     }
     case "text": {
       const html = renderedHtml(shown, r.id, layout().byId.get(r.id)?.number);
@@ -559,6 +578,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Table from CSV…", run: go("import_csv") },
         { label: "Insert Plot", run: go("insert_plot") },
         { label: "Insert 3D Plot", run: go("insert_plot3d") },
+        { label: "Insert Solve Block", run: go("insert_solve") },
         { label: "Insert Area", run: go("insert_area") },
         { label: "Insert Page Break", shortcut: "⌘↩", run: go("insert_pagebreak") },
         null,

@@ -10,7 +10,7 @@ import type { Doc, Localized } from "./types";
  * The desktop app writes the PDF itself on macOS and Linux. Windows (and the browser)
  * save it from the system print dialog ("Save as PDF").
  */
-export const directPdf = isMac || (isTauri && isLinux);
+export const directPdf = isTauri && (isMac || isLinux);
 
 async function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, type, quality));

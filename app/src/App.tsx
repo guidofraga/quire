@@ -794,9 +794,23 @@ function runCommand(id: string) {
 
 /** In a plain browser there is no native menu; map the same shortcuts. */
 function browserShortcuts(e: KeyboardEvent) {
-  if (isTauri || !(e.metaKey || e.ctrlKey)) return;
-  // ⌥ changes e.key on a Mac (⌥⌘F gives ƒ)
-  const key = e.altKey && e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
+  if (isTauri) return;
+  if (e.key === "F1") {
+    e.preventDefault();
+    return void runCommand("help");
+  }
+  if (e.key === "F3") {
+    e.preventDefault();
+    return void runCommand(e.shiftKey ? "find_prev" : "find_next");
+  }
+  if (!(e.metaKey || e.ctrlKey)) return;
+  // ⌥ changes e.key on a Mac (⌥⌘F gives ƒ, ⌥⌘, gives ≤)
+  const key =
+    e.altKey && e.code.startsWith("Key")
+      ? e.code.slice(3).toLowerCase()
+      : e.altKey && e.code === "Comma"
+        ? ","
+        : e.key.toLowerCase();
   const map: Record<string, string> = {
     s: e.shiftKey ? "save_as" : "save",
     o: e.shiftKey ? "open_notebook" : "open",
@@ -819,7 +833,7 @@ function browserShortcuts(e: KeyboardEvent) {
     "/": e.shiftKey ? "help" : "",
     // Ctrl+G is Greek in math
     g: e.metaKey ? (e.shiftKey ? "find_prev" : "find_next") : "",
-    ",": e.altKey ? "" : "settings",
+    ",": e.altKey ? "document_settings" : "settings",
   };
   if (key === "a" && (state.editing || state.hfEditing || focusedTextField())) return;
   const cmd = key === "a" ? "select_all" : map[key];

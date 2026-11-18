@@ -25,7 +25,10 @@ function pattern(): RegExp | null {
 const plain = (djot: string) => djot.replace(/\{[^}\n]*\}/g, "").replace(/\\(.)/g, "$1");
 
 function searchable(r: Region, lang?: string): string[] {
-  const out = [r.expr, r.note, localized(r.title, lang), localized(r.caption?.text, lang)];
+  const out = [r.expr, r.note, r.find, localized(r.title, lang), localized(r.caption?.text, lang)];
+  if (Array.isArray(r.guesses)) out.push(...r.guesses);
+  if (Array.isArray(r.given)) out.push(...r.given);
+  if (Array.isArray(r.rows)) for (const row of r.rows) out.push(...row);
   if (r.kind === "text") out.push(plain(localized(r.text, lang)));
   return out.filter((s): s is string => !!s);
 }
@@ -90,6 +93,10 @@ function replaceIn(r: Region, re: RegExp): number {
     typeof v === "string" ? fn(v) : Object.fromEntries(Object.entries(v).map(([k, s]) => [k, fn(s)]));
   if (r.expr) r.expr = swap(r.expr);
   if (r.note) r.note = swap(r.note);
+  if (r.find) r.find = swap(r.find);
+  if (Array.isArray(r.guesses)) r.guesses = r.guesses.map(swap);
+  if (Array.isArray(r.given)) r.given = r.given.map(swap);
+  if (Array.isArray(r.rows)) r.rows = r.rows.map((row) => row.map(swap));
   if (r.title) r.title = each(r.title, swap);
   if (r.caption) r.caption.text = each(r.caption.text, swap);
   if (r.kind === "text" && r.text) r.text = each(r.text, swapDjot);

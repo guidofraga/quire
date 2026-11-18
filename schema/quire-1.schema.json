@@ -12,9 +12,17 @@
         "title": { "$ref": "#/$defs/localized" },
         "authors": { "type": "array", "items": { "type": "string" } },
         "company": { "type": "string" },
+        "subject": { "$ref": "#/$defs/localized" },
+        "keywords": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
         "id": { "type": "string" },
         "lang": { "type": "string" },
-        "source": { "type": "object" }
+        "source": { "type": "object" },
+        "templateDescription": { "type": "string" }
       }
     },
     "settings": {
@@ -28,6 +36,9 @@
             "approxEqualDigits": { "type": "integer", "minimum": 1 },
             "trailingZeros": { "type": "boolean" },
             "resultUnits": { "enum": ["si", "working"] },
+            "notation": { "enum": ["auto", "engineering", "prefix"] },
+            "sigFigs": { "type": "integer", "minimum": 1 },
+            "groupDigits": { "type": "boolean" },
             "fractions": { "enum": ["decimal", "fraction", "mixed"] },
             "decimalSeparator": { "enum": ["auto", ".", ","] }
           }
@@ -93,7 +104,8 @@
         "unit": { "type": "string" },
         "label": { "type": "string" },
         "min": { "type": "number" },
-        "max": { "type": "number" }
+        "max": { "type": "number" },
+        "log": { "type": "boolean" }
       }
     },
     "length": {
@@ -102,7 +114,7 @@
         { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]+)?(px|pt|mm|cm|in)$" }
       ]
     },
-    "color": { "type": "string", "pattern": "^#[0-9a-f]{6}([0-9a-f]{2})?$" },
+    "color": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" },
     "asset": { "type": "string", "pattern": "^assets/[0-9a-f]{16}\\.[a-z0-9]+$" },
     "localized": {
       "oneOf": [
@@ -245,7 +257,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z2-9]{6}$" },
         "kind": {
-          "enum": ["math", "text", "image", "table", "plot2d", "plot3d", "data", "solve", "area", "pagebreak", "legacy"]
+          "enum": ["math", "text", "image", "table", "plot2d", "plot3d", "data", "toc", "solve", "area", "pagebreak", "legacy"]
         },
         "at": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
         "size": { "type": "array", "items": { "type": "number", "minimum": 0 }, "minItems": 2, "maxItems": 2 },
@@ -281,7 +293,13 @@
         },
         {
           "if": { "properties": { "kind": { "const": "image" } } },
-          "then": { "required": ["src", "size"], "properties": { "src": { "$ref": "#/$defs/asset" } } }
+          "then": {
+            "required": ["src", "size"],
+            "properties": {
+              "src": { "$ref": "#/$defs/asset" },
+              "alt": { "$ref": "#/$defs/localized" }
+            }
+          }
         },
         {
           "if": { "properties": { "kind": { "const": "table" } } },
@@ -328,7 +346,15 @@
                     "x": { "type": "string" },
                     "range": { "type": "string" },
                     "label": { "type": "string" },
-                    "style": { "type": "object" },
+                    "style": {
+                      "type": "object",
+                      "properties": {
+                        "color": { "$ref": "#/$defs/color" },
+                        "width": { "type": "number", "exclusiveMinimum": 0 },
+                        "dash": { "enum": ["dashed", "dotted"] },
+                        "draw": { "enum": ["line", "points", "line+points"] }
+                      }
+                    },
                     "surface": { "type": "string", "description": "plot3d: a height z(x, y) over xrange × yrange, or a matrix of heights" },
                     "parametric": {
                       "type": "array",
@@ -410,6 +436,15 @@
               }
             },
             "oneOf": [{ "required": ["src"] }, { "required": ["inline"] }]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "toc" } } },
+          "then": {
+            "properties": {
+              "of": { "enum": ["headings", "figures", "tables", "checks"] },
+              "title": { "$ref": "#/$defs/localized" }
+            }
           }
         },
         {

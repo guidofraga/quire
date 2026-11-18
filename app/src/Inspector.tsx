@@ -210,6 +210,40 @@ function CaptionFields(props: { r: Region }) {
   );
 }
 
+function DisplayFields(props: { r: Region }) {
+  return (
+    <div class="insp-row">
+      <Field label="Result unit" hint="e.g. kN, kgf/m^2, mm">
+        <Text
+          value={props.r.display?.unit}
+          mono
+          placeholder="automatic"
+          onCommit={(v) =>
+            updateRegion(props.r.id, (d) => {
+              d.display = { ...d.display, unit: v || undefined };
+              if (!d.display.unit) delete d.display.unit;
+              if (!Object.keys(d.display).length) delete d.display;
+            })
+          }
+        />
+      </Field>
+      <Field label="Decimals">
+        <Num
+          value={props.r.display?.decimals}
+          placeholder="document"
+          onCommit={(v) =>
+            updateRegion(props.r.id, (d) => {
+              d.display = { ...d.display, decimals: v };
+              if (d.display.decimals === undefined) delete d.display.decimals;
+              if (!Object.keys(d.display).length) delete d.display;
+            })
+          }
+        />
+      </Field>
+    </div>
+  );
+}
+
 function RegionTab() {
   const selected = () => (state.selection.length === 1 ? layout().byId.get(state.selection[0])?.region : undefined);
   return (
@@ -234,6 +268,8 @@ function RegionTab() {
                 table: "Table",
                 area: "Area",
                 toc: "Contents",
+                solve: "Solve Block",
+                pagebreak: "Page Break",
                 plot2d: "Plot",
                 plot3d: "3D Plot",
               }[r().kind] ?? r().kind
@@ -257,38 +293,23 @@ function RegionTab() {
                   label="Show the result"
                   onChange={(on) => updateRegion(r().id, { show: on ? "value" : undefined })}
                 />
-                <div class="insp-row">
-                  <Field label="Result unit" hint="e.g. kN, kgf/m^2, mm">
-                    <Text
-                      value={r().display?.unit}
-                      mono
-                      placeholder="automatic"
-                      onCommit={(v) =>
-                        updateRegion(r().id, (d) => {
-                          d.display = { ...d.display, unit: v || undefined };
-                          if (!d.display.unit) delete d.display.unit;
-                          if (!Object.keys(d.display).length) delete d.display;
-                        })
-                      }
-                    />
-                  </Field>
-                  <Field label="Decimals">
-                    <Num
-                      value={r().display?.decimals}
-                      placeholder="document"
-                      onCommit={(v) =>
-                        updateRegion(r().id, (d) => {
-                          d.display = { ...d.display, decimals: v };
-                          if (d.display.decimals === undefined) delete d.display.decimals;
-                          if (!Object.keys(d.display).length) delete d.display;
-                        })
-                      }
-                    />
-                  </Field>
-                </div>
+                <DisplayFields r={r()} />
                 <Field label="Note" hint="Shown beside the result">
                   <Text value={r().note} onCommit={(v) => updateRegion(r().id, { note: v || undefined })} />
                 </Field>
+                <Check
+                  checked={!!r().disabled}
+                  label="Exclude from calculation"
+                  onChange={(on) => updateRegion(r().id, { disabled: on || undefined })}
+                />
+              </Match>
+              <Match when={r().kind === "solve"}>
+                <Check
+                  checked={r().show === "value"}
+                  label="Show the result"
+                  onChange={(on) => updateRegion(r().id, { show: on ? "value" : undefined })}
+                />
+                <DisplayFields r={r()} />
                 <Check
                   checked={!!r().disabled}
                   label="Exclude from calculation"
@@ -597,21 +618,21 @@ function DocumentTab() {
         />
         <Field label="Figure captions" hint="{n} is the number; empty follows the language">
           <Text
-            value={numbering().figures}
+            value={numbering().figures ?? undefined}
             placeholder={defaultLabel("figure")}
             onCommit={(v) => set(["styles", "numbering", "figures"])(v || undefined)}
           />
         </Field>
         <Field label="Table captions">
           <Text
-            value={numbering().tables}
+            value={numbering().tables ?? undefined}
             placeholder={defaultLabel("table")}
             onCommit={(v) => set(["styles", "numbering", "tables"])(v || undefined)}
           />
         </Field>
         <Field label="References to headings" hint="How a cross-reference to a heading reads">
           <Text
-            value={numbering().sections}
+            value={numbering().sections ?? undefined}
             placeholder={defaultLabel("section")}
             onCommit={(v) => set(["styles", "numbering", "sections"])(v || undefined)}
           />

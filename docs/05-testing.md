@@ -12,11 +12,11 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 | End to end | `app/e2e/*.spec.ts` (Playwright, WebKit) | `npm --prefix app run e2e` | The UI against `quire serve`, typed as a user would; `web.spec.ts` runs the web version with its WebAssembly engine (project `web`) |
 | SMath examples | `crates/quire-cli/tests/smath_examples.rs` | `cargo test -p quire-cli --test smath_examples -- --nocapture` | Every worksheet in the SMath corpus imports, evaluates, and reproduces at least its floor of SMath's cached results |
 | SMath robustness | `crates/quire-cli/tests/smath_robustness.rs` | the same `cargo test` | The importer never panics on hostile input, corpus prefixes or mutations |
-| Accessibility | `app/e2e/a11y.spec.ts`, plus axe in `notebook.spec.ts` and `notebook-organise.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
+| Accessibility | `app/e2e/a11y.spec.ts`, plus axe (`e2e/axe.ts`) in `notebook.spec.ts`, `notebook-organise.spec.ts`, `header-footer.spec.ts`, `interface-polish.spec.ts`, `names.spec.ts`, `pages.spec.ts`, `unit-entry.spec.ts`, `unit-names.spec.ts` and `web.spec.ts` | part of `e2e` | axe in light and dark; keyboard flows |
 | Desktop app | `#[cfg(test)]` in `app/src-tauri/src` (`scope.rs`, `pdf.rs`) | `npm --prefix app run build`, then `cargo test -p quire-app` | Which paths the app may touch; finishing exported PDFs |
 | PDF export | `app/src-tauri/tests/` (macOS and Linux; CI runs it on Linux under `dbus-run-session` and `xvfb-run`) | `npm --prefix app run build`, then `cargo test -p quire-app --features tauri/custom-protocol -- --include-ignored` | Exports `fixtures/report.quire` headlessly and checks the PDF's details, bookmarks and links; also shows the app and its menu start |
 
-CI runs the PDF test on Linux only. When you change printing, `export.ts`, `print.rs` or `pdf.rs`, run it on a Mac too: macOS writes the PDF through AppKit, which CI doesn't cover.
+CI runs the PDF test on Linux (`ubuntu-24.04` for headless WebKitGTK, while `.github/workflows/release.yml` builds shipped Linux bundles on `ubuntu-22.04` for glibc 2.35 compatibility). When you change printing, `export.ts`, `print.rs` or `pdf.rs`, run it on a Mac too: macOS writes the PDF through AppKit, which CI doesn't cover.
 
 ## 2. The README's pictures
 
@@ -79,6 +79,7 @@ The test is a ratchet. `FLOOR` in the file holds, for each worksheet, the number
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
+cargo clippy -p quire-web --target wasm32-unknown-unknown -- -D warnings
 cargo test --workspace --exclude quire-app
 cd app && npm run format:check && npx tsc --noEmit && npm test && npm run e2e
 ```

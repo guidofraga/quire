@@ -1062,7 +1062,10 @@ createRoot(() =>
  * rather than an edit: no undo step, and the document doesn't become "Edited".
  */
 export function togglePageView() {
-  setState("doc", "page", (p) => ({ ...(p ?? {}), view: p?.view === "pages" ? "canvas" : "pages" }));
+  setState("doc", "page", (p) => ({
+    ...(p ?? {}),
+    view: p?.view === "pages" ? ("canvas" as const) : ("pages" as const),
+  }));
 }
 
 // ---------------------------------------------------------------------------

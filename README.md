@@ -83,10 +83,10 @@ Every picture is a real document, photographed by the app's own test setup (`npm
 
 | Area | Highlights |
 |---|---|
-| **Maths** | Units without markers, functions, matrices, `sum`, `int`, `diff`, `solve` (roots, systems), ODEs (`rkfixed`), fitting and statistics, built-in constants, errors that say what is wrong |
-| **Symbolic** | `→` for derivatives, integrals (substitution, by parts, partial fractions), `solve` up to degree four, limits, series, `factor`, `expand`, `simplify` |
-| **Documents** | Rich text with live maths in sentences, spreadsheet tables, 2D plots, images, numbered headings and captions, cross-references, contents lists, summary of checks |
-| **Pages** | A free canvas or A4/Letter pages with headers and footers, PDF export with bookmarks and links, templates |
+| **Maths** | Units without markers, functions, matrices, `sum`, `int`, `diff`, `solve` (roots, systems), `Given … find` solve blocks, ODEs (`rkfixed`), fitting and statistics, built-in constants, errors that say what is wrong |
+| **Symbolic** | `→` for derivatives, integrals (substitution, by parts, partial fractions), `solve` up to degree four and linear systems, limits, series, `factor`, `expand`, `simplify`, `subs` |
+| **Documents** | Rich text with live maths in sentences, spreadsheet tables, 2D and 3D plots, images, numbered headings and captions, cross-references, contents lists, summary of checks |
+| **Pages** | A free canvas or A4/Letter pages with headers and footers, PDF export with bookmarks and links, editable Word (`.docx`) export, templates |
 | **Notes** | Notebooks of sections and notes, search across notes, autosave (desktop app) |
 | **Sharing** | The web version, documents in links, copy and paste to Word and Google Docs as equations, LaTeX, CSV |
 | **Accessibility** | The whole app works from the keyboard and with VoiceOver; maths is read as words |
@@ -132,7 +132,7 @@ cargo run -q -p quire-cli -- calc "2 m + 30 cm" --in mm
 | [quire-eval](crates/quire-eval) | The engine: evaluation, worksheets, spreadsheet tables, plots, symbolic maths |
 | [quire-doc](crates/quire-doc) | Loading `.quire` and `.quirez` documents |
 | [quire-smath](crates/quire-smath) | Importing SMath Studio worksheets |
-| [quire-service](crates/quire-service) | What the app asks the engine for; templates; notebooks |
+| [quire-service](crates/quire-service) | What the app asks the engine for; templates; notebooks; Word export |
 | [quire-web](crates/quire-web) | The engine as WebAssembly, for the web version |
 | [quire-cli](crates/quire-cli) | The `quire` command, and `quire serve` for UI work in a browser |
 

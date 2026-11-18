@@ -2,6 +2,9 @@
 node_modules/
 dist/
 .DS_Store
+/latest.json
+/.claude/
+/.delta/
 
 # Tauri generated
 /app/src-tauri/gen/

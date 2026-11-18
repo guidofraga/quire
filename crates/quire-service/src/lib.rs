@@ -1349,6 +1349,7 @@ fn canonical_text(doc: &Json) -> String {
 pub fn open_json(doc: &Json) -> Result<Json> {
     let _: Document = serde_json::from_value(doc.clone())?;
     let mut doc = doc.clone();
+    quire_doc::hold_unreadable(&mut doc);
     names::upgrade_names(&mut doc);
     Ok(doc)
 }
@@ -1358,7 +1359,9 @@ pub fn open_json(doc: &Json) -> Result<Json> {
 pub fn store_json(doc: &Json) -> Result<Json> {
     let _: Document = serde_json::from_value(doc.clone())?;
     let mut doc = doc.clone();
+    canonical::sort_regions(&mut doc);
     names::explicit_names(&mut doc);
+    quire_doc::restore_unreadable(&mut doc);
     Ok(doc)
 }
 
@@ -1494,7 +1497,7 @@ pub fn export_docx(doc: &Json, opts: &DocxOptions, bundle: Option<&Path>) -> Res
         if quire_doc::is_single_file(bundle) {
             quire_doc::read_entry(bundle, src).ok().flatten()
         } else {
-            std::fs::read(bundle_dir(bundle).join(src)).ok()
+            read_bundle_asset(bundle, src).ok()
         }
     };
     docx::write(doc, &report, opts, &read)
@@ -1513,6 +1516,20 @@ pub fn export_docx_file(path: &Path, doc: &Json, opts: &DocxOptions, bundle: Opt
 pub fn export_docx_base64(doc: &Json, opts: &Json, bundle: Option<&Path>) -> Result<String> {
     let opts = DocxOptions::from_json(opts)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(export_docx(doc, &opts, bundle)?))
+}
+
+/// Read an asset inside an unpacked `.quire` directory, refusing symlinks so an untrusted
+/// bundle cannot pull files from elsewhere on disk.
+fn read_bundle_asset(bundle: &Path, src: &str) -> Result<Vec<u8>> {
+    let dir = bundle_dir(bundle);
+    if std::fs::symlink_metadata(dir.join("assets")).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(ServiceError("bundle assets cannot be symbolic links".into()));
+    }
+    let path = dir.join(src);
+    if std::fs::symlink_metadata(&path)?.file_type().is_symlink() {
+        return Err(ServiceError("bundle assets cannot be symbolic links".into()));
+    }
+    Ok(std::fs::read(&path)?)
 }
 
 /// Asset references are content-addressed names inside the bundle: `assets/<16 hex>.<ext>`.
@@ -1534,7 +1551,7 @@ pub fn read_asset(bundle: &Path, src: &str) -> Result<String> {
         Some(b) => b,
         None if quire_doc::is_single_file(bundle) => quire_doc::read_entry(bundle, src)?
             .ok_or_else(|| ServiceError(format!("{src} is missing from {}", bundle.display())))?,
-        None => std::fs::read(bundle_dir(bundle).join(src))?,
+        None => read_bundle_asset(bundle, src)?,
     };
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
@@ -1994,5 +2011,40 @@ mod tests {
         assert_eq!(localized(&v, Some("pt-BR")), Some("Input data:"));
         assert_eq!(localized(&v, Some("ru")), Some("Входные данные:"));
         assert_eq!(localized(&serde_json::json!({ "ru": "Только" }), None), Some("Только"));
+    }
+
+    #[test]
+    fn share_links_keep_unreadable_regions() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let odd = serde_json::json!({ "id": "odd111", "kind": "future", "at": { "x": 1 }, "data": 42 });
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                odd,
+                { "id": "b", "kind": "math", "at": [0, 36], "expr": "a := 1" },
+            ]
+        });
+        let opened = open_json(&doc)?;
+        assert_eq!(opened["regions"][0]["kind"], quire_doc::UNREADABLE);
+        let stored = store_json(&opened)?;
+        assert_eq!(stored["regions"][0], odd);
+        assert_eq!(stored["regions"][1]["id"], "b");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_bundle_assets_are_rejected() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
+        let dir = TempDir::new("symlink-asset")?;
+        let bundle = dir.0.join("Beam.quire");
+        std::fs::create_dir_all(bundle.join("assets"))?;
+        let outside = dir.0.join("secret.png");
+        std::fs::write(&outside, PNG)?;
+        let link = bundle.join("assets/0123456789abcdef.png");
+        std::os::unix::fs::symlink(&outside, &link)?;
+        let err =
+            read_asset(&bundle, "assets/0123456789abcdef.png").err().ok_or("symlinked asset should fail")?;
+        assert!(err.0.contains("symbolic links"), "{err}");
+        Ok(())
     }
 }

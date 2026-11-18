@@ -102,6 +102,87 @@ function plot(out: Shape[], r: Region) {
   out.push({ kind: "curve", x: x + 12, y: y + 12, w: w - 24, h: h - 24 });
 }
 
+function solveBlock(out: Shape[], r: Region, room: number) {
+  const [x, y] = r.at;
+  const guesses = Array.isArray(r.guesses) ? r.guesses : [];
+  const given = Array.isArray(r.given) ? r.given : [];
+  const find = typeof r.find === "string" ? r.find : "";
+  const w = Math.min(room, 280);
+  const pad = 10;
+  let cy = y + 8;
+  for (const g of guesses) {
+    out.push({ kind: "math", x: x + pad, y: cy + 5, w: Math.min(w - 2 * pad, String(g).length * 8), h: 11 });
+    cy += 24;
+  }
+  out.push({ kind: "heading", x: x + pad, y: cy + 4, w: 38, h: 11 });
+  cy += 22;
+  for (const c of given) {
+    out.push({ kind: "math", x: x + pad + 8, y: cy + 5, w: Math.min(w - 2 * pad - 8, String(c).length * 8), h: 11 });
+    cy += 24;
+  }
+  out.push({ kind: "rule", x: x + pad, y: cy + 2, w: w - 2 * pad, h: 0 });
+  cy += 8;
+  out.push({
+    kind: "math",
+    x: x + pad,
+    y: cy + 5,
+    w: Math.min(w - 2 * pad, find.length * 8 + (r.show ? 40 : 0)),
+    h: 11,
+  });
+  cy += 28;
+  out.push({ kind: "box", x, y, w, h: cy - y });
+}
+
+function drawRegion(content: Shape[], r: Region, contentW: number, end: number) {
+  const [x, y] = r.at;
+  if (y >= end) return;
+  const room = Math.max(60, contentW - x);
+  switch (r.kind) {
+    case "text":
+      textRegion(content, r, room);
+      break;
+    case "math": {
+      const w = Math.min(room, (r.expr ?? "").length * 8.5 + (r.show ? 40 : 0));
+      content.push({ kind: "math", x, y: y + 5, w, h: 11 });
+      if (r.note)
+        content.push({ kind: "note", x: x + w + 10, y: y + 7, w: Math.min(room - w, r.note.length * 5.5), h: 7 });
+      break;
+    }
+    case "table":
+      table(content, r);
+      break;
+    case "toc": {
+      content.push({ kind: "heading", x, y: y + 4, w: text(r.title).length * 8.5, h: 12 });
+      for (let i = 0; i < 6; i++)
+        content.push({ kind: "line", x: x + 14, y: y + 32 + i * 26, w: contentW - x - 14, h: 8 });
+      break;
+    }
+    case "plot2d":
+    case "plot3d":
+      plot(content, r);
+      break;
+    case "solve":
+      solveBlock(content, r, room);
+      break;
+    case "image": {
+      const [w, h] = r.size ?? [r.width ?? 200, r.height ?? 140];
+      content.push({ kind: "fill", x, y, w, h });
+      break;
+    }
+    case "area": {
+      const title = text(r.title);
+      if (title)
+        content.push({ kind: "heading", x: x + 18, y: y + 4, w: Math.min(room - 18, title.length * 8.5), h: 10 });
+      if (!r.collapsed && Array.isArray(r.regions)) {
+        for (const child of r.regions) {
+          drawRegion(content, { ...child, at: [x + child.at[0], y + child.at[1]] }, contentW, end);
+        }
+      }
+      break;
+    }
+  }
+}
+
 /** The first page of `doc` as shapes on a sheet of its paper size. */
 export function thumbnail(doc: Doc): Thumbnail {
   const g = pageGeom(doc);
@@ -124,39 +205,7 @@ export function thumbnail(doc: Doc): Thumbnail {
   const end = Math.min(g.contentH, ...breakAt);
   const content: Shape[] = [];
   for (const r of doc.regions) {
-    const [x, y] = r.at;
-    if (y >= end) continue;
-    const room = Math.max(60, g.contentW - x);
-    switch (r.kind) {
-      case "text":
-        textRegion(content, r, room);
-        break;
-      case "math": {
-        const w = Math.min(room, (r.expr ?? "").length * 8.5 + (r.show ? 40 : 0));
-        content.push({ kind: "math", x, y: y + 5, w, h: 11 });
-        if (r.note)
-          content.push({ kind: "note", x: x + w + 10, y: y + 7, w: Math.min(room - w, r.note.length * 5.5), h: 7 });
-        break;
-      }
-      case "table":
-        table(content, r);
-        break;
-      case "toc": {
-        content.push({ kind: "heading", x, y: y + 4, w: text(r.title).length * 8.5, h: 12 });
-        for (let i = 0; i < 6; i++)
-          content.push({ kind: "line", x: x + 14, y: y + 32 + i * 26, w: g.contentW - x - 14, h: 8 });
-        break;
-      }
-      case "plot2d":
-      case "plot3d":
-        plot(content, r);
-        break;
-      case "image": {
-        const [w, h] = r.size ?? [r.width ?? 200, r.height ?? 140];
-        content.push({ kind: "fill", x, y, w, h });
-        break;
-      }
-    }
+    drawRegion(content, r, g.contentW, end);
   }
   // inside the printable column, and cut at the foot of the page
   for (const s of content) {

@@ -259,7 +259,7 @@ pub(super) fn assemble(w: &mut Writer, body: String) -> Result<Vec<u8>> {
     let start = page.get("pageNumber").and_then(|p| p.get("start")).and_then(Json::as_u64);
     let fmt = match page.get("pageNumber").and_then(|p| p.get("style")).and_then(Json::as_str) {
         Some("roman") => Some("lowerRoman"),
-        Some("Roman") => Some("upperRoman"),
+        Some("ROMAN" | "Roman") => Some("upperRoman"),
         _ => None,
     };
     let pg_num = if start.is_some() || fmt.is_some() {

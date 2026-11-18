@@ -12,7 +12,6 @@
     "core:window:allow-set-theme",
     "core:window:allow-destroy",
     "dialog:allow-ask",
-    "dialog:allow-message",
     "updater:default",
     "process:allow-restart"
   ]
