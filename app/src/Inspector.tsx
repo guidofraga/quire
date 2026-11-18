@@ -597,21 +597,21 @@ function DocumentTab() {
         />
         <Field label="Figure captions" hint="{n} is the number; empty follows the language">
           <Text
-            value={numbering().figures}
+            value={numbering().figures ?? undefined}
             placeholder={defaultLabel("figure")}
             onCommit={(v) => set(["styles", "numbering", "figures"])(v || undefined)}
           />
         </Field>
         <Field label="Table captions">
           <Text
-            value={numbering().tables}
+            value={numbering().tables ?? undefined}
             placeholder={defaultLabel("table")}
             onCommit={(v) => set(["styles", "numbering", "tables"])(v || undefined)}
           />
         </Field>
         <Field label="References to headings" hint="How a cross-reference to a heading reads">
           <Text
-            value={numbering().sections}
+            value={numbering().sections ?? undefined}
             placeholder={defaultLabel("section")}
             onCommit={(v) => set(["styles", "numbering", "sections"])(v || undefined)}
           />
