@@ -29,6 +29,15 @@ function searchable(r: Region, lang?: string): string[] {
   if (Array.isArray(r.guesses)) out.push(...r.guesses);
   if (Array.isArray(r.given)) out.push(...r.given);
   if (Array.isArray(r.rows)) for (const row of r.rows) out.push(...row);
+  if (Array.isArray(r.elements)) {
+    for (const el of r.elements) {
+      if ("from" in el) out.push(...el.from);
+      if ("to" in el) out.push(...el.to);
+      if ("at" in el) out.push(...el.at);
+      if (el.type === "label") out.push(el.text);
+      else if (el.label) out.push(el.label);
+    }
+  }
   if (r.kind === "text") out.push(plain(localized(r.text, lang)));
   return out.filter((s): s is string => !!s);
 }
@@ -97,6 +106,15 @@ function replaceIn(r: Region, re: RegExp): number {
   if (Array.isArray(r.guesses)) r.guesses = r.guesses.map(swap);
   if (Array.isArray(r.given)) r.given = r.given.map(swap);
   if (Array.isArray(r.rows)) r.rows = r.rows.map((row) => row.map(swap));
+  if (Array.isArray(r.elements)) {
+    for (const el of r.elements) {
+      if ("from" in el) el.from = [swap(el.from[0]), swap(el.from[1])];
+      if ("to" in el) el.to = [swap(el.to[0]), swap(el.to[1])];
+      if ("at" in el) el.at = [swap(el.at[0]), swap(el.at[1])];
+      if (el.type === "label") el.text = swap(el.text);
+      else if (el.label) el.label = swap(el.label);
+    }
+  }
   if (r.title) r.title = each(r.title, swap);
   if (r.caption) r.caption.text = each(r.caption.text, swap);
   if (r.kind === "text" && r.text) r.text = each(r.text, swapDjot);

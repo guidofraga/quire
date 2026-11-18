@@ -18,6 +18,7 @@ mod ops;
 mod plot;
 mod plot3d;
 mod sheet;
+mod sketch;
 mod solveblock;
 mod solvers;
 mod special;
@@ -31,7 +32,7 @@ pub use constants::{CONSTANTS, Constant, constant};
 pub use error::{EvalError, Result};
 pub use format::{
     DisplaySettings, DisplaySpec, Notation, WorkingUnit, format_number, format_shown, format_value,
-    format_value_in, parse_unit_spec, working_unit,
+    format_value_in, parse_unit_spec, si_unit, working_unit,
 };
 pub use interp::{Binding, Env, Interp, Scope};
 pub use plot::{
@@ -39,6 +40,7 @@ pub use plot::{
 };
 pub use plot3d::{Plot3Input, Plot3Outcome, Series3Input, Series3Outcome, Shape};
 pub use sheet::{CellOutcome, TableInput, cell_label, column_name, parse_ref};
+pub use sketch::{LabelToken, SketchCoord, SketchElementInput, SketchInput, SketchOutcome, scan_label};
 pub use solveblock::constraint_text;
 pub use value::{Matrix, Quantity, Value};
 pub use worksheet::{Fix, MathInput, Outcome, SolvePart, Worksheet};

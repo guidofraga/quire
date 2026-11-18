@@ -1,6 +1,7 @@
 // Document actions that span the UI: clipboard, images, duplicate, context menus.
 import { copyPlotImage, editPlot } from "./Plot";
 import { copyPlot3dImage, editPlot3d } from "./Plot3D";
+import { copySketchImage, editSketch } from "./Sketch";
 import { setCaptionToEdit } from "./Region";
 import { unwrap } from "solid-js/store";
 import { api, isTauri } from "./api";
@@ -578,6 +579,7 @@ export function installContextMenus(run: (command: string) => void) {
         { label: "Insert Table from CSV…", run: go("import_csv") },
         { label: "Insert Plot", run: go("insert_plot") },
         { label: "Insert 3D Plot", run: go("insert_plot3d") },
+        { label: "Insert Sketch", run: go("insert_sketch") },
         { label: "Insert Solve Block", run: go("insert_solve") },
         { label: "Insert Area", run: go("insert_area") },
         { label: "Insert Page Break", shortcut: "⌘↩", run: go("insert_pagebreak") },
@@ -612,6 +614,8 @@ export function installContextMenus(run: (command: string) => void) {
       items.push({ label: "Edit Plot", shortcut: "↩", run: () => (closeMenu(), editPlot(id)) });
     else if (!many && r?.kind === "plot3d")
       items.push({ label: "Edit Plot", run: () => (closeMenu(), editPlot3d(id)) });
+    else if (!many && r?.kind === "sketch")
+      items.push({ label: "Edit Sketch", shortcut: "↩", run: () => (closeMenu(), editSketch(id)) });
     else if (!many && r && state.editing !== id && (r.kind === "math" || r.kind === "text" || isSheet(r)))
       items.push({
         label: isSheet(r) ? "Edit Table" : "Edit",
@@ -674,10 +678,12 @@ export function installContextMenus(run: (command: string) => void) {
       );
     } else if (!many && r?.kind === "text" && state.editing !== id) {
       items.push({ label: "Convert to Math", run: () => (closeMenu(), convertRegion(id, "math")) }, null);
-    } else if (r && ["image", "table", "plot2d", "plot3d"].includes(r.kind)) {
+    } else if (r && ["image", "table", "plot2d", "plot3d", "sketch"].includes(r.kind)) {
       if (r.kind === "plot2d") items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlotImage(id)) });
       if (r.kind === "plot3d")
         items.push({ label: "Copy as Image", run: () => (closeMenu(), void copyPlot3dImage(id)) });
+      if (r.kind === "sketch")
+        items.push({ label: "Copy as Image", run: () => (closeMenu(), void copySketchImage(id)) });
       items.push(
         {
           label: r.caption ? "Remove Caption" : "Add Caption",

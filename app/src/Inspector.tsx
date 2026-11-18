@@ -26,6 +26,7 @@ import {
 } from "./store";
 import { DEFAULT_SIZE, PlotFields } from "./Plot";
 import { DEFAULT_SIZE_3D, Plot3DFields } from "./Plot3D";
+import { shownSketchSize, SketchFields } from "./Sketch";
 import { defaultLabel } from "./labels";
 import type { Doc, Region } from "./types";
 import { bodySize } from "./typography";
@@ -272,6 +273,7 @@ function RegionTab() {
                 pagebreak: "Page Break",
                 plot2d: "Plot",
                 plot3d: "3D Plot",
+                sketch: "Sketch",
               }[r().kind] ?? r().kind
             }
           >
@@ -457,6 +459,28 @@ function RegionTab() {
                 </div>
                 <Plot3DFields r={r()} />
               </Match>
+              <Match when={r().kind === "sketch"}>
+                <div class="insp-row">
+                  <Field label="Width">
+                    <Num
+                      value={shownSketchSize(r())[0]}
+                      onCommit={(v) =>
+                        v && updateRegion(r().id, { size: [v, shownSketchSize(r())[1]], width: undefined })
+                      }
+                    />
+                  </Field>
+                  <Field label="Height">
+                    <Num
+                      value={shownSketchSize(r())[1]}
+                      onCommit={(v) =>
+                        v && updateRegion(r().id, { size: [shownSketchSize(r())[0], v], width: undefined })
+                      }
+                    />
+                  </Field>
+                </div>
+                <DisplayFields r={r()} />
+                <SketchFields r={r()} />
+              </Match>
               <Match when={r().kind === "toc"}>
                 <Field label="Lists">
                   <Select
@@ -476,7 +500,7 @@ function RegionTab() {
               </Match>
             </Switch>
           </Section>
-          <Show when={["image", "table", "plot2d", "plot3d"].includes(r().kind)}>
+          <Show when={["image", "table", "plot2d", "plot3d", "sketch"].includes(r().kind)}>
             <CaptionFields r={r()} />
           </Show>
         </>

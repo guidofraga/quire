@@ -22,6 +22,14 @@ export type Where = "math" | "text";
 const COMMANDS: (Sym & { where: Where })[] = [
   { name: "text", insert: "", label: "¶", note: "\\text  write text instead", command: "to_text", where: "math" },
   { name: "plot", insert: "", label: "∿", note: "\\plot  plot this function", command: "insert_plot", where: "math" },
+  {
+    name: "sketch",
+    insert: "",
+    label: "△",
+    note: "\\sketch  insert a sketch",
+    command: "insert_sketch",
+    where: "math",
+  },
   { name: "table", insert: "", label: "▦", note: "\\table  insert a table", command: "insert_table", where: "math" },
   {
     name: "math",

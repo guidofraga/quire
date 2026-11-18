@@ -18,6 +18,7 @@ fn run(lines: &[&str]) -> Vec<Outcome> {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         })
@@ -103,6 +104,7 @@ fn a_unit_after_a_number_in_a_table_cell_is_the_unit() -> TestResult {
         display: DisplaySpec::default(),
         table: None,
         plot: None,
+        sketch: None,
         symbolic: false,
         solve: None,
     };

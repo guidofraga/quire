@@ -9,6 +9,7 @@ import { announce } from "./a11y";
 import { isMac } from "./api";
 import { nearestRegion, stepRegion } from "./nav";
 import { editPlot } from "./Plot";
+import { editSketch } from "./Sketch";
 import { focusPlot3d } from "./Plot3D";
 import { Sheet } from "./Sheet";
 import { welcomeOpen } from "./Welcome";
@@ -607,8 +608,10 @@ export function Canvas() {
     }
     if (e.key === "Enter" && sel.length === 1) {
       e.preventDefault();
-      if (layout().byId.get(sel[0])?.region.kind === "plot2d") editPlot(sel[0]);
-      else if (layout().byId.get(sel[0])?.region.kind === "plot3d") focusPlot3d(sel[0]);
+      const kind = layout().byId.get(sel[0])?.region.kind;
+      if (kind === "plot2d") editPlot(sel[0]);
+      else if (kind === "plot3d") focusPlot3d(sel[0]);
+      else if (kind === "sketch") editSketch(sel[0]);
       else startEditing(sel[0]);
       return;
     }

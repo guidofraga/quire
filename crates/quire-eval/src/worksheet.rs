@@ -8,6 +8,7 @@ use crate::format::{DisplaySettings, DisplaySpec, WorkingUnit, format_value_in};
 use crate::interp::{Binding, Env, Func, Interp, Scope, func_key, set_element};
 use crate::plot::{Axis, PlotInput, PlotOutcome, Sampled, SeriesOutcome};
 use crate::sheet::{CellOutcome, TableInput, cell_label};
+use crate::sketch::{SketchInput, SketchOutcome, SketchRaw};
 use crate::value::Value;
 
 /// SI spelling of a dimension without unit markers (`N*m`).
@@ -16,7 +17,7 @@ fn si_text(dim: quire_units::Dim) -> String {
 }
 
 /// One math region, already in document (reading) order.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MathInput {
     pub id: String,
     pub expr: String,
@@ -27,6 +28,8 @@ pub struct MathInput {
     pub table: Option<TableInput>,
     /// A 2D plot instead of an expression (`expr` is then unused).
     pub plot: Option<PlotInput>,
+    /// A parametric sketch instead of an expression (`expr` is then unused).
+    pub sketch: Option<SketchInput>,
     /// Show the expression worked out symbolically (`→`) rather than its value.
     pub symbolic: bool,
     /// A line of a solve block's constraints or its closing `find` (a guess line is plain math).
@@ -69,6 +72,10 @@ pub struct Outcome {
     pub fix: Option<Fix>,
     /// A plot's series, in its axis units.
     pub plot: Option<PlotOutcome>,
+    /// A sketch's evaluated coordinates and interpolated labels.
+    pub sketch: Option<SketchOutcome>,
+    /// Raw evaluated sketch label values, kept until working units are chosen.
+    pub(crate) sketch_raw: Option<SketchRaw>,
     /// A plot's samples in SI, one frame per step of an animation, kept until its axis units are chosen.
     samples: Vec<crate::plot::Frame>,
     /// A 3D plot's samples in SI, kept until its axis units are chosen.
@@ -85,7 +92,7 @@ pub enum Fix {
 }
 
 impl Outcome {
-    fn new(id: &str) -> Self {
+    pub(crate) fn new(id: &str) -> Self {
         Outcome {
             id: id.to_string(),
             defines: None,
@@ -100,6 +107,8 @@ impl Outcome {
             cells: Vec::new(),
             fix: None,
             plot: None,
+            sketch: None,
+            sketch_raw: None,
             samples: Vec::new(),
             samples3: Vec::new(),
         }
@@ -310,6 +319,7 @@ impl Worksheet {
             } else if let Some(t) = &r.table {
                 self.step_table(r, t);
             } else if r.plot.is_none()
+                && r.sketch.is_none()
                 && let Ok(e) = p
                 && !matches!(e, Expr::Define { global: true, .. })
             {
@@ -346,6 +356,8 @@ impl Worksheet {
                 self.step_table(r, t)
             } else if let Some(pl) = &r.plot {
                 self.step_plot(r, pl)
+            } else if let Some(sk) = &r.sketch {
+                self.step_sketch(r, sk)
             } else if out.get(i).is_some_and(Option::is_none) {
                 match p {
                     Ok(e) => self.step(r, e),
@@ -374,6 +386,25 @@ impl Worksheet {
 
     /// "x is not defined" says why when it can: x is defined further down the page, or
     /// a name close to it is defined above, or it is a unit written in the wrong case.
+    fn explain_msg(&self, i: usize, msg: &str, defined: &[(&str, usize, bool)]) -> Option<(String, Fix)> {
+        let name = msg.strip_suffix(" is not defined")?;
+        let rename = |to: &str| Fix::Rename { from: name.to_string(), to: to.to_string() };
+        if let Some(&(_, j, _)) = defined.iter().find(|&&(n, j, global)| n == name && j > i && !global) {
+            Some((
+                format!(
+                    "{name} is defined further down; move that definition above this one, or make it global with ~ (≡)"
+                ),
+                Fix::DefinedBelow { index: j },
+            ))
+        } else if let Some(near) = nearest(name, defined.iter().filter(|d| d.1 < i || d.2).map(|d| d.0)) {
+            Some((format!("{name} is not defined; did you mean {near}?"), rename(near)))
+        } else {
+            unit_in_other_case(name, &self.units)
+                .filter(|_| !self.settings.marked_units)
+                .map(|unit| (format!("{name} is not defined; did you mean the unit {unit}?"), rename(&unit)))
+        }
+    }
+
     fn explain_undefined(
         &self,
         parsed: &[std::result::Result<Expr, quire_ast::ParseError>],
@@ -393,30 +424,47 @@ impl Worksheet {
             defined.push((name, i, *global));
         }
         for (i, o) in out.iter_mut().enumerate() {
-            let Some(name) = o.error.as_deref().and_then(|m| m.strip_suffix(" is not defined")) else {
-                continue;
-            };
-            let rename = |to: &str| Fix::Rename { from: name.to_string(), to: to.to_string() };
-            let (hint, fix) = if let Some(&(_, j, _)) =
-                defined.iter().find(|&&(n, j, global)| n == name && j > i && !global)
+            if let Some(msg) = o.error.as_deref()
+                && let Some((hint, fix)) = self.explain_msg(i, msg, &defined)
             {
-                (
-                    format!(
-                        "{name} is defined further down; move that definition above this one, or make it global with ~ (≡)"
-                    ),
-                    Fix::DefinedBelow { index: j },
-                )
-            } else if let Some(near) = nearest(name, defined.iter().filter(|d| d.1 < i || d.2).map(|d| d.0)) {
-                (format!("{name} is not defined; did you mean {near}?"), rename(near))
-            } else if let Some(unit) =
-                unit_in_other_case(name, &self.units).filter(|_| !self.settings.marked_units)
-            {
-                (format!("{name} is not defined; did you mean the unit {unit}?"), rename(&unit))
-            } else {
-                continue;
-            };
-            o.error = Some(hint);
-            o.fix = Some(fix);
+                o.error = Some(hint);
+                o.fix = Some(fix);
+            }
+            if let Some(sk) = o.sketch.as_mut() {
+                for (&idx, msg) in sk.errors.iter_mut() {
+                    if let Some((hint, fix)) = self.explain_msg(i, msg, &defined) {
+                        *msg = hint;
+                        sk.fixes.insert(idx, fix);
+                    }
+                }
+                if let Some(raw) = o.sketch_raw.as_mut() {
+                    for (&idx, vars) in &raw.unit_vars {
+                        if sk.fixes.contains_key(&idx) {
+                            continue;
+                        }
+                        if let Some((n, j)) = vars.iter().find_map(|v| {
+                            defined
+                                .iter()
+                                .find(|&&(dn, j, global)| dn == v && j > i && !global)
+                                .map(|&(dn, j, _)| (dn, j))
+                        }) {
+                            let hint = format!(
+                                "{n} is defined further down; move that definition above this one, or make it global with ~ (≡)"
+                            );
+                            sk.errors.insert(idx, hint);
+                            sk.fixes.insert(idx, Fix::DefinedBelow { index: j });
+                            let prefix = format!("{idx}.");
+                            sk.values.retain(|k, _| !k.starts_with(&prefix));
+                            sk.labels.remove(&idx);
+                            sk.label_chunks.remove(&idx);
+                            raw.parts.remove(&idx);
+                            raw.dim_lengths.remove(&idx);
+                        }
+                    }
+                }
+                o.error = sk.errors.values().next().cloned();
+                o.fix = sk.fixes.values().next().cloned();
+            }
         }
     }
 
@@ -450,6 +498,8 @@ impl Worksheet {
                         names(&e, &mut n);
                     }
                 }
+            } else if let Some(sk) = &r.sketch {
+                crate::sketch::collect_expr_parts(sk, &mut u, &mut n);
             } else if let Ok(e) = e {
                 explicit_units(e, &mut u);
                 match e {
@@ -483,6 +533,7 @@ impl Worksheet {
             let table = r.table.as_ref();
             if table.is_none()
                 && r.plot.is_none()
+                && r.sketch.is_none()
                 && (!r.show || r.display.unit.is_some() || o.error.is_some() || o.value.is_none())
             {
                 continue;
@@ -546,6 +597,8 @@ impl Worksheet {
                 self.finish_plot(o, p, x, y);
             } else if let Some(t) = table {
                 crate::sheet::reformat(t, &mut o.cells, &self.settings, &self.units, &vocab);
+            } else if let (Some(sk), Some(raw), Some(sk_out)) = (&r.sketch, &o.sketch_raw, &mut o.sketch) {
+                crate::sketch::format_labels(&sk.display, raw, sk_out, &self.settings, &self.units, &vocab);
             } else if let Some(v) = &o.value
                 && let Ok(text) = format_value_in(v, &r.display, &self.settings, &self.units, &vocab)
             {
@@ -662,6 +715,13 @@ impl Worksheet {
         out.constants = std::mem::take(&mut interp.constant_idents).into_iter().collect();
         self.finish_plot(&mut out, p, p.x_unit.clone(), p.y_unit.clone());
         out
+    }
+
+    fn step_sketch(&mut self, r: &MathInput, sk: &SketchInput) -> Outcome {
+        let globals = Rc::clone(&self.globals);
+        let mut interp = Interp::new(&self.units).with_marked_units(self.settings.marked_units);
+        let mut scope = Scope::new(&globals);
+        crate::sketch::evaluate(&r.id, sk, &mut interp, &mut scope, &self.settings, &self.units)
     }
 
     /// Put a plot's samples in its axis units: the ones given, or SI. Every frame of an
@@ -1258,6 +1318,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: l.ends_with(" →"),
                 solve: None,
             })
@@ -1287,6 +1348,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
                 solve: None,
             })
@@ -1334,6 +1396,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: i == 5,
                 solve: None,
             })
@@ -1508,6 +1571,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: i == 1,
                 solve: None,
             })
@@ -1611,6 +1675,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         };
@@ -1625,6 +1690,7 @@ mod tests {
                 ..Default::default()
             }),
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         };
@@ -1683,6 +1749,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         };
@@ -1693,6 +1760,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: Some(PlotInput { series, y_unit: y_unit.map(Into::into), ..Default::default() }),
+            sketch: None,
             symbolic: false,
             solve: None,
         };
@@ -1735,6 +1803,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            sketch: None,
             symbolic,
             solve: None,
         };
@@ -1842,6 +1911,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
                 solve: None,
             })
@@ -1990,6 +2060,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
                 solve: None,
             },
@@ -2000,6 +2071,7 @@ mod tests {
                 display: DisplaySpec { unit: Some("kN".into()), decimals: Some(3) },
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
                 solve: None,
             },
@@ -2022,6 +2094,7 @@ mod tests {
                 display: DisplaySpec { unit: Some(unit.into()), decimals: None },
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
                 solve: None,
             })
@@ -2156,6 +2229,7 @@ mod tests {
                 ..Default::default()
             }),
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         };

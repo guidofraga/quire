@@ -533,6 +533,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         }

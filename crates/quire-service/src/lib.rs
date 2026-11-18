@@ -22,8 +22,8 @@ use quire_ast::{Expr, parse};
 use quire_doc::Document;
 use quire_eval::{
     Animate, DisplaySettings, DisplaySpec, Fix, Marker, MathInput, Notation, Outcome, Plot3Input, PlotInput,
-    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, SolvePart, TableInput,
-    Worksheet,
+    PlotOutcome, Series3Input, Series3Outcome, SeriesInput, SeriesOutcome, Shape, SketchElementInput,
+    SketchInput, SketchOutcome, SolvePart, TableInput, Worksheet,
 };
 use serde::Serialize;
 use serde_json::{Value as Json, json};
@@ -250,6 +250,37 @@ fn plot_input(r: &quire_doc::Region) -> PlotInput {
     PlotInput { series, x_unit: axis("x"), y_unit: axis("y"), axes, grid, equal, animate, three: None }
 }
 
+fn sketch_pair(v: Option<&Json>) -> Option<[String; 2]> {
+    let a = v?.as_array()?;
+    Some([a.first()?.as_str()?.to_string(), a.get(1)?.as_str()?.to_string()])
+}
+
+/// A parametric `sketch` region's elements and display unit/decimals.
+fn sketch_input(r: &quire_doc::Region) -> SketchInput {
+    let elements = r
+        .extra
+        .get("elements")
+        .and_then(Json::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(Json::as_object)
+                .map(|el| {
+                    let kind = el.get("type").and_then(Json::as_str).unwrap_or_default().to_string();
+                    let label_key = if kind == "label" { "text" } else { "label" };
+                    SketchElementInput {
+                        kind,
+                        from: sketch_pair(el.get("from")),
+                        to: sketch_pair(el.get("to")),
+                        at: sketch_pair(el.get("at")),
+                        label: el.get(label_key).and_then(Json::as_str).map(String::from),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    SketchInput { elements, display: display_of(r) }
+}
+
 /// Trailing `→` (or `->`) inside text asks for the expression worked out symbolically.
 fn split_symbolic(expr: &str) -> Option<String> {
     let t = expr.trim_end();
@@ -289,6 +320,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         display: display_of(r),
                         table: None,
                         plot: None,
+                        sketch: None,
                         symbolic,
                         solve: None,
                     });
@@ -310,6 +342,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         display: DisplaySpec::default(),
                         table: None,
                         plot: None,
+                        sketch: None,
                         symbolic,
                         solve: None,
                     });
@@ -324,6 +357,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     display: display_of(r),
                     table: Some(table_input(r)),
                     plot: None,
+                    sketch: None,
                     symbolic: false,
                     solve: None,
                 });
@@ -336,6 +370,20 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                     display: DisplaySpec::default(),
                     table: None,
                     plot: Some(plot_input(r)),
+                    sketch: None,
+                    symbolic: false,
+                    solve: None,
+                });
+            }
+            "sketch" => {
+                out.push(MathInput {
+                    id: r.id.clone(),
+                    expr: String::new(),
+                    show: false,
+                    display: display_of(r),
+                    table: None,
+                    plot: None,
+                    sketch: Some(sketch_input(r)),
                     symbolic: false,
                     solve: None,
                 });
@@ -349,6 +397,7 @@ pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {
                         display: display_of(r),
                         table: None,
                         plot: None,
+                        sketch: None,
                         symbolic: false,
                         solve: None,
                     });
@@ -377,6 +426,7 @@ fn solve_inputs(r: &quire_doc::Region) -> Vec<MathInput> {
         display: DisplaySpec::default(),
         table: None,
         plot: None,
+        sketch: None,
         symbolic: false,
         solve,
     };
@@ -470,9 +520,55 @@ pub struct RegionView {
     /// A 2D plot's series, in its axis units.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plot: Option<PlotView>,
+    /// A parametric sketch's evaluated coordinates, labels, per-element errors, and read names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sketch: Option<SketchView>,
     /// The result is the expression worked out symbolically (shown after `→`).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub symbolic: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SketchValueView {
+    pub si: f64,
+    pub dim: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SketchView {
+    pub values: BTreeMap<String, SketchValueView>,
+    pub labels: BTreeMap<String, String>,
+    pub errors: BTreeMap<String, String>,
+    pub reads: Vec<String>,
+}
+
+fn sketch_view(sk: &SketchOutcome, group_digits: bool) -> SketchView {
+    let values = sk
+        .values
+        .iter()
+        .map(|(k, c)| {
+            (k.clone(), SketchValueView { si: c.si, dim: quire_eval::si_unit(c.dim).replace('\'', "") })
+        })
+        .collect();
+    let labels = sk
+        .label_chunks
+        .iter()
+        .map(|(i, chunks)| {
+            let text: String = chunks
+                .iter()
+                .map(
+                    |(is_val, s)| {
+                        if *is_val { docx::pretty_value_grouped(s, group_digits) } else { s.clone() }
+                    },
+                )
+                .collect();
+            (i.to_string(), text)
+        })
+        .collect();
+    let errors = sk.errors.iter().map(|(i, e)| (i.to_string(), e.clone())).collect();
+    SketchView { values, labels, errors, reads: sk.reads.clone() }
 }
 
 #[derive(Debug, Serialize)]
@@ -1068,9 +1164,37 @@ pub fn report(doc_json: &Json) -> Result<Report> {
         .collect();
     let quiet = quiet_names(&doc);
     let marked = marked_units(&doc);
+    let group_digits = doc.settings.display.extra.get("groupDigits").and_then(Json::as_bool).unwrap_or(false);
     let mut regions = Vec::with_capacity(ev.inputs.len());
     let mut error_count = 0;
     for (input, o) in ev.inputs.iter().zip(&ev.outcomes) {
+        if let Some(sk) = &o.sketch {
+            if o.error.is_some() {
+                error_count += 1;
+            }
+            regions.push(RegionView {
+                id: input.id.clone(),
+                input: None,
+                result: None,
+                result_text: None,
+                check: None,
+                error: o.error.clone(),
+                syntax_error: false,
+                units: o.units.clone(),
+                constants: o.constants.clone(),
+                shadowing: Vec::new(),
+                names_read_as_units: Vec::new(),
+                defines: None,
+                redefines: None,
+                cells: None,
+                unit_choices: Vec::new(),
+                fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
+                plot: None,
+                sketch: Some(sketch_view(sk, group_digits)),
+                symbolic: false,
+            });
+            continue;
+        }
         if let Some(p) = &o.plot {
             if o.error.is_some() {
                 error_count += 1;
@@ -1093,6 +1217,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 unit_choices: Vec::new(),
                 fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
                 plot: Some(plot_view(p)),
+                sketch: None,
                 symbolic: false,
             });
             continue;
@@ -1138,6 +1263,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
                 unit_choices: Vec::new(),
                 fix: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
             });
             continue;
@@ -1177,6 +1303,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             },
             fix: o.fix.as_ref().map(|f| fix_view(f, &ev.inputs)),
             plot: None,
+            sketch: None,
             symbolic: input.symbolic,
         });
     }
@@ -1333,6 +1460,37 @@ fn write_bundle(dir: &Path, doc: &Json, from: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+fn has_region_kind(v: &Json, kind: &str) -> bool {
+    let Some(list) = v.get("regions").and_then(Json::as_array) else { return false };
+    list.iter().any(|r| r.get("kind").and_then(Json::as_str) == Some(kind) || has_region_kind(r, kind))
+}
+
+/// Keep `"requires": ["sketch"]` in sync with whether the document holds a `"sketch"` region,
+/// leaving documents without `"sketch"` untouched.
+fn sync_requires(doc: &mut Json) {
+    let uses_sketch = has_region_kind(doc, "sketch");
+    let Some(root) = doc.as_object_mut() else { return };
+    if uses_sketch {
+        match root.get_mut("requires").and_then(Json::as_array_mut) {
+            Some(arr) => {
+                if !arr.iter().any(|v| v.as_str() == Some("sketch")) {
+                    arr.push(Json::String("sketch".into()));
+                }
+            }
+            None => {
+                root.insert("requires".into(), json!(["sketch"]));
+            }
+        }
+    } else if let Some(arr) = root.get_mut("requires").and_then(Json::as_array_mut)
+        && arr.iter().any(|v| v.as_str() == Some("sketch"))
+    {
+        arr.retain(|v| v.as_str() != Some("sketch"));
+        if arr.is_empty() {
+            root.shift_remove("requires");
+        }
+    }
+}
+
 /// The canonical `document.json` text: regions in reading order, then the regions held as
 /// placeholders put back as they were written. Sorting first keeps each where it was shown.
 /// A product with your variable is written explicitly (`2*T`, see [`names`]).
@@ -1341,6 +1499,7 @@ fn canonical_text(doc: &Json) -> String {
     canonical::sort_regions(&mut doc);
     names::explicit_names(&mut doc);
     quire_doc::restore_unreadable(&mut doc);
+    sync_requires(&mut doc);
     canonical::to_string(&doc)
 }
 
@@ -1362,6 +1521,7 @@ pub fn store_json(doc: &Json) -> Result<Json> {
     canonical::sort_regions(&mut doc);
     names::explicit_names(&mut doc);
     quire_doc::restore_unreadable(&mut doc);
+    sync_requires(&mut doc);
     Ok(doc)
 }
 
@@ -2045,6 +2205,100 @@ mod tests {
         let err =
             read_asset(&bundle, "assets/0123456789abcdef.png").err().ok_or("symlinked asset should fail")?;
         assert!(err.0.contains("symbolic links"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn sketch_regions_evaluate_round_trip_and_rewrite_names()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let _guard = assets::test_guard();
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "settings": { "display": { "decimals": 2, "resultUnits": "working" } },
+            "regions": [
+                { "id": "ll1111", "kind": "math", "at": [0, 0], "expr": "L := 6 m" },
+                { "id": "qq1111", "kind": "math", "at": [0, 32], "expr": "q := 10.6 kN/m" },
+                { "id": "tt1111", "kind": "math", "at": [0, 64], "expr": "T := 2 m" },
+                {
+                    "id": "sk1111",
+                    "kind": "sketch",
+                    "at": [0, 96],
+                    "size": [480, 220],
+                    "elements": [
+                        { "type": "member", "from": ["0 m", "0 m"], "to": ["L", "0 m"] },
+                        { "type": "support", "at": ["0 m", "0 m"], "kind": "pin" },
+                        { "type": "support", "at": ["L", "0 m"], "kind": "roller" },
+                        { "type": "udl", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "label": "q = {q}" },
+                        { "type": "dimension", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "offset": -40 },
+                        { "type": "label", "at": ["2*T", "0 m"], "text": "Support A': {2*T}" }
+                    ]
+                },
+                { "id": "after1", "kind": "math", "at": [0, 340], "expr": "after := 1 m" }
+            ]
+        });
+
+        let rep = report(&doc)?;
+        assert_eq!(rep.error_count, 0);
+        let sk_view = rep
+            .regions
+            .iter()
+            .find(|v| v.id == "sk1111")
+            .and_then(|v| v.sketch.as_ref())
+            .ok_or("no sketch view")?;
+        assert_eq!(sk_view.values["0.to.0"].si, 6.0);
+        assert_eq!(sk_view.values["0.to.0"].dim, "m");
+        assert_eq!(sk_view.labels["3"], "q = 10.6 kN/m");
+        assert_eq!(sk_view.labels["4"], "6 m");
+        assert_eq!(sk_view.labels["5"], "Support A': 4 m");
+        assert_eq!(sk_view.reads, ["L", "T", "q"]);
+
+        // completion inside the sketch sees variables above (`L`, `q`, `T`), not `after` below
+        let comps = complete(&doc, "sk1111", "")?;
+        let vars: Vec<&str> =
+            comps.iter().filter(|c| c.kind == "variable").map(|c| c.name.as_str()).collect();
+        assert!(vars.contains(&"L") && vars.contains(&"q") && vars.contains(&"T"));
+        assert!(!vars.contains(&"after"));
+
+        // saving adds `"requires": ["sketch"]` and round-trips byte-for-byte
+        let tmp = TempDir::new("sketch-rt")?;
+        let bundle = tmp.0.join("Beam.quire");
+        save(&bundle, &doc, None)?;
+        let saved_1 = std::fs::read_to_string(bundle.join("document.json"))?;
+        assert!(
+            saved_1.contains("\"requires\": [\n    \"sketch\"\n  ]")
+                || saved_1.contains("\"requires\": [\"sketch\"]")
+        );
+        let reopened = open(&bundle)?;
+        assert_eq!(reopened["requires"], serde_json::json!(["sketch"]));
+        let bundle_2 = tmp.0.join("Beam2.quire");
+        save(&bundle_2, &reopened, Some(&bundle))?;
+        let saved_2 = std::fs::read_to_string(bundle_2.join("document.json"))?;
+        assert_eq!(saved_2, saved_1);
+
+        // removing the sketch drops `"sketch"` from `requires` cleanly
+        let mut without = reopened;
+        without["regions"].as_array_mut().ok_or("regions")?.retain(|r| r["kind"] != "sketch");
+        let stored_without = store_json(&without)?;
+        assert!(stored_without.get("requires").is_none());
+
+        // legacy upgrade: `2T` under variable `T` upgrades to `2 'T` in both sketch coords and `{...}` labels
+        let legacy = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                { "id": "tt1111", "kind": "math", "at": [0, 0], "expr": "T := 300" },
+                {
+                    "id": "sk1111",
+                    "kind": "sketch",
+                    "at": [0, 40],
+                    "elements": [
+                        { "type": "label", "at": ["2T", "0 m"], "text": "B = {2T}" }
+                    ]
+                }
+            ]
+        });
+        let upgraded = open_json(&legacy)?;
+        assert_eq!(upgraded["regions"][1]["elements"][0]["at"][0], "2 'T");
+        assert_eq!(upgraded["regions"][1]["elements"][0]["text"], "B = {2 'T}");
         Ok(())
     }
 }

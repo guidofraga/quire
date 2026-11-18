@@ -522,3 +522,47 @@ fn documents_without_a_typography_keep_arial_at_10_pt() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn sketch_exports_as_picture_from_app_and_placeholder_from_cli() -> TestResult {
+    let doc = serde_json::json!({
+        "format": "quire/1",
+        "regions": [
+            { "id": "ll1111", "kind": "math", "at": [0, 0], "expr": "L := 6 m" },
+            {
+                "id": "sk1111",
+                "kind": "sketch",
+                "at": [0, 40],
+                "size": [480, 220],
+                "caption": { "text": "Static scheme" },
+                "elements": [
+                    { "type": "member", "from": ["0 m", "0 m"], "to": ["L", "0 m"] }
+                ]
+            }
+        ]
+    });
+
+    // CLI export (no PNG in DocxOptions) emits the "Sketch" placeholder and numbered Figure caption
+    let cli_files = unpack(&crate::export_docx(&doc, &DocxOptions::default(), None)?)?;
+    let cli_xml = text(&cli_files, "word/document.xml")?;
+    let _ = Xml::parse(cli_xml)?;
+    assert!(cli_xml.contains(">Sketch<"), "{cli_xml}");
+    assert!(cli_xml.contains("Static scheme"), "{cli_xml}");
+
+    // App export (PNG supplied in DocxOptions.pictures) embeds the PNG image in word/media/
+    let png: Vec<u8> = vec![
+        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R', 0, 0, 0, 1, 0,
+        0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89, 0, 0, 0, 10, b'I', b'D', b'A', b'T', 0x78, 0x9c,
+        0x63, 0, 1, 0, 0, 5, 0, 1, 0x0d, 0x0a, 0x2d, 0xb4, 0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xae, 0x42,
+        0x60, 0x82,
+    ];
+    let mut opts = DocxOptions::default();
+    opts.pictures.insert("sk1111".into(), png.clone());
+    let app_files = unpack(&crate::export_docx(&doc, &opts, None)?)?;
+    let app_xml = text(&app_files, "word/document.xml")?;
+    let _ = Xml::parse(app_xml)?;
+    assert!(!app_xml.contains(">Sketch<"), "{app_xml}");
+    assert!(app_xml.contains("<w:drawing>"), "{app_xml}");
+    assert_eq!(app_files.get("word/media/image1.png"), Some(&png));
+    Ok(())
+}

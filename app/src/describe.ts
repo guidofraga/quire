@@ -3,9 +3,10 @@
 import { isComparison, mathCheck } from "./checks";
 import type { NameMarks } from "./math";
 import { prefs } from "./settings";
+import { describeSketch } from "./sketchGeometry";
 import { spokenMath } from "./speech";
 import { layout, localized, state } from "./store";
-import type { Redefines, RegionView } from "./types";
+import type { Redefines, RegionView, SketchElement } from "./types";
 
 const plain = (html: string | undefined) =>
   html ? (new DOMParser().parseFromString(html, "text/html").body.textContent ?? "").replace(/\s+/g, " ").trim() : "";
@@ -83,6 +84,11 @@ export function describeRegion(id: string): string {
       return withCaption(
         `${r.kind === "plot3d" ? "3D plot" : "Plot"}${state.views[id]?.error ? `. Error: ${state.views[id]!.error}` : ""}`,
       );
+    case "sketch": {
+      const els = Array.isArray(r.elements) ? (r.elements as SketchElement[]) : [];
+      const summary = describeSketch(els, state.views[id]?.sketch);
+      return withCaption(`Sketch: ${summary}${state.views[id]?.error ? `. Error: ${state.views[id]!.error}` : ""}`);
+    }
     case "image":
       return withCaption("Image");
     case "area":

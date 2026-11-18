@@ -34,6 +34,7 @@ const PATHS = {
   table: "M2.5 3h11v10h-11zM2.5 6.5h11M2.5 9.75h11M6.5 3v10",
   plot: "M2.5 2.5v11h11M4.5 11c2-6 4-6 5-3s2 2 3.5-3",
   plot3d: "M8 2l5.5 3v6L8 14l-5.5-3V5zM2.5 5L8 8l5.5-3M8 8v6",
+  sketch: "M2 8.5h12M3.5 8.5L2 11.5h3zM12.5 8.5L11 11.5h3zM8 2.5v4.5M6.3 5.2L8 7l1.7-1.8",
   area: "M2.5 3h11v3h-11zM4.5 9h9M4.5 12h9M2.5 8v5",
   solve: "M3 4.5h10M3 8h10M3 11.5h5.5M10 11.2l1.4 1.4 2.6-3",
   pageBreak: "M3.5 2v4h9V2M3.5 14v-4h9v4M1.5 8h2M6.5 8h3M12.5 8h2",

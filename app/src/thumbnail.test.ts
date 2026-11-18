@@ -72,4 +72,22 @@ describe("template thumbnails", () => {
     expect(withMore.shapes.filter((s) => s.kind === "math").length).toBe(4);
     expect(withMore.shapes.filter((s) => s.kind === "heading").length).toBe(2);
   });
+
+  it("draws parametric sketch regions on the first page", () => {
+    const sk = thumbnail({
+      format: "quire/1",
+      page: { paper: "A4" },
+      regions: [
+        {
+          id: "sk1",
+          kind: "sketch",
+          at: [0, 40],
+          size: [480, 220],
+          elements: [{ type: "member", from: ["0 m", "0 m"], to: ["6 m", "0 m"] }],
+        },
+      ],
+    });
+    expect(sk.shapes.some((s) => s.kind === "box")).toBe(true);
+    expect(sk.shapes.some((s) => s.kind === "rule")).toBe(true);
+  });
 });

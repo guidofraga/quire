@@ -10,6 +10,7 @@ import { openPopover } from "./Popover";
 import { Field, Text as InspText } from "./Inspector";
 import { DEFAULT_SIZE, editPlot, insertPlot, PlotBody } from "./Plot";
 import { DEFAULT_SIZE_3D, editPlot3d, Plot3DBody } from "./Plot3D";
+import { editSketch, shownSketchSize, SketchBody } from "./Sketch";
 import { editTableAt, isSheet, SheetGrid } from "./TableEditor";
 import { SolveBody } from "./SolveBlock";
 import {
@@ -418,6 +419,29 @@ function PlotFigure(props: { p: Placed; selected: boolean }) {
   );
 }
 
+/** A parametric sketch as a figure: captioned like a plot or image, with error and fix below. */
+function SketchFigure(props: { p: Placed }) {
+  const r = () => props.p.region;
+  const view = () => state.views[r().id];
+  return (
+    <figure class="figure sketch-figure" style={{ width: `${shownSketchSize(r())[0]}px` }}>
+      <Show when={r().caption?.position === "above"}>
+        <Caption p={props.p} />
+      </Show>
+      <SketchBody r={r()} />
+      <Show when={view()?.error}>
+        <div class="err" title={view()!.error!}>
+          <span class="err-text">{view()!.error}</span>
+          <Show when={view()?.fix}>{(fix) => <FixButton id={r().id} fix={fix()} />}</Show>
+        </div>
+      </Show>
+      <Show when={r().caption?.position !== "above"}>
+        <Caption p={props.p} />
+      </Show>
+    </figure>
+  );
+}
+
 /**
  * An area's band: the printable column in page view. On the free canvas it starts as wide as
  * the column and reaches on to hold what is placed inside it further right.
@@ -720,14 +744,16 @@ function ContentsBody(props: { p: Placed }) {
   );
 }
 
-/** The size an image or plot is shown at, `size` or the default its body falls back to. */
+/** The size an image, plot or sketch is shown at, `size` or the default its body falls back to. */
 function shownSize(r: Region): [number, number] {
+  if (r.kind === "sketch") return shownSketchSize(r);
   if (r.size) return r.size;
   return r.kind === "plot2d" ? DEFAULT_SIZE : r.kind === "plot3d" ? DEFAULT_SIZE_3D : [200, 150];
 }
 
-/** Whether a region is resized as a box (image, 2D or 3D plot) rather than by its width (text). */
-export const resizable = (r: Region | undefined) => r?.kind === "image" || isPlot(r?.kind ?? "");
+/** Whether a region is resized as a box (image, plot, sketch) rather than by its width (text). */
+export const resizable = (r: Region | undefined) =>
+  r?.kind === "image" || r?.kind === "sketch" || isPlot(r?.kind ?? "");
 
 /**
  * Resize an image or plot from the keyboard by `dw` and `dh`, one undo step. An image
@@ -776,7 +802,7 @@ function ResizeHandle(props: { p: Placed }) {
           const reg = findDraft(d, id);
           if (!reg) return;
           if (reg.kind === "image") reg.size = [w, ev.shiftKey ? free : Math.round(w * ratio)];
-          else if (isPlot(reg.kind)) reg.size = [Math.max(160, w), Math.max(120, free)];
+          else if (isPlot(reg.kind) || reg.kind === "sketch") reg.size = [Math.max(160, w), Math.max(120, free)];
           else reg.width = w;
         }),
       );
@@ -1140,7 +1166,9 @@ export function RegionBox(props: RegionProps) {
             ? editPlot(r().id)
             : r().kind === "plot3d"
               ? editPlot3d(r().id)
-              : startEditing(r().id, [e.clientX, e.clientY])
+              : r().kind === "sketch"
+                ? editSketch(r().id)
+                : startEditing(r().id, [e.clientX, e.clientY])
       }
       onContextMenu={(e) => {
         e.preventDefault();
@@ -1186,6 +1214,9 @@ export function RegionBox(props: RegionProps) {
         <Match when={isPlot(r().kind)}>
           <PlotFigure p={placed()} selected={selected()} />
         </Match>
+        <Match when={r().kind === "sketch"}>
+          <SketchFigure p={placed()} />
+        </Match>
         <Match when={r().kind === "pagebreak"}>
           {/* a mark on screen only: what follows starts on the next page (store.ts computeLayout) */}
           <div class="pagebreak-mark" style={{ width: `${availableWidth(placed().x)}px` }}>
@@ -1199,7 +1230,7 @@ export function RegionBox(props: RegionProps) {
           state.selection.length === 1 &&
           !editing() &&
           !state.printing &&
-          ["text", "image", "plot2d", "plot3d"].includes(r().kind)
+          ["text", "image", "plot2d", "plot3d", "sketch"].includes(r().kind)
         }
       >
         <ResizeHandle p={placed()} />

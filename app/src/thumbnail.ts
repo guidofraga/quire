@@ -161,6 +161,12 @@ function drawRegion(content: Shape[], r: Region, contentW: number, end: number) 
     case "plot3d":
       plot(content, r);
       break;
+    case "sketch": {
+      const [w, h] = r.size ?? [r.width ?? 480, 220];
+      content.push({ kind: "box", x, y, w, h });
+      content.push({ kind: "rule", x: x + 28, y: y + h * 0.55, w: Math.max(20, w - 56), h: 0 });
+      break;
+    }
     case "solve":
       solveBlock(content, r, room);
       break;

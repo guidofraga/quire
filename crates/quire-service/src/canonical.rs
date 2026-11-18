@@ -41,6 +41,7 @@ const REGION_ORDER: &[&str] = &[
     "header",
     "columns",
     "rows",
+    "elements",
     "series",
     "surface",
     "parametric",
@@ -112,7 +113,8 @@ fn inline(v: &Json) -> String {
 fn dump(out: &mut String, v: &Json, indent: usize, key: Option<&str>) {
     let pad = "  ".repeat(indent);
     let inner = "  ".repeat(indent + 1);
-    let force = key.is_some_and(|k| EXPANDED.contains(&k)) || v.get("kind").is_some();
+    let force =
+        key.is_some_and(|k| EXPANDED.contains(&k)) || (v.get("kind").is_some() && v.get("id").is_some());
     let container = v.is_array() || v.is_object();
     let measured = compact(v);
     if !container
@@ -139,7 +141,7 @@ fn dump(out: &mut String, v: &Json, indent: usize, key: Option<&str>) {
         Json::Object(m) if m.is_empty() => out.push_str("{}"),
         Json::Object(m) => {
             let mut items: Vec<(&String, &Json)> = m.iter().collect();
-            if m.contains_key("kind") {
+            if m.contains_key("kind") && m.contains_key("id") {
                 items
                     .sort_by(|a, b| rank(REGION_ORDER, a.0).cmp(&rank(REGION_ORDER, b.0)).then(a.0.cmp(b.0)));
             } else if indent == 0 {
@@ -337,6 +339,40 @@ mod tests {
                 validate_region(&label, r, &kinds, &common_props, &by_kind)?;
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn sketch_elements_preserve_order_and_compact_support_kind() -> Result<(), Box<dyn std::error::Error>> {
+        let v: Json = serde_json::from_str(
+            r#"{
+              "format": "quire/1",
+              "requires": ["sketch"],
+              "regions": [
+                {
+                  "id": "sk1111",
+                  "kind": "sketch",
+                  "at": [0, 400],
+                  "size": [480, 220],
+                  "elements": [
+                    { "type": "member", "from": ["0 m", "0 m"], "to": ["L", "0 m"] },
+                    { "type": "support", "at": ["0 m", "0 m"], "kind": "pin" },
+                    { "type": "udl", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "label": "q = {q}" },
+                    { "type": "point", "at": ["L/2", "0 m"], "angle": -90, "label": "F = {F}" },
+                    { "type": "moment", "at": ["L", "0 m"], "sense": "ccw", "label": "M" },
+                    { "type": "dimension", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "offset": -40 },
+                    { "type": "label", "at": ["L/2", "0 m"], "text": "A", "anchor": "above" }
+                  ],
+                  "caption": { "text": "Static scheme" }
+                }
+              ]
+            }"#,
+        )?;
+        let out = to_string(&v);
+        assert!(out.contains(r#"{ "type": "support", "at": ["0 m", "0 m"], "kind": "pin" }"#), "{out}");
+        assert!(out.contains("      \"elements\": [\n"), "{out}");
+        let reparsed: Json = serde_json::from_str(&out)?;
+        assert_eq!(to_string(&reparsed), out);
         Ok(())
     }
 }

@@ -495,7 +495,7 @@ fn is_comparison(e: &Expr) -> bool {
 }
 
 /// `9.80665 'm/'s^2` → `9.80665 m/s²`, as a spreadsheet cell shows a value (`prettyValue`).
-fn pretty_value(v: &str) -> String {
+pub(crate) fn pretty_value(v: &str) -> String {
     const SUP: [(char, char); 11] = [
         ('-', '⁻'),
         ('0', '⁰'),
@@ -536,6 +536,42 @@ fn pretty_value(v: &str) -> String {
     }
     out.push_str(rest);
     out.replace('*', "·")
+}
+
+/// [`pretty_value`] with optional thin-space grouping of integer parts of five or more digits.
+pub(crate) fn pretty_value_grouped(v: &str, group_digits: bool) -> String {
+    let pretty = pretty_value(v);
+    if !group_digits {
+        return pretty;
+    }
+    let chars: Vec<char> = pretty.chars().collect();
+    let mut out = String::with_capacity(pretty.len() + 4);
+    let mut i = 0;
+    while i < chars.len() {
+        let after_dot_or_exp = i > 0 && matches!(chars[i - 1], '.' | '^');
+        if chars[i].is_ascii_digit() && !after_dot_or_exp {
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            let len = j - i;
+            if len >= 5 {
+                for (k, &ch) in chars[i..j].iter().enumerate() {
+                    if k > 0 && (len - k) % 3 == 0 {
+                        out.push('\u{2009}');
+                    }
+                    out.push(ch);
+                }
+            } else {
+                out.extend(&chars[i..j]);
+            }
+            i = j;
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 /// Writes one document; holds what the parts share (relationships, numbering, bookmarks).
@@ -771,7 +807,7 @@ impl<'a> Writer<'a> {
         let mut blocks = match r.kind.as_str() {
             "math" => self.math(r, ind),
             "text" => self.text(r, ind, room),
-            "image" | "plot2d" | "plot3d" => self.figure(r, ind, room),
+            "image" | "plot2d" | "plot3d" | "sketch" => self.figure(r, ind, room),
             "table" => self.table(r, ind, room),
             "solve" => self.solve(r, ind),
             "toc" => self.contents(r, ind, room),
@@ -904,6 +940,7 @@ impl<'a> Writer<'a> {
         let default = match r.kind.as_str() {
             "plot3d" => [420.0, 340.0],
             "plot2d" => [480.0, 260.0],
+            "sketch" => [480.0, 220.0],
             _ => [200.0, 150.0],
         };
         let size = r
@@ -911,6 +948,7 @@ impl<'a> Writer<'a> {
             .get("size")
             .and_then(Json::as_array)
             .and_then(|s| Some([s.first()?.as_f64()?, s.get(1)?.as_f64()?]))
+            .or_else(|| r.extra.get("width").and_then(Json::as_f64).map(|w| [w, default[1]]))
             .unwrap_or(default);
         // never wider than the room it has: Word would push it past the margin
         let scale = if size[0] > room && room > 0.0 { room / size[0] } else { 1.0 };
@@ -1002,6 +1040,7 @@ impl<'a> Writer<'a> {
                     .unwrap_or_default();
                 format!("3D plot of {}", if ys.is_empty() { "data".into() } else { ys.join("; ") })
             }
+            "sketch" => "Sketch".to_string(),
             _ => "Image".to_string(),
         };
         let note = "drawn by Quire; export from the app to include it";

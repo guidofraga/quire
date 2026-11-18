@@ -86,15 +86,16 @@ fn cmd_eval(path: &str) -> CmdResult {
     let exprs: Vec<String> = ev
         .inputs
         .iter()
-        .map(|i| match (&i.table, &i.plot) {
-            (Some(t), _) => {
+        .map(|i| match (&i.table, &i.plot, &i.sketch) {
+            (Some(t), _, _) => {
                 let size = format!("{}×{}", t.rows.len(), t.rows.iter().map(Vec::len).max().unwrap_or(0));
                 t.name.as_ref().map_or(format!("table {size}"), |n| format!("table {n} ({size})"))
             }
-            (_, Some(p)) => {
+            (_, Some(p), _) => {
                 let ys: Vec<&str> = p.series.iter().map(|s| s.y.as_str()).collect();
                 clip(&format!("plot {}", ys.join(", ")), 64)
             }
+            (_, _, Some(s)) => format!("sketch ({} elements)", s.elements.len()),
             _ => clip(&i.expr, 64),
         })
         .collect();
@@ -239,6 +240,7 @@ fn cmd_calc(args: &[String]) -> CmdResult {
         display,
         table: None,
         plot: None,
+        sketch: None,
         symbolic: false,
         solve: None,
     };

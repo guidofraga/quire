@@ -3709,6 +3709,88 @@ ms.str {
   margin: 0;
 }
 
+/* ==== sketch (ISO 128 three-weight engineering drawings, paper-white in every theme) */
+.sketch-box {
+  position: relative;
+  background: #ffffff;
+  color: #1b1d22;
+}
+
+.sketch-box svg {
+  display: block;
+  overflow: visible;
+}
+
+.sketch-stroke,
+.sketch-circle {
+  stroke: #1b1d22;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sketch-stroke.heavy,
+.sketch-circle.heavy {
+  stroke-width: 2.5px;
+}
+
+.sketch-stroke.medium,
+.sketch-circle.medium {
+  stroke-width: 1.35px;
+}
+
+.sketch-stroke.thin,
+.sketch-circle.thin {
+  stroke-width: 1px;
+}
+
+.sketch-text {
+  fill: #1b1d22;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+}
+
+.sketch-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  font:
+    11.5px -apple-system,
+    system-ui,
+    sans-serif;
+}
+
+.sketch-figure {
+  margin: 0;
+}
+
+.insp-sub.sketch-el .insp-subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sketch-el-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sketch-el-actions .insp-mini {
+  margin-left: 0;
+}
+
+.sketch-el-actions .insp-mini:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .app.printing .plot-tip,
 .app.printing .plot-hover {
   display: none;

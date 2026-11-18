@@ -410,7 +410,33 @@ The solver is Levenberg–Marquardt with a numerical Jacobian (`crates/quire-eva
 
 `find` and `minerr` outside a solve block are an error that says so. SMath has no solve blocks (it writes `solve` and `roots` calls, which Quire reads as functions), so the importer writes none.
 
-### 4.11 `area`, `pagebreak`, `legacy`
+### 4.11 `sketch` (parametric engineering schemes)
+
+A `sketch` region draws an engineering scheme as crisp ISO 128 vector SVG driven by the worksheet's variables where the sketch sits in reading order.
+
+```json
+{
+  "id": "sk1111",
+  "kind": "sketch",
+  "at": [36, 120],
+  "size": [480, 220],
+  "elements": [
+    { "type": "member", "from": ["0 m", "0 m"], "to": ["L", "0 m"] },
+    { "type": "support", "at": ["0 m", "0 m"], "kind": "pin" },
+    { "type": "support", "at": ["L", "0 m"], "kind": "roller" },
+    { "type": "udl", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "label": "q = {q}" },
+    { "type": "dimension", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "offset": -40 }
+  ],
+  "caption": { "text": "Static scheme", "position": "below" }
+}
+```
+
+- Coordinates (`from`, `to`, `at`) are pairs `[x, y]` of linear-syntax expressions in model space (`x` right, `y` up) that must evaluate to lengths (`m`).
+- Element types: `member` (`from`, `to`, `label?`), `support` (`at`, `kind`: `"pin" | "roller" | "fixed"`, `angle?`, `label?`), `udl` (`from`, `to`, `label?`), `point` (`at`, `angle?`, `label?`), `moment` (`at`, `sense?`: `"ccw" | "cw"`, `label?`), `dimension` (`from`, `to`, `offset?`, `label?`), and `label` (`at`, `text`, `anchor?`: `"above" | "below" | "left" | "right" | "center"`).
+- `{expr}` inside `label` or `text` evaluates `expr` in scope and formats it in the region's `display` (or the document's working units). An unlabelled `dimension` displays the Euclidean distance between `from` and `to`.
+- Documents holding a `sketch` region list `"sketch"` in root `"requires"`.
+
+### 4.12 `area`, `pagebreak`, `legacy`
 
 ```jsonc
 { "id": "a9tiey", "kind": "area", "at": [0, 6660], "height": 1008,
@@ -430,7 +456,7 @@ A `pagebreak` is a manual page break. In the page view, in print and in the PDF,
 Every writer (the app, the CLI, the importer) **must** produce byte-identical output for the same model:
 
 1. UTF-8 without BOM, `\n` line endings, 2-space indent, trailing newline.
-2. **Key order is fixed**: `format, meta, settings, units, styles, page, requires, …, regions` at the top (`TOP_ORDER` in `canonical.rs`), and `id, kind, at, size, width, height, style, keep, disabled, locked, collapsed, of, title, name, expr, guesses, given, find, show, mode, hideInput, display, note, notePosition, text, src, alt, format, inline, source, header, columns, rows, series, surface, parametric, xrange, yrange, range, urange, vrange, grid, axes, aspect, animate, extrema, legend, palette, render, camera, caption, legacy, color, background, border, …, regions` on a region (`REGION_ORDER`), with unknown keys sorted alphabetically before `regions`. Nested objects keep their insertion order.
+2. **Key order is fixed**: `format, meta, settings, units, styles, page, requires, …, regions` at the top (`TOP_ORDER` in `canonical.rs`), and `id, kind, at, size, width, height, style, keep, disabled, locked, collapsed, of, title, name, expr, guesses, given, find, show, mode, hideInput, display, note, notePosition, text, src, alt, format, inline, source, header, columns, rows, elements, series, surface, parametric, xrange, yrange, range, urange, vrange, grid, axes, aspect, animate, extrema, legend, palette, render, camera, caption, legacy, color, background, border, …, regions` on a region (`REGION_ORDER`), with unknown keys sorted alphabetically before `regions`. Nested objects keep their insertion order.
 3. Top-level sections and **each region are always expanded**, one key per line. Any other value is written on one line if it fits in 100 columns, otherwise expanded. The result is that changing an expression, moving a region, or toggling `collapsed` changes **exactly one line**.
 4. **Defaults are omitted** (`color` black, `show` none, `keep` false, …).
 5. **No derived data**: no computed sizes, no results, no save counters, no timestamps, no undo history.
@@ -468,7 +494,7 @@ The importer already obeys these rules. Converting the same `.sm` twice gives by
   In every case the value or region is written back exactly as it was found.
 - Early Quire versions wrote unquoted hex colours in Djot attributes (`[red]{color=#c00}`); readers normalize them to quoted form (`color="#c00"`) before parsing while preserving byte offsets.
 - A breaking change bumps the major and ships a migration path that runs on load. Old files are never rewritten silently: the app asks before upgrading.
-- `requires` lists optional capabilities (`plot3d`, `cas.giac`, plugin ids). A reader missing one still opens the file and shows those regions as placeholders.
+- `requires` lists optional capabilities (`plot3d`, `sketch`, `cas.giac`, plugin ids). A reader missing one still opens the file and shows those regions as placeholders.
 
 ## 8. Import validation (SMath → Quire)
 

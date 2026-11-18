@@ -51,9 +51,39 @@ export interface RegionView {
   fix?: Fix;
   /** A plot's series, in its axis units. */
   plot?: PlotView;
+  /** A parametric sketch's evaluated coordinates, labels, errors, and read variables. */
+  sketch?: SketchView;
   /** The result is symbolic (`→`). */
   symbolic?: boolean;
 }
+
+/** quire_service::SketchValueView */
+export interface SketchValueView {
+  si: number;
+  dim: string;
+}
+
+/** quire_service::SketchView */
+export interface SketchView {
+  values: Record<string, SketchValueView>;
+  labels: Record<string, string>;
+  errors: Record<string, string>;
+  reads: string[];
+}
+
+export type SketchElement =
+  | { type: "member"; from: [string, string]; to: [string, string]; label?: string }
+  | { type: "support"; at: [string, string]; kind: "pin" | "roller" | "fixed"; angle?: number; label?: string }
+  | { type: "udl"; from: [string, string]; to: [string, string]; label?: string }
+  | { type: "point"; at: [string, string]; angle?: number; label?: string }
+  | { type: "moment"; at: [string, string]; sense?: "ccw" | "cw"; label?: string }
+  | { type: "dimension"; from: [string, string]; to: [string, string]; offset?: number; label?: string }
+  | {
+      type: "label";
+      at: [string, string];
+      text: string;
+      anchor?: "above" | "below" | "left" | "right" | "center";
+    };
 
 /** quire_service::Redefines: `T := 300` hides the unit tesla. */
 export interface Redefines {
@@ -267,6 +297,7 @@ export interface Region {
   header?: { row?: boolean; column?: boolean };
   columns?: { width?: number; align?: "left" | "center" | "right" | "decimal"; unit?: string; decimals?: number }[];
   rows?: string[][];
+  elements?: SketchElement[];
   series?: PlotSeries[];
   surface?: string;
   parametric?: [string, string, string];

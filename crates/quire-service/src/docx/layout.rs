@@ -102,9 +102,16 @@ pub(super) fn size(
             let w = fixed.unwrap_or_else(|| (longest * size * 0.55).min(room));
             (w, lines.max(1.0) * line + 4.0)
         }
-        "image" | "plot2d" | "plot3d" => {
-            let default = if r.kind == "plot3d" { [420.0, 340.0] } else { [480.0, 260.0] };
-            let [w, h] = size_of(r).unwrap_or(if r.kind == "image" { [200.0, 150.0] } else { default });
+        "image" | "plot2d" | "plot3d" | "sketch" => {
+            let default = match r.kind.as_str() {
+                "plot3d" => [420.0, 340.0],
+                "plot2d" => [480.0, 260.0],
+                "sketch" => [480.0, 220.0],
+                _ => [200.0, 150.0],
+            };
+            let [w, h] = size_of(r)
+                .or_else(|| r.extra.get("width").and_then(Json::as_f64).map(|w| [w, default[1]]))
+                .unwrap_or(default);
             (w, h + caption)
         }
         "table" => {

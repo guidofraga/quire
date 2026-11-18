@@ -102,6 +102,7 @@ mod tests {
                 display: DisplaySpec::default(),
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: l.ends_with(" →"),
                 solve: None,
             })
@@ -235,6 +236,7 @@ mod tests {
             display: DisplaySpec::default(),
             table: Some(t),
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         };

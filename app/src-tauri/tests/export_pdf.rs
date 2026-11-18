@@ -340,3 +340,49 @@ fn the_pdf_is_printed_at_the_page_views_size() -> TestResult {
     assert!(lowest < margin + 40.0, "the lowest text on page 1 is {lowest:.1} pt from the foot");
     Ok(())
 }
+
+#[test]
+#[ignore = "drives the desktop app; see the module comment"]
+fn a_sketch_prints_its_labels_and_measured_dimension_to_pdf() -> TestResult {
+    let dir = std::env::temp_dir().join(format!("quire-sketch-pdf-{}", std::process::id()));
+    let input = dir.join("sketch.quire");
+    std::fs::create_dir_all(&input)?;
+    let json = serde_json::json!({
+        "format": "quire/1",
+        "meta": { "title": "Sketch PDF" },
+        "settings": { "display": { "decimals": 2, "resultUnits": "working" } },
+        "page": { "view": "pages", "paper": "A4" },
+        "requires": ["sketch"],
+        "regions": [
+            { "id": "ll1111", "kind": "math", "at": [36, 36], "expr": "L := 6 m" },
+            { "id": "qq1111", "kind": "math", "at": [36, 72], "expr": "q := 10.6 kN/m" },
+            {
+                "id": "sk1111",
+                "kind": "sketch",
+                "at": [36, 116],
+                "size": [480, 220],
+                "caption": { "text": "Simply supported beam" },
+                "elements": [
+                    { "type": "member", "from": ["0 m", "0 m"], "to": ["L", "0 m"] },
+                    { "type": "support", "at": ["0 m", "0 m"], "kind": "pin" },
+                    { "type": "support", "at": ["L", "0 m"], "kind": "roller" },
+                    { "type": "udl", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "label": "q = {q}" },
+                    { "type": "dimension", "from": ["0 m", "0 m"], "to": ["L", "0 m"], "offset": -40 }
+                ]
+            }
+        ]
+    });
+    std::fs::write(input.join("document.json"), serde_json::to_string_pretty(&json)?)?;
+    let exported = export(&input, "sketch");
+    std::fs::remove_dir_all(&dir).ok();
+    let doc = exported?;
+
+    assert_eq!(doc.get_pages().len(), 1);
+    let raw = doc.extract_text(&[1])?;
+    let compact: String = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(compact.contains("kN/m"), "PDF text should contain UDL unit: {compact}");
+    assert!(compact.contains("6 m"), "PDF text should contain measured span dimension: {compact}");
+    assert!(compact.contains("Figure 1"), "PDF text should contain Figure 1 number: {compact}");
+    assert!(compact.contains("Simply supported beam"), "PDF text should contain figure caption: {compact}");
+    Ok(())
+}

@@ -56,6 +56,7 @@ const COMMANDS: Command[] = [
     ["import_csv", "Insert Table from CSV…", "", "table"],
     ["insert_plot", "Insert Plot", `${alt}${mod}P`, "plot"],
     ["insert_plot3d", "Insert 3D Plot", "", "plot3d"],
+    ["insert_sketch", "Insert Sketch", "", "sketch"],
     ["insert_area", "Insert Area", "", "area"],
     ["insert_solve", "Insert Solve Block", "", "solve"],
     ["insert_pagebreak", "Insert Page Break", `${mod}↩`, "pageBreak"],

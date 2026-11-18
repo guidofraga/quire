@@ -108,6 +108,29 @@
         "log": { "type": "boolean" }
       }
     },
+    "sketchCoord": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "sketchElement": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["member", "support", "udl", "point", "moment", "dimension", "label"] },
+        "from": { "$ref": "#/$defs/sketchCoord" },
+        "to": { "$ref": "#/$defs/sketchCoord" },
+        "at": { "$ref": "#/$defs/sketchCoord" },
+        "kind": { "enum": ["pin", "roller", "fixed"] },
+        "angle": { "type": "number" },
+        "sense": { "enum": ["ccw", "cw"] },
+        "offset": { "type": "number" },
+        "label": { "type": "string" },
+        "text": { "type": "string" },
+        "anchor": { "enum": ["above", "below", "left", "right", "center"] }
+      }
+    },
     "length": {
       "oneOf": [
         { "type": "number" },
@@ -257,7 +280,21 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z2-9]{6}$" },
         "kind": {
-          "enum": ["math", "text", "image", "table", "plot2d", "plot3d", "data", "toc", "solve", "area", "pagebreak", "legacy"]
+          "enum": [
+            "math",
+            "text",
+            "image",
+            "table",
+            "plot2d",
+            "plot3d",
+            "sketch",
+            "data",
+            "toc",
+            "solve",
+            "area",
+            "pagebreak",
+            "legacy"
+          ]
         },
         "at": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
         "size": { "type": "array", "items": { "type": "number", "minimum": 0 }, "minItems": 2, "maxItems": 2 },
@@ -467,6 +504,16 @@
                 "description": "find(x, y, …) or minerr(x, y, …), possibly defining the result: [x; y] := find(x, y)"
               },
               "show": { "enum": ["value"] },
+              "display": { "$ref": "#/$defs/display" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "sketch" } } },
+          "then": {
+            "required": ["elements"],
+            "properties": {
+              "elements": { "type": "array", "items": { "$ref": "#/$defs/sketchElement" } },
               "display": { "$ref": "#/$defs/display" }
             }
           }

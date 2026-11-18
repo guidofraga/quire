@@ -26,6 +26,15 @@ describe("find and replace across region kinds", () => {
               ["Half", "=L/2"],
             ],
           },
+          {
+            id: "sk1",
+            kind: "sketch",
+            at: [0, 260],
+            elements: [
+              { type: "member", from: ["0 m", "0 m"], to: ["L", "0 m"] },
+              { type: "udl", from: ["0 m", "0 m"], to: ["L", "0 m"], label: "Span {L}" },
+            ],
+          },
         ],
       },
       null,
@@ -37,9 +46,10 @@ describe("find and replace across region kinds", () => {
       { id: "m1", count: 1 },
       { id: "s1", count: 4 },
       { id: "t1", count: 3 },
+      { id: "sk1", count: 3 },
     ]);
-    const replaced = replaceHits(["m1", "s1", "t1"]);
-    expect(replaced).toBe(8);
+    const replaced = replaceHits(["m1", "s1", "t1", "sk1"]);
+    expect(replaced).toBe(11);
     expect(state.doc.regions[0].expr).toBe("span := 6 m");
     expect(state.doc.regions[1].guesses).toEqual(["span := 5 m"]);
     expect(state.doc.regions[1].given).toEqual(["span > 0 m"]);
@@ -48,10 +58,15 @@ describe("find and replace across region kinds", () => {
       ["Span span", "=span*2"],
       ["Half", "=span/2"],
     ]);
+    expect(state.doc.regions[3].elements).toEqual([
+      { type: "member", from: ["0 m", "0 m"], to: ["span", "0 m"] },
+      { type: "udl", from: ["0 m", "0 m"], to: ["span", "0 m"], label: "Span {span}" },
+    ]);
     undo();
     expect(state.doc.regions[0].expr).toBe("L := 6 m");
     expect(state.doc.regions[1].find).toBe("L := find(L)");
     expect(state.doc.regions[2].rows?.[0]).toEqual(["Span L", "=L*2"]);
+    expect(state.doc.regions[3].elements?.[0]).toEqual({ type: "member", from: ["0 m", "0 m"], to: ["L", "0 m"] });
     setFindOpen(false);
     setQuery("");
     setReplacement("");

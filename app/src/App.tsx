@@ -41,6 +41,7 @@ import { importCsv, insertTable, isSheet, tableCommand, trackEvaluation, undoInC
 import { insertPlot } from "./Plot";
 import { insertSolveBlock } from "./SolveBlock";
 import { insertPlot3d } from "./Plot3D";
+import { insertSketch } from "./Sketch";
 import { findStep, openFind } from "./find";
 import { FormatBar } from "./FormatBar";
 import { Inspector, setInspectorTab } from "./Inspector";
@@ -487,6 +488,7 @@ function openInsertMenu(e: MouseEvent) {
       item("Table from CSV…", "import_csv"),
       item("Plot", "insert_plot", "⌥⌘P"),
       item("3D Plot", "insert_plot3d"),
+      item("Sketch", "insert_sketch"),
       item("Area", "insert_area"),
       item("Solve Block", "insert_solve"),
       item("Page Break", "insert_pagebreak", "⌘↩"),
@@ -565,7 +567,14 @@ function openZoomMenu(e: MouseEvent) {
 /** One line of a status menu: what the region says, shortened. */
 function regionText(id: string): string {
   const r = layout().byId.get(id)?.region;
-  const text = r?.kind === "math" ? (r.expr ?? "") : r?.kind === "table" ? tableName(r) : (r?.kind ?? "");
+  const text =
+    r?.kind === "math"
+      ? (r.expr ?? "")
+      : r?.kind === "table"
+        ? tableName(r)
+        : r?.kind === "sketch"
+          ? "Sketch"
+          : (r?.kind ?? "");
   return text.length > 34 ? `${text.slice(0, 33)}…` : text;
 }
 
@@ -681,6 +690,8 @@ function runCommand(id: string) {
       return insertPlot();
     case "insert_plot3d":
       return insertPlot3d();
+    case "insert_sketch":
+      return insertSketch();
     case "welcome":
       return setWelcomeOpen(true);
     case "check_updates":

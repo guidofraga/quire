@@ -29,6 +29,8 @@ enum Kind {
     Expr { text: String, locals: Vec<String> },
     /// Inline math number `index` in a text region's Djot `source`.
     Inline { source: String, index: usize, text: String },
+    /// `{expr}` interpolation number `index` in a sketch element's label `source`.
+    Brace { source: String, index: usize, text: String },
     /// A table that defines a variable.
     Table { name: String },
 }
@@ -172,6 +174,46 @@ fn slots(doc: &Document) -> Vec<Slot> {
                     out.push(Slot { id, pointer: "/find".into(), kind });
                 }
             }
+            "sketch" => {
+                let elements = r.extra.get("elements").and_then(Json::as_array).cloned().unwrap_or_default();
+                for (i, el) in elements.iter().enumerate() {
+                    let Some(el) = el.as_object() else { continue };
+                    for key in ["from", "to", "at"] {
+                        if let Some(pair) = el.get(key).and_then(Json::as_array) {
+                            for (k, part) in pair.iter().take(2).enumerate() {
+                                if let Some(text) = part.as_str() {
+                                    out.push(Slot {
+                                        id: id.clone(),
+                                        pointer: format!("/elements/{i}/{key}/{k}"),
+                                        kind: Kind::Expr { text: text.to_string(), locals: Vec::new() },
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    let label_key =
+                        if el.get("type").and_then(Json::as_str) == Some("label") { "text" } else { "label" };
+                    if let Some(source) = el.get(label_key).and_then(Json::as_str)
+                        && let Ok(tokens) = quire_eval::scan_label(source)
+                    {
+                        let mut index = 0;
+                        for tok in tokens {
+                            if let quire_eval::LabelToken::Expr { expr, .. } = tok {
+                                out.push(Slot {
+                                    id: id.clone(),
+                                    pointer: format!("/elements/{i}/{label_key}"),
+                                    kind: Kind::Brace {
+                                        source: source.to_string(),
+                                        index,
+                                        text: expr.to_string(),
+                                    },
+                                });
+                                index += 1;
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -181,18 +223,19 @@ fn slots(doc: &Document) -> Vec<Slot> {
 /// The expression a slot holds, parsed.
 fn parsed(kind: &Kind) -> Option<Expr> {
     match kind {
-        Kind::Expr { text, .. } => parse(text).ok(),
+        Kind::Expr { text, .. } | Kind::Brace { text, .. } => parse(text).ok(),
         Kind::Inline { text, .. } => parse(inline_core(text)).ok(),
         Kind::Table { .. } => None,
     }
 }
 
 /// The new text of each slot `transform` changes: `(region id, pointer)` → text. Inline math
-/// is gathered per text, as its index → new text.
+/// and `{expr}` sketch labels are gathered per string, as index → new text.
 #[derive(Default)]
 struct Plan {
     texts: HashMap<(String, String), String>,
     inline: HashMap<(String, String), (String, HashMap<usize, String>)>,
+    brace: HashMap<(String, String), (String, HashMap<usize, String>)>,
 }
 
 fn plan(doc: &Document, transform: Transform) -> Option<Plan> {
@@ -229,6 +272,10 @@ fn plan(doc: &Document, transform: Transform) -> Option<Plan> {
                 let entry = plan.inline.entry(key).or_insert_with(|| (source.clone(), HashMap::new()));
                 entry.1.insert(*index, format!("{}{tail}", print(&new)));
             }
+            Kind::Brace { source, index, .. } => {
+                let entry = plan.brace.entry(key).or_insert_with(|| (source.clone(), HashMap::new()));
+                entry.1.insert(*index, print(&new));
+            }
             Kind::Table { .. } => {}
         }
     };
@@ -250,10 +297,11 @@ fn plan(doc: &Document, transform: Transform) -> Option<Plan> {
             continue;
         }
         rewrite(slot, e, &variables);
-        // a plot's expressions define nothing for the regions below (a solve block's lines do)
+        // a plot's or sketch's expressions define nothing for the regions below (a solve block's lines do)
         let block = slot.pointer == "/find" || slot.pointer.starts_with("/guesses/");
-        let plot = matches!(slot.kind, Kind::Expr { .. }) && slot.pointer != "/expr" && !block;
-        if !plot {
+        let non_defining = matches!(slot.kind, Kind::Brace { .. })
+            || (matches!(slot.kind, Kind::Expr { .. }) && slot.pointer != "/expr" && !block);
+        if !non_defining {
             variables.extend(defined_names(e));
         }
     }
@@ -267,6 +315,25 @@ fn edits(plan: Plan) -> Vec<(String, String, String)> {
     for ((id, pointer), (source, new)) in plan.inline {
         let text = crate::text::rewrite_inline_math(&source, |i, _| new.get(&i).cloned());
         out.push((id, pointer, text));
+    }
+    for ((id, pointer), (source, new)) in plan.brace {
+        if let Ok(tokens) = quire_eval::scan_label(&source) {
+            let mut text = String::with_capacity(source.len() + 8);
+            let mut last = 0;
+            let mut idx = 0;
+            for tok in tokens {
+                if let quire_eval::LabelToken::Expr { start, end, .. } = tok {
+                    if let Some(repl) = new.get(&idx) {
+                        text.push_str(&source[last..start]);
+                        text.push_str(repl);
+                        last = end;
+                    }
+                    idx += 1;
+                }
+            }
+            text.push_str(&source[last..]);
+            out.push((id, pointer, text));
+        }
     }
     out
 }

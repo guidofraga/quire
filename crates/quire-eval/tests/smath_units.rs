@@ -317,6 +317,7 @@ fn eval(exprs: &[String]) -> Vec<quire_eval::Outcome> {
             display: DisplaySpec::default(),
             table: None,
             plot: None,
+            sketch: None,
             symbolic: false,
             solve: None,
         })

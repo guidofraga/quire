@@ -108,6 +108,10 @@ const lines = createRoot(() =>
       if (p.region.kind === "solve") {
         return solveSubIds(p.region).flatMap((sub) => linesFor(p.region.id, state.views[sub]));
       }
+      if (p.region.kind === "sketch") {
+        const used = new Set(state.views[p.region.id]?.sketch?.reads ?? []);
+        return [{ id: p.region.id, defines: null, global: false, reads: used }];
+      }
       return [];
     }),
   ),

@@ -161,10 +161,32 @@ export function undoSession(): () => void {
 /** For tests: how much undo history is kept. */
 export const undoDepth = () => ({ steps: undoStack.length, chars: undoChars });
 
+function hasRegionKind(regions: Region[] | undefined, kind: string): boolean {
+  if (!Array.isArray(regions)) return false;
+  return regions.some((r) => r.kind === kind || hasRegionKind(r.regions, kind));
+}
+
+function syncRequires(d: Doc) {
+  const usesSketch = hasRegionKind(d.regions, "sketch");
+  if (usesSketch) {
+    if (!Array.isArray(d.requires)) d.requires = ["sketch"];
+    else if (!d.requires.includes("sketch")) d.requires.push("sketch");
+  } else if (Array.isArray(d.requires) && d.requires.includes("sketch")) {
+    d.requires = d.requires.filter((x) => x !== "sketch");
+    if (!d.requires.length) delete d.requires;
+  }
+}
+
 /** Apply a change to the document; with `history`, it can be undone. */
 export function mutate(fn: (d: Doc) => void, history = true) {
   if (history) checkpoint();
-  setState("doc", produce(fn));
+  setState(
+    "doc",
+    produce((d) => {
+      fn(d);
+      syncRequires(d);
+    }),
+  );
   touch();
 }
 
@@ -1484,13 +1506,23 @@ function typed() {
   pauseTimer = setTimeout(releaseErrors, PAUSE_MS);
 }
 
-/** Write `to` in place of the name `from` in a math region (an error's fix). */
+/** Write `to` in place of the name `from` in a math or sketch region (an error's fix). */
 export function renameIn(id: string, from: string, to: string) {
   const name = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`(?<![\\p{L}\\p{N}_.'])${name}(?![\\p{L}\\p{N}_.])`, "gu");
+  const swapBraces = (s: string) => s.replace(/\{([^{}]+)\}/g, (_, expr: string) => `{${expr.replace(re, to)}}`);
   mutate((d) => {
     const r = findDraft(d, id);
     if (r?.kind === "math" && r.expr) r.expr = r.expr.replace(re, to);
+    else if (r?.kind === "sketch" && Array.isArray(r.elements)) {
+      for (const el of r.elements) {
+        if ("from" in el) el.from = [el.from[0].replace(re, to), el.from[1].replace(re, to)];
+        if ("to" in el) el.to = [el.to[0].replace(re, to), el.to[1].replace(re, to)];
+        if ("at" in el) el.at = [el.at[0].replace(re, to), el.at[1].replace(re, to)];
+        if (el.type === "label") el.text = swapBraces(el.text);
+        else if (el.label) el.label = swapBraces(el.label);
+      }
+    }
   });
 }
 

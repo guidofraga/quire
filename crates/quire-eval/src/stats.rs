@@ -369,6 +369,7 @@ pub(crate) mod tests {
                 display: DisplaySpec { decimals: Some(decimals), ..DisplaySpec::default() },
                 table: None,
                 plot: None,
+                sketch: None,
                 symbolic: false,
                 solve: None,
             })

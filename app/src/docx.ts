@@ -117,6 +117,9 @@ async function pictures(): Promise<Record<string, string>> {
     if (r.kind === "plot2d") {
       const svg = el.querySelector<SVGSVGElement>(".plot svg");
       if (svg) png = await svgPng(svg);
+    } else if (r.kind === "sketch") {
+      const svg = el.querySelector<SVGSVGElement>(".sketch-box svg");
+      if (svg) png = await svgPng(svg);
     } else if (r.kind === "plot3d") {
       const canvas = el.querySelector<HTMLCanvasElement>(".plot3d canvas");
       if (canvas) png = canvasPng(canvas);
