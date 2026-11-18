@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 quire-ast.workspace = true
-quire-units.workspace = true
 quire-eval.workspace = true
 quire-doc.workspace = true
 quire-smath.workspace = true
