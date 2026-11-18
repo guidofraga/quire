@@ -1,11 +1,9 @@
 // End to end: Insert ▸ Sketch, live parametric redraw when variables change, Inspector
 // autocomplete + add/reorder/remove + undo, "defined further down" error with partial render,
-// Canvas vs Pages zero layout shift, Word 300 dpi export, axe in light & dark, and screenshots.
+// Canvas vs Pages zero layout shift, Word 300 dpi export, and axe in light & dark.
 import { expect, test } from "@playwright/test";
 import { audit } from "./axe";
 import { exportWord, pngSize } from "./docx";
-
-const ARTIFACT_DIR = "/Users/guido/.gemini/antigravity/brain/266dbc7b-0c0f-4aa3-b72f-331b04bf09ed";
 
 test("Insert ▸ Sketch on a blank document draws a concrete starter beam and passes axe", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
@@ -112,15 +110,13 @@ test("sketch binds to L and q above, redraws live, supports Inspector autocomple
   expect(canvasBox?.height).toBeCloseTo(pagesBox!.height, 0);
   await page.getByRole("button", { name: "Pages" }).click();
 
-  // Axe + screenshot in light mode (with Inspector open on the sketch)
+  // Axe audit in light mode (with Inspector open on the sketch)
   await sketch.click();
   await audit(page, "sketch light with inspector");
-  await page.screenshot({ path: `${ARTIFACT_DIR}/sketch-light.png` });
 
-  // Axe + screenshot in dark mode (sketch stays paper-white)
+  // Axe audit in dark mode (sketch stays paper-white)
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await audit(page, "sketch dark with inspector");
-  await page.screenshot({ path: `${ARTIFACT_DIR}/sketch-dark.png` });
 
   // Export as Word: sketch is rasterized at 300 dpi (>= 1400 px wide for 480 px CSS width)
   const { files } = await exportWord(page);
