@@ -412,12 +412,18 @@ async fn export_pdf(
     info: Option<print::PdfInfo>,
 ) -> CmdResult<()> {
     allowed(window.state::<Chosen>().inner(), &path)?;
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
+        return Err("Export as PDF writes .pdf files".into());
+    }
     print::export_pdf(&window, path, paper, title, compress, info.unwrap_or_default())
 }
 
 /// End of a headless `--export-pdf` run.
 #[tauri::command]
 fn finish_export(app: AppHandle, error: Option<String>) {
+    if app.try_state::<headless::Progress>().is_none() {
+        return;
+    }
     match error {
         None => app.exit(0),
         Some(e) => {
@@ -427,6 +433,19 @@ fn finish_export(app: AppHandle, error: Option<String>) {
     }
 }
 
+/// Canonical path without Windows's `\\?\` verbatim disk prefix, so `Scope` and the UI see the
+/// same `C:\…` spelling that native dialogs return.
+fn clean_canonical(path: &Path) -> Option<PathBuf> {
+    let p = std::fs::canonicalize(path).ok()?;
+    #[cfg(windows)]
+    if let Some(rest) = p.to_str().and_then(|s| s.strip_prefix(r"\\?\"))
+        && rest.as_bytes().get(1) == Some(&b':')
+    {
+        return Some(PathBuf::from(rest));
+    }
+    Some(p)
+}
+
 /// `quire-app --export-pdf <document.quire> <output.pdf>`: render without showing a window.
 /// Returns the document and the PDF as absolute paths with no `..`, as the scope compares them.
 fn export_job() -> Option<(PathBuf, PathBuf)> {
@@ -434,9 +453,9 @@ fn export_job() -> Option<(PathBuf, PathBuf)> {
     let i = args.iter().position(|a| a == "--export-pdf")?;
     let (input, output) = (args.get(i + 1)?, args.get(i + 2)?);
     let cwd = std::env::current_dir().ok()?;
-    let input = std::fs::canonicalize(cwd.join(input)).ok()?;
+    let input = clean_canonical(&cwd.join(input))?;
     let output = cwd.join(output);
-    let output = std::fs::canonicalize(output.parent()?).ok()?.join(output.file_name()?);
+    let output = clean_canonical(output.parent()?)?.join(output.file_name()?);
     Some((input, output))
 }
 
@@ -779,7 +798,7 @@ fn main() {
         std::env::args()
             .skip(1)
             .filter(|a| !a.starts_with('-') && is_document(a))
-            .filter_map(|a| std::fs::canonicalize(cwd.join(a)).ok())
+            .filter_map(|a| clean_canonical(&cwd.join(a)))
             .map(scope::document_path)
             .collect()
     };
@@ -839,7 +858,10 @@ fn main() {
             let config = app.config().app.windows.first().cloned().ok_or("tauri.conf.json has no window")?;
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
             if let Some((input, output)) = &job {
-                let job = json!({ "open": input, "pdf": output });
+                let (Some(open), Some(pdf)) = (input.to_str(), output.to_str()) else {
+                    return Err("export paths must be UTF-8".into());
+                };
+                let job = json!({ "open": open, "pdf": pdf });
                 window = window
                     .visible(false)
                     // a hidden page must keep running: macOS 14 and later would otherwise

@@ -141,7 +141,7 @@ export const DOC_EXT = isMac ? "quire" : "quirez";
 
 /** `…/x.quire/document.json` (picked in a file dialog) means the `x.quire` bundle. */
 export function documentPath(p: string): string {
-  return p.replace(/[\\/]document\.json$/i, "");
+  return p.replace(/([\\/][^\\/]+\.quire)[\\/]document\.json$/i, "$1");
 }
 
 /** An SMath Studio worksheet (`.sm`, XML). It opens as an untitled document, never over the file. */

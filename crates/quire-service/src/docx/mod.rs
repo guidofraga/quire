@@ -987,11 +987,15 @@ impl<'a> Writer<'a> {
                     .map(|s| {
                         s.iter()
                             .filter_map(|s| {
-                                s.get("surface").and_then(Json::as_str).map(str::to_string).or_else(|| {
-                                    s.get("parametric").and_then(Json::as_array).map(|p| {
-                                        p.iter().filter_map(Json::as_str).collect::<Vec<_>>().join(", ")
+                                s.get("surface")
+                                    .or_else(|| s.get("y"))
+                                    .and_then(Json::as_str)
+                                    .map(str::to_string)
+                                    .or_else(|| {
+                                        s.get("parametric").and_then(Json::as_array).map(|p| {
+                                            p.iter().filter_map(Json::as_str).collect::<Vec<_>>().join(", ")
+                                        })
                                     })
-                                })
                             })
                             .collect()
                     })

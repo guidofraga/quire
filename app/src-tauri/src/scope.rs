@@ -72,7 +72,7 @@ pub fn with_ext(path: PathBuf, allowed: &[&str], ext: &str) -> PathBuf {
 pub fn document_path(path: PathBuf) -> PathBuf {
     let in_bundle = path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("document.json"));
     match path.parent() {
-        Some(bundle) if in_bundle => bundle.to_path_buf(),
+        Some(bundle) if in_bundle && ext_is(bundle, &["quire"]) => bundle.to_path_buf(),
         _ => path,
     }
 }
@@ -357,6 +357,7 @@ mod tests {
     #[test]
     fn a_document_json_picked_in_a_bundle_means_the_bundle() {
         assert_eq!(document_path(abs("Beam.quire/document.json")), abs("Beam.quire"));
+        assert_eq!(document_path(abs("Downloads/document.json")), abs("Downloads/document.json"));
         assert_eq!(document_path(abs("Beam.quirez")), abs("Beam.quirez"));
     }
 }
