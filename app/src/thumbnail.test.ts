@@ -44,4 +44,32 @@ describe("template thumbnails", () => {
     for (const s of t.shapes) expect(s.x + s.w).toBeLessThanOrEqual(right + 0.01);
     expect(t.shapes.filter((s) => s.kind === "line").length).toBeGreaterThan(5);
   });
+
+  it("draws solve blocks and uncollapsed areas", () => {
+    const withMore = thumbnail({
+      format: "quire/1",
+      page: { paper: "A4" },
+      regions: [
+        {
+          id: "s1",
+          kind: "solve",
+          at: [0, 0],
+          guesses: ["x := 1"],
+          given: ["x^2 == 4"],
+          find: "x := find(x)",
+          show: "value",
+        },
+        {
+          id: "a1",
+          kind: "area",
+          at: [0, 140],
+          title: "Section",
+          regions: [{ id: "m1", kind: "math", at: [0, 30], expr: "y := 2" }],
+        },
+      ],
+    });
+    expect(withMore.shapes.some((s) => s.kind === "box")).toBe(true);
+    expect(withMore.shapes.filter((s) => s.kind === "math").length).toBe(4);
+    expect(withMore.shapes.filter((s) => s.kind === "heading").length).toBe(2);
+  });
 });

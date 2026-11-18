@@ -178,6 +178,15 @@ export async function confirmDiscard(): Promise<boolean> {
   return window.confirm(msg);
 }
 
+export async function confirmDeleteTemplate(name: string): Promise<boolean> {
+  const msg = `Delete the template “${name}”?`;
+  if (isTauri) {
+    const { ask } = await import("@tauri-apps/plugin-dialog");
+    return ask(msg, { title: "Delete template", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" });
+  }
+  return window.confirm(msg);
+}
+
 /** Documents opened from the system while the app is running. */
 export async function onOpenFile(handler: (path: string) => void) {
   if (!isTauri) return;

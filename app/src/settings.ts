@@ -26,7 +26,7 @@ export interface Prefs {
   shiftContent: boolean;
   /** Resolution of images in exported PDFs; 0 keeps them as they are. */
   exportDpi: number;
-  /** Store photos in exported PDFs as JPEG (macOS export; drawings stay lossless). */
+  /** Store photos in exported PDFs as JPEG (macOS and Linux export; drawings stay lossless). */
   compressPhotos: boolean;
   // Defaults for new documents: empty font and size 0 leave the document's own (typography.ts)
   font: string;

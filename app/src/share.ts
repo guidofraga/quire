@@ -4,7 +4,7 @@
 // with images travels as a .quirez file instead.
 
 import { pageAssets } from "./pages";
-import type { Doc } from "./types";
+import type { Doc, Region } from "./types";
 
 /** Where the web version lives; links made in the desktop app open there. */
 export const WEB_URL = "https://guidofraga.github.io/quire/";
@@ -68,7 +68,10 @@ export async function linkFor(
   return `${base.replace(/#.*$/, "")}${PREFIX}${await encodeDoc(await stored(doc))}`;
 }
 
+const hasImageRegion = (regions: Region[]): boolean =>
+  regions.some((r) => r.kind === "image" || (Array.isArray(r.regions) && hasImageRegion(r.regions)));
+
 /** Whether a document uses images (page backgrounds and header logos included), which links leave out. */
 export function hasImages(doc: Doc): boolean {
-  return doc.regions.some((r) => r.kind === "image") || pageAssets(doc).length > 0;
+  return hasImageRegion(doc.regions) || pageAssets(doc).length > 0;
 }

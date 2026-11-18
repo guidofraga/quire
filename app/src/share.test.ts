@@ -43,6 +43,20 @@ describe("documents in links", () => {
     expect(
       hasImages({ ...doc, regions: [...doc.regions, { id: "i", kind: "image", at: [0, 0], src: "assets/x.png" }] }),
     ).toBe(true);
+    // an image inside an area counts too
+    expect(
+      hasImages({
+        ...doc,
+        regions: [
+          {
+            id: "a1",
+            kind: "area",
+            at: [0, 0],
+            regions: [{ id: "i", kind: "image", at: [0, 20], src: "assets/w.png" }],
+          },
+        ],
+      }),
+    ).toBe(true);
     expect(hasImages({ ...doc, page: { backgrounds: [{ pages: "1", src: "assets/y.png" }] } })).toBe(true);
     // a logo in a header counts too
     expect(hasImages({ ...doc, page: { header: { image: { src: "assets/z.png" } } } })).toBe(true);

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { audit } from "./axe";
 
 let dir: string;
 
@@ -88,26 +89,20 @@ async function physics(page: Page) {
 
 for (const scheme of ["light", "dark"] as const)
   test(`a selection, Move to… and the Trash question pass axe in ${scheme}`, async ({ page }) => {
-    const { default: AxeBuilder } = await import("@axe-core/playwright");
     await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
     await physics(page);
-    const audit = async (what: string, where: string) => {
-      const { violations } = await new AxeBuilder({ page }).include(where).analyze();
-      const bad = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-      expect(bad.map((v) => `${what}: ${v.id} ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
-    };
     await row(page, "Euler").click();
     await row(page, "Newton").click({ modifiers: ["Shift"] });
-    await audit("selection", ".sidebar");
+    await audit(page, "selection", ".sidebar");
     await row(page, "Newton").click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move 3 Items to…" }).click();
     await expect(page.getByRole("dialog", { name: "Move 3 items to…" })).toBeVisible();
-    await audit("move to", ".nb-move");
+    await audit(page, "move to", ".nb-move");
     await page.keyboard.press("Escape");
     await row(page, "Newton").focus();
     await page.keyboard.press("Delete");
     await expect(page.getByRole("alertdialog")).toBeVisible();
-    await audit("trash", ".nb-dialog");
+    await audit(page, "trash", ".nb-dialog");
     await page.keyboard.press("Escape");
   });
 

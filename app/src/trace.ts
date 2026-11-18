@@ -3,7 +3,7 @@
 // ⌘-click (Ctrl-click) on a name jumps to the definition that applies there.
 import { createEffect, createMemo, createRoot, createSignal } from "solid-js";
 import { layout, revealRegion, state } from "./store";
-import type { Expr } from "./types";
+import type { Expr, Region, RegionView } from "./types";
 
 const [caretName, setCaretName] = createSignal<string | null>(null);
 const [hoverName, setHoverName] = createSignal<string | null>(null);
@@ -12,9 +12,23 @@ export { setCaretName };
 /** `f(x)` → `f`, `v[2]` → `v`. */
 export const baseName = (defines: string | null | undefined) => (defines ? defines.split(/[([]/)[0] : null);
 
+function definedNames(v: RegionView | undefined): string[] {
+  if (!v) return [];
+  if (v.defines) {
+    const n = baseName(v.defines);
+    return n ? [n] : [];
+  }
+  if (v.input?.t === "Define" && v.input.c.lhs.t === "Matrix") {
+    return v.input.c.lhs.c.flat().flatMap((e) => (e.t === "Ident" ? [e.c] : []));
+  }
+  return [];
+}
+
 function selectedDefinition(): string | null {
   if (state.editing || state.selection.length !== 1) return null;
-  return baseName(state.views[state.selection[0]]?.defines);
+  const id = state.selection[0];
+  const names = definedNames(state.views[id] ?? state.views[`${id}:f`]);
+  return names.length === 1 ? names[0] : null;
 }
 
 /** The name being traced. */
@@ -65,21 +79,37 @@ interface Line {
   reads: Set<string>;
 }
 
-/** Math regions in reading order, with what each defines and reads. */
+function solveSubIds(r: Region): string[] {
+  const g = Array.isArray(r.guesses) ? r.guesses.length : 0;
+  const c = Array.isArray(r.given) ? r.given.length : 0;
+  return [
+    ...Array.from({ length: g }, (_, i) => `${r.id}:g${i}`),
+    ...Array.from({ length: c }, (_, i) => `${r.id}:c${i}`),
+    `${r.id}:f`,
+  ];
+}
+
+function linesFor(id: string, v: RegionView | undefined): Line[] {
+  const input = v?.input ?? null;
+  const global = input?.t === "Define" && input.c.global;
+  const used = reads(input, new Set(v?.units ?? []), new Set());
+  const defs = definedNames(v);
+  if (!defs.length) return [{ id, defines: null, global, reads: used }];
+  return defs.map((defines) => ({ id, defines, global, reads: used }));
+}
+
+/** Math, table and solve-block lines in reading order, with what each defines and reads. */
 const lines = createRoot(() =>
   createMemo((): Line[] =>
-    layout()
-      .list.filter((p) => p.region.kind === "math" || p.region.kind === "table")
-      .map((p) => {
-        const v = state.views[p.region.id];
-        const input = v?.input ?? null;
-        return {
-          id: p.region.id,
-          defines: baseName(v?.defines),
-          global: input?.t === "Define" && input.c.global,
-          reads: reads(input, new Set(v?.units ?? []), new Set()),
-        };
-      }),
+    layout().list.flatMap((p) => {
+      if (p.region.kind === "math" || p.region.kind === "table") {
+        return linesFor(p.region.id, state.views[p.region.id]);
+      }
+      if (p.region.kind === "solve") {
+        return solveSubIds(p.region).flatMap((sub) => linesFor(p.region.id, state.views[sub]));
+      }
+      return [];
+    }),
   ),
 );
 
