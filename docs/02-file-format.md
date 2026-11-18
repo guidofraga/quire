@@ -205,7 +205,7 @@ Designed so that **(1)** a human can read and edit it in a diff, **(2)** it roun
 | Matrix | `[1, 2; 3, 4]`; multi-line allowed | 2D matrix |
 | Range | `1..10`, or `range(0, 1, 0.1)` for a step. With units, `..` steps by one of the unit written on its ends (`0 'mm..10 'mm` is 0, 1, …, 10 mm); with no unit written there (`a..b` for two lengths) or two different ones, the step must be given: `range(0 'm, L, 0.5 'm)` | |
 | Empty slot | `?` (an unfinished expression; evaluating it is an error) | placeholder box |
-| Symbolic evaluation | stored as `"show": "symbolic"` (typed as a trailing `→` or `->`, or Ctrl+.). Names stay symbols and the document's functions are expanded; `diff(e, x)`, `diff(e, x, n)`, `int(e, x)`, `int(e, x, a, b)`, `expand(e)`, `simplify(e)` and `solve(a == b, x)` (degree one or two) work symbolically. Inline math in text takes a trailing `→` too | `→ result` |
+| Symbolic evaluation | stored as `"show": "symbolic"` (typed as a trailing `→` or `->`, or Ctrl+.). Names stay symbols and the document's functions are expanded; `diff`, `int`, `expand`, `simplify`, `factor`, `subs`/`substitute`, `series`/`taylor`, `lim`/`limit`, and `solve` (polynomials up to degree 4, transcendental isolation, and linear systems) work symbolically. Inline math in text takes a trailing `→` too | `→ result` |
 | Calculus | `diff(f(x), x)`, `diff(f, x, 2)`, `int(f, x)`, `int(f, x, a, b)`, `sum(e, i, 1, n)`, `prod(...)`, `lim(e, x, a)` | 2D operators |
 | Roots / abs | `sqrt(x)`, `root(x, n)`, `abs(x)` | √x, ⁿ√x, \|x\| |
 | Programming | `if(c, a, b)`, `block(...)`, `for(i, range, body)`, `while(c, body)` | SMath program blocks |
@@ -243,7 +243,6 @@ The text is **[Djot](https://djot.net)**: a strict, unambiguous light markup by 
 - `# Assumptions` is an **auto-numbered heading** (rendered "1. Assumptions" per `styles.numbering.headings`).
 - Inline live math: `` The net area is $`A.net =` `` renders the *current* value inside the sentence.
 - Cross-references: `[](#ref:<region id>)` is an empty link to a heading's text region or to a captioned figure, table or plot, and reads "Figure 2", "Table 1" or "Section 2.1" with the current numbering. `{.num}` gives just the number (2.1), `{.page}` the page ("page 4") and `{.title}` the caption or heading text. A reference whose target was deleted reads "missing reference".
-- Cross-reference: `[](#scheme)` renders "Figure 1".
 - Multilingual (SMath supports per-language text): `"text": { "pt": "…", "en": "…" }`.
 
 ### 4.5 `image`
@@ -312,14 +311,15 @@ A spreadsheet table runs in reading order with the math regions:
 | Field | Notes |
 |---|---|
 | `series[].y` | What is plotted: an expression in the variable (`M(x)`), or, without a `range`, a vector of values (data). A matrix with two or more columns is one line through its rows (column 1 is x, column 2 is y; a row without numbers is a gap). A vector of matrices (`sys(…)` is one) draws one line per element. Style columns are below. |
+| `series[].style` | Optional `{ color, width, dash, draw }`: `dash` is `"dashed"` or `"dotted"`; `draw` is `"line"`, `"points"` or `"line+points"`. |
 | `animate` | `{ "var": "t", "over": "step", "fps": 20 }`: the plot is drawn once per element of the list `over`, with `var` bound to it. Variables that a plotted call changes keep their new values for the next frame, so `f(path, t)` whose `f` appends to `path` grows a trail. At most 1000 frames; `fps` defaults to 20. |
 | `aspect` | `"equal"` draws one unit of x as long as one unit of y, so circles stay round. |
 | `axes`, `grid` | Booleans. `axes: false` hides the axes, their numbers and titles; `grid: false` hides the grid lines. An `axes` object hides them with `"visible": false` while still fixing the window. |
 | `series[].x` | With a `range`: the variable's name (default `x`). Without: a vector of x values (default 1, 2, 3…). |
 | `series[].range` | `start..end`; the expression is sampled at 241 evenly spaced points. A point that fails to evaluate is a gap in the line. |
-| `axes.x` / `axes.y` | `unit` (otherwise the units the document works in, as for results), `label`, `min`, `max`. |
+| `axes.x` / `axes.y` | `unit` (otherwise the units the document works in, as for results), `label`, `min`, `max`, `log` (`true` for a logarithmic scale). |
 | `extrema` | `true` marks and labels each series' maximum and minimum. |
-| `legend` | `false` (or `"none"`) hides the legend. Without it, a plot of several series has one. SMath imports set `false`. |
+| `legend` | `false`, `"none"`, `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"`. Without it, a plot of several series defaults to `"top-left"`. SMath imports set `false`. |
 | `palette` | `"smath"` takes SMath's series colours in order (blue, red, green, sandy orange, violet, dark red) instead of the app's own. Explicit `style.color` still wins. SMath imports set it. |
 
 **Style columns.** A matrix row may carry SMath's marker style after its x and y: column 3 is the marker, column 4 its size and column 5 its colour. Markers are `"."` (a filled disc), `"o"` (an open circle), `"+"`, `"x"` and `"*"`; `""` or `"-"` is a plain vertex of the line. Any other word is a text label drawn under its point (SMath's beam names its reactions this way). Sizes are read off the SMath screenshots: a `"."` of size 125 is about 50 px across, an `"o"` of size 185 about 112 px. Colours are SMath's names (`Red`, `Blue`, `Light Blue`, `Green`, …, case and spaces ignored); an unknown name takes the series' colour. A series whose rows all carry markers is not joined by a line.
@@ -362,21 +362,21 @@ A point that cannot be computed is a gap: a surface leaves out the faces around 
 
 The SMath importer writes a 3D graph's input as `surface` (an expression or a matrix of heights). Files written by Quire 0.2.0's importer have it as `y`; a `plot3d` series with `y` and neither `surface` nor `parametric` is read as `surface`, and the app writes `surface` when the series is edited.
 
-### 4.8 `data` (CSV / JSON import)
+### 4.8 `data` (reserved for external data import)
 
 ```json
 { "id": "…", "kind": "data", "at": [0, 4000], "name": "loads",
   "src": "assets/1c0ffee5e1a5b2d3.csv", "format": "csv", "header": true,
   "columns": [{ "name": "x", "unit": "m" }, { "name": "F", "unit": "kN" }] }
 ```
-This defines the matrix variable `loads` (with per-column units). Small datasets may use `"inline": [[…], […]]` instead of `src`. Export goes the other way: right-click any matrix result and choose *Export CSV/JSON*, or *Copy as TSV*.
+Reserved in the schema for defining a matrix variable `loads` from a CSV/TSV/JSON asset or `inline` array; not evaluated yet (tabular CSV import/export currently uses `table` regions, §4.6).
 
 ### 4.9 `toc` (contents lists)
 
 ```json
 { "id": "…", "kind": "toc", "at": [0, 54], "of": "headings", "title": "Contents" }
 ```
-`of` is `headings` (table of contents), `figures` or `tables`. The entries, numbers and page numbers are computed when the document is drawn and never stored. A heading styled **Title** (`{.title}` before `#`) is neither numbered nor listed.
+`of` is `headings` (table of contents), `figures`, `tables` or `checks` (summary of checks). The entries, numbers and page numbers are computed when the document is drawn and never stored. A heading styled **Title** (`{.title}` before `#`) is neither numbered nor listed.
 
 ### 4.10 `solve` (solve blocks: Given … find)
 
@@ -430,7 +430,7 @@ A `pagebreak` is a manual page break. In the page view, in print and in the PDF,
 Every writer (the app, the CLI, the importer) **must** produce byte-identical output for the same model:
 
 1. UTF-8 without BOM, `\n` line endings, 2-space indent, trailing newline.
-2. **Key order is fixed**: `format, meta, settings, units, styles, page, requires, regions` at the top. In a region: `id, kind, at, size, width, height, style, keep, disabled, locked, collapsed, title, expr, guesses, given, find, show, mode, hideInput, display, note, …, regions`. Nested objects keep their schema-defined order.
+2. **Key order is fixed**: `format, meta, settings, units, styles, page, requires, …, regions` at the top (`TOP_ORDER` in `canonical.rs`), and `id, kind, at, size, width, height, style, keep, disabled, locked, collapsed, of, title, name, expr, guesses, given, find, show, mode, hideInput, display, note, notePosition, text, src, alt, format, inline, source, header, columns, rows, series, surface, parametric, xrange, yrange, range, urange, vrange, grid, axes, aspect, animate, extrema, legend, palette, render, camera, caption, legacy, color, background, border, …, regions` on a region (`REGION_ORDER`), with unknown keys sorted alphabetically before `regions`. Nested objects keep their insertion order.
 3. Top-level sections and **each region are always expanded**, one key per line. Any other value is written on one line if it fits in 100 columns, otherwise expanded. The result is that changing an expression, moving a region, or toggling `collapsed` changes **exactly one line**.
 4. **Defaults are omitted** (`color` black, `show` none, `keep` false, …).
 5. **No derived data**: no computed sizes, no results, no save counters, no timestamps, no undo history.
@@ -454,7 +454,7 @@ The importer already obeys these rules. Converting the same `.sm` twice gives by
 ```
 - Keyed by region `id`. Values are in linear syntax, in the region's display unit.
 - **Commit it when you want calculation review in pull requests.** A diff that shows `"FU.diag": "0.83"` → `"0.91"` is exactly what a checking engineer wants to see. Add it to `.gitignore` for quieter history.
-- Lets a viewer (web, Quick Look, CLI `quire show`) display a document without running the engine.
+- Lets a viewer (web, Quick Look) display a document without running the engine.
 - The importer fills it from SMath's own cached results, which makes imported reports a regression oracle: the Quire engine must reproduce them.
 
 ## 7. Versioning & compatibility
@@ -466,7 +466,8 @@ The importer already obeys these rules. Converting the same `.sm` twice gives by
   - a region without a string `id` and `kind`, an `at` of two numbers, or `regions` as a list is shown as a placeholder and evaluated as nothing, with a warning.
 
   In every case the value or region is written back exactly as it was found.
-- A breaking change bumps the major and ships a migration in `quire-doc::migrate`, which always runs on load. Old files are never rewritten silently: the app asks before upgrading.
+- Early Quire versions wrote unquoted hex colours in Djot attributes (`[red]{color=#c00}`); readers normalize them to quoted form (`color="#c00"`) before parsing while preserving byte offsets.
+- A breaking change bumps the major and ships a migration path that runs on load. Old files are never rewritten silently: the app asks before upgrading.
 - `requires` lists optional capabilities (`plot3d`, `cas.giac`, plugin ids). A reader missing one still opens the file and shows those regions as placeholders.
 
 ## 8. Import validation (SMath → Quire)
@@ -488,4 +489,4 @@ SMath conventions the importer handles:
 - **Option lists** (`radiobuttonlist`) become a math region defining their variable: `Categoria := 2`, the number of the chosen option (from 1), or with `output="Element"` the chosen row of the list's table, `valor := Tabela[3, 2]`. The options are listed in the region's note, the chosen one in bold.
 - **Comparisons:** SMath's `≈` (approximately equal, usually in the condition of an `if`) and `≡` inside an expression are equality tests and become `==`, which already allows for rounding.
 
-Known gaps for P1: plot axis ranges and styles, table cell styling, and SMath `description` positions other than right are only partly carried over. The text→heading and text→caption heuristics are tuned for Portuguese/English report conventions.
+Known gaps: table cell styling, and SMath `description` positions other than `right` and `below` are only partly carried over. The text→heading and text→caption heuristics are tuned for Portuguese/English report conventions.
