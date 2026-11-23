@@ -1442,12 +1442,15 @@ export function showReport(report: Report) {
   latest = report;
   const editing = state.editing;
   let hidden = 0;
-  const block = !!editing && layout().byId.get(editing)?.region.kind === "solve";
+  const editingRegion = editing ? layout().byId.get(editing)?.region : undefined;
+  const block = editingRegion?.kind === "solve";
+  // a math line still empty isn't wrong yet, however long you pause before typing it (#151)
+  const blank = editingRegion?.kind === "math" && !(editingRegion.expr ?? "").trim();
   const views = report.regions.map((v): RegionView => {
     if (!editing || !v.error) return v;
     // a solve block's lines are reported as `<id>:c0` and so on
     if (v.id === editing || (block && v.id.startsWith(`${editing}:`))) {
-      if (!typing) return v;
+      if (!typing && !blank) return v;
       hidden++;
       return { ...v, error: null, syntaxError: false };
     }

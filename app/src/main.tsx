@@ -1,6 +1,7 @@
 import { render } from "solid-js/web";
 import { api, exportJob } from "./api";
 import { App } from "./App";
+import { applyTheme } from "./settings";
 import "./styles.css";
 
 if (import.meta.env.DEV) {
@@ -12,5 +13,8 @@ if (import.meta.env.DEV) {
 
 // a headless export's first sign of life, before anything else can fail (issue #59)
 if (exportJob) void api.exportStep("starting the page").catch(() => {});
+
+// the theme chosen in Settings before the first paint, so a forced Dark doesn't flash light
+void applyTheme();
 
 render(() => <App />, document.getElementById("root")!);
