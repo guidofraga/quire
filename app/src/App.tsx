@@ -792,9 +792,44 @@ function runCommand(id: string) {
   }
 }
 
+/**
+ * The desktop app's Undo, Redo and Select All, run by the page itself. On Windows the web view
+ * keeps Ctrl+Z and Ctrl+A for the hidden text box that holds the page's focus, so the menu's
+ * shortcuts never fire (#168). The editors and text fields keep theirs.
+ */
+function desktopEditKeys(e: KeyboardEvent) {
+  if (e.defaultPrevented || !(isMac ? e.metaKey : e.ctrlKey) || e.altKey) return;
+  if (state.editing || state.hfEditing || focusedTextField()) return;
+  const k = e.key.toLowerCase();
+  const id =
+    k === "z"
+      ? e.shiftKey
+        ? "redo"
+        : "undo"
+      : k === "y" && !isMac && !e.shiftKey
+        ? "redo"
+        : k === "a" && !e.shiftKey
+          ? "select_all"
+          : "";
+  if (!id) return;
+  e.preventDefault();
+  runOnce(id, "page");
+}
+
+/** The command a shortcut ran last, and how: the page and the menu may both see one key press. */
+let lastShortcut = { id: "", from: "", at: 0 };
+
+/** Run a shortcut's command, unless the same key press already ran it the other way. */
+function runOnce(id: string, from: "page" | "menu") {
+  const now = performance.now();
+  if (lastShortcut.id === id && lastShortcut.from !== from && now - lastShortcut.at < 300) return;
+  lastShortcut = { id, from, at: now };
+  runCommand(id);
+}
+
 /** In a plain browser there is no native menu; map the same shortcuts. */
 function browserShortcuts(e: KeyboardEvent) {
-  if (isTauri) return;
+  if (isTauri) return desktopEditKeys(e);
   if (e.key === "F1") {
     e.preventDefault();
     return void runCommand("help");
@@ -817,6 +852,8 @@ function browserShortcuts(e: KeyboardEvent) {
     n: e.altKey ? "new_section" : e.shiftKey ? "new_from_template" : "new",
     "\\": "toggle_sidebar",
     z: e.shiftKey ? "redo" : "undo",
+    // Ctrl+Y, as on Windows and Linux; on a Mac ⌘Y is not Redo
+    y: !isMac && !e.shiftKey ? "redo" : "",
     p: e.altKey ? "insert_plot" : e.shiftKey ? "page_view" : "print",
     e: "export_pdf",
     d: "duplicate",
@@ -974,7 +1011,7 @@ export function App() {
     // before anything is opened: the desktop app adopts older recent lists only until then
     const lastBook = lastNotebook();
     await syncRecent(lastBook ? [lastBook, ...recentNotebooks().filter((p) => p !== lastBook)] : recentNotebooks());
-    await onMenu(runCommand);
+    await onMenu((id) => (["undo", "redo", "select_all"].includes(id) ? runOnce(id, "menu") : runCommand(id)));
     await guardClose(() => state.dirty && !nb.current, api.clearRecovery, flushSave);
     installAutosave();
     window.addEventListener("keydown", browserShortcuts);
