@@ -91,6 +91,13 @@ fn is_unit_char(c: char) -> bool {
 }
 
 pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
+    tokenize_with(src, false)
+}
+
+/// `lenient`: for the preview of a line still being typed, a `#` or `'` with no name after it
+/// yet, and a `.` that would start a subscript, are left out until their letters come; a string
+/// not yet closed ends with the line; a `:` at the end is the `:=` it is becoming.
+pub(crate) fn tokenize_with(src: &str, lenient: bool) -> Result<Vec<Token>, ParseError> {
     let chars: Vec<char> = src.chars().collect();
     let len = chars.len();
     let at = |i: usize| chars.get(i).copied();
@@ -135,6 +142,10 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
         // `#G`, `#k.B`: the built-in constant, spelled as its plain name
         if c == '#' {
             if !at(i + 1).is_some_and(is_ident_start) {
+                if lenient {
+                    i += 1;
+                    continue;
+                }
                 return Err(ParseError::new("expected a constant name after #", start));
             }
             i = name_end(&chars, i + 2);
@@ -163,6 +174,9 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
                 i += 1;
             }
             if i == start + 1 {
+                if lenient {
+                    continue;
+                }
                 return Err(ParseError::new("expected a unit name after '", start));
             }
             out.push(Token { tok: Tok::Unit(slice_str(start + 1, i)), pos: start });
@@ -174,13 +188,21 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
             let mut s = String::new();
             loop {
                 let Some(ch) = at(i) else {
+                    if lenient {
+                        break;
+                    }
                     return Err(ParseError::new("unterminated string", start));
                 };
                 i += 1;
                 match ch {
                     '"' => break,
                     '\\' => {
-                        let esc = at(i).ok_or_else(|| ParseError::new("unterminated string", start))?;
+                        let Some(esc) = at(i) else {
+                            if lenient {
+                                break;
+                            }
+                            return Err(ParseError::new("unterminated string", start));
+                        };
                         i += 1;
                         s.push(match esc {
                             '"' => '"',
@@ -221,6 +243,17 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, ParseError> {
             }
         }
 
+        // `A.` on its way to `A.net`
+        if lenient && c == '.' {
+            i += 1;
+            continue;
+        }
+        // `M :` on its way to `M :=`
+        if lenient && c == ':' && chars[i + 1..].iter().all(|c| c.is_whitespace()) {
+            out.push(Token { tok: Tok::Sym(":="), pos: start });
+            i = len;
+            continue;
+        }
         let msg = if c == '=' {
             "use := to define or == to compare".to_string()
         } else {

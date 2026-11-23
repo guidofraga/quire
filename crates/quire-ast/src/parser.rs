@@ -16,7 +16,7 @@
 use std::fmt;
 
 use crate::ast::{BinaryOp, CmpOp, Expr, UnaryOp};
-use crate::lexer::{Tok, Token, tokenize};
+use crate::lexer::{Tok, Token, tokenize, tokenize_with};
 
 /// The deepest expression accepted, a leaf being depth 1: the SMath importer's limit too.
 /// A long chain is deep as well (`a + b + c` is `(a + b) + c`), so this also bounds sums
@@ -50,12 +50,27 @@ type Result<T> = std::result::Result<T, ParseError>;
 type Tree = (Expr, usize);
 
 pub fn parse(src: &str) -> Result<Expr> {
-    let mut p = Parser { tokens: tokenize(src)?, i: 0, nest: 0, exponent: false, held: false };
+    let mut p =
+        Parser { tokens: tokenize(src)?, i: 0, nest: 0, exponent: false, held: false, lenient: false };
     let (e, _) = p.expr(DEFINE)?;
     match p.peek() {
         Tok::Eof => Ok(e),
         t => Err(p.error(format!("unexpected {}", describe(t)))),
     }
+}
+
+/// A line still being typed, for its preview only: what is missing becomes an empty slot
+/// (`Placeholder`, drawn □) and brackets not yet closed close at the end, so `M := q*(L - x)/`
+/// reads as `M ≔ q·(L − x)/□`. The same as [`parse`] for any line `parse` accepts; `None` when
+/// even this can't make sense of it (or the line is empty). Evaluation never uses it.
+pub fn parse_lenient(src: &str) -> Option<Expr> {
+    if src.trim().is_empty() {
+        return None;
+    }
+    let tokens = tokenize_with(src, true).ok()?;
+    let mut p = Parser { tokens, i: 0, nest: 0, exponent: false, held: false, lenient: true };
+    let (e, _) = p.expr(DEFINE).ok()?;
+    matches!(p.peek(), Tok::Eof).then_some(e)
 }
 
 fn not_a_value(t: &Tok, pos: usize) -> ParseError {
@@ -114,6 +129,9 @@ struct Parser {
     exponent: bool,
     /// A unit that a value in the exponent would have taken is next: the power takes it.
     held: bool,
+    /// A line still being typed ([`parse_lenient`]): missing values are empty slots and open
+    /// brackets close at the end.
+    lenient: bool,
 }
 
 impl Parser {
@@ -148,7 +166,8 @@ impl Parser {
     }
 
     fn expect(&mut self, sym: &str) -> Result<()> {
-        if self.eat(sym) {
+        // a bracket not closed yet closes at the end of the line being typed
+        if self.eat(sym) || (self.lenient && matches!(sym, ")" | "]") && *self.peek() == Tok::Eof) {
             Ok(())
         } else {
             Err(self.error(format!("expected '{sym}' but found {}", describe(self.peek()))))
@@ -355,6 +374,10 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Result<Tree> {
+        // a value not typed yet, at the end or before what closes it: an empty slot
+        if self.lenient && matches!(self.peek(), Tok::Eof | Tok::Sym(")" | "]" | "," | ";")) {
+            return Ok((Expr::Placeholder, 1));
+        }
         let pos = self.pos();
         match self.bump() {
             Tok::Num(n) => self.number(n),
@@ -474,7 +497,7 @@ impl Parser {
 
     #[inline(never)]
     fn matrix(&mut self, pos: usize) -> Result<Tree> {
-        if self.eat("]") {
+        if !self.lenient && self.eat("]") {
             return Err(ParseError::new("empty matrix", pos));
         }
         let mut rows: Vec<Vec<Expr>> = Vec::new();
@@ -495,6 +518,13 @@ impl Parser {
             break;
         }
         rows.push(row);
+        // a row still being typed: the others' cells it hasn't reached yet are empty slots
+        if self.lenient {
+            let width = rows.iter().map(Vec::len).max().unwrap_or(1);
+            for r in &mut rows {
+                r.resize(width, Expr::Placeholder);
+            }
+        }
         let width = rows.first().map_or(0, Vec::len);
         if rows.iter().any(|r| r.len() != width) {
             return Err(ParseError::new("matrix rows have different lengths", pos));
@@ -664,5 +694,88 @@ mod tests {
             Expr::Define { lhs, rhs, global } => Expr::Define { lhs: s(lhs), rhs: s(rhs), global },
             other => other,
         }
+    }
+}
+
+#[cfg(test)]
+mod lenient {
+    use super::*;
+    use crate::print;
+
+    /// How a line still being typed previews, in the linear syntax (`?` is an empty slot).
+    fn preview(src: &str) -> Option<String> {
+        parse_lenient(src).map(|e| print(&e))
+    }
+
+    #[test]
+    fn every_prefix_of_a_line_being_typed_previews() {
+        for line in [
+            "M(x) := q.d*x*(L - x)/2",
+            "[1, 2; 3, 4]",
+            "int(sin(x)/x, x, 0, π)",
+            "T '°C + #G",
+            "a ≤ b < c",
+            "s := \"OK\"",
+            "v[i, j]^2 + 3!",
+        ] {
+            let chars: Vec<char> = line.chars().collect();
+            for n in 1..=chars.len() {
+                let prefix: String = chars[..n].iter().collect();
+                if prefix.trim().is_empty() {
+                    continue;
+                }
+                assert!(parse_lenient(&prefix).is_some(), "no preview for {prefix:?}");
+                // where the strict parser accepts the line, the preview is the same tree
+                if let Ok(strict) = parse(&prefix) {
+                    assert_eq!(parse_lenient(&prefix), Some(strict), "{prefix:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn what_is_missing_is_an_empty_slot() {
+        assert_eq!(preview("M :=").as_deref(), Some("M := ?"));
+        assert_eq!(preview("q*L^2/").as_deref(), Some("q*L^2/?"));
+        assert_eq!(preview("x^").as_deref(), Some("x^?"));
+        assert_eq!(preview("1..").as_deref(), Some("1..?"));
+        assert_eq!(preview("-").as_deref(), Some("-?"));
+        assert_eq!(preview("a <").as_deref(), Some("a < ?"));
+        assert_eq!(preview("f(1,").as_deref(), Some("f(1, ?)"));
+    }
+
+    #[test]
+    fn open_brackets_close_at_the_end() {
+        assert_eq!(preview("q*(L - x").as_deref(), Some("q*(L - x)"));
+        assert_eq!(preview("sqrt(").as_deref(), Some("sqrt(?)"));
+        assert_eq!(preview("[1, 2; 3").as_deref(), Some("[1, 2; 3, ?]"));
+        assert_eq!(preview("[").as_deref(), Some("[?]"));
+    }
+
+    #[test]
+    fn unfinished_units_constants_strings_and_subscripts() {
+        assert_eq!(preview("M :").as_deref(), Some("M := ?"));
+        assert_eq!(preview("2*#").as_deref(), Some("2*?"));
+        assert_eq!(preview("s := \"O").as_deref(), Some("s := \"O\""));
+        assert_eq!(preview("A.").as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn an_empty_line_or_nonsense_has_no_preview() {
+        assert_eq!(parse_lenient("   "), None);
+        assert_eq!(parse_lenient("a b c )"), None);
+        assert_eq!(parse_lenient("2 @ 3"), None);
+        // and a complete line is exactly what parse gives
+        assert_eq!(parse_lenient("M := q*L^2/8"), parse("M := q*L^2/8").ok());
+    }
+
+    #[test]
+    fn a_deep_line_being_typed_is_still_refused_safely() {
+        // on a stack as large as the other depth tests use, in debug builds' large frames
+        let run = std::thread::Builder::new().stack_size(8 << 20).spawn(|| {
+            let deep = "(".repeat(MAX_DEPTH + 5);
+            parse_lenient(&deep)
+        });
+        assert!(matches!(run.map(|h| h.join()), Ok(Ok(None))));
     }
 }

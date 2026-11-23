@@ -1428,6 +1428,18 @@ let latest: Report | null = null;
 let typing = false;
 let pauseTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * A line being typed that doesn't parse yet isn't evaluated, so the engine can't say which of its
+ * names are units or constants; the ones it said a keystroke ago keep their colour (`12 kN/`
+ * keeps kN blue) instead of flickering to variables until the line parses again (#164).
+ */
+function keepColours(v: RegionView): RegionView {
+  const before = state.views[v.id];
+  if (!v.syntaxError || !before) return v;
+  const merge = (a: string[] | undefined, b: string[] | undefined) => [...new Set([...(a ?? []), ...(b ?? [])])];
+  return { ...v, units: merge(v.units, before.units), constants: merge(v.constants, before.constants) };
+}
+
 /** Show an engine report, holding back the errors the edit in progress would cause. */
 export function showReport(report: Report) {
   // the first report of a document just opened: say once what this version couldn't read
@@ -1450,9 +1462,9 @@ export function showReport(report: Report) {
     if (!editing || !v.error) return v;
     // a solve block's lines are reported as `<id>:c0` and so on
     if (v.id === editing || (block && v.id.startsWith(`${editing}:`))) {
-      if (!typing && !blank) return v;
+      if (!typing && !blank) return keepColours(v);
       hidden++;
-      return { ...v, error: null, syntaxError: false };
+      return { ...keepColours(v), error: null, syntaxError: false };
     }
     const before = state.views[v.id];
     if (!before || before.error) return v;
