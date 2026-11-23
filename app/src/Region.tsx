@@ -30,6 +30,7 @@ import {
 import { produce } from "solid-js/store";
 import { api, isMac } from "./api";
 import { SHEET_GAP } from "./pages";
+import { bracketsOf, highlightPair, mathCaret } from "./brackets";
 import { noteSide, startNoteDrag } from "./notePosition";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
 import { mathWords, nameMarks } from "./describe";
@@ -291,13 +292,26 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
   // a check: a comparison reads ✓ / ✗ instead of = 1 / = 0; an OK / FAIL result is coloured
   const check = () => mathCheck(props.r, view());
   const comparison = () => check() !== null && isComparison(view()?.input);
+  let mathEl: HTMLSpanElement | undefined;
+  // the pair at the caret lights up, on the math as drawn (brackets.ts)
+  createEffect(() => {
+    void rendered();
+    const caret = mathCaret();
+    highlightPair(mathEl, props.r.expr ?? "", editing() && caret?.view === props.r.id ? caret.at : null);
+  });
   const rendered = () => {
     const v = view();
     const result = props.r.show && !comparison() ? v?.result : null;
     // while typing, an unfinished line is drawn as far as it goes, missing parts as □ (#164);
     // once the edit ends, a line that still doesn't parse shows as typed, beside its error
     const input = v?.input ?? (editing() ? v?.preview : null);
-    return input ? mathml(input, result, v!.units, v!.constants, props.r.show === "symbolic", nameMarks(v!)) : null;
+    // the brackets numbered for the highlight while typing, the ones not closed yet faint. Not
+    // asked whether the line is being edited: opening it must not draw it again, which would
+    // replace what is under the mouse and lose the click that opened it
+    const brackets = bracketsOf(props.r.expr ?? "", null);
+    return input
+      ? mathml(input, result, v!.units, v!.constants, props.r.show === "symbolic", nameMarks(v!), brackets)
+      : null;
   };
   return (
     <>
@@ -317,7 +331,7 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
         <Show when={rendered()} fallback={<code class="raw">{props.r.expr || " "}</code>}>
           {/* screen readers get the formula in words; the MathML would be read symbol by symbol */}
           <span class="sr-only">{mathWords(props.r.id, false)}</span>
-          <span class="m" innerHTML={rendered()!} aria-hidden="true" />
+          <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
         </Show>
         <Show when={comparison()}>
           <span

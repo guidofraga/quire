@@ -1,6 +1,7 @@
 // AST → MathML, rendered with the bundled QuireMath (STIX Two Math) font so
 // fractions, radicals, stretchy fences and matrices read directly in WebKit and
 // Chromium and copy/speak cleanly; see docs/01-architecture.md §3.
+import { type Brackets, numberParens } from "./brackets";
 import { prefs } from "./settings";
 import { state } from "./store";
 import type { BinaryOp, CmpOp, Expr } from "./types";
@@ -260,6 +261,26 @@ export function groupDigits(n: string): string {
   return n.replace(/^(-?)(\d{5,})/, (_, sign: string, int: string) => sign + int.replace(/\B(?=(\d{3})+$)/g, "\u2009"));
 }
 
+/**
+ * The brackets of the line being typed: each pair numbered (`data-p`), for the highlight of the
+ * pair at the caret, which follows the caret without drawing the math again (brackets.ts); and
+ * a `)` not typed yet marked `ghost`.
+ */
+let parenMarks = new Map<Expr, { open?: string; close?: string }>();
+
+function markParens(input: Expr, b: Brackets): Map<Expr, { open?: string; close?: string }> {
+  const out = new Map<Expr, { open?: string; close?: string }>();
+  const ids = numberParens(input);
+  // the line and the tree must agree on the brackets, or none is marked rather than a wrong one
+  if (!ids.size || ids.size !== b.count) return out;
+  for (const [node, k] of ids)
+    out.set(node, {
+      open: ` data-p="${k}"`,
+      close: ` data-p="${k}"${b.open.has(k) ? ' class="ghost"' : ""}`,
+    });
+  return out;
+}
+
 function m(e: Expr): string {
   switch (e.t) {
     case "Num":
@@ -275,8 +296,11 @@ function m(e: Expr): string {
       return `<ms class="str">"${esc(e.c)}"</ms>`;
     case "Placeholder":
       return `<mi class="ph">□</mi>`;
-    case "Paren":
-      return row(mo("("), m(e.c), mo(")"));
+    case "Paren": {
+      // the pair at the caret is highlighted, a `)` not typed yet is faint (brackets.ts)
+      const k = parenMarks.get(e);
+      return row(mo("(", k?.open ?? ""), m(e.c), mo(")", k?.close ?? ""));
+    }
     case "Unary": {
       const [op, x] = e.c;
       return row(mo({ Neg: "−", Pos: "+", PlusMinus: "±", Not: "¬" }[op]), m(x));
@@ -328,12 +352,15 @@ export function mathml(
   constants: readonly string[] = [],
   symbolic = false,
   nameMarks: NameMarks = {},
+  brackets?: Brackets,
 ): string {
   unitNames = new Set(units);
   constantNames = new Set(constants);
   marks = nameMarks;
+  parenMarks = brackets ? markParens(input, brackets) : new Map();
   grouping = !!(state.doc.settings as { display?: { groupDigits?: boolean } } | undefined)?.display?.groupDigits;
   const parts = [m(input)];
+  parenMarks = new Map();
   unitNames = new Set();
   constantNames = new Set();
   marks = {};
