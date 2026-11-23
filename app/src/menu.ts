@@ -8,6 +8,8 @@ export interface MenuItem {
   checked?: boolean;
   /** A colour dot before the label (section colours). */
   swatch?: string;
+  /** A check's verdict, drawn in the leading column as a green ✓ or a red ✗ (the checks menu). */
+  status?: boolean;
   run?: () => void;
 }
 

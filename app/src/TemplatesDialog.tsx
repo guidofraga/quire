@@ -2,11 +2,21 @@
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useModal } from "./a11y";
-import { api, confirmDeleteTemplate, isWeb, type TemplateInfo } from "./api";
+import { api, confirmDeleteTemplate, isTauri, isWeb, type TemplateInfo } from "./api";
 import { flash, localized, state } from "./store";
+import { TemplateThumb } from "./TemplateThumb";
 import type { Doc } from "./types";
 
 export const [templates, setTemplates] = createSignal<"new" | "save" | null>(null);
+
+/** Where to go back to when the dialog closes without a choice (the Welcome screen it came from). */
+let onDismiss: (() => void) | null = null;
+
+/** Open the chooser from somewhere it should return to when dismissed. */
+export function openTemplatesFrom(back: () => void) {
+  onDismiss = back;
+  setTemplates("new");
+}
 
 interface Props {
   /** Load a template's copy; false when the user kept the current document. */
@@ -19,7 +29,18 @@ export function TemplatesDialog(props: Props) {
 }
 
 function Dialog(props: Props & { mode: "new" | "save" }) {
-  const close = () => setTemplates(null);
+  // dismissed (Esc, ✕, a click outside): back to where it was opened from, if anywhere
+  const close = () => {
+    const back = onDismiss;
+    onDismiss = null;
+    setTemplates(null);
+    back?.();
+  };
+  // a template or a blank document chosen: nothing to go back to
+  const done = () => {
+    onDismiss = null;
+    setTemplates(null);
+  };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -47,7 +68,7 @@ function Dialog(props: Props & { mode: "new" | "save" }) {
           </button>
         </header>
         <Show when={props.mode === "new"} fallback={<SaveForm close={close} />}>
-          <Chooser {...props} close={close} />
+          <Chooser {...props} close={done} />
         </Show>
       </div>
     </div>
@@ -90,9 +111,12 @@ function Chooser(props: Props & { close: () => void }) {
         </button>
         <For each={group(true)}>
           {(t) => (
-            <button class="template-card" onClick={() => void open(t)} disabled={busy()}>
-              <span class="template-name">{t.name}</span>
-              <span class="template-desc">{t.description}</span>
+            <button class="template-card with-thumb" onClick={() => void open(t)} disabled={busy()}>
+              <TemplateThumb t={t} width={56} />
+              <span class="template-text">
+                <span class="template-name">{t.name}</span>
+                <span class="template-desc">{t.description}</span>
+              </span>
             </button>
           )}
         </For>
@@ -101,15 +125,32 @@ function Chooser(props: Props & { close: () => void }) {
         <h3 class="templates-heading">Your templates</h3>
         <Show
           when={group(false).length}
-          fallback={<p class="templates-empty">Save any document with File ▸ Save as Template…</p>}
+          fallback={
+            // without the desktop menu bar there is no File menu to point to: offer it here
+            <Show
+              when={isTauri}
+              fallback={
+                <p class="templates-empty">
+                  <button class="link-button" onClick={() => setTemplates("save")}>
+                    Save this document as a template…
+                  </button>
+                </p>
+              }
+            >
+              <p class="templates-empty">Save any document with File ▸ Save as Template…</p>
+            </Show>
+          }
         >
           <div class="template-grid">
             <For each={group(false)}>
               {(t) => (
                 <div class="template-card mine">
-                  <button class="template-open" onClick={() => void open(t)} disabled={busy()}>
-                    <span class="template-name">{t.name}</span>
-                    <span class="template-desc">{t.description || "Your template"}</span>
+                  <button class="template-open with-thumb" onClick={() => void open(t)} disabled={busy()}>
+                    <TemplateThumb t={t} width={56} />
+                    <span class="template-text">
+                      <span class="template-name">{t.name}</span>
+                      <span class="template-desc">{t.description || "Your template"}</span>
+                    </span>
                   </button>
                   <button
                     class="template-delete"
