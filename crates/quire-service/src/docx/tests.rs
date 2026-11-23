@@ -522,3 +522,29 @@ fn documents_without_a_typography_keep_arial_at_10_pt() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_note_goes_on_the_side_of_its_formula_that_the_document_says() -> TestResult {
+    // (side, whether the note comes first, whether it shares the formula's paragraph)
+    for (side, first, same) in [
+        (None, false, true),
+        (Some("left"), true, true),
+        (Some("above"), true, false),
+        (Some("below"), false, false),
+        (Some("sideways"), false, true),
+    ] {
+        let mut math = serde_json::json!({"id": "m", "kind": "math", "expr": "a := 2", "at": [0, 0], "note": "Side note"});
+        if let Some(side) = side {
+            math["notePosition"] = side.into();
+        }
+        let doc = serde_json::json!({"format": "quire/1", "regions": [math]});
+        let files = unpack(&crate::export_docx(&doc, &DocxOptions::default(), None)?)?;
+        let body = text(&files, "word/document.xml")?;
+        let note = body.find("Side note").ok_or("the note is missing")?;
+        let formula = body.find("<m:oMath").ok_or("the formula is missing")?;
+        assert_eq!(note < formula, first, "{side:?}: {body}");
+        let between = &body[note.min(formula)..note.max(formula)];
+        assert_eq!(!between.contains("</w:p>"), same, "{side:?}: {body}");
+    }
+    Ok(())
+}

@@ -823,16 +823,32 @@ impl<'a> Writer<'a> {
             );
         }
         let note = r.extra.get("note").and_then(Json::as_str).map(str::to_string);
-        let below = r.extra.get("notePosition").and_then(Json::as_str) == Some("below");
+        // anything this version doesn't know reads as the default, beside it on the right
+        let side = (r.extra.get("notePosition").and_then(Json::as_str))
+            .filter(|side| matches!(*side, "above" | "below" | "left"))
+            .unwrap_or("right");
         let note_rpr = RPr { color: Some(NOTE_COLOR.into()), size: Some(size * 95 / 100), ..RPr::default() };
-        if let (Some(n), false) = (&note, below) {
-            content.push_str(&note_rpr.text("\u{2003}"));
-            content.push_str(&djot::runs(self, n, &note_rpr, &r.id));
+        // beside the formula in its paragraph, or a paragraph of its own above or below it
+        let note_para = |this: &mut Self, n: &str| {
+            let runs = djot::runs(this, n, &note_rpr, &r.id);
+            Block::Para(PPr { ind_left: ind, after: Some(40), ..PPr::default() }, runs)
+        };
+        match (&note, side) {
+            (Some(n), "above") => blocks.push(note_para(self, n)),
+            (Some(n), "left") => {
+                let mut before = djot::runs(self, n, &note_rpr, &r.id);
+                before.push_str(&note_rpr.text("\u{2003}"));
+                content.insert_str(0, &before);
+            }
+            (Some(n), "right") => {
+                content.push_str(&note_rpr.text("\u{2003}"));
+                content.push_str(&djot::runs(self, n, &note_rpr, &r.id));
+            }
+            _ => {}
         }
         blocks.push(Block::Para(PPr { ind_left: ind, after: Some(40), ..PPr::default() }, content));
-        if let (Some(n), true) = (&note, below) {
-            let runs = djot::runs(self, n, &note_rpr, &r.id);
-            blocks.push(Block::Para(PPr { ind_left: ind, after: Some(40), ..PPr::default() }, runs));
+        if let (Some(n), "below") = (&note, side) {
+            blocks.push(note_para(self, n));
         }
         if let Some(e) = view.and_then(|v| v.error.as_deref()) {
             blocks.push(error_para(e, ind));

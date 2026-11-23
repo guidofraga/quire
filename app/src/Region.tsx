@@ -30,6 +30,7 @@ import {
 import { produce } from "solid-js/store";
 import { api, isMac } from "./api";
 import { SHEET_GAP } from "./pages";
+import { noteSide, startNoteDrag } from "./notePosition";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
 import { mathWords, nameMarks } from "./describe";
 import { spokenMath } from "./speech";
@@ -110,7 +111,14 @@ function fillInlineMath(el: HTMLElement) {
 }
 
 /** `page`: the 0-based page the text is on, for the fields `{page}`, `{date}` … it can hold. */
-function Html(props: { html: string | undefined; class?: string; page?: number; style?: JSX.CSSProperties }) {
+function Html(props: {
+  html: string | undefined;
+  class?: string;
+  page?: number;
+  style?: JSX.CSSProperties;
+  title?: string;
+  onPointerDown?: (e: PointerEvent) => void;
+}) {
   let el!: HTMLDivElement;
   createEffect(() => {
     el.innerHTML = props.html ?? "";
@@ -126,7 +134,9 @@ function Html(props: { html: string | undefined; class?: string; page?: number; 
     void props.html;
     fillRefs(el);
   });
-  return <div ref={el} class={props.class} style={props.style} />;
+  return (
+    <div ref={el} class={props.class} style={props.style} title={props.title} onPointerDown={props.onPointerDown} />
+  );
 }
 
 function captionPrefix(r: Region, number: string | undefined): string {
@@ -297,7 +307,7 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           preview: editing(),
           "check-pass": check() === true,
           "check-fail": check() === false,
-          "note-below": props.r.notePosition === "below",
+          [`note-${noteSide(props.r.notePosition)}`]: !!props.r.note && !editing(),
         }}
         aria-hidden={editing() || undefined}
       >
@@ -317,11 +327,18 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           </span>
         </Show>
         <Show when={props.r.note && !editing()}>
-          {/* `notePosition: "below"`: under the formula, wrapping within the room it has */}
+          {/* beside the formula, or above or under it wrapping within the room it has; drag it
+              to another side (notePosition.ts) */}
           <Html
             html={state.report?.html[`${props.r.id}:note`]}
             class="note"
-            style={props.r.notePosition === "below" ? { "max-width": `${props.noteWidth() - 8}px` } : undefined}
+            title="Drag to put the note on another side"
+            onPointerDown={(e) => startNoteDrag(e, props.r.id)}
+            style={
+              noteSide(props.r.notePosition) === "above" || noteSide(props.r.notePosition) === "below"
+                ? { "max-width": `${props.noteWidth() - 8}px` }
+                : undefined
+            }
           />
         </Show>
       </div>

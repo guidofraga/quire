@@ -258,7 +258,7 @@ export interface Region {
   hideInput?: boolean;
   display?: { unit?: string; decimals?: number; notation?: "auto" | "sci" | "eng" | "fixed" };
   note?: string;
-  /** Where `note` sits: beside the formula (default) or under it. */
+  /** Where `note` sits: right of the formula (default), left of it, above or below it (notePosition.ts). */
   notePosition?: "right" | "below" | "left" | "above";
   text?: Localized;
   src?: string;
