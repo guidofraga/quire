@@ -294,7 +294,10 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
   const rendered = () => {
     const v = view();
     const result = props.r.show && !comparison() ? v?.result : null;
-    return v?.input ? mathml(v.input, result, v.units, v.constants, props.r.show === "symbolic", nameMarks(v)) : null;
+    // while typing, an unfinished line is drawn as far as it goes, missing parts as □ (#164);
+    // once the edit ends, a line that still doesn't parse shows as typed, beside its error
+    const input = v?.input ?? (editing() ? v?.preview : null);
+    return input ? mathml(input, result, v!.units, v!.constants, props.r.show === "symbolic", nameMarks(v!)) : null;
   };
   return (
     <>

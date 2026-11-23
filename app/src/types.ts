@@ -26,6 +26,8 @@ export type Expr =
 export interface RegionView {
   id: string;
   input: Expr | null;
+  /** On a syntax error, the line with what is missing as empty slots: drawn while it is typed (#164). */
+  preview?: Expr | null;
   result: Expr | null;
   resultText: string | null;
   /** Pass or fail of a line that is only a comparison, with or without `=`. */

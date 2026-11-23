@@ -529,9 +529,25 @@ ms.str {
   white-space: normal;
 }
 
+/* the formula being edited stays where it is on the page, at its size (#164) */
 .math-line.preview {
-  margin-top: 4px;
-  opacity: 0.9;
+  opacity: 0.95;
+}
+
+/* and what is typed floats just under it, out of the page's flow: opening a formula doesn't
+   push it, or what is below it, down (MathEditor.tsx) */
+.region.math.editing .math-input {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -4px;
+  z-index: 20;
+  min-width: 80px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 4px 14px rgba(30, 50, 90, 0.16);
 }
 
 .raw {

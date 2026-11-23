@@ -436,6 +436,11 @@ pub struct RegionView {
     pub id: String,
     /// Parsed input, for 2D rendering. `None` on a syntax error.
     pub input: Option<Expr>,
+    /// On a syntax error, the line as far as it makes sense, missing parts as empty slots
+    /// (`quire_ast::parse_lenient`): what the page draws while the line is being typed, so
+    /// it doesn't fall back to plain text at every unfinished keystroke (#164).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<Expr>,
     pub result: Option<Expr>,
     pub result_text: Option<String>,
     /// Pass or fail of a line that is only a comparison, shown with or without `=`.
@@ -1078,6 +1083,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             regions.push(RegionView {
                 id: input.id.clone(),
                 input: None,
+                preview: None,
                 result: None,
                 result_text: None,
                 check: None,
@@ -1123,6 +1129,7 @@ pub fn report(doc_json: &Json) -> Result<Report> {
             regions.push(RegionView {
                 id: input.id.clone(),
                 input: None,
+                preview: None,
                 result: None,
                 result_text: None,
                 check: None,
@@ -1144,12 +1151,14 @@ pub fn report(doc_json: &Json) -> Result<Report> {
         }
         let parsed = parse(&input.expr);
         let syntax_error = parsed.is_err();
+        let preview = if syntax_error { quire_ast::parse_lenient(&input.expr) } else { None };
         if o.error.is_some() {
             error_count += 1;
         }
         regions.push(RegionView {
             id: input.id.clone(),
             input: parsed.ok(),
+            preview,
             result: o.shown.as_deref().and_then(|s| parse(s).ok()),
             result_text: o.shown.clone(),
             check: o.check,
@@ -1754,6 +1763,32 @@ mod tests {
             let doc = templates::document(&std::env::temp_dir(), &t.id)?;
             assert_eq!(doc.doc["styles"]["typography"], json!(TYPOGRAPHY), "{}", t.id);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_line_being_typed_has_a_preview_with_empty_slots()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let doc = serde_json::json!({
+            "format": "quire/1",
+            "regions": [
+                {"id": "a", "kind": "math", "at": [0, 0], "expr": "q := 12 kN/"},
+                {"id": "b", "kind": "math", "at": [0, 40], "expr": "L := 6 m"}
+            ]
+        });
+        let r = report(&doc)?;
+        let typing = r.regions.iter().find(|v| v.id == "a").ok_or("no a")?;
+        assert!(typing.syntax_error && typing.input.is_none());
+        let Some(Expr::Define { rhs, .. }) = &typing.preview else {
+            return Err(format!("no preview: {:?}", typing.preview).into());
+        };
+        assert!(
+            matches!(&**rhs, Expr::Binary(quire_ast::BinaryOp::Div, _, d) if **d == Expr::Placeholder),
+            "{rhs:?}"
+        );
+        // a line that parses has its input and no preview
+        let done = r.regions.iter().find(|v| v.id == "b").ok_or("no b")?;
+        assert!(done.input.is_some() && done.preview.is_none());
         Ok(())
     }
 

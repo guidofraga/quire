@@ -186,7 +186,9 @@ function Line(props: { r: Region; at: LineRef; text: string }) {
   const shows = () => props.at.key === "find" && props.r.show === "value";
   const rendered = () => {
     const v = view();
-    return v?.input ? mathml(v.input, shows() ? v.result : null, v.units, v.constants, false, nameMarks(v)) : null;
+    // an unfinished line being typed draws as far as it goes (#164)
+    const input = v?.input ?? (editing() ? v?.preview : null);
+    return input ? mathml(input, shows() ? v!.result : null, v!.units, v!.constants, false, nameMarks(v!)) : null;
   };
   // at the values found, whether a constraint holds
   const holds = () => (props.at.key === "given" && !view()?.error ? view()?.check : undefined);
