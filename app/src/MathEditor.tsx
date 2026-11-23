@@ -2,6 +2,7 @@
 // (a sentence becomes text), and the meanings of a name: Ctrl+Space lists them, a list opens by
 // itself after two letters (after one where a unit goes, `20 C`, searching the units by symbol,
 // name and quantity), and ⌥Enter cycles the name at the caret through them.
+import { setMathCaret } from "./brackets";
 import { nameAt, setCaretName } from "./trace";
 import { paletteOpen } from "./Palette";
 import { stepRegion } from "./nav";
@@ -217,6 +218,10 @@ export interface MathLine {
   onTab: (by: 1 | -1) => boolean;
 }
 
+/** What each opening bracket or quote is closed by, for typing them in pairs. */
+const PAIRS: Record<string, string> = { "(": ")", "[": "]", '"': '"' };
+const CLOSERS = new Set(Object.values(PAIRS));
+
 export function MathEditor(props: { r: Region; line?: MathLine }) {
   let input!: HTMLInputElement;
   // the id of its results and meanings, and the region being edited
@@ -279,8 +284,12 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
   const atEnd = () => input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
   const latexBefore = () => (prefs.latex ? LATEX_BEFORE.exec(input.value.slice(0, input.selectionStart ?? 0)) : null);
 
-  const traceCaret = () =>
-    setCaretName(input.selectionStart === input.selectionEnd ? nameAt(input.value, input.selectionStart ?? 0) : null);
+  const traceCaret = () => {
+    const collapsed = input.selectionStart === input.selectionEnd;
+    setCaretName(collapsed ? nameAt(input.value, input.selectionStart ?? 0) : null);
+    // for the preview's bracket highlight (brackets.ts)
+    setMathCaret(collapsed ? { view: viewId, at: input.selectionStart ?? 0 } : null);
+  };
   /** The list for where the caret is: `\name` first, then the units after `=`, then names. */
   const updateCompletion = (typing = false) => {
     const m = latexBefore();
@@ -473,6 +482,51 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     ),
   );
 
+  /**
+   * Brackets and quotes come in pairs, as in code editors: `(` types `()` with the caret inside
+   * (where nothing follows that the pair would split), a selection is wrapped, `)` over the one
+   * already there steps past it, and Backspace between an empty pair removes both. True when
+   * the key was handled here.
+   */
+  const pairKey = (e: KeyboardEvent): boolean => {
+    const v = input.value;
+    const from = input.selectionStart ?? 0;
+    const to = input.selectionEnd ?? 0;
+    const inString = (at: number) => (v.slice(0, at).replace(/\\./g, "").match(/"/g)?.length ?? 0) % 2 === 1;
+    const step = (at: number) => {
+      input.setSelectionRange(at, at);
+      traceCaret();
+    };
+    const close = PAIRS[e.key];
+    if (from === to && CLOSERS.has(e.key) && v[to] === e.key && (e.key !== '"' || inString(from))) {
+      e.preventDefault();
+      step(from + 1);
+      return true;
+    }
+    if (close && !(e.key === '"' && inString(from))) {
+      if (from !== to) {
+        e.preventDefault();
+        document.execCommand("insertText", false, `${e.key}${v.slice(from, to)}${close}`);
+        input.setSelectionRange(from + 1, to + 1);
+        traceCaret();
+        return true;
+      }
+      if (/^$|[\s)\],;+\-*/^=<>≤≥≠]/.test(v[to] ?? "")) {
+        e.preventDefault();
+        document.execCommand("insertText", false, `${e.key}${close}`);
+        step(from + 1);
+        return true;
+      }
+    }
+    if (e.key === "Backspace" && from === to && from > 0 && PAIRS[v[from - 1]] === v[from]) {
+      e.preventDefault();
+      input.setSelectionRange(from - 1, from + 1);
+      document.execCommand("delete");
+      return true;
+    }
+    return false;
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
     // only the key right after `:` may be the `=` of `:=`; any other key ends that
     const typedAssign = assignJustTyped;
@@ -534,6 +588,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
       return;
     }
     if (e.metaKey || e.altKey) return;
+    if (!e.ctrlKey && !e.isComposing && pairKey(e)) return;
     if (e.key === "=" && props.line?.equation && !e.ctrlKey && !typedAssign) {
       // in a constraint `=` is the equation sign (a bold =, stored as `==`); `<=`, `>=`, `!=` as typed
       const before = input.value.slice(0, input.selectionStart ?? 0);
@@ -641,6 +696,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
       onBlur={(e) => {
         hideCompletions();
         setCaretName(null);
+        setMathCaret(null);
         // switching to text unmounts this input: that blur must not end the edit; nor does
         // moving to another line of the same block
         const stillMath = props.line ? props.line.active() : layout().byId.get(props.r.id)?.region.kind === "math";

@@ -529,6 +529,17 @@ ms.str {
   white-space: normal;
 }
 
+/* brackets while typing (brackets.ts): the pair at the caret, and a ) not typed yet */
+.math-line.preview mo.bmatch {
+  border-radius: 2px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.math-line.preview mo.ghost {
+  opacity: 0.35;
+}
+
 /* the formula being edited stays where it is on the page, at its size (#164) */
 .math-line.preview {
   opacity: 0.95;

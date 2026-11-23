@@ -1,6 +1,7 @@
 // Solve blocks (docs/02-file-format.md §4.10): guess values, Given, the constraints, and a
 // closing `find(x, y)` or `minerr(x, y)`, as one framed region. Each line is edited like a
 // math region; the engine reports each as `<id>:g<n>`, `<id>:c<n>` and `<id>:f`.
+import { bracketsOf, highlightPair, mathCaret } from "./brackets";
 import { createEffect, createSignal, Index, on, Show } from "solid-js";
 import { type MathLine, MathEditor } from "./MathEditor";
 import { mathml } from "./math";
@@ -184,11 +185,23 @@ function Line(props: { r: Region; at: LineRef; text: string }) {
   const view = () => state.views[lineId(id(), props.at)];
   const editing = () => state.editing === id() && isActive(id(), props.at);
   const shows = () => props.at.key === "find" && props.r.show === "value";
+  let mathEl: HTMLSpanElement | undefined;
+  // the pair at the caret lights up, on the math as drawn (brackets.ts)
+  createEffect(() => {
+    void rendered();
+    const caret = mathCaret();
+    const line = lineId(id(), props.at);
+    highlightPair(mathEl, props.text, editing() && caret?.view === line ? caret.at : null);
+  });
   const rendered = () => {
     const v = view();
     // an unfinished line being typed draws as far as it goes (#164)
     const input = v?.input ?? (editing() ? v?.preview : null);
-    return input ? mathml(input, shows() ? v!.result : null, v!.units, v!.constants, false, nameMarks(v!)) : null;
+    // numbered whether or not the line is being edited, so opening it doesn't draw it again
+    const brackets = bracketsOf(props.text, null);
+    return input
+      ? mathml(input, shows() ? v!.result : null, v!.units, v!.constants, false, nameMarks(v!), brackets)
+      : null;
   };
   // at the values found, whether a constraint holds
   const holds = () => (props.at.key === "given" && !view()?.error ? view()?.check : undefined);
@@ -241,7 +254,7 @@ function Line(props: { r: Region; at: LineRef; text: string }) {
       >
         <Show when={rendered()} fallback={<code class="raw">{props.text || " "}</code>}>
           <span class="sr-only">{words()}</span>
-          <span class="m" innerHTML={rendered()!} aria-hidden="true" />
+          <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
         </Show>
         <Show when={holds() !== undefined}>
           <span

@@ -42,7 +42,8 @@ test("opening a formula to edit it doesn't move it on the page", async ({ page }
   const formula = region.locator(".math-line > .m");
   await expect(formula).toBeVisible();
   const before = (await formula.boundingBox())!;
-  await region.dblclick();
+  // on the formula itself: its error note under it is a target of its own
+  await formula.dblclick();
   await expect(editing(page)).toHaveCount(1);
   await expect(editing(page).locator(".math-input")).toBeFocused();
   const during = (await editing(page).locator(".math-line > .m").boundingBox())!;
@@ -51,4 +52,40 @@ test("opening a formula to edit it doesn't move it on the page", async ({ page }
   // what is typed floats under the formula
   const input = (await editing(page).locator(".math-input").boundingBox())!;
   expect(input.y).toBeGreaterThanOrEqual(during.y + during.height - 1);
+});
+
+test("brackets and quotes close themselves, and the closer typed anyway steps past", async ({ page }) => {
+  await blank(page);
+  const input = page.locator(".math-input");
+  await page.keyboard.type("M:=q*(L-x");
+  await expect(input).toHaveValue("M:=q*(L-x)");
+  // the `)` already there is stepped over, not doubled
+  await page.keyboard.type(")/2");
+  await expect(input).toHaveValue("M:=q*(L-x)/2");
+  await page.keyboard.type(" + f(");
+  await expect(input).toHaveValue("M:=q*(L-x)/2 + f()");
+  // Backspace between an empty pair takes both
+  await page.keyboard.press("Backspace");
+  await expect(input).toHaveValue("M:=q*(L-x)/2 + f");
+});
+
+test("the bracket pair at the caret is highlighted, and one not closed yet is faint", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.type("a:=2*(b+c");
+  const line = editing(page).locator(".math-line");
+  // the caret sits before the `)` that closed itself: that pair lights up
+  await expect(line.locator("mo.bmatch")).toHaveCount(2);
+  // past the `)`: no pair at the caret any more
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.type("+d");
+  await expect(line.locator("mo.bmatch")).toHaveCount(0);
+
+  // a `(` typed before text doesn't close itself: its `)` is drawn faint until typed
+  await page.keyboard.press("Escape");
+  await page.mouse.click(600, 450);
+  await page.keyboard.type("x:=a+b");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+  await page.keyboard.type("(");
+  await expect(page.locator(".math-input")).toHaveValue("x:=(a+b");
+  await expect(editing(page).locator(".math-line mo.ghost")).toHaveCount(1);
 });
