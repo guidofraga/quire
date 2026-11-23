@@ -1107,9 +1107,15 @@ impl Converter {
             let note = self.paragraph_join(desc);
             if !note.is_empty() {
                 reg.insert("note".into(), json!(note));
-                let pos = desc.attribute("position").unwrap_or("Right");
-                if pos != "Right" {
-                    reg.insert("notePosition".into(), json!(pos.to_lowercase()));
+                // SMath's names for the sides, as Quire's `notePosition`
+                let pos = match desc.attribute("position").unwrap_or("Right").to_ascii_lowercase().as_str() {
+                    "left" => Some("left"),
+                    "top" | "above" | "up" => Some("above"),
+                    "bottom" | "below" | "down" => Some("below"),
+                    _ => None,
+                };
+                if let Some(pos) = pos {
+                    reg.insert("notePosition".into(), json!(pos));
                 }
             }
         }

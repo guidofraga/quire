@@ -483,16 +483,50 @@ ms.str {
   gap: 14px;
 }
 
-/* notePosition "below": the note under the formula, wrapping at the page edge (Region.tsx) */
+/* notePosition: the note left of the formula, or above or under it wrapping at the page edge
+   (Region.tsx); the formula keeps its place in the page (notePosition.ts) */
+.math-line.note-left .note,
+.math-line.note-above .note {
+  order: -1;
+}
+
+.math-line.note-above,
 .math-line.note-below {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
 }
 
+.math-line.note-above .note,
 .math-line.note-below .note {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* a note can be dragged to another side of its formula */
+.math-line .note {
+  cursor: grab;
+}
+
+.region.note-dragging .math-line .note {
+  opacity: 0.3;
+}
+
+.note-ghost {
+  position: fixed;
+  z-index: 1000;
+  transform-origin: 0 0;
+  pointer-events: none;
+  border-radius: 3px;
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 2px;
+  background: var(--accent-soft);
+  white-space: nowrap;
+}
+
+.note-ghost[data-side="above"],
+.note-ghost[data-side="below"] {
+  white-space: normal;
 }
 
 .math-line.preview {

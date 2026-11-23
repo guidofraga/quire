@@ -2,6 +2,7 @@
 // the regions drawn as the shapes they make on paper (lines of text, rows of math, tables,
 // plots), from the document alone. No engine call and nothing to download, so it is cheap,
 // works offline and in the web version, and a template of your own gets one too.
+import { noteSide } from "./notePosition";
 import { pageGeom } from "./pages";
 import type { Doc, Localized, Region } from "./types";
 
@@ -143,9 +144,21 @@ function drawRegion(content: Shape[], r: Region, contentW: number, end: number) 
       break;
     case "math": {
       const w = Math.min(room, (r.expr ?? "").length * 8.5 + (r.show ? 40 : 0));
-      content.push({ kind: "math", x, y: y + 5, w, h: 11 });
-      if (r.note)
-        content.push({ kind: "note", x: x + w + 10, y: y + 7, w: Math.min(room - w, r.note.length * 5.5), h: 7 });
+      const side = noteSide(r.notePosition);
+      const nw = r.note ? Math.min(side === "above" || side === "below" ? room : room - w, r.note.length * 5.5) : 0;
+      // the formula moves right of a note on the left, and down below one above it
+      const mx = side === "left" && r.note ? x + nw + 10 : x;
+      const my = side === "above" && r.note ? y + 12 : y;
+      content.push({ kind: "math", x: mx, y: my + 5, w, h: 11 });
+      if (r.note) {
+        const at: Record<typeof side, [number, number]> = {
+          right: [x + w + 10, y + 7],
+          left: [x, y + 7],
+          above: [x, y + 2],
+          below: [x, y + 20],
+        };
+        content.push({ kind: "note", x: at[side][0], y: at[side][1], w: nw, h: 7 });
+      }
       break;
     }
     case "table":

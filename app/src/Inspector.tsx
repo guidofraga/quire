@@ -1,4 +1,5 @@
 // Inspector: properties of the selected region, the document and its pages.
+import { NOTE_SIDES, type NoteSide, noteSide, setNotePosition } from "./notePosition";
 import { activeCell, colName, type Column, columnsOf, isSheet } from "./TableEditor";
 import { createComputed, createSignal, For, type JSX, Match, Show, Switch, onCleanup } from "solid-js";
 import { arrowFocus } from "./a11y";
@@ -49,11 +50,14 @@ export function Text(props: {
   value: string | undefined;
   placeholder?: string;
   mono?: boolean;
+  /** For code that focuses this field (Add Note…). */
+  name?: string;
   onCommit: (v: string) => void;
 }) {
   return (
     <input
       class="insp-input"
+      data-field={props.name}
       classList={{ mono: !!props.mono }}
       value={props.value ?? ""}
       placeholder={props.placeholder}
@@ -295,8 +299,17 @@ function RegionTab() {
                 />
                 <DisplayFields r={r()} />
                 <Field label="Note" hint="Shown beside the result">
-                  <Text value={r().note} onCommit={(v) => updateRegion(r().id, { note: v || undefined })} />
+                  <Text value={r().note} name="note" onCommit={(v) => updateRegion(r().id, { note: v || undefined })} />
                 </Field>
+                <Show when={r().note}>
+                  <Field label="Note position" hint="Or drag the note to another side">
+                    <Select<NoteSide>
+                      value={noteSide(r().notePosition)}
+                      options={NOTE_SIDES}
+                      onChange={(side) => setNotePosition(r().id, side)}
+                    />
+                  </Field>
+                </Show>
                 <Check
                   checked={!!r().disabled}
                   label="Exclude from calculation"

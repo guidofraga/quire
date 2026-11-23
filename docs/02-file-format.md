@@ -182,7 +182,7 @@ Lengths: bare numbers are **layout px (1/96 in)**, which is identical to SMath's
 | `show` | `"value"` renders `= result` (numeric), `"symbolic"` renders `→ result`. Omitted means no result shown. |
 | `display` | `unit` (SMath's "contract": force the result unit), `decimals`, `notation` (`auto`/`sci`/`eng`) |
 | `mode` | `"numeric"` / `"symbolic"`: per-region optimization override |
-| `note` | Side description (Djot); `notePosition`: `right` (default) or `below` |
+| `note` | Side description (Djot); `notePosition`: `right` (default), `left`, `above` or `below`; any other value reads as `right` |
 | `hideInput` | Show only the result |
 
 ### 4.3 Quire linear math syntax (summary; full grammar in P1)

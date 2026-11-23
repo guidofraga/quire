@@ -1,4 +1,5 @@
 // Document actions that span the UI: clipboard, images, duplicate, context menus.
+import { NOTE_SIDES, noteSide, setNotePosition } from "./notePosition";
 import { copyPlotImage, editPlot } from "./Plot";
 import { copyPlot3dImage, editPlot3d } from "./Plot3D";
 import { setCaptionToEdit } from "./Region";
@@ -544,6 +545,20 @@ export const isImagePath = (p: string) => IMAGE_EXT.test(p);
 // ---------------------------------------------------------------------------
 
 /** More / Fewer Decimals for one result, as in a spreadsheet. */
+/** Where the note goes: one of four sides, or a note to add (it opens in the Inspector). */
+function noteItems(id: string, r: Region, addNote: () => void): MenuItems {
+  if (!r.note) return [{ label: "Add Note…", run: addNote }, null];
+  const side = noteSide(r.notePosition);
+  return [
+    ...NOTE_SIDES.map(([s, label]) => ({
+      label: `Note ${s === "left" || s === "right" ? `on the ${label}` : label}`,
+      checked: side === s,
+      run: () => (closeMenu(), setNotePosition(id, s)),
+    })),
+    null,
+  ];
+}
+
 function decimalsItems(id: string, r: Region): MenuItems {
   const docDecimals = (state.doc.settings as { display?: { decimals?: number } } | undefined)?.display?.decimals ?? 4;
   const current = r.display?.decimals ?? docDecimals;
@@ -671,6 +686,12 @@ export function installContextMenus(run: (command: string) => void) {
         },
         { label: "Convert to Text", run: () => (closeMenu(), commitEditing(), convertRegion(id, "text")) },
         null,
+        ...noteItems(id, r, () => {
+          closeMenu();
+          run("region_properties");
+          // the Inspector opens on the region: straight into its note field
+          requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-field="note"]')?.focus());
+        }),
       );
     } else if (!many && r?.kind === "text" && state.editing !== id) {
       items.push({ label: "Convert to Math", run: () => (closeMenu(), convertRegion(id, "math")) }, null);
