@@ -29,3 +29,17 @@ test("a comparison without = shows pass or fail, counts, and is listed in the su
   await expect(summary.locator(".contents-row")).toHaveCount(2);
   await expect(summary.locator(".checks-total")).toHaveText("1 of 2 failing");
 });
+
+test("the toolbar's checks menu names each check by its note, failing ones first in red", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Simply supported beam/ }).click();
+  await page.getByRole("button", { name: "✗ 1 of 8 failing" }).click();
+  const rows = page.getByRole("menu").getByRole("menuitem");
+  await expect(rows).toHaveCount(8);
+  // the failing check leads, marked ✗ in red, and says what it checks
+  await expect(rows.first().locator(".cm-check.fail")).toHaveText("✗");
+  await expect(rows.first()).toContainText("Fails:");
+  await expect(rows.nth(1).locator(".cm-check.pass")).toHaveText("✓");
+  await expect(rows.filter({ hasText: "total deflection" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "bending, 6.2.5(1)" })).toHaveCount(1);
+});

@@ -31,6 +31,16 @@ test("the Welcome screen lists a few templates and reaches the rest", async ({ p
   for (const [name] of BUILTIN) await expect(dialog.getByRole("button", { name: new RegExp(name) })).toBeVisible();
 });
 
+test("the full list shows each template's first page, and Esc goes back to the Welcome screen", async ({ page }) => {
+  const dialog = await allTemplates(page);
+  // a page in miniature beside every built-in template, as on the Welcome screen
+  await expect(dialog.locator(".template-card .welcome-thumb")).toHaveCount(BUILTIN.length);
+  await expect(dialog.locator(".welcome-thumb .t-title").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Welcome to Quire" })).toBeVisible();
+});
+
 for (const [name, checks] of BUILTIN) {
   test(`the ${name} template opens with no errors and its checks as expected`, async ({ page }) => {
     const dialog = await allTemplates(page);

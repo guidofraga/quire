@@ -50,6 +50,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
+import { Icon } from "./icons";
 import type { Doc, RegionView } from "./types";
 import { closeMenu, setMenu } from "./menu";
 import { checks, failing, tableName } from "./checks";
@@ -470,6 +471,40 @@ async function runExportJob(job: { open: string; pdf: string }) {
   }
 }
 
+/**
+ * Without the desktop app's menu bar (in a browser and on the web), the File menu's commands
+ * and Settings sit behind a button at the start of the toolbar, so they need no shortcut (#153).
+ */
+function openFileMenu(e: MouseEvent) {
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const k = isMac ? "⌘" : "Ctrl+";
+  const item = (label: string, id: string, shortcut?: string) => ({
+    label,
+    shortcut,
+    run: () => (closeMenu(), runCommand(id)),
+  });
+  setMenu({
+    x: box.left,
+    y: box.bottom + 4,
+    items: [
+      item("New", "new", `${k}N`),
+      item("New from Template…", "new_from_template"),
+      item("Open…", "open", `${k}O`),
+      item(isWeb ? "Save (download)" : "Save", "save", `${k}S`),
+      ...(isWeb ? [] : [item("Save as Template…", "save_template")]),
+      null,
+      item("Share Link…", "share_link"),
+      item("Export as Word…", "export_docx"),
+      item("Export as PDF…", "export_pdf", `${k}E`),
+      item("Print…", "print", `${k}P`),
+      null,
+      item("Command Palette…", "command_palette", `${k}K`),
+      item("Settings…", "settings", `${k},`),
+      item("Quire Help", "help", `${k}?`),
+    ],
+  });
+}
+
 /** Insert ▾ in the toolbar: everything but math and text, which have their own buttons. */
 function openInsertMenu(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -631,10 +666,16 @@ function openChecksMenu(e: MouseEvent) {
   setMenu({
     x: box.left,
     y: box.bottom + 4,
-    items: list.map((c) => ({
-      label: `${c.pass ? "✓" : "✗"}  ${c.cell ? `${regionText(c.id)} · ${c.row || `row ${c.cell[0] + 1}`}` : regionText(c.id)}`,
-      run: () => (closeMenu(), reveal(c.id)),
-    })),
+    items: list.map((c) => {
+      const where = c.cell ? `${regionText(c.id)} · ${c.row || `row ${c.cell[0] + 1}`}` : regionText(c.id);
+      // the note says what is checked ("total deflection"), as the page's summary of checks does (#156)
+      const note = c.cell ? undefined : layout().byId.get(c.id)?.region.note;
+      return {
+        label: note ? `${where} — ${note}` : where,
+        status: c.pass,
+        run: () => (closeMenu(), reveal(c.id)),
+      };
+    }),
   });
 }
 
@@ -1118,6 +1159,17 @@ export function App() {
             <Show when={!sidebarShown() && !isWeb}>
               <SidebarToggle />
             </Show>
+            <Show when={!isTauri}>
+              <button
+                class="icon-btn file-menu-btn"
+                onClick={openFileMenu}
+                title="File, export and settings"
+                aria-label="Menu"
+                aria-haspopup="menu"
+              >
+                <Icon name="menu" />
+              </button>
+            </Show>
             <h1 class="title" data-tauri-drag-region>
               <Show
                 when={nb.current}
@@ -1239,6 +1291,12 @@ export function App() {
             >
               {Math.round(state.view.zoom * 100)}%
             </button>
+            {/* the Help menu's place, without a menu bar */}
+            <Show when={!isTauri}>
+              <button class="icon-btn" onClick={() => runCommand("help")} title="Quire Help" aria-label="Help">
+                <Icon name="help" />
+              </button>
+            </Show>
           </div>
         </header>
         <div class="workspace">

@@ -1704,6 +1704,13 @@ ms.str {
   white-space: nowrap;
 }
 
+/* Inline math in the text format bar: √x set as math is (FormatBar.tsx) */
+.fb-glyph {
+  font-family: "Quire Math", "STIX Two Math", serif;
+  font-size: 14px;
+  letter-spacing: -0.5px;
+}
+
 .fb-swatch {
   display: inline-block;
   width: 14px;
@@ -2276,6 +2283,15 @@ ms.str {
 .cm-check {
   width: 18px;
   text-align: center;
+}
+
+/* a check's verdict in the checks menu (App.tsx) */
+.cm-check.pass {
+  color: var(--ok-ink);
+}
+
+.cm-check.fail {
+  color: var(--error-ink);
 }
 
 .cm-label {
@@ -3080,7 +3096,7 @@ ms.str {
 
 .template-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -3121,6 +3137,37 @@ ms.str {
   color: inherit;
   font: inherit;
   text-align: left;
+  cursor: pointer;
+}
+
+/* a template's first page beside its name, as on the Welcome screen (TemplatesDialog.tsx) */
+.template-card.with-thumb,
+.template-open.with-thumb {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.template-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.with-thumb .welcome-thumb {
+  flex: none;
+}
+
+/* an action written as a link, inside a sentence (Save this document as a template…) */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text, var(--accent));
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
 }
 

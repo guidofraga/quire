@@ -72,10 +72,17 @@ export function ContextMenu() {
                   disabled={item.disabled}
                   onClick={() => item.run?.()}
                 >
-                  <span class="cm-check" aria-hidden="true">
-                    {item.checked ? "✓" : ""}
+                  <span
+                    class="cm-check"
+                    classList={{ pass: item.status === true, fail: item.status === false }}
+                    aria-hidden="true"
+                  >
+                    {item.status !== undefined ? (item.status ? "✓" : "✗") : item.checked ? "✓" : ""}
                   </span>
                   <span class="cm-label">
+                    <Show when={item.status !== undefined}>
+                      <span class="sr-only">{item.status ? "Passes: " : "Fails: "}</span>
+                    </Show>
                     <Show when={item.swatch}>
                       <span class="cm-swatch" style={{ background: item.swatch }} aria-hidden="true" />
                     </Show>

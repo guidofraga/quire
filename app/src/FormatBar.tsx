@@ -40,6 +40,7 @@ import {
   commitEditing,
   distributeRegions,
   layout,
+  runAppCommand,
   setState,
   startEditing,
   state,
@@ -412,6 +413,15 @@ function TextGroup() {
         {icon("M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5")}
       </Btn>
       <LinkButton />
+      {/* the two features that make a report's prose live, otherwise only a shortcut away (#154) */}
+      <Btn title="Inline math  ⇧⌘M" disabled={!editing()} hiddenLabel onClick={() => runAppCommand("insert_math")}>
+        <span class="fb-glyph" aria-hidden="true">
+          √<i>x</i>
+        </span>
+      </Btn>
+      <Btn title="Cross-reference  ⇧⌘R" disabled={!editing()} onClick={() => runAppCommand("insert_ref")}>
+        {icon("M3 6h10M3 10h10M6.5 3L5.5 13M10.5 3l-1 10")}
+      </Btn>
       <Dropdown
         title="Text colour"
         name="Text colour"

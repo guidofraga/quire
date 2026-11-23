@@ -1,5 +1,7 @@
-// Edit ▸ Find (⌘F): search math, text, notes, captions and area titles; replace in place.
+// Edit ▸ Find (⌘F): search math, text, notes, captions and area titles, and the results shown on
+// the page; replace in place, in what was typed only.
 import { createMemo, createRoot, createSignal } from "solid-js";
+import { prettyValue } from "./math";
 import { escapeText } from "./richtext";
 import { findDraft, layout, localized, mutate, revealRegion, state } from "./store";
 import type { Localized, Region } from "./types";
@@ -33,6 +35,20 @@ function searchable(r: Region, lang?: string): string[] {
   return out.filter((s): s is string => !!s);
 }
 
+/**
+ * What the engine shows for a region: a result after `=`, the values a solve block finds, the
+ * worked-out cells of a table, as the page writes them (`123.11 kN·m`). Find matches them, so a
+ * number read on the page can be looked for (#155); Replace never touches them.
+ */
+function shown(r: Region): string[] {
+  const out: string[] = [];
+  const result = (text: string | null | undefined) => text && out.push(prettyValue(text));
+  if (r.show) result(state.views[r.id]?.resultText);
+  if (r.kind === "solve") result(state.views[`${r.id}:f`]?.resultText);
+  for (const row of state.views[r.id]?.cells ?? []) for (const cell of row) if (cell.formula) result(cell.text);
+  return out;
+}
+
 export interface Hit {
   id: string;
   count: number;
@@ -45,7 +61,10 @@ export const hits = createRoot(() =>
     const lang = state.doc.meta?.lang;
     const out: Hit[] = [];
     for (const p of layout().list) {
-      const count = searchable(p.region, lang).reduce((n, s) => n + (s.match(re)?.length ?? 0), 0);
+      const count = [...searchable(p.region, lang), ...shown(p.region)].reduce(
+        (n, s) => n + (s.match(re)?.length ?? 0),
+        0,
+      );
       if (count) out.push({ id: p.region.id, count });
     }
     return out;
