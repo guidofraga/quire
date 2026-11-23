@@ -50,7 +50,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { HelpDialog, setHelpOpen } from "./HelpDialog";
 import { Palette, setPaletteOpen } from "./Palette";
 import { RefPicker, setRefPickerOpen } from "./RefPicker";
-import type { Doc } from "./types";
+import type { Doc, RegionView } from "./types";
 import { closeMenu, setMenu } from "./menu";
 import { checks, failing, tableName } from "./checks";
 import { PagePopover } from "./Popover";
@@ -569,20 +569,58 @@ function regionText(id: string): string {
   return text.length > 34 ? `${text.slice(0, 33)}…` : text;
 }
 
+/**
+ * Every error the toolbar counts, in reading order: a region's own, and those of its parts,
+ * which the engine reports apart (a solve block's lines `<id>:g0`, `<id>:c0`, `<id>:f`, math
+ * inside text `<id>:m0`), each one an error of its own in the count (#151).
+ */
+function errorList(): { region: string; view: string; error: string }[] {
+  const parts = new Map<string, RegionView[]>();
+  for (const v of Object.values(state.views)) {
+    if (!v.error) continue;
+    const region = v.id.split(":")[0];
+    parts.set(region, [...(parts.get(region) ?? []), v]);
+  }
+  return layout().list.flatMap((p) =>
+    p.hidden
+      ? []
+      : (parts.get(p.region.id) ?? [])
+          // the region itself first, then its parts in order (c0 before c1)
+          .sort((a, b) =>
+            a.id === p.region.id ? -1 : b.id === p.region.id ? 1 : a.id.localeCompare(b.id, "en", { numeric: true }),
+          )
+          .map((v) => ({ region: p.region.id, view: v.id, error: v.error! })),
+  );
+}
+
+/** What a part of a region says, for a menu: a solve block's line, or math inside text. */
+function partText(region: string, view: string): string {
+  const part = view.slice(region.length + 1);
+  if (!part) return regionText(region);
+  const r = layout().byId.get(region)?.region;
+  const n = Number(part.slice(1));
+  const line =
+    part[0] === "g" && Array.isArray(r?.guesses)
+      ? r.guesses[n]
+      : part[0] === "c" && Array.isArray(r?.given)
+        ? r.given[n]
+        : part === "f"
+          ? r?.find
+          : undefined;
+  const text = typeof line === "string" ? line : part[0] === "m" ? "math in text" : regionText(region);
+  return text.length > 34 ? `${text.slice(0, 33)}…` : text;
+}
+
 /** The toolbar's error count: every error, in reading order; click one to go there. */
 function openErrorsMenu(e: MouseEvent) {
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const errors = layout().list.filter((p) => !p.hidden && state.views[p.region.id]?.error);
   setMenu({
     x: box.left,
     y: box.bottom + 4,
-    items: errors.map((p) => {
-      const msg = state.views[p.region.id]!.error!;
-      return {
-        label: `${regionText(p.region.id)} — ${msg.length > 60 ? `${msg.slice(0, 59)}…` : msg}`,
-        run: () => (closeMenu(), reveal(p.region.id)),
-      };
-    }),
+    items: errorList().map(({ region, view, error }) => ({
+      label: `${partText(region, view)} — ${error.length > 60 ? `${error.slice(0, 59)}…` : error}`,
+      run: () => (closeMenu(), reveal(region)),
+    })),
   });
 }
 
@@ -601,14 +639,8 @@ function openChecksMenu(e: MouseEvent) {
 }
 
 function nextError() {
-  // a line of a solve block, or math inside text (`<id>:c0`, `<id>:m0`), is its region's error
-  const errors = [
-    ...new Set(
-      Object.values(state.views)
-        .filter((v) => v.error)
-        .map((v) => v.id.split(":")[0]),
-    ),
-  ];
+  // in reading order; a region with errors in several parts is one stop
+  const errors = [...new Set(errorList().map((e) => e.region))];
   if (!errors.length) return;
   const current = errors.indexOf(state.selection[0]);
   reveal(errors[(current + 1) % errors.length]);
@@ -1113,7 +1145,12 @@ export function App() {
               </span>
               <span class="tool-label">Math</span>
             </button>
-            <button onClick={() => insertAtCaret("text")} title="Text (⇧⌘T)">
+            {/* as ⇧⌘T: keeps the math being typed open, so the line becomes text (#152) */}
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => runCommand("insert_text")}
+              title="Text (⇧⌘T)"
+            >
               <span class="glyph" aria-hidden="true">
                 ¶
               </span>{" "}

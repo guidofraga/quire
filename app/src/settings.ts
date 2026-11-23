@@ -94,8 +94,36 @@ export function resetPrefs() {
   void applyTheme();
 }
 
-/** The window's appearance; the web view's `prefers-color-scheme` follows it. */
+/** The stylesheet's dark rules, found once: `@media (prefers-color-scheme: dark)` blocks. */
+const darkRules = new Set<CSSMediaRule>();
+
+/**
+ * Light or Dark from Settings, in a browser and on the web too (#150). A page can't change what
+ * `prefers-color-scheme` reports, so the stylesheet's dark blocks are switched on (`all`) or
+ * off (`not all`) here, and back to following the system for "Match system". The CSS itself
+ * keeps one place for each dark rule.
+ */
+function applyThemeToStyles() {
+  for (const sheet of document.styleSheets) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue; // a stylesheet from another origin: not ours
+    }
+    for (const rule of rules)
+      if (rule instanceof CSSMediaRule && rule.media.mediaText.includes("prefers-color-scheme: dark"))
+        darkRules.add(rule);
+  }
+  const media = { system: "(prefers-color-scheme: dark)", dark: "all", light: "not all" }[prefs.theme];
+  for (const rule of darkRules) rule.media.mediaText = media;
+  // native controls and scrollbars follow too
+  document.documentElement.style.colorScheme = prefs.theme === "system" ? "" : prefs.theme;
+}
+
+/** The window's appearance: the page's styles, and in the desktop app the native window too. */
 export async function applyTheme() {
+  applyThemeToStyles();
   if (!("__TAURI_INTERNALS__" in window)) return;
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   await getCurrentWindow()
