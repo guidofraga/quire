@@ -89,3 +89,54 @@ test("the bracket pair at the caret is highlighted, and one not closed yet is fa
   await expect(page.locator(".math-input")).toHaveValue("x:=(a+b");
   await expect(editing(page).locator(".math-line mo.ghost")).toHaveCount(1);
 });
+
+/** The middle of the drawn piece showing `text` in the formula being edited. */
+async function pieceAt(page: Page, text: string) {
+  const piece = editing(page)
+    .locator(".math-line > .m")
+    .locator("mi, mn, mo")
+    .filter({ hasText: new RegExp(`^${text}$`) });
+  return (await piece.first().boundingBox())!;
+}
+
+test("the typing caret shows in the formula, and follows the arrow keys", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.type("M:=q*(L-x)/2");
+  const caret = editing(page).locator(".formula-caret");
+  await expect(caret).toBeVisible();
+  // at the end, after the 2 under the fraction bar
+  const two = await pieceAt(page, "2");
+  await expect.poll(async () => Math.abs((await caret.boundingBox())!.x - (two.x + two.width))).toBeLessThan(3);
+  // back four: after `L−`, before `x`, up in the numerator
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
+  const x = await pieceAt(page, "x");
+  await expect.poll(async () => Math.abs((await caret.boundingBox())!.x - x.x)).toBeLessThan(3);
+  expect((await caret.boundingBox())!.y).toBeLessThan(two.y);
+});
+
+test("a click in the formula being edited moves the typing caret there", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.type("M:=q*(L-x)/2");
+  const input = page.locator(".math-input");
+  const q = await pieceAt(page, "q");
+  // on the right half of q: just after it, in `M:=q|*(L-x)/2`
+  await page.mouse.click(q.x + q.width * 0.8, q.y + q.height / 2);
+  await expect(editing(page)).toHaveCount(1);
+  await expect(input).toBeFocused();
+  await expect.poll(() => input.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(4);
+  await page.keyboard.type("^2");
+  await expect(input).toHaveValue("M:=q^2*(L-x)/2");
+});
+
+test("the click that opens a formula puts the caret where it landed", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.type("a:=bb+c");
+  await page.keyboard.press("Escape");
+  const region = page.locator(".region.math").first();
+  const b = region.locator(".math-line > .m mi").filter({ hasText: /^bb$/ });
+  const box = (await b.boundingBox())!;
+  // the region is selected: a click on it opens it, there, on the left edge of bb
+  await page.mouse.click(box.x + 1, box.y + box.height / 2);
+  await expect(editing(page)).toHaveCount(1);
+  await expect.poll(() => page.locator(".math-input").evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(3);
+});

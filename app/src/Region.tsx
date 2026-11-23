@@ -1,4 +1,4 @@
-import { MathEditor } from "./MathEditor";
+import { MathEditor, placeMathCaret } from "./MathEditor";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
@@ -30,6 +30,7 @@ import {
 import { produce } from "solid-js/store";
 import { api, isMac } from "./api";
 import { SHEET_GAP } from "./pages";
+import { type CaretBox, caretBox, offsetAt } from "./caretMap";
 import { bracketsOf, highlightPair, mathCaret } from "./brackets";
 import { noteSide, startNoteDrag } from "./notePosition";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
@@ -293,12 +294,26 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
   const check = () => mathCheck(props.r, view());
   const comparison = () => check() !== null && isComparison(view()?.input);
   let mathEl: HTMLSpanElement | undefined;
+  let lineEl: HTMLDivElement | undefined;
+  // the typing caret, shown in the formula too (caretMap.ts, #165)
+  const [caretAt, setCaretAt] = createSignal<CaretBox | null>(null);
   // the pair at the caret lights up, on the math as drawn (brackets.ts)
   createEffect(() => {
     void rendered();
     const caret = mathCaret();
-    highlightPair(mathEl, props.r.expr ?? "", editing() && caret?.view === props.r.id ? caret.at : null);
+    const at = editing() && caret?.view === props.r.id ? caret.at : null;
+    highlightPair(mathEl, props.r.expr ?? "", at);
+    setCaretAt(at !== null && mathEl && lineEl ? caretBox(mathEl, lineEl, props.r.expr ?? "", at) : null);
   });
+  /** A click in the formula being edited moves the typing caret there, and keeps the edit open. */
+  const placeCaret = (e: PointerEvent) => {
+    if (!editing() || e.button !== 0 || !mathEl) return;
+    const at = offsetAt(mathEl, props.r.expr ?? "", e.clientX, e.clientY);
+    if (at === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    placeMathCaret(at);
+  };
   const rendered = () => {
     const v = view();
     const result = props.r.show && !comparison() ? v?.result : null;
@@ -319,7 +334,9 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
         <MathEditor r={props.r} />
       </Show>
       <div
+        ref={lineEl}
         class="math-line"
+        onPointerDown={placeCaret}
         classList={{
           preview: editing(),
           "check-pass": check() === true,
@@ -332,6 +349,15 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           {/* screen readers get the formula in words; the MathML would be read symbol by symbol */}
           <span class="sr-only">{mathWords(props.r.id, false)}</span>
           <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
+        </Show>
+        <Show when={caretAt()}>
+          {(c) => (
+            <span
+              class="formula-caret"
+              aria-hidden="true"
+              style={{ left: `${c().x}px`, top: `${c().y}px`, height: `${c().height}px` }}
+            />
+          )}
         </Show>
         <Show when={comparison()}>
           <span

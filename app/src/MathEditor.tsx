@@ -2,6 +2,7 @@
 // (a sentence becomes text), and the meanings of a name: Ctrl+Space lists them, a list opens by
 // itself after two letters (after one where a unit goes, `20 C`, searching the units by symbol,
 // name and quantity), and ⌥Enter cycles the name at the caret through them.
+import { offsetAt as formulaOffset } from "./caretMap";
 import { setMathCaret } from "./brackets";
 import { nameAt, setCaretName } from "./trace";
 import { paletteOpen } from "./Palette";
@@ -58,6 +59,17 @@ const GREEK: Record<string, string> = Object.fromEntries(
 const LATIN = Object.fromEntries(Object.entries(GREEK).map(([l, g]) => [g, l]));
 
 let activeMathInput: HTMLInputElement | null = null;
+/** The active editor's caret tracking, for a caret moved from outside (`placeMathCaret`). */
+let activeMathTrace: (() => void) | null = null;
+
+/** Put the typing caret at `at`, as a click in the typeset formula does (Region.tsx). */
+export function placeMathCaret(at: number) {
+  const input = activeMathInput;
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(at, at);
+  activeMathTrace?.();
+}
 /** Whether math is being typed: the format bar shows the galleries meanwhile. */
 const [mathActive, setMathActive] = createSignal(false);
 export { mathActive };
@@ -233,10 +245,17 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
   createEffect(() => {
     input.focus();
     const hole = initial.indexOf("?");
-    const at = editClickPoint ? offsetAt(input, editClickPoint[0]) : initial.length;
+    // opened by a click: the caret where the click was in the formula (caretMap.ts), or failing
+    // that, where it was along the line typed
+    const drawn = props.line
+      ? null
+      : document.querySelector(`[data-region="${CSS.escape(props.r.id)}"] .math-line > .m`);
+    const clicked = editClickPoint && drawn ? formulaOffset(drawn, initial, ...editClickPoint) : null;
+    const at = clicked ?? (editClickPoint ? offsetAt(input, editClickPoint[0]) : initial.length);
     if (hole >= 0) input.setSelectionRange(hole, hole + 1);
     else input.setSelectionRange(at, at);
     activeMathInput = input;
+    activeMathTrace = traceCaret;
     activeMathHistory = travel;
     setMathActive(true);
     // the regions above may have changed since the last edit
@@ -247,6 +266,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
     clearTimeout(nameTimer);
     if (activeMathInput === input) {
       activeMathInput = null;
+      activeMathTrace = null;
       activeMathHistory = null;
       setMathActive(false);
     }

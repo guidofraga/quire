@@ -542,7 +542,31 @@ ms.str {
 
 /* the formula being edited stays where it is on the page, at its size (#164) */
 .math-line.preview {
+  position: relative;
   opacity: 0.95;
+  cursor: text;
+}
+
+/* the typing caret, shown in the formula as well (caretMap.ts, #165) */
+.formula-caret {
+  position: absolute;
+  width: 1.5px;
+  margin-left: -0.75px;
+  background: var(--accent);
+  pointer-events: none;
+  animation: formula-caret-blink 1.06s steps(1) infinite;
+}
+
+@keyframes formula-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .formula-caret {
+    animation: none;
+  }
 }
 
 /* and what is typed floats just under it, out of the page's flow: opening a formula doesn't
