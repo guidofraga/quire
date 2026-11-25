@@ -85,9 +85,9 @@ export function unitName(r: Row): string {
 // Rows as tokens
 // ---------------------------------------------------------------------------
 
-type Tok =
+type Tok = (
   | { t: "num"; s: string }
-  | { t: "name"; s: string }
+  | { t: "name"; s: string; sub?: Node }
   | { t: "kw"; s: string }
   | { t: "op"; s: string }
   /** A structure that is a value: a fraction, brackets, a matrix, a radical, a string, a unit… */
@@ -96,27 +96,38 @@ type Tok =
   | { t: "sup"; n: Node }
   | { t: "index"; n: Node }
   | { t: "hole" }
-  | { t: "eof" };
+  | { t: "eof" }
+) & {
+  /** The token's atoms on its row, `[at, end)` (a name's subscript not included). */
+  at: number;
+  end: number;
+};
+type TokBody = Tok extends infer T ? (T extends Tok ? Omit<T, "at" | "end"> : never) : never;
 
-/** A row's atoms as the lexer would read the same characters (crates/quire-ast/src/lexer.rs). */
-function lex(atoms: Atom[]): Tok[] {
+/**
+ * A row's atoms as the lexer would read the same characters (crates/quire-ast/src/lexer.rs);
+ * `base` is where `atoms` start on their row.
+ */
+function lex(atoms: Atom[], base = 0): Tok[] {
   const out: Tok[] = [];
   const g = (j: number) => glyph(atoms[j]);
+  const push = (t: TokBody, from: number, to: number) => out.push({ ...t, at: base + from, end: base + to } as Tok);
   let i = 0;
   while (i < atoms.length) {
     const a = atoms[i];
     if (a.k !== "g") {
-      if (a.k === "sup") out.push({ t: "sup", n: a });
-      else if (a.k === "index") out.push({ t: "index", n: a });
+      if (a.k === "sup") push({ t: "sup", n: a }, i, i + 1);
+      else if (a.k === "index") push({ t: "index", n: a }, i, i + 1);
       // a subscript with no name before it, a `\command` not finished, a `'` or `#` with
-      // no name yet: nothing yet, as the forgiving lexer reads them
+      // no name yet: nothing yet, as the forgiving lexer reads them (but drawn, when drawing)
       else if (
-        a.k !== "sub" &&
-        a.k !== "cmd" &&
-        !(a.k === "unit" && !unitName(a.slots[0])) &&
-        !(a.k === "const" && !constName(a.slots[0]))
+        spans ||
+        (a.k !== "sub" &&
+          a.k !== "cmd" &&
+          !(a.k === "unit" && !unitName(a.slots[0])) &&
+          !(a.k === "const" && !constName(a.slots[0])))
       )
-        out.push({ t: "node", n: a });
+        push({ t: "node", n: a }, i, i + 1);
       i++;
       continue;
     }
@@ -126,7 +137,7 @@ function lex(atoms: Atom[]): Tok[] {
       continue;
     }
     if (s === "?") {
-      out.push({ t: "hole" });
+      push({ t: "hole" }, i, i + 1);
       i++;
       continue;
     }
@@ -149,7 +160,7 @@ function lex(atoms: Atom[]): Tok[] {
           while (isDigit(g(j))) text += g(j++);
         }
       }
-      out.push({ t: "num", s: text });
+      push({ t: "num", s: text }, i, j);
       i = j;
       continue;
     }
@@ -157,24 +168,84 @@ function lex(atoms: Atom[]): Tok[] {
       let j = i + 1;
       let text = s;
       while (isNameCont(g(j))) text += g(j++);
+      const end = j;
       const next = atoms[j];
       let sub = "";
       if (next?.k === "sub") {
         sub = subText(next.slots[0]);
         j++;
       }
-      if (!sub && KEYWORDS.has(text)) out.push({ t: "kw", s: text });
-      else out.push({ t: "name", s: sub ? `${text}.${sub}` : text });
+      if (!sub && KEYWORDS.has(text)) push({ t: "kw", s: text }, i, end);
+      else push({ t: "name", s: sub ? `${text}.${sub}` : text, sub: next?.k === "sub" ? next : undefined }, i, end);
       i = j;
       continue;
     }
-    if (KEYWORDS.has(s)) out.push({ t: "kw", s: a.s });
+    if (KEYWORDS.has(s)) push({ t: "kw", s: a.s }, i, i + 1);
     // a lone `.` is a subscript or decimal not finished yet: left out, as the forgiving lexer does
-    else if (s !== ".") out.push({ t: "op", s });
+    else if (s !== ".") push({ t: "op", s }, i, i + 1);
     i++;
   }
-  out.push({ t: "eof" });
+  push({ t: "eof" }, atoms.length, atoms.length);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Where each part of an expression is drawn from (the editor on the page, math.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an expression read from a row comes from, for drawing it with the caret: the row, the
+ * atoms of a name or number (`[from, to)`), the operator glyphs it draws (`ops`, in the order
+ * math.ts draws them), the structure it is (`node`), a name's subscript (`sub`), and where an
+ * empty slot `□` stands (`hole`).
+ */
+export interface Span {
+  row: string;
+  from?: number;
+  to?: number;
+  ops?: number[];
+  node?: Node;
+  sub?: Node;
+  hole?: number;
+  /** For `SEQ`: the glyphs between its parts. */
+  seps?: string[];
+}
+
+/** The name of a row drawn as parts, where it doesn't read as one expression (`a, b`). */
+export const SEQ = "\u2063seq";
+
+/** Set while a row is read for drawing: each expression's span. */
+let spans: Map<Expr, Span> | null = null;
+
+/**
+ * A row read for drawing it: the expression, as `rowExpr` reads it but with the editor's
+ * unfinished parts in it (a `\name` being typed, an empty `'`), and where each part comes from.
+ * Null when the row doesn't read as an expression (`a, b`).
+ */
+export function traceRow(r: Row, exponent = false): { expr: Expr | null; spans: Map<Expr, Span> } {
+  const before = spans;
+  const out = new Map<Expr, Span>();
+  spans = out;
+  try {
+    return { expr: rowExpr(r, exponent), spans: out };
+  } finally {
+    spans = before;
+  }
+}
+
+/** Atoms `[from, to)` of a row read for drawing, for a row that doesn't read as a whole (`a, b`). */
+export function traceSlice(r: Row, from: number, to: number): { expr: Expr | null; spans: Map<Expr, Span> } {
+  const before = spans;
+  const out = new Map<Expr, Span>();
+  spans = out;
+  try {
+    return { expr: new Parser(lex(r.atoms.slice(from, to), from), false, r).all(), spans: out };
+  } catch (e) {
+    if (e instanceof Unreadable) return { expr: null, spans: out };
+    throw e;
+  } finally {
+    spans = before;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +267,8 @@ const ATOM = 10;
 class Unreadable extends Error {}
 
 const bin = (op: BinaryOp, a: Expr, b: Expr): Expr => ({ t: "Binary", c: [op, a, b] });
-const HOLE: Expr = { t: "Placeholder" };
+/** An empty slot (a new object each time: each one is drawn where it is). */
+const hole = (): Expr => ({ t: "Placeholder" });
 const BINARY: Record<string, BinaryOp> = {
   "+": "Add",
   "-": "Sub",
@@ -220,10 +292,21 @@ function holdsUnit(r: Row, exp: Expr): "num" | "paren" | null {
   if (!last) return null;
   if (last.t === "num") return "num";
   if (last.t === "sup") {
-    const inner = rowExpr(last.n.slots[0], true);
+    const inner = untraced(() => rowExpr(last.n.slots[0], true));
     return inner ? holdsUnit(last.n.slots[0], inner) : null;
   }
   return last.t === "node" && last.n.k === "paren" ? "paren" : null;
+}
+
+/** Reads something again on the side (a lookahead): not drawn. */
+function untraced<T>(f: () => T): T {
+  const before = spans;
+  spans = null;
+  try {
+    return f();
+  } finally {
+    spans = before;
+  }
 }
 
 class Parser {
@@ -231,6 +314,7 @@ class Parser {
   constructor(
     private toks: Tok[],
     private exponent: boolean,
+    private row: Row,
   ) {}
 
   private peek(k = 0): Tok {
@@ -244,11 +328,31 @@ class Parser {
   private isParen(t: Tok) {
     return t.t === "node" && t.n.k === "paren";
   }
+  /** Records where `e` comes from, when drawing. */
+  private mark(e: Expr, s: Omit<Span, "row"> & { row?: string }): Expr {
+    if (spans) spans.set(e, { row: this.row.id, ...s });
+    return e;
+  }
+  private hole(at: number): Expr {
+    return this.mark(hole(), { hole: at });
+  }
 
   all(): Expr {
     const e = this.expr(DEFINE);
-    if (this.peek().t !== "eof") throw new Unreadable();
-    return e;
+    if (this.peek().t === "eof") return e;
+    if (!spans) throw new Unreadable();
+    // drawing a row that doesn't read as one expression (`a, b`, `M[1; 2]`): its parts as they
+    // stand, between what separates them, so that whatever is typed is drawn where it is typed
+    const parts = [e];
+    const ops: number[] = [];
+    const seps: string[] = [];
+    while (this.peek().t !== "eof") {
+      const t = this.bump();
+      ops.push(t.at);
+      seps.push(t.t === "op" || t.t === "kw" ? t.s : "");
+      parts.push(this.expr(DEFINE));
+    }
+    return this.mark({ t: "Call", c: [SEQ, parts] }, { ops, seps });
   }
 
   private expr(min: number): Expr {
@@ -272,21 +376,25 @@ class Parser {
       const takes = at === COMPARE || at === RANGE ? level > at : level >= at;
       if (min > at || !takes) break;
       if (at === DEFINE) {
-        const global = (this.bump() as { s: string }).s === "≡";
-        lhs = { t: "Define", c: { lhs, rhs: this.expr(DEFINE), global } };
+        const op = this.bump() as { s: string; at: number };
+        lhs = { t: "Define", c: { lhs, rhs: this.expr(DEFINE), global: op.s === "≡" } };
+        this.mark(lhs, { ops: [op.at] });
       } else if (at === COMPARE) {
         const rest: [CmpOp, Expr][] = [];
+        const ops: number[] = [];
         for (let c = this.peek(); c.t === "op" && c.s in CMP; c = this.peek()) {
-          this.bump();
+          ops.push(this.bump().at);
           rest.push([CMP[c.s], this.expr(RANGE)]);
         }
-        lhs = { t: "Compare", c: [lhs, rest] };
+        lhs = this.mark({ t: "Compare", c: [lhs, rest] }, { ops });
       } else if (at === RANGE) {
-        this.bump();
-        lhs = { t: "Range", c: [lhs, this.expr(ADD)] };
+        const op = this.bump().at;
+        lhs = this.mark({ t: "Range", c: [lhs, this.expr(ADD)] }, { ops: [op] });
+      } else if (implicit) {
+        lhs = bin("Mul", lhs, this.expr(at + 1));
       } else {
-        const op = implicit ? "Mul" : BINARY[(this.bump() as { s: string }).s];
-        lhs = bin(op, lhs, this.expr(at + 1));
+        const op = this.bump() as { s: string; at: number };
+        lhs = this.mark(bin(BINARY[op.s], lhs, this.expr(at + 1)), { ops: [op.at] });
       }
       level = at;
     }
@@ -297,13 +405,13 @@ class Parser {
     const t = this.peek();
     if (t.t === "kw" && t.s === "not" && min <= NOT) {
       this.bump();
-      return [{ t: "Unary", c: ["Not", this.expr(NOT)] }, NOT];
+      return [this.mark({ t: "Unary", c: ["Not", this.expr(NOT)] }, { ops: [t.at] }), NOT];
     }
     const op: UnaryOp | null =
       t.t === "op" ? (t.s === "-" ? "Neg" : t.s === "+" ? "Pos" : t.s === "±" ? "PlusMinus" : null) : null;
     if (!op) return [this.power(), ATOM];
     this.bump();
-    return [{ t: "Unary", c: [op, this.expr(UNARY)] }, UNARY];
+    return [this.mark({ t: "Unary", c: [op, this.expr(UNARY)] }, { ops: [t.at] }), UNARY];
   }
 
   private power(): Expr {
@@ -311,7 +419,7 @@ class Parser {
     while (this.peek().t === "sup") {
       const n = (this.bump() as { n: Node }).n;
       const exp = this.slot(n.slots[0], true);
-      e = bin("Pow", e, exp);
+      e = this.mark(bin("Pow", e, exp), { node: n });
       // `10^-4 m^3`: a unit after the power multiplies the whole power
       const held = this.exponent ? null : holdsUnit(n.slots[0], exp);
       const next = this.peek();
@@ -340,13 +448,19 @@ class Parser {
     if (t.t === "name" && (this.isParen(next) || next.t === "index")) unit = this.postfix();
     else {
       this.bump();
-      if (t.t === "name") unit = { t: "Ident", c: t.s };
-      else if (t.t === "node" && t.n.k === "unit") unit = { t: "Unit", c: unitName(t.n.slots[0]) };
-      else if (t.t === "node" && t.n.k === "const") unit = { t: "Const", c: constName(t.n.slots[0]) };
+      if (t.t === "name") unit = this.name(t);
+      else if (t.t === "node" && (t.n.k === "unit" || t.n.k === "const")) unit = this.node(t.n);
       else throw new Unreadable();
     }
-    if (this.peek().t === "sup") unit = bin("Pow", unit, this.slot((this.bump() as { n: Node }).n.slots[0], true));
+    if (this.peek().t === "sup") {
+      const n = (this.bump() as { n: Node }).n;
+      unit = this.mark(bin("Pow", unit, this.slot(n.slots[0], true)), { node: n });
+    }
     return unit;
+  }
+
+  private name(t: { s: string; sub?: Node; at: number; end: number }): Expr {
+    return this.mark({ t: "Ident", c: t.s }, { from: t.at, to: t.end, sub: t.sub });
   }
 
   private postfix(): Expr {
@@ -355,10 +469,11 @@ class Parser {
       const t = this.peek();
       if (t.t === "op" && t.s === "!") {
         this.bump();
-        e = { t: "Factorial", c: e };
+        e = this.mark({ t: "Factorial", c: e }, { ops: [t.at] });
       } else if (t.t === "index") {
         this.bump();
-        e = { t: "Index", c: [e, args(t.n.slots[0], true)] };
+        const a = args(t.n.slots[0], true);
+        e = this.mark({ t: "Index", c: [e, a.list] }, { node: t.n, ops: a.commas });
       } else return e;
     }
   }
@@ -368,7 +483,7 @@ class Parser {
     switch (t.t) {
       case "num": {
         this.bump();
-        const num: Expr = { t: "Num", c: t.s };
+        const num = this.mark({ t: "Num", c: t.s }, { from: t.at, to: t.end });
         return this.unitNext() && !this.exponent ? bin("Juxt", num, this.unitTerm()) : num;
       }
       case "name": {
@@ -377,19 +492,23 @@ class Parser {
         if (this.isParen(next)) {
           this.bump();
           const paren = (next as { n: Node }).n;
-          return { t: "Call", c: [t.s, args(paren.slots[0], !!paren.ghost)] };
+          const a = args(paren.slots[0], !!paren.ghost);
+          return this.mark(
+            { t: "Call", c: [t.s, a.list] },
+            { from: t.at, to: t.end, sub: t.sub, node: paren, ops: a.commas },
+          );
         }
-        return this.quotedUnitAfter({ t: "Ident", c: t.s });
+        return this.quotedUnitAfter(this.name(t));
       }
       case "hole":
         this.bump();
-        return HOLE;
+        return this.hole(t.at);
       case "node":
         this.bump();
         return this.node(t.n);
       default:
         // a value not typed yet, at the end or before an operator: an empty slot
-        return HOLE;
+        return this.hole(t.at);
     }
   }
 
@@ -401,9 +520,10 @@ class Parser {
 
   private node(n: Node): Expr {
     const s = n.slots;
+    const at = (e: Expr, extra: Omit<Span, "row"> & { row?: string } = {}) => this.mark(e, { node: n, ...extra });
     switch (n.k) {
       case "paren": {
-        const paren: Expr = { t: "Paren", c: parseRow(s[0], false) };
+        const paren: Expr = at({ t: "Paren", c: parseRow(s[0], false) });
         // `10^(-4) m^3`: in an exponent, the unit after brackets is the power's
         return this.exponent ? paren : this.quotedUnitAfter(paren);
       }
@@ -411,7 +531,7 @@ class Parser {
         const cols = n.cols ?? 1;
         const rows: Expr[][] = [];
         for (let r = 0; r * cols < s.length; r++) rows.push(s.slice(r * cols, r * cols + cols).map((c) => slot(c)));
-        const m: Expr = { t: "Matrix", c: rows };
+        const m: Expr = at({ t: "Matrix", c: rows });
         const t = this.peek();
         const unit =
           ((t.t === "name" && !this.isParen(this.peek(1)) && this.peek(1).t !== "index") ||
@@ -420,20 +540,31 @@ class Parser {
         return unit ? bin("Juxt", m, this.unitTerm()) : m;
       }
       case "frac":
-        return bin("Div", slot(s[0]), slot(s[1]));
+        return at(bin("Div", slot(s[0]), slot(s[1])));
       case "sqrt":
       case "abs":
-        return { t: "Call", c: [n.k, [slot(s[0])]] };
+        return at({ t: "Call", c: [n.k, [slot(s[0])]] });
       case "root":
-        return { t: "Call", c: ["root", [slot(s[0]), slot(s[1])]] };
+        return at({ t: "Call", c: ["root", [slot(s[0]), slot(s[1])]] });
       case "big":
-        return { t: "Call", c: [n.name ?? "", s.map((r) => slot(r))] };
+        return at({ t: "Call", c: [n.name ?? "", s.map((r) => slot(r))] });
       case "str":
-        return { t: "Str", c: rowText(s[0]) };
+        return at({ t: "Str", c: rowText(s[0]) }, { row: s[0].id, from: 0, to: s[0].atoms.length });
       case "unit":
-        return { t: "Unit", c: unitName(s[0]) };
-      case "const":
-        return this.quotedUnitAfter({ t: "Const", c: constName(s[0]) });
+        return at({ t: "Unit", c: unitName(s[0]) }, { row: s[0].id, from: 0, to: s[0].atoms.length });
+      case "const": {
+        const sub = s[0].atoms.find((a): a is Node => a.k === "sub");
+        const end = sub ? s[0].atoms.indexOf(sub) : s[0].atoms.length;
+        return this.quotedUnitAfter(at({ t: "Const", c: constName(s[0]) }, { row: s[0].id, from: 0, to: end, sub }));
+      }
+      case "cmd":
+        // drawn only: a `\name` being typed
+        if (spans) return at({ t: "Ident", c: `\\${rowText(s[0])}` }, { row: s[0].id, from: 0, to: s[0].atoms.length });
+        throw new Unreadable();
+      case "sub":
+        // drawn only: a subscript with no name before it
+        if (spans) return at(hole(), { row: s[0].id, hole: 0 });
+        throw new Unreadable();
       default:
         throw new Unreadable();
     }
@@ -447,7 +578,7 @@ class Parser {
 
 /** A row read as one expression; an empty row is an empty slot. */
 function parseRow(r: Row, exponent: boolean): Expr {
-  return new Parser(lex(r.atoms), exponent).all();
+  return new Parser(lex(r.atoms), exponent, r).all();
 }
 
 /** A structure's slot: its brackets, when it keeps the ones typed around it (`x^(2)`), are put back. */
@@ -457,17 +588,26 @@ function slot(r: Row, exponent = false): Expr {
 }
 
 /**
- * A call's or an index's arguments: the row split at its commas. Empty brackets are a call with
- * no arguments (`f()`) once closed, and an empty slot while their `)` is still to come (`f(□`).
+ * A call's or an index's arguments: the row split at its commas (`commas`: where they are).
+ * Empty brackets are a call with no arguments (`f()`) once closed, and an empty slot while their
+ * `)` is still to come (`f(□`).
  */
-function args(r: Row, open: boolean): Expr[] {
-  if (!r.atoms.length) return open ? [HOLE] : [];
-  const parts: Atom[][] = [[]];
-  for (const a of r.atoms) {
-    if (glyph(a) === ",") parts.push([]);
-    else parts[parts.length - 1].push(a);
+function args(r: Row, open: boolean): { list: Expr[]; commas: number[] } {
+  if (!r.atoms.length) {
+    if (!open) return { list: [], commas: [] };
+    const h = hole();
+    if (spans) spans.set(h, { row: r.id, hole: 0 });
+    return { list: [h], commas: [] };
   }
-  return parts.map((atoms) => new Parser(lex(atoms), false).all());
+  const parts: { atoms: Atom[]; base: number }[] = [{ atoms: [], base: 0 }];
+  const commas: number[] = [];
+  r.atoms.forEach((a, k) => {
+    if (glyph(a) === ",") {
+      commas.push(k);
+      parts.push({ atoms: [], base: k + 1 });
+    } else parts[parts.length - 1].atoms.push(a);
+  });
+  return { list: parts.map((p) => new Parser(lex(p.atoms, p.base), false, r).all()), commas };
 }
 
 /** What a row says, as the engine would parse it; null when it doesn't read as an expression. */
@@ -689,6 +829,68 @@ function write(out: string[], e: Expr) {
       write(out, e.c.rhs);
       return;
   }
+}
+
+/**
+ * `e` with the brackets `print` would write around its parts (`c*(a/b)`, `(a/b)^2`), as the
+ * engine reads them back from the stored text: what the view will draw once the edit ends.
+ * Changes `e` in place, so what was recorded about its parts (`traceRow`) still holds; the
+ * brackets put in are new objects, drawn without a caret position of their own.
+ */
+export function withPrintedBrackets(e: Expr): Expr {
+  const paren = (x: Expr, min: number): Expr => {
+    withPrintedBrackets(x);
+    return prec(x) < min ? { t: "Paren", c: x } : x;
+  };
+  switch (e.t) {
+    case "Paren":
+      withPrintedBrackets(e.c);
+      break;
+    case "Unary":
+      e.c[1] = paren(e.c[1], e.c[0] === "Not" ? 3 : P_UNARY);
+      break;
+    case "Factorial":
+      e.c = paren(e.c, P_POSTFIX);
+      break;
+    case "Binary": {
+      const [op, a, b] = e.c;
+      if (op === "Juxt") {
+        withPrintedBrackets(a);
+        withPrintedBrackets(b);
+      } else if (op === "Pow") {
+        e.c[1] = paren(a, P_POSTFIX);
+        e.c[2] = endsInQuantity(b) ? { t: "Paren", c: withPrintedBrackets(b) } : paren(b, P_UNARY);
+      } else {
+        const p = level(op);
+        e.c[1] = paren(a, p);
+        e.c[2] = paren(b, p + 1);
+      }
+      break;
+    }
+    case "Compare":
+      e.c[0] = paren(e.c[0], 5);
+      for (const pair of e.c[1]) pair[1] = paren(pair[1], 5);
+      break;
+    case "Call":
+      e.c[1].forEach(withPrintedBrackets);
+      break;
+    case "Index":
+      e.c[0] = paren(e.c[0], P_POSTFIX);
+      e.c[1].forEach(withPrintedBrackets);
+      break;
+    case "Matrix":
+      e.c.forEach((r) => r.forEach(withPrintedBrackets));
+      break;
+    case "Range":
+      e.c[0] = paren(e.c[0], P_ADDITIVE);
+      e.c[1] = paren(e.c[1], P_ADDITIVE);
+      break;
+    case "Define":
+      e.c.lhs = paren(e.c.lhs, 1);
+      withPrintedBrackets(e.c.rhs);
+      break;
+  }
+  return e;
 }
 
 // ---------------------------------------------------------------------------

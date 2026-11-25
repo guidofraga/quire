@@ -545,6 +545,88 @@ ms.str {
   opacity: 0.95;
 }
 
+/* math edited in place (MathInPlace.tsx): the formula is the editor. The caret, the selection
+   and the field that takes the keyboard are drawn over it, out of the page's flow, so the
+   formula is laid out exactly as when it isn't edited */
+.m.in-place {
+  cursor: text;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mip-caret,
+.mip-sel,
+.mip-sink {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+}
+
+.mip-caret {
+  z-index: 3;
+  background: var(--accent);
+  border-radius: 0.5px;
+}
+
+/* steady while typing, then on and off as macOS blinks it */
+.mip-caret.blink {
+  animation: mip-blink 1.06s step-end infinite;
+}
+
+@keyframes mip-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mip-caret.blink {
+    animation: none;
+  }
+}
+
+/* behind the formula's ink, over the region's paper, as a text selection is */
+.mip-sel {
+  z-index: -1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 24%, var(--paper));
+}
+
+/* the empty slot the caret is in */
+.m.in-place mi.ph.on {
+  color: var(--accent);
+}
+
+/* invisible, at the caret (the IME opens its window there); while a character is composed it
+   shows what is composed, underlined, as text fields do */
+.mip-sink {
+  display: block;
+  z-index: 4;
+  width: 1px;
+  min-height: 1em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  overflow: hidden;
+  resize: none;
+  opacity: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: 1.2em var(--math-font);
+  line-height: 1;
+  white-space: pre;
+}
+
+.mip-sink.composing {
+  opacity: 1;
+  color: var(--ink);
+  background: var(--paper);
+  text-decoration: underline;
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
 /* and what is typed floats just under it, out of the page's flow: opening a formula doesn't
    push it, or what is below it, down (MathEditor.tsx) */
 .region.math.editing .math-input {

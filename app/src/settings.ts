@@ -22,6 +22,8 @@ export interface Prefs {
   onLaunch: "welcome" | "last" | "blank";
   /** Hover explanations for units and constants. */
   tooltips: boolean;
+  /** Math is typed into the typeset formula itself rather than a line of text under it (#165). */
+  mathInPlace: boolean;
   /** Enter / Backspace on empty space open or close a line, moving what is below. */
   shiftContent: boolean;
   /** Resolution of images in exported PDFs; 0 keeps them as they are. */
@@ -46,6 +48,7 @@ const DEFAULTS: Prefs = {
   pageBreaks: true,
   onLaunch: "welcome",
   tooltips: true,
+  mathInPlace: false,
   shiftContent: true,
   exportDpi: 300,
   compressPhotos: true,

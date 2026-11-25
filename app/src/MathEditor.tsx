@@ -71,15 +71,37 @@ let activeMathHistory: ((redo: boolean) => void) | null = null;
  * or do nothing. Undoing past the start of the edit does nothing.
  */
 export function undoInMath(redo = false): boolean {
+  if (inPlace) {
+    inPlace.undo(redo);
+    return true;
+  }
   if (!activeMathHistory) return false;
   activeMathHistory(redo);
   return true;
 }
+/** The math being edited in place (MathInPlace.tsx), while it is on the page. */
+export interface InPlace {
+  type(text: string): void;
+  insert(template: string): void;
+  undo(redo: boolean): void;
+}
+let inPlace: InPlace | null = null;
+
+/** The in-place editor comes (or goes, with null): the galleries, undo and early typing go to it. */
+export function setInPlace(editor: InPlace | null) {
+  inPlace = editor;
+  setMathActive(!!editor);
+}
+
 /** After ":" became ":=", an "=" typed out of habit is swallowed. */
 let assignJustTyped = false;
 
 /** Text typed so fast it reached the canvas before the new editor took focus. */
 export function forwardTyping(text: string): boolean {
+  if (inPlace) {
+    inPlace.type(text);
+    return true;
+  }
   const input = activeMathInput;
   if (!input) return false;
   input.focus();
@@ -99,6 +121,10 @@ export function forwardTyping(text: string): boolean {
 
 /** Insert a template (e.g. `sqrt(?)`) into the math being edited; selects the first `?`. */
 export function insertIntoMath(template: string): boolean {
+  if (inPlace) {
+    inPlace.insert(template);
+    return true;
+  }
   const input = activeMathInput;
   if (!input) return false;
   input.focus();
@@ -711,7 +737,7 @@ export function MathEditor(props: { r: Region; line?: MathLine }) {
 }
 
 /** Tab out of a region: edit the next one in reading order (⇧Tab: the one before). */
-function editNext(id: string, by: 1 | -1) {
+export function editNext(id: string, by: 1 | -1) {
   const next = stepRegion(id, by);
   commitEditing();
   if (!next || !layout().byId.has(next)) return;

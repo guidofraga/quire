@@ -2,6 +2,7 @@
 // fractions, radicals, stretchy fences and matrices read directly in WebKit and
 // Chromium and copy/speak cleanly; see docs/01-architecture.md §3.
 import { type Brackets, numberParens } from "./brackets";
+import { SEQ, type Span } from "./mathLinear";
 import { prefs } from "./settings";
 import { state } from "./store";
 import type { BinaryOp, CmpOp, Expr } from "./types";
@@ -9,8 +10,82 @@ import type { BinaryOp, CmpOp, Expr } from "./types";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const mo = (s: string, attrs = "") => `<mo${attrs}>${esc(s)}</mo>`;
 const row = (...xs: string[]) => `<mrow>${xs.join("")}</mrow>`;
-const space = (em: number) => `<mspace width="${em}em"></mspace>`;
-const unparen = (e: Expr): Expr => (e.t === "Paren" ? e.c : e);
+const space = (em: number, attrs = "") => `<mspace width="${em}em"${attrs}></mspace>`;
+/**
+ * Brackets around a whole slot (a numerator, an exponent) are the slot's, not drawn. While a
+ * formula is edited in place, brackets typed into a slot the caret is still in are drawn: what
+ * follows their `)` may still apply to them (docs/07-math-editing.md).
+ */
+const unparen = (e: Expr): Expr => (e.t === "Paren" && trace?.get(e)?.node?.k !== "paren" ? e.c : e);
+
+// ---------------------------------------------------------------------------
+// The formula being edited in place (#165): each part drawn with where it comes from in the
+// edit tree, so the editor finds the caret's place on the page. Drawn exactly as the stored
+// formula is drawn, with `data-*` attributes added and nothing else.
+// ---------------------------------------------------------------------------
+
+/** While drawing the formula being edited: where each expression comes from (mathLinear `traceRow`). */
+let trace: Map<Expr, Span> | null = null;
+
+const attr = (name: string, v: string | number) => ` data-${name}="${esc(String(v))}"`;
+
+/** The `k`th operator glyph `e` draws: its row and atom. */
+function op_(e: Expr, k = 0): string {
+  const s = trace?.get(e);
+  const at = s?.ops?.[k];
+  return s && at !== undefined ? attr("r", s.row) + attr("a", at) + attr("n", 1) : "";
+}
+
+/** `html` (one element) with attributes added to its first tag. */
+const withAttrs = (html: string, attrs: string) => (attrs ? html.replace(/^<([a-z]+)/, `<$1${attrs}`) : html);
+
+/** A name or number drawn from atoms `[from, to)` of a row; a name's subscript is its own row. */
+function leaf(e: Expr, html: string): string {
+  const s = trace?.get(e);
+  if (!s || s.from === undefined) return html;
+  let out = withAttrs(html, attr("r", s.row) + attr("a", s.from) + attr("n", (s.to ?? s.from) - s.from));
+  const sub = s.sub;
+  if (sub) {
+    const r = sub.slots[0];
+    const tags = attr("r", r.id) + attr("a", 0) + attr("n", r.atoms.length) + attr("node", sub.id);
+    // `A.` with its subscript still to come: an empty slot under the name
+    if (!r.atoms.length || !/<\/mi><mi/.test(out))
+      out = `<msub>${out}<mi class="ph"${attr("r", r.id) + attr("hole", 0) + attr("node", sub.id)}>□</mi></msub>`;
+    else out = out.replace(/<\/mi><mi/, `</mi><mi${tags}`);
+  }
+  return out;
+}
+
+/** What an expression's root element is in the edit tree: a structure, an empty slot, a name. */
+function tagged(e: Expr, html: string): string {
+  const s = trace?.get(e);
+  if (!s) return html;
+  if (s.hole !== undefined) return withAttrs(html, attr("r", s.row) + attr("hole", s.hole));
+  const n = s.node;
+  switch (e.t) {
+    case "Num":
+    case "Ident":
+    case "Unit":
+    case "Const":
+    case "Str": {
+      const out = leaf(e, html);
+      return n ? withAttrs(out, attr("node", n.id)) : out;
+    }
+  }
+  if (!n) return html;
+  // a superscript or an index: the script is the structure's box
+  if (n.k === "sup" || n.k === "index") return withAttrs(html, attr("script", n.id));
+  // a call's brackets, and brackets typed: marked on the brackets themselves (`paren`)
+  if (n.k === "paren") return html;
+  return withAttrs(html, attr("node", n.id));
+}
+
+/** The brackets of `e`, typed in the edit tree: marked for the caret, and faint until their `)` is typed. */
+function parens(e: Expr): [string, string] {
+  const n = trace?.get(e)?.node;
+  if (n?.k !== "paren") return ["", ""];
+  return [attr("open", n.id), attr("close", n.id) + (n.ghost ? ' class="ghost"' : "")];
+}
 
 /** `A.net` → A with literal subscript net (SMath convention). */
 function identParts(name: string): [string, string | null] {
@@ -93,7 +168,7 @@ function quantity(e: Expr): boolean {
   return e.t === "Binary" && (e.c[0] === "Mul" || e.c[0] === "Juxt") && e.c[1].t === "Num" && unitsOnly(e.c[2]);
 }
 
-const tight = (s: string) => mo(s, ' lspace="0" rspace="0"');
+const tight = (s: string, attrs = "") => mo(s, ` lspace="0" rspace="0"${attrs}`);
 
 /** Units written tight, products with a dot: `(m·s)`, `s²`. */
 function unitRow(e: Expr): string {
@@ -115,15 +190,17 @@ const flatUnits = (a: Expr, b: Expr) => prefs.flatUnits && unitsOnly(b) && quant
 const BIN: Partial<Record<BinaryOp, string>> = { Add: "+", Sub: "−", PlusMinus: "±", Mod: "mod", And: "∧", Or: "∨" };
 const CMP: Record<CmpOp, string> = { Eq: "=", Ne: "≠", Lt: "<", Le: "≤", Gt: ">", Ge: "≥" };
 
-function binary(op: BinaryOp, a: Expr, b: Expr): string {
+function binary(op: BinaryOp, a: Expr, b: Expr, at = ""): string {
   switch (op) {
     case "Juxt":
       return row(m(a), space(0.2), m(b));
     case "Mul":
+      // a `\name` being typed sits where it is typed, with no dot before it
+      if (b.t === "Ident" && b.c.startsWith("\\")) return row(m(a), m(b));
       // a unit after a unit is a compound unit (54 kN·m), as in the unit lists and plots
-      if (isUnitTerm(b) && a.t !== "Num" && quantity(a)) return row(m(a), tight("·"), m(b));
+      if (isUnitTerm(b) && a.t !== "Num" && quantity(a)) return row(m(a), tight("·", at), m(b));
       // numbers and units sit side by side (5.1 m, 2·900 kgf); everything else gets a dot
-      return isUnitTerm(b) ? row(m(a), space(0.2), m(b)) : row(m(a), mo("·"), m(b));
+      return isUnitTerm(b) ? row(m(a), space(0.2, at), m(b)) : row(m(a), mo("·", at), m(b));
     case "Div":
       if (flatUnits(a, b)) return row(m(a), tight("/"), unitRow(b));
       return `<mfrac>${m(unparen(a))}${m(unparen(b))}</mfrac>`;
@@ -131,14 +208,21 @@ function binary(op: BinaryOp, a: Expr, b: Expr): string {
       const exp = m(unparen(b));
       if (a.t === "Ident") {
         const [base, sub] = identParts(a.c);
-        if (sub !== null) return `<msubsup>${mi(base)}${mi(sub, sub.length === 1)}${exp}</msubsup>`;
+        if (sub !== null) {
+          // the name with its subscript (tagged as `leaf` tags a name), and the exponent over it
+          const name = leaf(a, `<msub>${mi(base)}${mi(sub, sub.length === 1)}</msub>`);
+          return name.replace(/^<msub/, "<msubsup").replace(/<\/msub>$/, `${exp}</msubsup>`);
+        }
       }
       return `<msup>${m(a)}${exp}</msup>`;
     }
     default:
-      return row(m(a), mo(BIN[op] ?? op), m(b));
+      return row(m(a), mo(BIN[op] ?? op, at), m(b));
   }
 }
+
+/** Arguments with their commas: `a, b`. */
+const list = (e: Expr, xs: Expr[]) => xs.map((x, k) => (k ? mo(",", op_(e, k - 1)) : "") + m(x)).join("");
 
 const d = mi("d", true);
 
@@ -211,7 +295,13 @@ function system(args: Expr[]): string {
   return row(mo("{", ' stretchy="true"'), column("q-sys", rows, "axis"));
 }
 
-function call(name: string, args: Expr[]): string {
+function call(name: string, args: Expr[], e?: Expr): string {
+  // a row being edited that doesn't read as one expression: its parts as typed
+  if (name === SEQ && e) {
+    const seps = trace?.get(e)?.seps ?? [];
+    const glyph = (s: string) => ({ "*": "·", "-": "−", ":=": "≔", "==": "=", and: "∧", or: "∨", not: "¬" })[s] ?? s;
+    return row(...args.map((x, k) => (k ? mo(glyph(seps[k - 1] ?? ""), op_(e, k - 1)) : "") + m(x)));
+  }
   if (name === "block") return program(args);
   if (name === "sys" && args.length >= 3) return system(args);
   if ((name === "for" && (args.length === 3 || args.length === 4)) || (name === "while" && args.length === 2)) {
@@ -251,7 +341,13 @@ function call(name: string, args: Expr[]): string {
     case "substitute/3":
       return `<msub>${row(m(unparen(x)), mo("|", ' stretchy="true"'))}${row(m(y), mo("="), m(z))}</msub>`;
   }
-  return row(ident(name), mo("("), args.map(m).join(mo(",")), mo(")"));
+  const [open, close] = e ? parens(e) : ["", ""];
+  return row(
+    e ? leaf(e, ident(name)) : ident(name),
+    mo("(", open),
+    e ? list(e, args) : args.map(m).join(mo(",")),
+    mo(")", close),
+  );
 }
 
 /** Document ▸ Results ▸ Group digits: a thin space every three digits, from five digits on. */
@@ -282,6 +378,10 @@ function markParens(input: Expr, b: Brackets): Map<Expr, { open?: string; close?
 }
 
 function m(e: Expr): string {
+  return trace ? tagged(e, m0(e)) : m0(e);
+}
+
+function m0(e: Expr): string {
   switch (e.t) {
     case "Num":
       return `<mn>${esc(grouping ? groupDigits(e.c) : e.c)}</mn>`;
@@ -299,30 +399,34 @@ function m(e: Expr): string {
     case "Paren": {
       // the pair at the caret is highlighted, a `)` not typed yet is faint (brackets.ts)
       const k = parenMarks.get(e);
-      return row(mo("(", k?.open ?? ""), m(e.c), mo(")", k?.close ?? ""));
+      const [open, close] = parens(e);
+      return row(mo("(", (k?.open ?? "") + open), m(e.c), mo(")", (k?.close ?? "") + close));
     }
     case "Unary": {
       const [op, x] = e.c;
-      return row(mo({ Neg: "−", Pos: "+", PlusMinus: "±", Not: "¬" }[op]), m(x));
+      return row(mo({ Neg: "−", Pos: "+", PlusMinus: "±", Not: "¬" }[op], op_(e)), m(x));
     }
     case "Factorial":
-      return row(m(e.c), mo("!"));
+      return row(m(e.c), mo("!", op_(e)));
     case "Binary":
-      return binary(...e.c);
+      return binary(...e.c, op_(e));
     case "Compare":
-      return row(m(e.c[0]), ...e.c[1].map(([op, x]) => mo(CMP[op], op === "Eq" ? ' class="beq"' : "") + m(x)));
+      return row(
+        m(e.c[0]),
+        ...e.c[1].map(([cmp, x], k) => mo(CMP[cmp], (cmp === "Eq" ? ' class="beq"' : "") + op_(e, k)) + m(x)),
+      );
     case "Call":
-      return call(...e.c);
+      return call(...e.c, e);
     case "Index":
-      return `<msub>${m(e.c[0])}${row(e.c[1].map(m).join(mo(",")))}</msub>`;
+      return `<msub>${m(e.c[0])}${row(list(e, e.c[1]))}</msub>`;
     case "Matrix": {
       const rows = e.c.map((r) => `<mtr>${r.map((c) => `<mtd>${m(c)}</mtd>`).join("")}</mtr>`).join("");
       return row(mo("["), `<mtable>${rows}</mtable>`, mo("]"));
     }
     case "Range":
-      return row(m(e.c[0]), mo(".."), m(e.c[1]));
+      return row(m(e.c[0]), mo("..", op_(e)), m(e.c[1]));
     case "Define": {
-      const op = mo(e.c.global ? "≡" : "≔");
+      const op = mo(e.c.global ? "≡" : "≔", op_(e));
       const lhs = definedName(e.c.lhs);
       // a block on the right is drawn from its header, so `f(x) :=` sits level with its first statement
       const rhs = e.c.rhs;
@@ -339,9 +443,10 @@ function definedName(lhs: Expr): string {
   marks = { ...marks, defines: undefined };
   const [base, sub] = identParts(lhs.c);
   const attrs = ` data-v="${esc(lhs.c)}"${markAttrs("redef", mark.title)}`;
-  return sub === null
-    ? `<mi${attrs}>${esc(base)}</mi>`
-    : `<msub${attrs}>${mi(base)}${mi(sub, sub.length === 1)}</msub>`;
+  return tagged(
+    lhs,
+    sub === null ? `<mi${attrs}>${esc(base)}</mi>` : `<msub${attrs}>${mi(base)}${mi(sub, sub.length === 1)}</msub>`,
+  );
 }
 
 /** One `<math>` element for an input, optionally followed by `= result`. */
@@ -366,6 +471,85 @@ export function mathml(
   marks = {};
   if (result) parts.push(mo(symbolic ? "→" : "="), `<mrow class="res${symbolic ? " sym" : ""}">${m(result)}</mrow>`);
   return `<math>${row(...parts)}</math>`;
+}
+
+/** A row of the edit tree as read for drawing (mathLinear `traceRow`), or markup drawn by hand. */
+export type Piece = { expr: Expr; spans: Map<Expr, Span> } | string;
+
+/**
+ * The formula being edited in place (#165), drawn as `mathml` draws the stored formula, each
+ * part tagged with where it is in the edit tree (`data-r` row and `data-a` atom, `data-node`,
+ * `data-hole` for □): opening, typing and closing the edit never move it. After `=`, the result
+ * the engine gave, or its number with the unit being typed (`unit`), drawn as units.
+ */
+export function editingMathml(opts: {
+  main: Piece[];
+  show: "value" | "symbolic" | null;
+  result: Expr | null;
+  unit: Piece | null;
+  unitRow: string;
+  units: readonly string[];
+  constants: readonly string[];
+  nameMarks: NameMarks;
+}): string {
+  const draw = (p: Piece) => {
+    if (typeof p === "string") return p;
+    trace = p.spans;
+    try {
+      return m(p.expr);
+    } finally {
+      trace = null;
+    }
+  };
+  unitNames = new Set(opts.units);
+  constantNames = new Set(opts.constants);
+  marks = opts.nameMarks;
+  parenMarks = new Map();
+  grouping = !!(state.doc.settings as { display?: { groupDigits?: boolean } } | undefined)?.display?.groupDigits;
+  const parts = [opts.main.length === 1 ? draw(opts.main[0]) : row(...opts.main.map(draw))];
+  unitNames = new Set();
+  constantNames = new Set();
+  marks = {};
+  if (opts.show) {
+    const res = (html: string) =>
+      `<mrow class="res${opts.show === "symbolic" ? " sym" : ""}"${attr("unitrow", opts.unitRow)}>${html}</mrow>`;
+    const [value] = opts.result ? splitUnit(opts.result) : [null];
+    const typed = opts.show === "value" && opts.unit && typeof opts.unit !== "string" ? opts.unit : null;
+    if (typed) asUnits(typed.expr);
+    parts.push(
+      mo(opts.show === "symbolic" ? "→" : "="),
+      typed
+        ? res(value ? row(m(value), space(0.2), draw(typed)) : row(`<mi class="ph">□</mi>`, space(0.2), draw(typed)))
+        : res(opts.result ? m(opts.result) : `<mi class="ph">□</mi>`),
+    );
+  }
+  return `<math>${row(...parts)}</math>`;
+}
+
+/** A result's number and its unit: `12.5 kN·m` → 12.5 and kN·m. */
+function splitUnit(e: Expr): [Expr, Expr | null] {
+  if (e.t === "Unary" && e.c[0] === "Neg") {
+    const [v, u] = splitUnit(e.c[1]);
+    return u ? [{ t: "Unary", c: ["Neg", v] }, u] : [e, null];
+  }
+  if (e.t === "Num") return [e, null];
+  // `1250 kN·cm` is ((1250 kN)·cm): the number is the leftmost value, the unit all the rest
+  if (e.t === "Binary" && ["Juxt", "Mul", "Div"].includes(e.c[0]) && unitsOnly(e.c[2])) {
+    const [v, u] = splitUnit(e.c[1]);
+    if (v.t !== "Num" && !(v.t === "Unary" && v.c[1].t === "Num")) return [e, null];
+    return [v, u ? { t: "Binary", c: [e.c[0], u, e.c[2]] } : e.c[2]];
+  }
+  return [e, null];
+}
+
+/** The names typed after `=` are units: drawn as the result's units are. Changes `e` in place. */
+function asUnits(e: Expr) {
+  if (e.t === "Ident") (e as { t: string }).t = "Unit";
+  else if (e.t === "Paren" || e.t === "Factorial") asUnits(e.c);
+  else if (e.t === "Binary") {
+    asUnits(e.c[1]);
+    if (e.c[0] !== "Pow") asUnits(e.c[2]);
+  } else if (e.t === "Unary") asUnits(e.c[1]);
 }
 
 /** A name as the math draws it in its meaning: your variable italic, a unit or constant upright. */

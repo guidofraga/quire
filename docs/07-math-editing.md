@@ -390,3 +390,15 @@ What phase 2 must take care of:
 - **IME and dead keys** (`´` + `a`): feed composed characters to `key()`, not key codes.
 - **A formula that doesn't read** (`a + * b`) still has a text (`rawText`, as typed) for the engine to report on; drawing it needs nothing special.
 - **Pasted text** goes through `paste()`; the clipboard's LaTeX through `latexToLinear` first.
+
+## Phase 2: the editor on the page
+
+Built behind Settings ▸ Editing ▸ Edit math in place (preview), off by default; off is the linear editor as before.
+
+- **Drawn as stored.** `mathDraw.ts` reads each row with `traceRow` (the parser port, recording where each expression comes from), adds the brackets the stored text will have (`withPrintedBrackets`, which covers `bracketed`), and draws it with math.ts's own code, adding only `data-*` attributes. `mathTree.engine.test.ts` checks that every formula in the repository is drawn exactly as the view draws it when an edit starts and when it ends. Brackets filling a slot the caret is not in become the slot's at once (`settleSlots`).
+- **Rows that don't read** (`a, b`) are drawn as their parts between the separators, so what is typed is always drawn where it is typed.
+- **Caret and hit-testing** come from the browser's layout of the MathML: a character's box from a text range, a structure's from its element. The caret is as tall as the line of its slot's font; a click picks the slot under it first; ↑ ↓ pass `pick` from the caret's x; a click on the result goes to its unit.
+- **Keys** arrive in a hidden field at the caret: characters as text (composed by the IME or a dead key), the rest as keys. Undo is the model's `History`. The document is written only when the formula's text changes, and a formula changed back keeps the text it had.
+- **Solve blocks** use the same editor for their lines.
+
+Left for phase 3: inline math in text (`richtext.ts`), programs (`if`, `for`, `block`) drawn as rows are walked as calls, VoiceOver announcements of the caret's context, and a word-wise ⌥← ⌥→.

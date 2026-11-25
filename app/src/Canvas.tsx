@@ -167,7 +167,9 @@ export function focusCanvas() {
   // back into the region being edited, where it was left
   const editor =
     state.editing &&
-    viewportEl.querySelector<HTMLElement>(".region.editing :is(input, [contenteditable=true], .sheet-wrap)");
+    viewportEl.querySelector<HTMLElement>(
+      ".region.editing :is(input, textarea.mip-sink, [contenteditable=true], .sheet-wrap)",
+    );
   if (editor) return editor.focus({ preventScroll: true });
   if (!state.caret && !state.selection.length && !state.editing) {
     const rect = viewportEl.getBoundingClientRect();
@@ -332,7 +334,9 @@ export function Canvas() {
   function editorElement() {
     if (!state.editing) return null;
     return (
-      viewportEl?.querySelector<HTMLElement>(".region.editing :is(input, [contenteditable=true], .sheet-wrap)") ?? null
+      viewportEl?.querySelector<HTMLElement>(
+        ".region.editing :is(input, textarea.mip-sink, [contenteditable=true], .sheet-wrap)",
+      ) ?? null
     );
   }
 

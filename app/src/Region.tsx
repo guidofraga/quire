@@ -1,4 +1,6 @@
 import { MathEditor } from "./MathEditor";
+import { MathInPlace } from "./MathInPlace";
+import { prefs } from "./settings";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
 import { trace } from "./trace";
@@ -313,9 +315,20 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
       ? mathml(input, result, v!.units, v!.constants, props.r.show === "symbolic", nameMarks(v!), brackets)
       : null;
   };
+  // Settings ▸ Editing ▸ Edit math in place: the formula itself is the editor (MathInPlace.tsx)
+  const inPlace = createMemo(() => editing() && untrack(() => prefs.mathInPlace));
+  const said = () => {
+    const v = view();
+    return {
+      result: props.r.show && !comparison() ? (v?.result ?? null) : null,
+      units: v?.units ?? [],
+      constants: v?.constants ?? [],
+      marks: v ? nameMarks(v) : {},
+    };
+  };
   return (
     <>
-      <Show when={editing()}>
+      <Show when={editing() && !inPlace()}>
         <MathEditor r={props.r} />
       </Show>
       <div
@@ -326,12 +339,20 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
           "check-fail": check() === false,
           [`note-${noteSide(props.r.notePosition)}`]: !!props.r.note && !editing(),
         }}
-        aria-hidden={editing() || undefined}
+        aria-hidden={(editing() && !inPlace()) || undefined}
       >
-        <Show when={rendered()} fallback={<code class="raw">{props.r.expr || " "}</code>}>
-          {/* screen readers get the formula in words; the MathML would be read symbol by symbol */}
+        <Show
+          when={inPlace()}
+          fallback={
+            <Show when={rendered()} fallback={<code class="raw">{props.r.expr || " "}</code>}>
+              {/* screen readers get the formula in words; the MathML would be read symbol by symbol */}
+              <span class="sr-only">{mathWords(props.r.id, false)}</span>
+              <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
+            </Show>
+          }
+        >
           <span class="sr-only">{mathWords(props.r.id, false)}</span>
-          <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
+          <MathInPlace r={props.r} said={said} />
         </Show>
         <Show when={comparison()}>
           <span

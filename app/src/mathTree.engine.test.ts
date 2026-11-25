@@ -7,8 +7,10 @@
 // .quire/.quirez/.sm files to run the round trip over as well.
 import { describe, expect, test } from "vitest";
 import type { Expr } from "./types";
-import { empty, fromExpr, fromLinear, key, toExpr, toLinear, type EditState } from "./mathTree";
+import { empty, fromExpr, fromLinear, key, settleSlots, toExpr, toLinear, type EditState } from "./mathTree";
 import { print } from "./mathLinear";
+import { mathml } from "./math";
+import { drawLine } from "./mathDraw";
 
 interface Fs {
   existsSync(p: string): boolean;
@@ -255,6 +257,31 @@ describe.skipIf(!haveEngine)("against the engine", () => {
     const t = roundTrip(sources);
     console.info(report(`${dir} (${files.length} files, ${unreadable} not opened)`, t));
     expect(t.failures).toEqual([]);
+  });
+
+  test("a formula edited in place is drawn exactly as the view draws it, when the edit starts and ends", () => {
+    // what the editor adds for the caret may differ, and nothing else
+    const bare = (html: string) => html.replace(/ data-(?:r|a|n|node|hole|script|open|close|unitrow)="[^"]*"/g, "");
+    const said = { result: null, units: [], constants: [] };
+    const sources = IN_REPO.flatMap((p) => formulas(openDoc(p))).filter((s) => parse(s).expr);
+    const bad: string[] = [];
+    for (const s of sources) {
+      const e = parse(s).expr!;
+      // opening it: the tree built from what the engine read
+      const opened = bare(drawLine(fromExpr(e), said));
+      if (opened !== mathml(e)) bad.push(`opened: ${s}\n    ${opened}\n    ${mathml(e)}`);
+      // typing it and leaving it: the tree typing built, against the text it stores
+      const typed = settleSlots(key(fromLinear(parse(s).print!), "End"));
+      const stored = parse(toLinear(typed)).expr;
+      if (!stored) continue;
+      const drawn = bare(drawLine(typed, said));
+      if (drawn !== mathml(stored)) bad.push(`typed: ${s}\n    ${drawn}\n    ${mathml(stored)}`);
+    }
+    console.info(
+      `drawn in place: ${sources.length} formulas, ${bad.length} drawn otherwise\n  ${bad.slice(0, 12).join("\n  ")}`,
+    );
+    expect(sources.length).toBeGreaterThan(100);
+    expect(bad).toEqual([]);
   });
 
   test("every prefix of a line typed previews as the engine previews that text", () => {
