@@ -131,6 +131,29 @@ test("the tree works from the keyboard", async ({ page }) => {
   await expect.poll(() => existsSync(join(dir, "Alpha.quire"))).toBe(true);
 });
 
+test("F2 right after Enter keeps the rename field, however long the note takes to open", async ({ page }) => {
+  await openBook(page);
+  await name(page, "A");
+  await page.locator(".nb-new").click();
+  await name(page, "B");
+  // opening a note answers late, as on a busy machine
+  await page.route("**/api/open_document", async (route) => {
+    await new Promise((r) => setTimeout(r, 600));
+    await route.continue();
+  });
+  await row(page, "A").focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("F2");
+  const field = page.getByRole("textbox", { name: "Name" });
+  await expect(field).toBeFocused();
+  // the note has opened by now, and the field still has the keyboard
+  await page.waitForTimeout(900);
+  await expect(field).toBeFocused();
+  await field.fill("Alpha");
+  await field.press("Enter");
+  await expect.poll(() => existsSync(join(dir, "Alpha.quire"))).toBe(true);
+});
+
 test("keys on a focused note stay in the tree and leave the page alone", async ({ page }) => {
   await openBook(page);
   await name(page, "A");

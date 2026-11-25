@@ -292,8 +292,8 @@ test("a logo added from the toolbar shows on every page and survives saving and 
   await expect(band(page, 0, "header").locator(".hf-left .hf-image")).toBeVisible();
   await expect(toolbar(page).getByRole("button", { name: "Image", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  // saved at once: `quire serve` is shared by the tests running alongside, and a document one
-  // of them opens releases the images staged for this one (one editor per server)
+  // `quire serve` is shared by the tests running alongside; a document one of them opens no
+  // longer drops the logo this one staged (assets::serve_many_editors)
   await save(page);
   await expect(page.locator(".toast")).toHaveText("Saved report");
   const written = JSON.parse(readFileSync(join(doc, "document.json"), "utf8"));

@@ -152,6 +152,9 @@ fn handle(mut stream: TcpStream, port: u16) -> std::io::Result<()> {
 
 pub fn serve(port: u16) -> std::io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
+    // every browser tab is an editor of its own: one opening a document must not drop the
+    // images another has added but not saved yet
+    quire_service::assets::serve_many_editors();
     println!("quire dev server on http://127.0.0.1:{port}/api/ (Ctrl-C to stop)");
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };

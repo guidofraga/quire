@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine;
 use serde_json::Value as Json;
@@ -13,6 +14,16 @@ use sha2::{Digest, Sha256};
 use crate::{Result, ServiceError};
 
 static STAGED: Mutex<BTreeMap<String, Vec<u8>>> = Mutex::new(BTreeMap::new());
+
+/// Set by a process that serves several editors at once (`quire serve`, one per browser tab):
+/// there, one editor opening a document must not drop the images another has staged but not
+/// saved yet, so staged images are kept until the process ends.
+static SHARED: AtomicBool = AtomicBool::new(false);
+
+/// This process serves several editors at once: keep every staged image (see [`SHARED`]).
+pub fn serve_many_editors() {
+    SHARED.store(true, Ordering::Relaxed);
+}
 
 /// The staging area. A poisoned lock (a panic while another thread held it) still holds
 /// complete map entries, so its data is recovered rather than crashing the caller.
@@ -82,8 +93,12 @@ pub fn is_staged(src: &str) -> bool {
 }
 
 /// Forget the staged images not named in `keep` (the assets the document now shown uses).
-/// Called when the editor switches to another document.
+/// Called when the editor switches to another document. A process serving several editors
+/// keeps them all: another editor may still need its own.
 pub fn release_unreferenced(keep: &BTreeSet<String>) {
+    if SHARED.load(Ordering::Relaxed) {
+        return;
+    }
     staging().retain(|name, _| keep.contains(name));
 }
 
