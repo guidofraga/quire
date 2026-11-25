@@ -2767,6 +2767,7 @@ name = "quire-web"
 version = "0.6.2"
 dependencies = [
  "base64 0.23.1",
+ "quire-ast",
  "quire-service",
  "serde_json",
 ]

@@ -8,7 +8,8 @@ What is tested where, how to run it, and what a good test looks like. CI (`.gith
 |---|---|---|---|
 | Engine unit tests | `#[cfg(test)] mod tests` next to the code; `quire-eval/src/symbolic/tests.rs` | `cargo test --workspace --exclude quire-app` | Parsing, units, evaluation, tables, symbolic math, notebooks, file I/O |
 | Worksheet fixtures | `crates/quire-cli/tests/fixtures/*.quire` with `results.json`, checked by `tests/check.rs` | the same `cargo test` | Whole documents against results worked out independently |
-| UI logic | `app/src/*.test.ts` (Vitest, jsdom) | `npm --prefix app test` (`run test:watch` while you work) | Store and undo, clipboard, CSV, LaTeX, speech, pages, notebook paths and drops |
+| UI logic | `app/src/*.test.ts` (Vitest, jsdom) | `npm --prefix app test` (`run test:watch` while you work) | Store and undo, clipboard, CSV, LaTeX, speech, pages, notebook paths and drops; the 2D editor's keys (`mathTree.test.ts` runs the tables of [07](07-math-editing.md)) |
+| UI against the engine | `app/src/mathTree.engine.test.ts` | `npm --prefix app run wasm` once, then `npm --prefix app test`; `QUIRE_ROUNDTRIP_CORPUS=<folder>` adds a folder of `.quire`/`.sm` files | The 2D editor's trees against the engine's parser (WebAssembly): every formula in the repository round-trips, random typing reads alike. Skipped without the engine, except on CI |
 | End to end | `app/e2e/*.spec.ts` (Playwright, WebKit) | `npm --prefix app run e2e` | The UI against `quire serve`, typed as a user would; `web.spec.ts` runs the web version with its WebAssembly engine (project `web`) |
 | SMath examples | `crates/quire-cli/tests/smath_examples.rs` | `cargo test -p quire-cli --test smath_examples -- --nocapture` | Every worksheet in the SMath corpus imports, evaluates, and reproduces at least its floor of SMath's cached results |
 | SMath robustness | `crates/quire-cli/tests/smath_robustness.rs` | the same `cargo test` | The importer never panics on hostile input, corpus prefixes or mutations |
@@ -81,7 +82,7 @@ cargo fmt --all --check
 cargo clippy --workspace --exclude quire-app --all-targets -- -D warnings
 cargo clippy -p quire-web --target wasm32-unknown-unknown -- -D warnings
 cargo test --workspace --exclude quire-app
-cd app && npm run format:check && npx tsc --noEmit && npm test && npm run e2e
+cd app && npm run format:check && npx tsc --noEmit && npm run wasm && npm test && npm run e2e
 ```
 
 If you changed `app/src-tauri`, also (after `npm --prefix app run build`):

@@ -48,6 +48,18 @@ pub fn dispatch(command: &str, body: &Json) -> Result<Json, String> {
             quire_service::show_in(doc()?, arg(body, "regionId")?, arg(body, "query")?).map_err(err)?,
         )
         .map_err(|e| e.to_string()),
+        // one line of math as the parser reads it: the structural editor's tests compare their
+        // trees with the engine's (app/src/mathTree.engine.test.ts)
+        "parse" => {
+            let src = arg(body, "src")?;
+            let parsed = quire_ast::parse(src);
+            Ok(json!({
+                "expr": parsed.as_ref().ok(),
+                "print": parsed.as_ref().ok().map(quire_ast::print),
+                "error": parsed.as_ref().err().map(|e| e.to_string()),
+                "lenient": quire_ast::parse_lenient(src),
+            }))
+        }
         "djot_html" => Ok(Json::String(quire_service::render_djot_editable(arg(body, "src")?))),
         "stage_image" => quire_service::assets::stage_base64(arg(body, "data")?, arg(body, "ext")?)
             .map(Json::String)
@@ -181,6 +193,18 @@ mod tests {
         let Ok(Ok(Ok(report))) = run.map(|h| h.join()) else { std::process::abort() };
         assert!(report.contains("\"resultText\":\"250\""), "{report:.300}");
         assert!(report.contains("too deeply nested"), "{report:.300}");
+    }
+
+    #[test]
+    fn parses_a_line_as_the_engine_does() -> Result<(), Box<dyn std::error::Error>> {
+        let ok = dispatch("parse", &json!({ "src": "M:=q*L^2/8" }))?;
+        assert_eq!(ok["print"], "M := q*L^2/8");
+        assert_eq!(ok["expr"]["t"], "Define");
+        assert!(ok["error"].is_null());
+        let unfinished = dispatch("parse", &json!({ "src": "q*L^2/" }))?;
+        assert!(unfinished["expr"].is_null() && unfinished["error"].is_string());
+        assert_eq!(unfinished["lenient"]["c"][2]["t"], "Placeholder");
+        Ok(())
     }
 
     #[test]
