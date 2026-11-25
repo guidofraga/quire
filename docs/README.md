@@ -11,5 +11,6 @@ For people working on Quire. Start with [CONTRIBUTING.md](../CONTRIBUTING.md) to
 | [04 — Guidelines](04-guidelines.md) | You are writing code, CSS or words the user reads; recipes for adding functions, units, commands, backend calls and region kinds |
 | [05 — Testing](05-testing.md) | You are adding or fixing tests, or one is flaky |
 | [06 — Releasing](06-releasing.md) | You are shipping a version (maintainers) |
+| [07 — Editing math in 2D](07-math-editing.md) | You change what a key does in a formula: the structural editor's rules, one table per key |
 
 Keep these pages true: a change that moves code, adds a convention or changes a process updates the page that describes it in the same commit.

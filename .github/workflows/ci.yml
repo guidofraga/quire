@@ -79,15 +79,16 @@ jobs:
       - name: Front-end formatting
         run: npm run format:check
         working-directory: app
+      # what pages.yml publishes, so a change that breaks it fails here and not after merging;
+      # before the unit tests, which check the 2D editor against this engine (mathTree.engine.test.ts)
+      - name: Build the web version
+        run: npm run build:web
+        working-directory: app
       - name: Front-end unit tests
         run: npm test
         working-directory: app
       - name: Build the desktop front end
         run: npm run build
-        working-directory: app
-      # what pages.yml publishes, so a change that breaks it fails here and not after merging
-      - name: Build the web version
-        run: npm run build:web
         working-directory: app
       - name: End-to-end smoke test (WebKit)
         run: |

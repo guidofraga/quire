@@ -144,7 +144,7 @@ A **structural (template) editor**, like SMath/Mathcad. The AST *is* the editing
 - Each AST node has a stable ID. The layout output maps glyph boxes to node IDs and child slots. That's how caret movement, selection, and red-squiggle error placement work.
 - Paste accepts linear text (`(a+b)/2 'm`), LaTeX, MathML, and SMath/Mathcad clipboard XML where feasible.
 
-> **What was built:** a linear-text editor with a live 2D preview (`MathEditor.tsx`): you type `M := q*L^2/8` and see it typeset as you go, with Greek, LaTeX shortcuts and completion. A structural editor needs caret geometry from our own math layout, which was not built. Paste accepts linear text, LaTeX and HTML tables (`clipboard.ts`).
+> **What was built:** a linear-text editor with a live 2D preview (`MathEditor.tsx`): you type `M := q*L^2/8` and see it typeset as you go, with Greek, LaTeX shortcuts and completion. A structural editor once seemed to need caret geometry from our own math layout; the MathML the browser lays out gives it, so it is being built over the same rendering (#165): the model and its rules are in [07 — Editing math in 2D](07-math-editing.md). Paste accepts linear text, LaTeX and HTML tables (`clipboard.ts`).
 
 ## 4. Process & crate layout
 
