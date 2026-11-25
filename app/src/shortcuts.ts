@@ -15,19 +15,24 @@ export interface Keys {
 
 /**
  * The command a key press is the shortcut for, or "" when it is none. `mac` picks ⌘ over Ctrl.
+ * `either` takes Ctrl or ⌘ on any system, as a web page does: a browser can't tell which a
+ * keyboard means, and Ctrl+S on a Mac in a browser has always saved. The desktop app is strict.
  * Formatting shortcuts (Bold, Italic, Underline) are left out: the text editor has them.
  */
-export function shortcutCommand(e: Keys, mac: boolean): string {
+export function shortcutCommand(e: Keys, mac: boolean, either = false): string {
   if (e.key === "F1") return "help";
   if (e.key === "F3") return e.shiftKey ? "find_prev" : "find_next";
-  if (!(mac ? e.metaKey : e.ctrlKey)) return "";
-  // ⌥ changes e.key on a Mac (⌥⌘F gives ƒ, ⌥⌘, gives ≤), and Shift changes it everywhere
-  // (Ctrl+Shift+- gives _), so read letters, digits and punctuation from the key's position
-  const key = e.code.startsWith("Key")
-    ? e.code.slice(3).toLowerCase()
-    : e.code.startsWith("Digit")
-      ? e.code.slice(5)
-      : (CODES[e.code] ?? e.key.toLowerCase());
+  if (!(either ? e.metaKey || e.ctrlKey : mac ? e.metaKey : e.ctrlKey)) return "";
+  // the letter the key types, so shortcuts follow the keyboard's layout (Ctrl+S is the S key
+  // on AZERTY and Dvorak too); only when ⌥ or Shift changes what it types (⌥⌘F gives ƒ,
+  // Ctrl+Shift+- gives _) is the key read from its position
+  const key = /^[a-z]$/i.test(e.key)
+    ? e.key.toLowerCase()
+    : e.code.startsWith("Key")
+      ? e.code.slice(3).toLowerCase()
+      : e.code.startsWith("Digit")
+        ? e.code.slice(5)
+        : (CODES[e.code] ?? e.key.toLowerCase());
   const { shiftKey: shift, altKey: alt } = e;
   switch (key) {
     case "s":
@@ -71,9 +76,9 @@ export function shortcutCommand(e: Keys, mac: boolean): string {
       return "next_error";
     case "/":
       return shift ? "help" : "";
-    // Ctrl+G is Greek in math, so Find Next is ⌘G on a Mac only
+    // Ctrl+G is Greek in math, so Find Next is ⌘G only
     case "g":
-      return mac ? (shift ? "find_prev" : "find_next") : "";
+      return mac && e.metaKey ? (shift ? "find_prev" : "find_next") : "";
     case ",":
       return alt ? "document_settings" : "settings";
     default:

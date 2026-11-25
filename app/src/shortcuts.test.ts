@@ -80,4 +80,21 @@ describe("shortcutCommand", () => {
     // Ctrl on a Mac is not ⌘
     expect(shortcutCommand({ ...m, ctrlKey: true }, true)).toBe("");
   });
+
+  it("follows the keyboard's layout for letters", () => {
+    // on AZERTY the key in QWERTY's Q position types A: Ctrl+A is Select All, not nothing
+    const azertyA: Keys = { key: "a", code: "KeyQ", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false };
+    expect(shortcutCommand(azertyA, false)).toBe("select_all");
+    // ⌥⌘F types ƒ on a Mac: the key's position says F
+    const optF: Keys = { key: "ƒ", code: "KeyF", ctrlKey: false, metaKey: true, shiftKey: false, altKey: true };
+    expect(shortcutCommand(optF, true)).toBe("find_replace");
+  });
+
+  it("takes Ctrl or ⌘ in a browser, but only ⌘ for the Mac desktop app", () => {
+    const save: Keys = { key: "s", code: "KeyS", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false };
+    expect(shortcutCommand(save, true, true)).toBe("save");
+    expect(shortcutCommand(save, true)).toBe("");
+    // Ctrl+G stays Greek in math even in a browser on a Mac
+    expect(shortcutCommand({ ...save, key: "g", code: "KeyG" }, true, true)).toBe("");
+  });
 });

@@ -896,7 +896,7 @@ function runOnce(id: string, from: "page" | "menu") {
 
 /** In a plain browser there is no native menu: the page runs the same shortcuts. */
 function browserShortcuts(e: KeyboardEvent) {
-  const id = shortcutCommand(e, isMac);
+  const id = shortcutCommand(e, isMac, true);
   if (!id) return;
   if (EDITOR_KEYS.has(id) && (state.editing || state.hfEditing || focusedTextField())) return;
   e.preventDefault();
