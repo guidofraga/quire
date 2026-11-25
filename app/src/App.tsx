@@ -873,12 +873,13 @@ function runCommand(id: string) {
  * there the page runs every menu shortcut, listening before the editors so a formula being
  * typed can't swallow Ctrl+Shift+T. On a Mac the menu gets them; the page runs only the ones
  * the hidden text box would otherwise keep. The editors and text fields keep their own Undo,
- * Redo and Select All.
+ * Redo and Select All; a header or footer being edited gets the app's.
  */
 function desktopShortcuts(e: KeyboardEvent) {
   const id = shortcutCommand(e, isMac);
   if (!id || (isMac && !EDITOR_KEYS.has(id))) return;
-  if (EDITOR_KEYS.has(id) && (state.editing || state.hfEditing || focusedTextField())) return;
+  // a header or footer being edited has no undo of its own: runCommand does it
+  if (EDITOR_KEYS.has(id) && (state.editing || focusedTextField())) return;
   e.preventDefault();
   runOnce(id, "page");
 }
@@ -898,7 +899,8 @@ function runOnce(id: string, from: "page" | "menu") {
 function browserShortcuts(e: KeyboardEvent) {
   const id = shortcutCommand(e, isMac, true);
   if (!id) return;
-  if (EDITOR_KEYS.has(id) && (state.editing || state.hfEditing || focusedTextField())) return;
+  // a header or footer being edited has no undo of its own: runCommand does it
+  if (EDITOR_KEYS.has(id) && (state.editing || focusedTextField())) return;
   e.preventDefault();
   runCommand(id);
 }
