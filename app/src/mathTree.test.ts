@@ -148,7 +148,8 @@ function walk(s: EditState, dir: "ArrowRight" | "ArrowLeft"): string[] {
   throw new Error("trapped");
 }
 
-describe("whatever is typed", () => {
+// thousands of random key sequences: about a second here, several on a slow CI runner
+describe("whatever is typed", { timeout: 60_000 }, () => {
   test("no key throws, and the caret is always somewhere on the line", () => {
     let n = 0;
     for (const s of states(3000)) {
