@@ -84,3 +84,24 @@ test("Settings ▸ Theme turns the window dark or light, whatever the system say
   await chooseTheme(page, "Match system");
   await expect.poll(() => chrome(page)).toBe(dark);
 });
+
+// the shortcuts Windows lost (#168); the page runs them from the same table as the desktop app
+test("Ctrl+Shift+M, T, I and P insert math, text and an image, and switch the view", async ({ page }) => {
+  await blank(page);
+  await page.keyboard.press("ControlOrMeta+Shift+m");
+  await expect(page.locator(".region.math.editing")).toHaveCount(1);
+  await page.keyboard.type("a:=1");
+  await page.keyboard.press("Escape");
+  await page.mouse.click(500, 420);
+  await page.keyboard.press("ControlOrMeta+Shift+t");
+  await page.keyboard.type("words");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".region.text")).toContainText("words");
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("ControlOrMeta+Shift+i");
+  await chooser;
+  const pages = page.getByRole("button", { name: "Pages", exact: true });
+  const before = await pages.getAttribute("aria-pressed");
+  await page.keyboard.press("ControlOrMeta+Shift+p");
+  await expect(pages).not.toHaveAttribute("aria-pressed", before ?? "");
+});
