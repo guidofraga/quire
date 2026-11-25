@@ -92,6 +92,7 @@ import { decodeDoc, docInHash, linkFor } from "./share";
 import { directPdf, pdfInfo, shrinkImages } from "./export";
 import { addRecent, clearRecent, forgetRecent, recentList, syncRecent } from "./recent";
 import { applyTheme, prefs, setPref, setSettingsOpen, withDefaults } from "./settings";
+import { EDITOR_KEYS, shortcutCommand } from "./shortcuts";
 import { type Align, activeView, commands, run as runText } from "./richtext";
 import {
   type AlignMode,
@@ -866,25 +867,19 @@ function runCommand(id: string) {
 }
 
 /**
- * The desktop app's Undo, Redo and Select All, run by the page itself. On Windows the web view
- * keeps Ctrl+Z and Ctrl+A for the hidden text box that holds the page's focus, so the menu's
- * shortcuts never fire (#168). The editors and text fields keep theirs.
+ * The desktop app's menu shortcuts, run by the page itself. On Windows and Linux the web view
+ * can keep a key press from ever reaching the native menu: Ctrl+Z and Ctrl+A go to the hidden
+ * text box that holds the page's focus, and Ctrl+Shift+M, T, I and P were lost too (#168). So
+ * there the page runs every menu shortcut, listening before the editors so a formula being
+ * typed can't swallow Ctrl+Shift+T. On a Mac the menu gets them; the page runs only the ones
+ * the hidden text box would otherwise keep. The editors and text fields keep their own Undo,
+ * Redo and Select All; a header or footer being edited gets the app's.
  */
-function desktopEditKeys(e: KeyboardEvent) {
-  if (e.defaultPrevented || !(isMac ? e.metaKey : e.ctrlKey) || e.altKey) return;
-  if (state.editing || state.hfEditing || focusedTextField()) return;
-  const k = e.key.toLowerCase();
-  const id =
-    k === "z"
-      ? e.shiftKey
-        ? "redo"
-        : "undo"
-      : k === "y" && !isMac && !e.shiftKey
-        ? "redo"
-        : k === "a" && !e.shiftKey
-          ? "select_all"
-          : "";
-  if (!id) return;
+function desktopShortcuts(e: KeyboardEvent) {
+  const id = shortcutCommand(e, isMac);
+  if (!id || (isMac && !EDITOR_KEYS.has(id))) return;
+  // a header or footer being edited has no undo of its own: runCommand does it
+  if (EDITOR_KEYS.has(id) && (state.editing || focusedTextField())) return;
   e.preventDefault();
   runOnce(id, "page");
 }
@@ -900,57 +895,14 @@ function runOnce(id: string, from: "page" | "menu") {
   runCommand(id);
 }
 
-/** In a plain browser there is no native menu; map the same shortcuts. */
+/** In a plain browser there is no native menu: the page runs the same shortcuts. */
 function browserShortcuts(e: KeyboardEvent) {
-  if (isTauri) return desktopEditKeys(e);
-  if (e.key === "F1") {
-    e.preventDefault();
-    return void runCommand("help");
-  }
-  if (e.key === "F3") {
-    e.preventDefault();
-    return void runCommand(e.shiftKey ? "find_prev" : "find_next");
-  }
-  if (!(e.metaKey || e.ctrlKey)) return;
-  // ⌥ changes e.key on a Mac (⌥⌘F gives ƒ, ⌥⌘, gives ≤)
-  const key =
-    e.altKey && e.code.startsWith("Key")
-      ? e.code.slice(3).toLowerCase()
-      : e.altKey && e.code === "Comma"
-        ? ","
-        : e.key.toLowerCase();
-  const map: Record<string, string> = {
-    s: e.shiftKey ? "save_as" : "save",
-    o: e.shiftKey ? "open_notebook" : "open",
-    n: e.altKey ? "new_section" : e.shiftKey ? "new_from_template" : "new",
-    "\\": "toggle_sidebar",
-    z: e.shiftKey ? "redo" : "undo",
-    // Ctrl+Y, as on Windows and Linux; on a Mac ⌘Y is not Redo
-    y: !isMac && !e.shiftKey ? "redo" : "",
-    p: e.altKey ? "insert_plot" : e.shiftKey ? "page_view" : "print",
-    e: "export_pdf",
-    d: "duplicate",
-    i: e.altKey ? "toggle_inspector" : "",
-    "=": "zoom_in",
-    "-": "zoom_out",
-    "0": "zoom_reset",
-    "'": "next_error",
-    f: e.altKey ? "find_replace" : e.shiftKey ? "search_notebook" : "find",
-    m: e.shiftKey ? "insert_math" : "",
-    r: e.shiftKey ? "insert_ref" : "",
-    t: e.altKey ? "insert_table" : "",
-    "?": "help",
-    "/": e.shiftKey ? "help" : "",
-    // Ctrl+G is Greek in math
-    g: e.metaKey ? (e.shiftKey ? "find_prev" : "find_next") : "",
-    ",": e.altKey ? "document_settings" : "settings",
-  };
-  if (key === "a" && (state.editing || state.hfEditing || focusedTextField())) return;
-  const cmd = key === "a" ? "select_all" : map[key];
-  if (cmd && !(state.editing && (cmd === "undo" || cmd === "redo" || cmd === "duplicate"))) {
-    e.preventDefault();
-    runCommand(cmd);
-  }
+  const id = shortcutCommand(e, isMac, true);
+  if (!id) return;
+  // a header or footer being edited has no undo of its own: runCommand does it
+  if (EDITOR_KEYS.has(id) && (state.editing || focusedTextField())) return;
+  e.preventDefault();
+  runCommand(id);
 }
 
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__quire = { state, layout, runCommand };
@@ -1084,10 +1036,12 @@ export function App() {
     // before anything is opened: the desktop app adopts older recent lists only until then
     const lastBook = lastNotebook();
     await syncRecent(lastBook ? [lastBook, ...recentNotebooks().filter((p) => p !== lastBook)] : recentNotebooks());
-    await onMenu((id) => (["undo", "redo", "select_all"].includes(id) ? runOnce(id, "menu") : runCommand(id)));
+    // the page may already have run a menu shortcut (desktopShortcuts): once per key press
+    await onMenu((id) => runOnce(id, "menu"));
     await guardClose(() => state.dirty && !nb.current, api.clearRecovery, flushSave);
     installAutosave();
-    window.addEventListener("keydown", browserShortcuts);
+    if (isTauri) window.addEventListener("keydown", desktopShortcuts, { capture: true });
+    else window.addEventListener("keydown", browserShortcuts);
     window.addEventListener("keydown", keepBackspaceFromHistory);
     // another document's link pasted into the address bar
     window.addEventListener("hashchange", () => {
