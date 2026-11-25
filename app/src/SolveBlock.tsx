@@ -2,8 +2,10 @@
 // closing `find(x, y)` or `minerr(x, y)`, as one framed region. Each line is edited like a
 // math region; the engine reports each as `<id>:g<n>`, `<id>:c<n>` and `<id>:f`.
 import { bracketsOf, highlightPair, mathCaret } from "./brackets";
-import { createEffect, createSignal, Index, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Index, on, Show, untrack } from "solid-js";
 import { type MathLine, MathEditor } from "./MathEditor";
+import { MathInPlace } from "./MathInPlace";
+import { prefs } from "./settings";
 import { mathml } from "./math";
 import { nameMarks, solveWords } from "./describe";
 import { spokenMath } from "./speech";
@@ -203,6 +205,17 @@ function Line(props: { r: Region; at: LineRef; text: string }) {
       ? mathml(input, shows() ? v!.result : null, v!.units, v!.constants, false, nameMarks(v!), brackets)
       : null;
   };
+  // Settings ▸ Editing ▸ Edit math in place: the line itself is the editor (MathInPlace.tsx)
+  const inPlace = createMemo(() => editing() && untrack(() => prefs.mathInPlace));
+  const said = () => {
+    const v = view();
+    return {
+      result: shows() ? (v?.result ?? null) : null,
+      units: v?.units ?? [],
+      constants: v?.constants ?? [],
+      marks: v ? nameMarks(v) : {},
+    };
+  };
   // at the values found, whether a constraint holds
   const holds = () => (props.at.key === "given" && !view()?.error ? view()?.check : undefined);
   const words = () => {
@@ -244,17 +257,25 @@ function Line(props: { r: Region; at: LineRef; text: string }) {
         editLine(id(), props.at);
       }}
     >
-      <Show when={editing()}>
+      <Show when={editing() && !inPlace()}>
         <MathEditor r={{ id: line.view, kind: "math", at: [0, 0], expr: line.text }} line={line} />
       </Show>
       <div
         class="math-line"
         classList={{ preview: editing(), "check-pass": holds() === true, "check-fail": holds() === false }}
-        aria-hidden={editing() || undefined}
+        aria-hidden={(editing() && !inPlace()) || undefined}
       >
-        <Show when={rendered()} fallback={<code class="raw">{props.text || " "}</code>}>
+        <Show
+          when={inPlace()}
+          fallback={
+            <Show when={rendered()} fallback={<code class="raw">{props.text || " "}</code>}>
+              <span class="sr-only">{words()}</span>
+              <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
+            </Show>
+          }
+        >
           <span class="sr-only">{words()}</span>
-          <span class="m" ref={mathEl} innerHTML={rendered()!} aria-hidden="true" />
+          <MathInPlace r={{ id: line.view, kind: "math", at: [0, 0], expr: line.text }} line={line} said={said} />
         </Show>
         <Show when={holds() !== undefined}>
           <span

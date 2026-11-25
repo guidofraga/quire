@@ -2027,6 +2027,54 @@ export function sketch(s: EditState): string {
   return main;
 }
 
+// ---------------------------------------------------------------------------
+// For the editor on the page
+// ---------------------------------------------------------------------------
+
+/**
+ * Brackets filling a slot the caret is not in become the slot's (`absorb`), as they will be
+ * once the edit ends: an arrow or a click out of `e^(x + 1)` draws it as the view draws it. The
+ * formula and its text are the same, so it is no new undo step.
+ */
+export function settleSlots(s: EditState): EditState {
+  const e = new Ed(s);
+  const inside = new Set(ancestry(e.w, s.caret.row).map((x) => x.row));
+  if (s.anchor) for (const x of ancestry(e.w, s.anchor.row)) inside.add(x.row);
+  const rows: Row[] = [];
+  forEachRow(e.line, (r) => rows.push(r));
+  for (const r of rows.reverse()) if (!inside.has(r.id)) e.absorb(r);
+  e.re();
+  const out = e.done(s);
+  return { ...out, version: s.version, effect: s.effect, space: s.space, assign: s.assign, beforeShow: s.beforeShow };
+}
+
+/** Every position the caret can be at, as ← → walk them. */
+export function positions(s: EditState): Pos[] {
+  return stops(s.line)
+    .filter((p) => !p.skip)
+    .map(({ row, i }) => ({ row, i }));
+}
+
+/** The caret in the first empty slot (□ or `?`), if there is one. */
+export function toFirstHole(s: EditState): EditState | null {
+  const h = holes(s.line)[0];
+  return h ? setCaret(s, h) : null;
+}
+
+/** Where a row is: the structure it is a slot of (null for the line's rows), and that structure's place. */
+export function whereIs(
+  s: EditState,
+  row: string,
+): { owner: Node | null; slot: number; parent: Row | null; at: number; row: Row } | null {
+  const w = locate(s.line).get(row);
+  return w ? { owner: w.owner, slot: w.slot, parent: w.parent, at: w.at, row: w.row } : null;
+}
+
+/** Selects `[from, to)` of a row (the caret at `to`). */
+export function selectRange(s: EditState, row: string, from: number, to: number): EditState {
+  return setCaret(setCaret(s, { row, i: from }), { row, i: to }, true);
+}
+
 /** An empty formula, the caret in it. */
 export function empty(opts: { equation?: boolean } = {}): EditState {
   return { ...fresh(emptyLine()), equation: opts.equation };

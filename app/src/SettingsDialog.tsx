@@ -77,6 +77,7 @@ function Dialog() {
           </Section>
           <Section title="Editing">
             <Check checked={prefs.latex} label="LaTeX shortcuts (\alpha → α)" onChange={toggle("latex")} />
+            <Check checked={prefs.mathInPlace} label="Edit math in place (preview)" onChange={toggle("mathInPlace")} />
             <Check checked={prefs.nameNotes} label="Flag ambiguous names" onChange={toggle("nameNotes")} />
             <Check checked={prefs.tooltips} label="Unit and constant tooltips" onChange={toggle("tooltips")} />
             <Check
