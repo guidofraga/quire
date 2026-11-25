@@ -714,9 +714,17 @@ function treeKeys(e: KeyboardEvent, root: HTMLElement) {
       else if (node.kind === "section") setExpanded(node.rel, !nb.expanded[node.rel]);
       else {
         // opened from the keyboard, focus stays in the tree for the next arrow key; the page
-        // is a Tab or Esc away
+        // is a Tab or Esc away. Unless something took it while the note was loading: F2
+        // pressed straight away opens the rename field, and that keeps the keyboard
         const rel = node.rel;
-        void openNote(rel).then(() => setTimeout(() => rowOf(rel)?.focus({ preventScroll: true })));
+        const from = document.activeElement;
+        void openNote(rel).then(() =>
+          setTimeout(() => {
+            const now = document.activeElement;
+            if (nb.renaming || (now !== from && now !== document.body && !now?.classList.contains("key-sink"))) return;
+            rowOf(rel)?.focus({ preventScroll: true });
+          }),
+        );
       }
       break;
     case "F2":

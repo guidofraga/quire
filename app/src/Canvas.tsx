@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { focusedTextField } from "./fieldKeys";
 import { openRegionMenu, openRegionMenuAt } from "./menu";
 import { SHEET_GAP } from "./pages";
 import { forwardTyping } from "./MathEditor";
@@ -293,8 +294,13 @@ export function Canvas() {
   // IME composition, dictation and paste all start a region — not just plain keydowns.
   // The welcome screen keeps focus while it is open and hands it back when it closes,
   // so typing starts at the insertion point right after "Blank document".
+  // A text field outside the page keeps the keyboard, though: a note that finishes opening
+  // while its name is being typed in the sidebar must not end the rename.
   createEffect(() => {
-    if (state.caret && !state.editing && !state.hfEditing && !welcomeOpen()) sink.focus({ preventScroll: true });
+    if (!state.caret || state.editing || state.hfEditing || welcomeOpen()) return;
+    const field = untrack(focusedTextField);
+    if (field && !viewportEl?.contains(field)) return;
+    sink.focus({ preventScroll: true });
   });
 
   function onSinkInput(e: InputEvent) {
