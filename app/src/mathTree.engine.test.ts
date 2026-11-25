@@ -182,6 +182,64 @@ describe.skipIf(!haveEngine)("against the engine", () => {
     expect(t.sameText).toBe(t.formulas - t.unparsed);
   });
 
+  test("typing a formula with brackets around random parts of it builds that formula", () => {
+    // nested brackets, calls in brackets, brackets that are a whole slot, operators after `)`
+    const seeds = [
+      "(1 - cos(α))/2",
+      "ln(abs((x - r)/(x + r)))",
+      "sqrt((1 - cos(α))/2)",
+      "(2*n - 1)!",
+      "x^(2*n)/(2*n)!",
+      "(x ≠ 0) and (y ≠ 0)",
+      "not (a < b) or c",
+      "2 and b",
+      "f(g(h(x)))^2",
+      "e^(-(x - μ)^2/(2*σ^2))",
+      "abs(sqrt((a + b)))!",
+      "M := q*L^2/8 - (w*L)/(2*(a + b))",
+      "[f(a), (b + c)/2; -(d), e!]",
+    ];
+    const sources = [...seeds, ...IN_REPO.flatMap((p) => formulas(openDoc(p)))].filter((s) => parse(s).expr);
+    let seed = Number(env.env.MATHTREE_SEED ?? 173);
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return Math.floor(seed / 65536) / 32768;
+    };
+    const isExpr = (v: object) =>
+      typeof (v as { t?: unknown }).t === "string" && Object.keys(v).every((k) => k === "t" || k === "c");
+    // every sub-expression wrapped in brackets with probability p, at any depth
+    const vary = (v: unknown, p: number): unknown => {
+      if (Array.isArray(v)) return v.map((x) => vary(x, p));
+      if (!v || typeof v !== "object") return v;
+      if (!isExpr(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, vary(x, p)]));
+      const e = v as { t: string; c?: unknown };
+      const inner = "c" in e ? { ...e, c: vary(e.c, p) } : e;
+      const r = rand();
+      // sometimes twice: `((a + b))/2`
+      return r < p / 4 ? { t: "Paren", c: { t: "Paren", c: inner } } : r < p ? { t: "Paren", c: inner } : inner;
+    };
+    const rounds = Number(env.env.MATHTREE_ROUNDS ?? 4);
+    let checked = 0;
+    const bad: string[] = [];
+    for (let r = 0; r < rounds; r++)
+      for (const s of sources) {
+        const e = parse(s).expr!;
+        const varied = { ...e, c: vary((e as { c?: unknown }).c, 0.15 + 0.3 * rand()) } as Expr;
+        const text = print(varied);
+        const want = parse(text).expr;
+        // brackets where the text can't have them (`2 ('m)`): not a formula
+        if (!want || JSON.stringify(strip(want)) !== JSON.stringify(strip(varied))) continue;
+        checked++;
+        const typed = toLinear(fromLinear(text));
+        if (JSON.stringify(strip(parse(typed).expr)) !== JSON.stringify(strip(want))) bad.push(`${text}  →  ${typed}`);
+      }
+    console.info(
+      `bracketed: ${checked} formulas typed, ${bad.length} built otherwise\n  ${bad.slice(0, 30).join("\n  ")}`,
+    );
+    expect(checked).toBeGreaterThan(500);
+    expect(bad).toEqual([]);
+  });
+
   test.skipIf(!env.env.QUIRE_ROUNDTRIP_CORPUS)("QUIRE_ROUNDTRIP_CORPUS survives the editor", () => {
     const dir = env.env.QUIRE_ROUNDTRIP_CORPUS!;
     const files = docsIn(dir, (n) => /\.(quire|quirez|sm)$/i.test(n));

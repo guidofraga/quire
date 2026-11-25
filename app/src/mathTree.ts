@@ -39,6 +39,8 @@ export interface Glyph {
   k: "g";
   id: string;
   s: string;
+  /** Put in by the editor, not typed: the `·` between two values (`2·(`). */
+  auto?: boolean;
 }
 
 export type Kind =
@@ -129,6 +131,8 @@ export interface EditState {
 let seq = 0;
 const nid = () => `m${(++seq).toString(36)}`;
 const gl = (s: string): Glyph => ({ k: "g", id: nid(), s });
+/** The `·` the editor puts between two values the text can't write side by side. */
+const times = (): Glyph => ({ k: "g", id: nid(), s: "*", auto: true });
 const mkRow = (atoms: Atom[] = [], extra: Partial<Row> = {}): Row => ({ id: nid(), atoms, ...extra });
 const mkNode = (k: Kind, slots: Row[], extra: Partial<Node> = {}): Node => ({ k, id: nid(), slots, ...extra });
 
@@ -359,12 +363,23 @@ export function fromLinear(text: string, opts: { equation?: boolean } = {}): Edi
   const { expr, show, unit } = splitShow(text);
   const base = { ...fresh(emptyLine()), equation: opts.equation };
   let s = typeText(base, expr, true);
+  s = absorbed(s, !!show);
   if (show) {
     s = clean(s);
     s.line.show = show;
     if (show === "value" && unit) s = typeText({ ...s, caret: { row: s.line.unit.id, i: 0 } }, unit, true);
   }
   return settle({ ...s, caret: show ? endOf(s.line) : s.caret, anchor: null, version: 0 });
+}
+
+/** Brackets that fill a slot become the slot's, except where the caret still is (`everywhere`: there too). */
+function absorbed(s: EditState, everywhere: boolean): EditState {
+  const e = new Ed(s);
+  if (everywhere) e.caret = { row: e.line.main.id, i: 0 };
+  e.absorbAll();
+  if (everywhere) e.caret = s.caret;
+  e.re();
+  return e.done(s);
 }
 
 /** `store.ts` `splitShow`: the expression, and the `=` or `→` with the unit typed after it. */
@@ -729,6 +744,7 @@ class Ed {
       if (owner.k === "sup" && this.continuesExponent(row, ch)) return;
       if (owner.k === "frac" && (this.here.slot === 0 || this.continuesDenominator(row, ch))) return;
       if (owner.k !== "sup" && owner.k !== "frac") return;
+      this.absorb(row);
       this.after(owner);
     }
   }
@@ -765,7 +781,7 @@ class Ed {
     if (space && endsName(this.row, this.i) && isNameCont(ch)) {
       this.put(gl(" "));
     } else if (space && isDigit(glyph(prev)) && (ch === "e" || ch === "E")) this.put(gl(" "));
-    else if (this.timesBefore(prev, ch)) this.put(gl("*"));
+    else if (this.timesBefore(prev, ch)) this.put(times());
     this.put(gl(ch));
   }
 
@@ -928,7 +944,7 @@ class Ed {
     }
     const prev = this.prev();
     const call = (isWordChar(prev) && this.inName()) || prev?.k === "sub";
-    if (!call && endsValueBefore(prev)) this.put(gl("*"));
+    if (!call && endsValueBefore(prev)) this.put(times());
     const next = this.next();
     const inner = mkRow(next && !isOp(next) ? r.atoms.splice(this.i) : []);
     const paren = mkNode("paren", [inner], { ghost: true });
@@ -949,12 +965,11 @@ class Ed {
         const tail = row.atoms.splice(this.i);
         const place = this.placeOf(owner)!;
         // what was left after the `)` is a value of its own: `(a)·b`
-        if (tail.length && !isOp(tail[0]) && glyph(tail[0]) !== " ") tail.unshift(gl("*"));
+        if (tail.length && !isOp(tail[0]) && glyph(tail[0]) !== " ") tail.unshift(times());
         place.row.atoms.splice(place.at + 1, 0, ...tail);
         owner.ghost = false;
         this.re();
         this.set(place.row, place.at + 1);
-        this.absorb(owner, place.row);
         this.shape(owner);
         return;
       }
@@ -962,22 +977,28 @@ class Ed {
       const bracket = owner.k === "index" || owner.k === "matrix";
       if ((ch === ")" && fn) || (ch === "]" && bracket)) {
         owner.ghost = false;
+        this.absorb(row);
         return this.after(owner);
       }
       if (fn || bracket || owner.k === "paren" || this.i !== row.atoms.length) break;
+      this.absorb(row);
       this.after(owner);
     }
     this.caret = start;
   }
 
   /**
-   * Brackets closed around the whole of a slot that draws none (`e^(x + 1)`, `(a + b)/`) become
-   * the slot's: the formula is drawn as it will be once the edit ends.
+   * A slot being left whose content is one pair of closed brackets, in a slot that draws none
+   * (`e^(x + 1)`, `sqrt((a + b))`): the brackets become the slot's, drawn as the formula will be
+   * once the edit ends. Only when the slot is left, since what follows the `)` may still apply
+   * to the brackets (`sqrt((1 - a)/2)`, `/(2 n)!`, `/(m)^3`).
    */
-  absorb(paren: Node, on: Row) {
-    const w = this.w.get(on.id)!;
-    const owner = w.owner;
-    if (!owner || on.atoms.length !== 1) return;
+  absorb(on: Row) {
+    const w = this.w.get(on.id);
+    const owner = w?.owner;
+    const paren = on.atoms[0];
+    // one pair per slot: `((x))/2` keeps its inner pair
+    if (!w || !owner || on.kept || on.atoms.length !== 1 || paren.k !== "paren" || paren.ghost) return;
     const what =
       owner.k === "frac"
         ? w.slot === 0
@@ -992,10 +1013,17 @@ class Ed {
     const inner = paren.slots[0];
     const e = rowExpr(inner);
     on.atoms = inner.atoms;
-    on.kept = what === "radicand" || (!!e && !NEEDS_BRACKETS[what](e)) ? true : undefined;
-    if (!on.kept) delete on.kept;
+    if (what === "radicand" || (!!e && !NEEDS_BRACKETS[what](e))) on.kept = true;
+    else delete on.kept;
+    if (this.caret.row === inner.id) this.caret.row = on.id;
     this.re();
-    this.set(on, on.atoms.length);
+  }
+
+  /** `absorb` in every slot but the one the caret is in, where more may still be typed. */
+  absorbAll() {
+    const rows: Row[] = [];
+    forEachRow(this.line, (r) => rows.push(r));
+    for (const r of rows.reverse()) if (r.id !== this.caret.row) this.absorb(r);
   }
 
   /** `int(f, x, a, b)` with its `)` typed: the integral's shape, when it has that many arguments. */
@@ -1037,7 +1065,7 @@ class Ed {
       this.put(n);
       return this.set(n.slots[0], 0);
     }
-    if (endsValueBefore(prev)) this.put(gl("*"));
+    if (endsValueBefore(prev)) this.put(times());
     const m = mkNode("matrix", [mkRow()], { cols: 1 });
     this.put(m);
     this.set(m.slots[0], 0);
@@ -1077,7 +1105,10 @@ class Ed {
     }
     if (ch === "," && owner && (owner.k === "root" || owner.k === "big")) {
       const next = owner.slots[slot + 1];
-      if (next) this.set(next, 0);
+      if (next) {
+        this.absorb(row);
+        this.set(next, 0);
+      }
       return;
     }
     this.put(gl(ch));
@@ -1123,6 +1154,8 @@ class Ed {
   insertTemplate(text: string) {
     const t = new Ed(empty());
     for (const ch of text) t.type(ch, true);
+    t.caret = { row: t.line.main.id, i: 0 };
+    t.absorbAll();
     // a slot holding only `?` is an empty slot
     forEachRow(t.line, (r) => {
       const at = t.w.get(r.id);
@@ -1188,26 +1221,32 @@ class Ed {
     this.set(this.line.unit, 0);
   }
 
-  /** `and`, `or`, `not` typed as a word of their own become the operator. */
+  /**
+   * `and`, `or`, `not` typed as a word of their own become the operator, wherever the text would
+   * read them so: after a space, an operator, a number (`2 and b`), brackets (`(a) and b`). A gap
+   * or an automatic `·` before the word goes. Another word typed after a space is a second
+   * name: the gap becomes `·`.
+   */
   keyword() {
     const r = this.row;
     let start = this.i;
     while (start > 0 && isWordChar(r.atoms[start - 1])) start--;
+    // digits before letters are a number of their own (`2and`): the word starts at the letters
+    if (!isNameStart(glyph(r.atoms[start]))) while (start < this.i && !isNameStart(glyph(r.atoms[start]))) start++;
     const word = r.atoms
       .slice(start, this.i)
       .map((a) => glyph(a))
       .join("");
+    if (!word || isWordChar(this.next())) return;
     const before = r.atoms[start - 1];
-    if (!KW.has(word) && word && glyph(before) === " " && !isWordChar(this.next()) && start >= 2) {
-      if (endsName(r, start - 1)) {
-        r.atoms.splice(start - 1, 1, gl("*"));
+    if (!KW.has(word)) {
+      if (glyph(before) === " " && endsName(r, start - 1)) {
+        r.atoms.splice(start - 1, 1, times());
         this.re();
       }
       return;
     }
-    if (!KW.has(word) || isWordChar(this.next())) return;
-    if (before && !(glyph(before) === " " || isOp(before))) return;
-    const from = glyph(before) === " " ? start - 1 : start;
+    const from = before?.k === "g" && (before.s === " " || before.auto) ? start - 1 : start;
     r.atoms.splice(from, this.i - from, gl(word));
     this.re();
     this.set(r, from + 1);

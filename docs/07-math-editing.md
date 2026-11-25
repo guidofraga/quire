@@ -20,6 +20,7 @@ What every key does when a formula is edited in place, typeset (#165): the rules
 - Every other structure (brackets, radicals, matrices, indices, sums) is left with its closer (`)` or `]`) or →.
 - Backspace deletes the last thing drawn before the caret; at the start of a slot it takes the structure apart (`a/|b` → `a|b`). Delete is its mirror.
 - Brackets are the #173 pairs: `(` types a faint `)`, typing `)` over it steps past, an empty pair goes together, Backspace after `)` turns it faint again.
+- Brackets that fill a slot the view draws without them (a numerator, denominator, exponent, radicand) become the slot's own when the slot is left by typing; until then they are drawn, because what follows `)` may still apply to them (`sqrt((1 - a)/2)`, `/(2 n)!`, `/(m)^3`).
 
 ## How to read the tables
 
@@ -77,10 +78,11 @@ What every key does when a formula is edited in place, typeset (#165): the rules
 | `e^-x` | `e^{-x‸}` | `e^-x` | A sign right after `^` is the exponent's. |
 | `e^-x+1` | `e^{-x}+1‸` | `e^-x + 1` |  |
 | `e^-x/2` | `\frac{e^{-x}}{2‸}` | `e^-x/2` | Linear `e^-x/2` is (e^−x)/2: `/` leaves the exponent too. To divide the exponent, use brackets. |
-| `e^(-x/2)` | `e^{\frac{-x}{2}‸}` | `e^(-x/2)` | Brackets that are the whole exponent are its own: drawn as e^(−x/2) without them, as the view does. |
-| `e^(x+1)` | `e^{x+1‸}` | `e^(x + 1)` |  |
+| `e^(-x/2)` | `e^{(\frac{-x}{2})‸}` | `e^(-x/2)` | Brackets that fill the exponent stay drawn while the caret is still in it, since what follows `)` may still apply to them… |
+| `e^(x+1)` | `e^{(x+1)‸}` | `e^(x + 1)` |  |
+| `e^(x+1)+2` | `e^{x+1}+2‸` | `e^(x + 1) + 2` | …and become the exponent's own once it is left by typing: drawn without them, as the view draws the stored formula. |
 | `e^2x` | `e^{2}x‸` | `e^2 x` | Deliberately as the text reads it: `e^2x` is e²·x in linear Quire, so it is here; e^(2x) is typed `e^(2x)`. The x visibly drops to the line. |
-| `x^(2)` | `x^{2‸}` | `x^(2)` | Unneeded brackets are kept in the text, not drawn. |
+| `x^(2)` | `x^{(2)‸}` | `x^(2)` | Brackets the text doesn't need are kept in it, as typed. |
 | `x^2^3` | `x^{2^{3‸}}` | `x^2^3` | `^` groups to the right (x^(2³)), as in the parser. |
 | `x^^` | `x^{‸}` | `x^?` | Nothing to raise: the second `^` does nothing. |
 | `(a+b)^2` | `(a+b)^{2‸}` | `(a + b)^2` |  |
@@ -135,6 +137,14 @@ What every key does when a formula is edited in place, typeset (#165): the rules
 | `sum(i^2,i,1,n)` | `\sum{i}{1}{n}{i^{2}}‸` | `sum(i^2, i, 1, n)` |  |
 | `diff(f(x),x)` | `\diff{x}{f(x)}‸` | `diff(f(x), x)` |  |
 | `lim(f(x),x,0)` | `\lim{x}{0}{f(x)}‸` | `lim(f(x), x, 0)` |  |
+| `(1␣-␣cos(α))/2` | `\frac{1-cos(α)}{2‸}` | `(1 - cos(α))/2` | The `)` after a call's `)` closes the outer brackets. |
+| `sqrt((1␣-␣cos(α))/2)` | `\sqrt{\frac{1-cos(α)}{2}}‸` | `sqrt((1 - cos(α))/2)` | Brackets that fill a radicand become its own only when it is left: here `/2` still applies to them. |
+| `ln(abs((x␣-␣r)/(x␣+␣r)))` | `ln(\|\frac{x-r}{x+r}\|)‸` | `ln(abs((x - r)/(x + r)))` | Nested brackets, each `)` closing the innermost one still open. |
+| `(2*n␣-␣1)!` | `(2·n-1)!‸` | `(2*n - 1)!` | A factorial after `)` applies to the brackets. |
+| `x^(2*n)/(2*n)!` | `\frac{x^{2·n}}{(2·n)!‸}` | `x^(2*n)/(2*n)!` | …also when they fill a denominator: the exponent's brackets became its own when `/` left it, the denominator's are still drawn when `!` is typed. |
+| `25␣kN/(m)^3` | `\frac{25kN}{(m)^{3‸}}` | `25 kN/(m)^3` | A power after `)` applies to the brackets too. |
+| `sqrt((a+b))` | `\sqrt{a+b}‸` | `sqrt((a + b))` | Stepping out of the radical, its brackets become its own (kept in the text, as typed). |
+| `((a+b))/2` | `\frac{(a+b)}{2‸}` | `((a + b))/2` | One pair per slot: the inner pair stays. |
 
 ## `[` `]` `,` `;` — indices and matrices
 
@@ -283,6 +293,11 @@ Everything the linear editor does keeps working, by the same keys.
 | `"a+b/"` | `"a+b/"‸` | `"a+b/"` |  |
 | `a␣and␣b` | `a∧b‸` | `a and b` | `and`, `or`, `not` typed as words become the operators (∧ ∨ ¬). |
 | `not␣x` | `¬x‸` | `not x` |  |
+| `(x␣≠␣0)␣and␣(y␣≠␣0)` | `(x≠0)∧(y≠0)‸` | `(x ≠ 0) and (y ≠ 0)` | After brackets, a space and `and` is the operator: the `·` put in before the word goes. |
+| `(a)␣or␣b` | `(a)∨b‸` | `(a) or b` |  |
+| `not␣(a)␣or␣b` | `¬(a)∨b‸` | `not (a) or b` |  |
+| `2␣and␣b` | `2∧b‸` | `2 and b` | After a number too (the text reads `2 and b` so). |
+| `A.b␣and␣c` | `A_{b}∧c‸` | `A.b and c` |  |
 | `a␣b` | `a␣b‸` | `a*b` | Two names typed apart stay apart (a thin gap), so a keyword can still follow… |
 | `a␣b+c` | `a·b+c‸` | `a*b + c` | …and once the second name is done and isn't one, the gap becomes `·`. |
 | `1e-5` | `1e-5‸` | `1e-5` | A number's exponent stays a number. |
@@ -332,7 +347,7 @@ The whole point: a formula typed as a linear typist types it, spaces and all, co
 | `M␣:=␣q*(L␣-␣x)/2` | `M≔\frac{q·(L-x)}{2‸}` | `M := q*(L - x)/2` |  |
 | `g␣:=␣9.81␣m/s^2` | `g≔\frac{9.81m}{s^{2‸}}` | `g := 9.81 m/s^2` |  |
 | `W␣:=␣2.5*10^-4␣m^3` | `W≔2.5·10^{-4}m^{3‸}` | `W := 2.5*10^-4 m^3` |  |
-| `e^(-t/(2␣s))` | `e^{\frac{-t}{2s}‸}` | `e^(-t/(2 s))` |  |
+| `e^(-t/(2␣s))` | `e^{(\frac{-t}{2s})‸}` | `e^(-t/(2 s))` |  |
 | `A.tank␣:=␣π*(D.base/2)^2` | `A_{tank}≔π·(\frac{D_{base}}{2})^{2‸}` | `A.tank := π*(D.base/2)^2` |  |
 | `F.cr␣:=␣(0.658^(F.y/F.e))*F.y` | `F_{cr}≔(0.658^{\frac{F_{y}}{F_{e}}})·F_{y‸}` | `F.cr := (0.658^(F.y/F.e))*F.y` |  |
 
@@ -350,12 +365,13 @@ Each is a test.
 4. **The selection is always one slice of one row.**
 5. **The text is what the tree says:** for 1,500 random sequences (more on demand, `MATHTREE_RUNS`), whenever the tree reads as a formula, the engine parses `toLinear()` without error, and to the same formula as the model (brackets aside).
 6. **Round trip:** for every formula in the repository's documents, `parse(toLinear(fromExpr(parse(s)))) == parse(s)`, the text is exactly `print(parse(s))`, and typing that text builds the same formula.
-7. **Unfinished lines:** for every prefix of those formulas, the text of the typed tree previews as the engine previews the prefix (`parse_lenient`).
+7. **Brackets anywhere:** those formulas, and a few nested on purpose (`sqrt((1 - cos(α))/2)`, `(2*n - 1)!`, `(x ≠ 0) and (y ≠ 0)`), with brackets put around random parts at every depth (sometimes twice), typed key by key, build the formula their text says (4 rounds; more with `MATHTREE_ROUNDS`, other draws with `MATHTREE_SEED`).
+8. **Unfinished lines:** for every prefix of those formulas, the text of the typed tree previews as the engine previews the prefix (`parse_lenient`).
 
 ## Tests
 
 - `app/src/mathTree.test.ts`: the tables of this page, row by row, and invariants 1–4, undo, clipboard, templates, hints.
-- `app/src/mathTree.engine.test.ts`: invariants 5–7 against the engine itself, `crates/quire-web` as WebAssembly, through a `parse` command that returns the strict tree, its canonical text and the forgiving preview. It needs `app/web-public/quire_web.wasm` (`npm run wasm`); without it the file is skipped, except on CI, where it fails. CI builds the web version before the unit tests for this.
+- `app/src/mathTree.engine.test.ts`: invariants 5–8 against the engine itself, `crates/quire-web` as WebAssembly, through a `parse` command that returns the strict tree, its canonical text and the forgiving preview. It needs `app/web-public/quire_web.wasm` (`npm run wasm`); without it the file is skipped, except on CI, where it fails. CI builds the web version before the unit tests for this.
 - A new row for these tables: list its keys in a file, one per line, and run `MATHTREE_DUMP=<file> npx vitest run src/mathTree.test.ts -t dump`; `<file>.out` has the rows as the model gives them, to check by eye before they go here with their reason.
 - `QUIRE_ROUNDTRIP_CORPUS=<folder>` runs the round trip over every `.quire`, `.quirez` and `.sm` file in a folder as well (SMath files converted as the app converts them).
 
@@ -366,6 +382,7 @@ Each is a test.
 What phase 2 must take care of:
 
 - **Draw the tree as the view draws the stored formula,** or the formula will jump when the edit ends: brackets that are a slot's own (`kept`, or around a whole numerator, denominator, exponent, radicand) are not drawn; an index is a subscript; `A.b^2` is one msubsup; flat units (`80 km/h`) if that setting is on; programs (`if`, `for`, `block`) are drawn as calls while edited, which does jump: a later step.
+- **Brackets filling a slot left by an arrow or a click** stay in the tree (and drawn) until the edit ends, so ← → stay a walk over a tree that doesn't change; the view then draws them as the slot's. Phase 2 may hide them as soon as the caret is outside that slot (`absorbAll` is the model's version of it).
 - **Positions that would draw at the same place.** The model already skips the one between a subscript and the superscript stacked above it. A caret drawn between `2` and `m` in `2 m` and at the start of `m` must not look the same: the model has one position there, the renderer must not add a second.
 - **↑ ↓ need geometry:** `key(…, { pick })` lets the editor choose the landing index from the caret's x; the default keeps the caret's share of the row.
 - **`effect.leave`** after ← → ↑ ↓ Tab: move to the next region or line, or nothing; **`effect.command`** after a `\` shortcut (`to_text`, `insert_plot`, `insert_table`).
