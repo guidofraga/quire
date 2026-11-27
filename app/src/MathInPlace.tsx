@@ -43,6 +43,7 @@ import {
   type Row,
 } from "./mathTree";
 import { editNext, looksLikeProse, type MathLine, setInPlace } from "./MathEditor";
+import { edgeKey, type Exit, exitOf, type Start } from "./inlineMath";
 import {
   cycleOrder,
   currentMeaning,
@@ -152,7 +153,7 @@ const PROGRAM_KINDS = new Set(["if", "block", "for", "while"]);
 const TEXT = new Set(["mi", "mn", "mo", "ms", "mtext"]);
 
 /** The caret on screen: its x and the top and bottom of its line, in window coordinates. */
-interface Spot {
+export interface Spot {
   x: number;
   t: number;
   b: number;
@@ -173,7 +174,23 @@ interface NameHere {
   afterNumber: boolean;
 }
 
-export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Said }) {
+/**
+ * A formula inside a paragraph of text (MathInText.tsx, `line` gives its text and where its
+ * results are): the text around it decides what happens at its edges, and its undo history is
+ * the text's (inlineMath.ts).
+ */
+export interface InlineHost {
+  /** Where the caret starts, and a key to give the formula once it is open. */
+  start: Start;
+  then?: string;
+  /** Out of the formula, into the text (`at`: where the caret was on screen, for ↑ ↓). */
+  exit(how: Exit, at: Spot | null): void;
+  undo(redo: boolean): void;
+  /** The editor's handles for the text around it: its text changed there (an undo), the focus back. */
+  bind(api: { reload(text: string): void; focus(): void }): void;
+}
+
+export function MathInPlace(props: { r: Region; line?: MathLine; inline?: InlineHost; said: () => Said }) {
   let mathEl!: HTMLSpanElement;
   let caretEl!: HTMLDivElement;
   let selEl!: HTMLDivElement;
@@ -183,6 +200,10 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
   const live = (text: string) => (props.line ? props.line.onInput(text) : setLive(props.r.id, text));
   const initialText = untrack(() => props.line?.text ?? editText(props.r));
   const equation = untrack(() => !!props.line?.equation);
+  const inline = untrack(() => props.inline);
+  /** Gone from the page (an inline formula left in the middle of a paste): no more keys. */
+  let gone = false;
+  onCleanup(() => (gone = true));
 
   // ---- the edit tree ----
 
@@ -190,9 +211,11 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     const v = untrack(() => state.views[viewId]);
     const { show, unit } = splitShow(initialText);
     // the tree of what the engine read, when it read this very text; else as typing it builds it
-    const s = v?.input
-      ? fromExpr(v.input, show || null, unit ?? "", { equation })
-      : fromLinear(initialText, { equation });
+    const typed = () => fromLinear(initialText, { equation });
+    let s = v?.input ? fromExpr(v.input, show || null, unit ?? "", { equation }) : typed();
+    // inline math is numbered by its place in the text: until the engine has read the text as it
+    // is now, the result at that number may be another formula's
+    if (inline && v?.input && toLinear(s) !== toLinear(typed())) s = typed();
     return settleSlots(key(s, "End"));
   };
   let s = begin();
@@ -200,6 +223,8 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
   const initialTree = toLinear(s);
   /** What was last written to the document: nothing until the formula changes. */
   let sent = initialText;
+  /** The tree last seen with each text, for an undo of the text around it to come back to. */
+  const byText = new Map<string, EditState>([[initialText, s]]);
 
   /** The formula changed (or the caret moved): draw it, write it, update the lists, and say where the caret went. */
   const changed = (opts: { record?: boolean; typing?: boolean; deleted?: Deleted } = {}) => {
@@ -209,6 +234,7 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     const text = toLinear(s);
     // a formula changed back to what it was keeps the text it was stored with
     const out = text === initialTree ? initialText : text;
+    byText.set(out, s);
     if (out !== sent) {
       sent = out;
       live(out);
@@ -241,6 +267,12 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     const e = s.effect;
     if (!e) return;
     s = { ...s, effect: undefined };
+    if (inline) {
+      const out = exitOf(e);
+      if (out) return inline.exit(out, spot(s.caret));
+      if (e.command) runAppCommand(e.command);
+      return;
+    }
     if (e.finish) return finish();
     if (e.command) {
       if (e.command === "to_text") {
@@ -261,6 +293,10 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
 
   /** One key or character, given to the tree. */
   const press = (k: string, opts: { shift?: boolean; pick?: boolean } = {}) => {
+    if (gone) return;
+    // Backspace at the very start of an inline formula, Delete at its very end: the text's
+    const edge = inline && edgeKey(s, k);
+    if (inline && edge) return inline.exit({ edge }, spot(s.caret));
     const before = s.version;
     const from = opts.pick ? spot(s.caret) : null;
     s = key(s, k, {
@@ -282,7 +318,7 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
         return;
       }
       press(ch);
-      if (state.editing !== owner) return;
+      if (state.editing !== owner || gone) return;
     }
   };
 
@@ -294,6 +330,8 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
   };
 
   const travel = (redo: boolean) => {
+    // in text, one history for the text and its formulas
+    if (inline) return inline.undo(redo);
     const to = redo ? history.redo() : history.undo();
     if (!to) return;
     s = to;
@@ -937,9 +975,10 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
         detail: c.title,
       }));
       if (!items.length || (items.length === 1 && items[0].name === unit)) return hideCompletions();
-      // below the whole formula, so the result stays in view
+      // below the whole formula, so the result stays in view (inline: below its line of text)
       const [x, , top] = listPoint();
-      const y = (mathEl.closest(".region")?.getBoundingClientRect().bottom ?? listPoint()[1]) + 6;
+      const under = inline ? mathEl : mathEl.closest(".region");
+      const y = (under?.getBoundingClientRect().bottom ?? listPoint()[1]) + 6;
       showCompletions(
         x,
         y,
@@ -1037,11 +1076,14 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
         e.preventDefault();
         hideCompletions();
         // in a program Enter adds a line (docs/07-math-editing.md); ⌘Enter ends the edit from anywhere
-        if (e.metaKey || e.ctrlKey) finish();
+        if ((e.metaKey || e.ctrlKey) && inline) inline.exit({ finish: true }, null);
+        else if (e.metaKey || e.ctrlKey) finish();
         else press("Enter");
         return;
       case "Escape": {
         e.preventDefault();
+        // in text: back to the text, right after the formula; Esc there ends the text's edit
+        if (inline) return inline.exit({ leave: "after" }, null);
         const at = layout().byId.get(owner)?.region.at;
         commitEditing();
         if (layout().byId.has(owner)) setState({ selection: [owner], caret: null });
@@ -1156,10 +1198,10 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     });
     draw();
     // where the click that opened it landed, or where the arrow came in, or the first □
-    const click = editClickPoint;
+    const click = inline ? (Array.isArray(inline.start) ? inline.start : null) : editClickPoint;
     const at = click ? hit(click[0], click[1]) : null;
-    const from = entry;
-    entry = null;
+    const from = inline ? (inline.start === "hole" ? null : inline.start) : entry;
+    if (!inline) entry = null;
     if (at) s = setCaret(s, at);
     else if (from === "start") s = key(s, "Home");
     else if (from !== "end") s = toFirstHole(s) ?? s;
@@ -1171,6 +1213,9 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     setInPlace({ type, insert, undo: travel });
     forgetMeanings(viewId);
     traceName();
+    inline?.bind({ reload, focus: () => sink.focus({ preventScroll: true }) });
+    // Backspace into the formula from the text after it: its last character goes
+    if (inline?.then) press(inline.then);
   });
   onCleanup(() => {
     setInPlace(null);
@@ -1180,6 +1225,16 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
 
   // a new result, or what the names mean, from the engine: drawn as it comes
   createEffect(on(props.said, () => draw(), { defer: true }));
+
+  /** The formula's text changed around it (the text's undo): the tree last seen with that text. */
+  const reload = (text: string) => {
+    if (gone || text === sent) return;
+    sent = text;
+    s = byText.get(text) ?? settleSlots(key(fromLinear(text, { equation }), "End"));
+    draw();
+    updateLists(false);
+    traceName();
+  };
 
   const insert = (template: string) => {
     sink.focus({ preventScroll: true });
@@ -1258,6 +1313,8 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
           hideCompletions();
           setCaretName(null);
           caretEl.style.display = "none";
+          // in text, the text's editor decides when the edit ends
+          if (inline) return;
           // moving to another line of the same block, the palette, or the format bar end nothing
           const stillMath = props.line ? props.line.active() : layout().byId.get(props.r.id)?.region.kind === "math";
           const toBar = (e.relatedTarget as Element | null)?.closest?.(".formatbar");

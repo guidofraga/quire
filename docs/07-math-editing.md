@@ -510,9 +510,69 @@ The whole point: a formula typed as a linear typist types it, spaces and all, co
 | `A.tank␣:=␣π*(D.base/2)^2` | `A_{tank}≔π·(\frac{D_{base}}{2})^{2‸}` | `A.tank := π*(D.base/2)^2` |  |
 | `F.cr␣:=␣(0.658^(F.y/F.e))*F.y` | `F_{cr}≔(0.658^{\frac{F_{y}}{F_{e}}})·F_{y‸}` | `F.cr := (0.658^(F.y/F.e))*F.y` |  |
 
+## Inline math in text
+
+A formula in a paragraph (`` $`q*L^2/8` `` in the Djot, see [02 — File format](02-file-format.md)) is drawn typeset while the text is edited, exactly as it reads once the edit ends, and is typed into as it is drawn: every key of this page works in it, as in a math region. What is new is its edge with the text around it.
+
+- **← → walk into a formula and out of it, one press per step.** → at the text just before a formula puts the caret at the formula's first position, ← just after one at its last; at the formula's edge, ← → go back to the text. There is no stop on the formula as a whole between the two: a caret walks into a formula as it walks into a word, and every press is one visible step, as everywhere on this page (the formula's own caret is drawn, and the formula is shaded while it is typed into, as Word shades an equation).
+- **Esc** in a formula goes back to the text, right after it; Esc there ends the text's edit, as always. Two presses to leave everything, and never a surprise that the whole edit ended when only the formula was meant.
+- **Enter** in a formula (outside a program, § Programs) goes back to the text right after it, without a new paragraph: a formula in a sentence is finished the way it is in a math region, and the sentence goes on. **⌘Enter** ends the text's edit from a formula as from the text.
+- **Backspace from the text right after a formula goes into it and deletes its last character**, and Delete before one its first: what a structure does inside a formula (§ Backspace and Delete), so one press always deletes one visible thing, and a typo at a formula's end is one key away. Selecting the formula first (MathQuill's way) would cost a press for every deletion and make Backspace behave unlike everywhere else on this page; a whole formula goes by deleting it to empty, or with a selection in the text.
+- **Backspace at a formula's first position deletes the character before it in the text**, Delete at its last the one after: the caret is at the formula's edge, and the thing drawn before it is the text's. An empty formula goes with one Backspace or Delete, and the caret stays where it was.
+- **An empty formula goes when it is left**, by an arrow, Esc or a click: as an empty math region does. While it is empty it isn't written to the Djot.
+- **↑ ↓** in a formula go to the line of text above or below, at the caret's x, as in the text; with no line there, to the formula's start or end.
+- **A click** in a formula puts the caret where it lands, in the slot under it; a click in the text puts it in the text. Starting to edit a text region with a click on a formula opens the formula there.
+- **Inserting a formula**: the Inline Math button (⇧⌘M), `\math` and the structures of the format bar's galleries open a new formula with the caret in its first □. `$$` typed in text opens an empty one (as in Notion); `$` alone stays a dollar sign, so prices stay text; `$x$` still becomes the formula `x`, the caret after it.
+- **Undo is one history for the text and its formulas.** Each key that changes a formula is a step of the text's own undo history, of its own; ⌘Z undoes the latest step wherever it was, and a formula step undone opens that formula with its caret where it was. Redo goes forward the same way.
+- **The stored text is linear, and written only when the formula changes** (`q * L^2 / 8` stays as written until a key changes it); with the setting off, inline math is the box of linear text it was before.
+
+The table reads like the others. **Before** and **After** are the paragraph: text, a closed formula as `$text$` (its stored text), the text's caret `‸`, the formula being typed into as `⟨tree⟩` (the tree as in the tables above, with its caret), and ` ⟶ end` when the text's edit ends. **Djot** is what the document stores after the keys. `{Inline math}` is the button; `{Esc}`, `{Enter}`, `{⌘Enter}`, `{⌘Z}`, `{⌘⇧Z}` the keys. The rows run in `app/src/inlineMath.test.ts` (through `inlineSim.ts`, which runs exactly what the editor runs at the boundary).
+
+| Keys | Before | After | Djot | Why |
+|---|---|---|---|---|
+| `{→}` | `x ‸$a/b$ y` | `x ⟨‸\frac{a}{b}⟩ y` | `` x $`a/b` y `` | → at the text's edge: into the formula, at its first position. |
+| `{←}` | `x $a/b$‸ y` | `x ⟨\frac{a}{b}‸⟩ y` | `` x $`a/b` y `` | ← after a formula: into it, at its last. |
+| `{→}{→}{→}{→}{→}{→}` | `x ‸$a/b$ y` | `x ⟨\frac{a}{b}‸⟩ y` | `` x $`a/b` y `` | Through the formula, one position per press. |
+| `{→}{→}{→}z` | `x ‸$a$ y` | `x $a$z‸ y` | `` x $`a`z y `` | → at the formula's last position: back to the text, right after it. |
+| `{←}{←}{←}z` | `x $a$‸ y` | `x z‸$a$ y` | `` x z$`a` y `` | ← at its first: right before it. |
+| `{←}{←}{←}{←}` | `$a$$b$‸` | `⟨a‸⟩$b$` | `` $`a`$`b` `` | Between two formulas there is a text position of its own. |
+| `{→}{Esc}` | `x ‸$a/b$ y` | `x $a/b$‸ y` | `` x $`a/b` y `` | Esc: back to the text, right after the formula… |
+| `{←}{Esc}{Esc}` | `x $a/b$‸ y` | `x $a/b$‸ y ⟶ end` | `` x $`a/b` y `` | …and Esc there ends the text's edit. |
+| `{→}{Enter}` | `x ‸$a/b$ y` | `x $a/b$‸ y` | `` x $`a/b` y `` | Enter: back to the text, no new paragraph. |
+| `{←}{⌘Enter}` | `x $a$‸ y` | `x ⟨a‸⟩ y ⟶ end` | `` x $`a` y `` | ⌘Enter ends the text's edit, as in the text. |
+| `{→}{Tab}` | `x ‸$a/b$ y` | `x $a/b$‸ y` | `` x $`a/b` y `` | Tab with no □ left: on, out of the formula. |
+| `{→}{End}{→}!` | `x ‸$a/b$ y` | `x $a/b$!‸ y` | `` x $`a/b`! y `` |  |
+| `{⌫}` | `x $a/b$‸ y` | `x ⟨\frac{a}{‸}⟩ y` | `` x $`a/?` y `` | Backspace after a formula: into it, its last character goes (as after a structure, § Backspace and Delete). |
+| `{⌫}{⌫}` | `x $a/b$‸ y` | `x ⟨a‸⟩ y` | `` x $`a` y `` | Then as in any formula… |
+| `{⌫}{⌫}{⌫}` | `x $a/b$‸ y` | `x ⟨‸⟩ y` | `x  y` | …to empty, when it isn't written… |
+| `{⌫}{⌫}{⌫}{⌫}` | `x $a/b$‸ y` | `x ‸ y` | `x  y` | …and the next Backspace takes the empty formula: never trapped, never a dead press. |
+| `{⌦}` | `x ‸$a/b$ y` | `x ⟨\frac{‸}{b}⟩ y` | `` x $`?/b` y `` | Delete before a formula: its first character. |
+| `{→}{⌫}` | `x ‸$a$ y` | `x‸$a$ y` | `` x$`a` y `` | Backspace at a formula's first position: the text's character before it. |
+| `{←}{⌦}` | `x $a$‸ y` | `x $a$‸y` | `` x $`a`y `` | Delete at its last: the one after it. |
+| `{→}{⌫}` | `x $a$‸$b$ y` | `x ⟨‸⟩$b$ y` | `` x $`b` y `` | The thing before is another formula: its last character. |
+| `{⌫}` | `x $sqrt(a)$‸ y` | `x ⟨\sqrt{‸}⟩ y` | `` x $`sqrt(?)` y `` |  |
+| `{⌫}` | `x $(a + b)$‸ y` | `x ⟨(a+b‸⦆⟩ y` | `` x $`(a + b)` y `` | After `)`, as in any formula: the `)` turns faint. |
+| `{Inline math}` | `x ‸ y` | `x ⟨‸⟩ y` | `x  y` | A new formula, the caret in its □. |
+| `{Inline math}q*L^2/8` | `x ‸ y` | `x ⟨\frac{q·L^{2}}{8‸}⟩ y` | `` x $`q*L^2/8` y `` | Typed as in a math region. |
+| `{Inline math}q*L^2/8{→}{→}␣kN·m` | `x ‸ y` | `x $q*L^2/8$ kN·m‸ y` | `` x $`q*L^2/8` kN·m y `` | Out of the denominator, out of the formula, and the sentence goes on. |
+| `{Inline math}{Esc}` | `x ‸ y` | `x ‸ y` | `x  y` | Left empty, it goes. |
+| `{Inline math}{⌫}` | `x ‸ y` | `x ‸ y` | `x  y` |  |
+| `{Inline math}2*3=` | `x ‸ y` | `x ⟨2·3 = ‸⟩ y` | `` x $`2*3 =` y `` | `=` shows the result in the text, as before. |
+| `$$` | `x ‸ y` | `x ⟨‸⟩ y` | `x  y` | `$$`: an empty formula. |
+| `$$a{→}!` | `x ‸` | `x $a$!‸` | `` x $`a`! `` |  |
+| `$5␣or␣$6` | `costs ‸` | `costs $5 or $6‸` | `costs \$5 or \$6` | A dollar alone is a dollar. |
+| `{←}{←}{→}{→}` | `x $q * L^2 / 8$‸ y` | `x $q * L^2 / 8$‸ y` | `` x $`q * L^2 / 8` y `` | Walked through, a formula keeps the text it was stored with… |
+| `{←}{⌫}2` | `x $q * L^2 / 8$‸ y` | `x ⟨\frac{q·L^{2}}{2‸}⟩ y` | `` x $`q*L^2/2` y `` | …and once changed it is written as the engine prints it. |
+| `{→}{→}+c{→}z` | `x ‸$a$ y` | `x $a + c$z‸ y` | `` x $`a + c`z y `` |  |
+| `{→}{→}+c{→}z{⌘Z}` | `x ‸$a$ y` | `x $a + c$‸ y` | `` x $`a + c` y `` | ⌘Z undoes the latest edit: the text's… |
+| `{→}{→}+c{→}z{⌘Z}{⌘Z}` | `x ‸$a$ y` | `x ⟨a+?‸⟩ y` | `` x $`a + ?` y `` | …then the formula's, a key at a time, the formula open where it was… |
+| `{→}{→}+c{→}z{⌘Z}{⌘Z}{⌘Z}` | `x ‸$a$ y` | `x ⟨a‸⟩ y` | `` x $`a` y `` |  |
+| `{→}{→}+c{→}z{⌘Z}{⌘Z}{⌘Z}{⌘⇧Z}{⌘⇧Z}{⌘⇧Z}` | `x ‸$a$ y` | `x $a + c$z‸ y` | `` x $`a + c`z y `` | …and redo goes forward the same way. |
+| `{Inline math}{⌘Z}` | `x ‸ y` | `x ‸ y` | `x  y` | A formula just put in goes with one undo. |
+
 ## Undo
 
-As the linear editor does it (#119): every key that changes the formula is one undo step; a paste, a template or a `\` shortcut is one step; moving the caret is none, but a step remembers where the caret was. At most 500 steps. `History.record()` after each key, `undo()` and `redo()`. A step comes back with no slot open, as if the caret had been put there by hand.
+As the linear editor does it (#119): every key that changes the formula is one undo step; a paste, a template or a `\` shortcut is one step; moving the caret is none, but a step remembers where the caret was. At most 500 steps. `History.record()` after each key, `undo()` and `redo()`. A step comes back with no slot open, as if the caret had been put there by hand. A formula in text has no history of its own: its steps are the text's (§ Inline math in text).
 
 ## Invariants
 
@@ -527,13 +587,15 @@ Each is a test.
 7. **Brackets anywhere:** those formulas, and a few nested on purpose (`sqrt((1 - cos(α))/2)`, `(2*n - 1)!`, `(x ≠ 0) and (y ≠ 0)`), with brackets put around random parts at every depth (sometimes twice), typed key by key, build the formula their text says (4 rounds; more with `MATHTREE_ROUNDS`, other draws with `MATHTREE_SEED`).
 8. **Unfinished lines:** for every prefix of those formulas, the text of the typed tree previews as the engine previews the prefix (`parse_lenient`).
 9. **Programs typed as written:** for every program in the repository and 600 random ones (chains, loops, blocks nested any way), typing it with keywords and Enter (§ Typing programs) stores exactly its text and builds the tree typing its text builds; the invariants 1–4 hold for random keys in programs, keywords included.
+10. **Inline math:** for random keys across text and its formulas (600 runs of up to 50 keys, more with `INLINE_RUNS`), nothing throws, a formula is open exactly when the text's selection is on it, → from anywhere walks through every formula to the text's end and ← back to its start, the Djot holds each formula's text (and no empty one), the engine's editor HTML for that Djot reads back as the same paragraphs and formulas, and the engine numbers them `<id>:m0`, `:m1`… in order; undo all the way gives the text it started from, redo all the way the text it ended with. Every formula of the repository, written in a sentence with its result asked for (`=`, `→`) and without, is drawn in place exactly as the text draws it, with a result and without one.
 
 ## Tests
 
 - `app/src/mathTree.test.ts`: the tables of this page, row by row, and invariants 1–4, undo, clipboard, templates, hints.
 - `app/src/mathTree.engine.test.ts`: invariants 5–8 against the engine itself, `crates/quire-web` as WebAssembly, through a `parse` command that returns the strict tree, its canonical text and the forgiving preview. It needs `app/web-public/quire_web.wasm` (`npm run wasm`); without it the file is skipped, except on CI, where it fails. CI builds the web version before the unit tests for this.
 - A new row for these tables: list its keys in a file, one per line, and run `MATHTREE_DUMP=<file> npx vitest run src/mathTree.test.ts -t dump`; `<file>.out` has the rows as the model gives them, to check by eye before they go here with their reason.
-- `QUIRE_ROUNDTRIP_CORPUS=<folder>` runs the round trip over every `.quire`, `.quirez` and `.sm` file in a folder as well (SMath files converted as the app converts them).
+- `app/src/inlineMath.test.ts`: the table of § Inline math in text, row by row, and invariant 10 without the engine; `mathTree.engine.test.ts` checks the Djot against the engine and inline math drawn in place. `app/e2e/math-in-text.spec.ts` does what needs a screen: clicks, the caret's place, the paragraph not moving.
+- `QUIRE_ROUNDTRIP_CORPUS=<folder>` runs the round trip over every `.quire`, `.quirez` and `.sm` file in a folder as well (SMath files converted as the app converts them), and draws their inline math in place.
 
 ## For phase 2
 
@@ -574,3 +636,13 @@ Left for phase 3: inline math in text (`richtext.ts`), programs (`if`, `for`, `b
 **Phase 3a, second part.** Programs typed as written (§ Typing programs); the rule down every program's lines and every program centred on its line (§ Programs). Invariant 9 below: typing a program's text or typing it as written builds the same tree (`naturalKeys.ts` types any program the second way, for the tests).
 
 Left for phase 3b: inline math in text (`richtext.ts`, the `$…$` node view), then making in-place editing the default (and retiring the linear box behind it).
+
+## Phase 3b: inline math in text
+
+- **A formula in a paragraph is typed into as it is drawn** (§ Inline math in text), with the same tree, drawing and editor as a math region: `MathInText.tsx` is ProseMirror's node view of the `math` node, drawn as `fillInlineMath` draws it when the text isn't edited, and holding `MathInPlace` while the text's selection is on the node (a NodeSelection: open exactly then, so ProseMirror's own selection, undo and node views decide it, not a second state beside them).
+- **The boundary** is `inlineMath.ts`, pure: which text keys go into a formula, which formula keys go to the text, leaving to a side, an empty formula going, `36139`, the formula's number among the text's (`<id>:m<n>`, counting the formulas of blocks kept as written).
+- **One undo history.** Every change to a formula is a ProseMirror step of its own (`setNodeAttribute`, `closeHistory`), with the NodeSelection before it, so undoing it opens the formula where it was; the formula's own `History` isn't used in text.
+- **Nothing moves.** The formula is drawn the same closed and open (`mathTree.engine.test.ts`, inline math drawn in place); a line asking for a result it has none for keeps its `= □` in the text being edited, as the editor draws it. The shading of the formula being typed into, the caret and the field that takes the keys are drawn out of the flow.
+- **Off**, inline math is the box of linear text it was, unchanged.
+
+Left: making in-place editing the default (a separate change, after the feel check), and with it the text not edited drawing a formula's `= □` when it has no result, as the editor does (today it is drawn without it there, underlined as an error).

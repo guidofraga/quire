@@ -1,5 +1,6 @@
 import { MathEditor } from "./MathEditor";
 import { MathInPlace } from "./MathInPlace";
+import { MathInText } from "./MathInText";
 import { prefs } from "./settings";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
@@ -249,6 +250,9 @@ function RichTextEditor(props: { p: Placed; style: Record<string, string | undef
     const html = plain ? null : await api.djotHtml(src).catch(() => "");
     if (state.editing !== id) return;
     view = createEditor(host, html ?? { text: src }, {
+      region: id,
+      // Settings ▸ Editing ▸ Edit math in place: inline math typed into as it is drawn
+      formula: prefs.mathInPlace ? (node, v, getPos, host) => new MathInText(node, v, getPos, host) : undefined,
       onChange: (djot) => setLive(id, djot),
       onExit: (below) => (below ? commitBelow(id) : commitEditing()),
       onKey: (v, e) => {

@@ -787,6 +787,25 @@ ms.str {
   text-decoration: underline wavy var(--error);
 }
 
+/* inline math typed in place (MathInText.tsx): drawn as the text draws it, the caret and the
+   field that takes the keys placed over it */
+.qmath-ip {
+  position: relative;
+  /* the shading and the selection go behind the ink, over the page, whatever is around */
+  isolation: isolate;
+  cursor: text;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* the formula being typed into is shaded, as Word shades an equation: its whole height, and a
+   little around it as a shadow, so nothing is laid out again; the selection shows through */
+.qmath-ip.open math {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .text-body h1,
 .text-body h2,
 .text-body h3,
