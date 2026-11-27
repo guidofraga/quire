@@ -90,8 +90,6 @@ interface Tagged {
   scripts: Map<string, Element>;
   opens: Map<string, Element>;
   closes: Map<string, Element>;
-  /** A block drawn from a definition's header (`f(x) :=` level with its first line): its statements' cells. */
-  parts: Map<string, Element[]>;
   unitRow: Element | null;
 }
 
@@ -327,12 +325,11 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
       scripts: new Map(),
       opens: new Map(),
       closes: new Map(),
-      parts: new Map(),
       unitRow: mathEl.querySelector("[data-unitrow]"),
     };
     const push = <T,>(m: Map<string, T[]>, k: string, v: T) => (m.get(k) ?? m.set(k, []).get(k)!).push(v);
     for (const el of mathEl.querySelectorAll<HTMLElement>(
-      "[data-r],[data-node],[data-script],[data-open],[data-close],[data-part]",
+      "[data-r],[data-node],[data-script],[data-open],[data-close]",
     )) {
       const d = el.dataset;
       if (d.r !== undefined && d.hole !== undefined) push(ix.holes, d.r, { el, at: Number(d.hole) });
@@ -342,7 +339,6 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
       if (d.script) ix.scripts.set(d.script, el);
       if (d.open) ix.opens.set(d.open, el);
       if (d.close) ix.closes.set(d.close, el);
-      if (d.part) push(ix.parts, d.part, el);
     }
     return (index = ix);
   };
@@ -428,16 +424,6 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
       const c = box(ix.closes.get(a.id));
       return o && c ? { l: o.l, r: c.r, t: Math.min(o.t, c.t), b: Math.max(o.b, c.b) } : (o ?? c);
     }
-    const parts = ix.nodes.has(a.id) ? null : ix.parts.get(a.id);
-    if (parts?.length)
-      return parts
-        .map((el) => boxOf(el.getBoundingClientRect()))
-        .reduce((x, y) => ({
-          l: Math.min(x.l, y.l),
-          r: Math.max(x.r, y.r),
-          t: Math.min(x.t, y.t),
-          b: Math.max(x.b, y.b),
-        }));
     return box(ix.nodes.get(a.id));
   };
 

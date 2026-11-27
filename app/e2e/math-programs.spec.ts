@@ -72,6 +72,68 @@ test.describe("edited in place", () => {
     await expect(page.locator(".region.math").first().locator("mtext.kw")).toHaveText(["if", "else if", "else"]);
   });
 
+  test("typed as written, no menu: the grade example and a for with an if in it", async ({ page }) => {
+    await blank(page);
+    // #175's example, as it is written: keywords, Enter between the lines
+    await typeKeys(page, "grade(x):=if x>=90");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, '"A"');
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "else if x>=80");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, '"B"');
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "else");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, '"C"');
+    await expect(formula(page).locator("mtext.kw")).toHaveText(["if", "else if", "else"]);
+    // out of the else, then out of the formula
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect(editing(page)).toHaveCount(0);
+    await typeKeys(page, "grade(85)=");
+    await page.keyboard.press("Enter");
+    // a function of several lines: Enter after `:=`; a loop, an if in it; Enter climbs out a level at a time
+    await typeKeys(page, "n:=6");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "evens:=");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "c:=0");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "for i in 1..n");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "if mod(i,2)==0");
+    await page.keyboard.press("Enter");
+    await typeKeys(page, "c:=c+1");
+    for (let k = 0; k < 3; k++) await page.keyboard.press("Enter");
+    await typeKeys(page, "c");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect(editing(page)).toHaveCount(0);
+    await typeKeys(page, "evens=");
+    await page.keyboard.press("Escape");
+    expect(await stored(page)).toEqual([
+      'grade(x) := if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))',
+      "grade(85)",
+      "n := 6",
+      "evens := block(c := 0, for(i, 1..n, if(mod(i, 2) == 0, c := c + 1)), c)",
+      "evens",
+    ]);
+    const regions = page.locator(".region.math");
+    await expect(regions.nth(1).locator(".res")).toContainText("B");
+    await expect(regions.nth(4).locator(".res")).toContainText("3");
+    // every program with its rule down its lines, and the left-hand side centred on it
+    const grade = regions.nth(0);
+    await expect(grade.locator(".q-stack > mtr > .q-body")).toHaveCount(6);
+    const evens = regions.nth(3);
+    await expect(evens.locator(".q-body")).toHaveCount(3 + 2 + 2);
+    for (const r of [grade, evens]) {
+      const table = (await r.locator("mtable").first().boundingBox())!;
+      const op = (await r.locator("mo", { hasText: "≔" }).first().boundingBox())!;
+      expect(Math.abs(op.y + op.height / 2 - (table.y + table.height / 2))).toBeLessThan(6);
+    }
+  });
+
   test("typing else if at the start of the else adds a branch", async ({ page }) => {
     await blank(page);
     await typeKeys(page, "y:=if(x>0,1,-1)");

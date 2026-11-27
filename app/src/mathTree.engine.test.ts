@@ -19,6 +19,7 @@ import {
   type EditState,
 } from "./mathTree";
 import { print } from "./mathLinear";
+import { naturalKeys } from "./naturalKeys";
 import { mathml } from "./math";
 import { drawLine } from "./mathDraw";
 
@@ -273,8 +274,7 @@ describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
 
   test("a formula edited in place is drawn exactly as the view draws it, when the edit starts and ends", () => {
     // what the editor adds for the caret may differ, and nothing else
-    const bare = (html: string) =>
-      html.replace(/ data-(?:r|a|n|node|hole|script|open|close|unitrow|part)="[^"]*"/g, "");
+    const bare = (html: string) => html.replace(/ data-(?:r|a|n|node|hole|script|open|close|unitrow)="[^"]*"/g, "");
     const said = { result: null, units: [], constants: [] };
     const sources = IN_REPO.flatMap((p) => formulas(openDoc(p))).filter((s) => parse(s).expr);
     const bad: string[] = [];
@@ -361,6 +361,25 @@ describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
     expect(complete).toBeGreaterThan(100);
   });
 
+  test("every program in the repository typed as written (keywords and Enter) is stored as its text", () => {
+    const programs = IN_REPO.flatMap((p) => formulas(openDoc(p))).filter((s) => parse(s).expr);
+    let typedSo = 0;
+    const bad: string[] = [];
+    for (const s of programs) {
+      const p = parse(s);
+      const keys = naturalKeys(p.expr!);
+      if (!keys) continue;
+      typedSo++;
+      const typed = toLinear(keys.reduce((t, k) => key(t, k), empty()));
+      if (typed !== p.print) bad.push(`${p.print}  →  ${typed}`);
+    }
+    console.info(
+      `typed as written: ${typedSo} programs, ${bad.length} stored otherwise\n  ${bad.slice(0, 20).join("\n  ")}`,
+    );
+    expect(typedSo).toBeGreaterThan(15);
+    expect(bad).toEqual([]);
+  });
+
   test("random typing in programs never breaks, and the engine reads what the editor drew", () => {
     let seed = Number(env.env.MATHTREE_SEED ?? 175);
     const rand = (n: number) => {
@@ -385,6 +404,10 @@ describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
       "WordLeft",
       "WordRight",
       "else if ",
+      "else ",
+      "if ",
+      "for i in ",
+      "while ",
       "Tab",
       "Backspace",
       "Delete",

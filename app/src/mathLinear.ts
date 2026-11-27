@@ -85,6 +85,9 @@ export function unitName(r: Row): string {
 // Programs: `if`, `block`, `for`, `while`
 // ---------------------------------------------------------------------------
 
+/** The edit tree's programs: written as calls, `if(…)`, `for(…)`, `while(…)`, `block(…)`. */
+const isProgramKind = (k: string) => k === "if" || k === "block" || k === "for" || k === "while";
+
 /** `if(c, a)` or `if(c, a, b)`. */
 export const isIfArgs = (args: Expr[]): boolean => args.length === 2 || args.length === 3;
 
@@ -445,7 +448,7 @@ class Parser {
     let e = this.postfix();
     while (this.peek().t === "sup") {
       const n = (this.bump() as { n: Node }).n;
-      const exp = this.slot(n.slots[0], true);
+      const exp = this.exponentSlot(n.slots[0]);
       e = this.mark(bin("Pow", e, exp), { node: n });
       // `10^-4 m^3`: a unit after the power multiplies the whole power
       const held = this.exponent ? null : holdsUnit(n.slots[0], exp);
@@ -461,18 +464,19 @@ class Parser {
     return e;
   }
 
-  /** A unit the value before it takes: a name, a quoted unit or a `#` constant. */
+  /** A unit the value before it takes: a name, a quoted unit or a `#` constant (or a call, `2 sin(x)`). */
   private unitNext(): boolean {
     const t = this.peek();
-    return t.t === "name" || (t.t === "node" && (t.n.k === "unit" || t.n.k === "const"));
+    return t.t === "name" || (t.t === "node" && (t.n.k === "unit" || t.n.k === "const" || isProgramKind(t.n.k)));
   }
 
   private unitTerm(): Expr {
     const t = this.peek();
     const next = this.peek(1);
     let unit: Expr;
-    // `2 sin(x)`, `3 v[i]`
-    if (t.t === "name" && (this.isParen(next) || next.t === "index")) unit = this.postfix();
+    // `2 sin(x)`, `3 v[i]`, and a program, which the text writes as a call (`2 if(c, a, b)`)
+    if ((t.t === "name" && (this.isParen(next) || next.t === "index")) || (t.t === "node" && isProgramKind(t.n.k)))
+      unit = this.postfix();
     else {
       this.bump();
       if (t.t === "name") unit = this.name(t);
@@ -481,7 +485,7 @@ class Parser {
     }
     if (this.peek().t === "sup") {
       const n = (this.bump() as { n: Node }).n;
-      unit = this.mark(bin("Pow", unit, this.slot(n.slots[0], true)), { node: n });
+      unit = this.mark(bin("Pow", unit, this.exponentSlot(n.slots[0])), { node: n });
     }
     return unit;
   }
@@ -602,6 +606,17 @@ class Parser {
       default:
         throw new Unreadable();
     }
+  }
+
+  /**
+   * An exponent: read as an exponent, where a value takes no unit (`10^-4 m`); but when its text
+   * is in brackets (`x^(c*+0 kPa)`), what is inside them is read as anywhere else, as the engine
+   * reads the brackets.
+   */
+  private exponentSlot(r: Row): Expr {
+    const e = this.slot(r, true);
+    const inner = r.kept && e.t === "Paren" ? e.c : e;
+    return r.kept || NEEDS_BRACKETS.exponent(inner) ? this.slot(r, false) : e;
   }
 
   /** A slot of a superscript: read in the exponent, where values take no units. */

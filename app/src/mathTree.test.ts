@@ -16,10 +16,14 @@ import {
   setCaret,
   sketch,
   symbolic,
+  toExpr,
   toLinear,
   wrapIn,
   type EditState,
 } from "./mathTree";
+import { print } from "./mathLinear";
+import { naturalKeys } from "./naturalKeys";
+import type { Expr } from "./types";
 
 interface Fs {
   readFileSync(p: string, enc: string): string;
@@ -155,7 +159,10 @@ const PROGRAM_TEXTS = [
   "if(x > 0, 1, -1)",
 ];
 /** The keys typed in programs: every other key, and Enter, `,`, word jumps, `else if `. */
-const PROGRAM_KEYS = [...KEYS, "Enter", "Enter", "Enter", ",", "WordLeft", "WordRight", "else if "];
+const PROGRAM_KEYS = [
+  ...KEYS,
+  ...["Enter", "Enter", "Enter", ",", "WordLeft", "WordRight", "else if ", "else ", "if ", "for i in ", "while "],
+];
 
 /** Random programs: a template or a program opened, then a random run of keys. */
 function* programStates(count: number, length = 30): Generator<EditState> {
@@ -262,6 +269,88 @@ describe.each(SUITES)("%s", (_, states) => {
         if (sel) expect(sel.from).toBeLessThan(sel.to);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Programs typed as written: keywords and Enter, or their linear text, build the same tree
+// ---------------------------------------------------------------------------
+
+/** The tree as a formula, without ids, the caret or slots open for typing. */
+const formula = (s: EditState) =>
+  JSON.stringify(s.line, (k, v) => (k === "id" || k === "born" || k === "auto" ? undefined : v));
+
+/** Random programs, nested any way: ifs with else ifs and elses, for and while loops, blocks of lines. */
+function randomProgram(rand: (n: number) => number): Expr {
+  const id = (c: string): Expr => ({ t: "Ident", c });
+  const num = (c: string): Expr => ({ t: "Num", c });
+  const call = (name: string, ...args: Expr[]): Expr => ({ t: "Call", c: [name, args] });
+  const define = (lhs: string, rhs: Expr): Expr => ({ t: "Define", c: { lhs: id(lhs), rhs, global: false } });
+  const add = (a: Expr, b: Expr): Expr => ({ t: "Binary", c: ["Add", a, b] });
+  const cmp = (a: Expr, b: Expr): Expr => ({ t: "Compare", c: [a, [[["Lt", "Ge", "Eq"][rand(3)] as "Lt", b]]] });
+  const names = ["s", "c", "x", "k"];
+  const name = () => names[rand(names.length)];
+  const leaf = (): Expr =>
+    [
+      () => define(name(), add(id(name()), num(String(rand(9) + 1)))),
+      () => id(name()),
+      () => ({ t: "Str", c: "AB"[rand(2)] }) as Expr,
+      () => call("if", cmp(id(name()), num("2")), num("1"), num("0")),
+    ][rand(4)]();
+  const value = (d: number): Expr => {
+    if (d > 2 || rand(3) === 0) return leaf();
+    if (rand(3) === 0) return call("block", ...Array.from({ length: 2 + rand(2) }, () => value(d + 1)));
+    return prog(d + 1);
+  };
+  const prog = (d: number): Expr => {
+    switch (rand(3)) {
+      case 0: {
+        // a chain: `if`, `else if`s, maybe an else
+        const links = 1 + rand(3);
+        const build = (k: number): Expr =>
+          k === links - 1
+            ? rand(2)
+              ? call("if", cmp(id(name()), num(String(k))), value(d))
+              : call("if", cmp(id(name()), num(String(k))), value(d), value(d))
+            : call("if", cmp(id(name()), num(String(k))), value(d), build(k + 1));
+        return build(0);
+      }
+      case 1:
+        return call("for", id("i"), { t: "Range", c: [num("1"), id("n")] }, value(d));
+      default:
+        return call("while", cmp(id(name()), id("n")), value(d));
+    }
+  };
+  switch (rand(3)) {
+    case 0:
+      return prog(0);
+    case 1:
+      return define("f", prog(0));
+    default:
+      return define("f", call("block", define("s", num("0")), prog(0), id("s")));
+  }
+}
+
+/** Types keys as the spec writes them: characters, and named keys such as `Enter`. */
+const typed = (keys: string[]) => keys.reduce((s, k) => key(s, k), empty());
+
+describe("a program typed as written", { timeout: 60_000 }, () => {
+  test("keywords and Enter build the tree its linear text builds, and the same text", () => {
+    const rand = random(175);
+    const sources = [...PROGRAM_TEXTS.map((t) => toExpr(fromLinear(t))!)];
+    for (let k = 0; k < 600; k++) sources.push(randomProgram(rand));
+    let checked = 0;
+    for (const e of sources) {
+      const keys = naturalKeys(e);
+      if (!keys) continue;
+      checked++;
+      const text = print(e);
+      const byKeywords = typed(keys);
+      expect(toLinear(byKeywords), `${text}\n  ${keys.join(" ")}`).toBe(text);
+      const byText = key(fromLinear(text), "End");
+      expect(formula(byKeywords), text).toBe(formula(byText));
+    }
+    expect(checked).toBeGreaterThan(500);
   });
 });
 

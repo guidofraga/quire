@@ -223,11 +223,11 @@ impl Ctx<'_> {
         }
     }
 
-    /// Statements in rows, left-aligned (`m:eqArr`), with a rule down their left like the page's
-    /// program blocks.
+    /// Lines in rows, left-aligned (`m:eqArr`) and centred on the line they sit in, with a rule
+    /// down their left like the page's programs (a block, an `if` on rows, a loop).
     fn rows(&self, rows: &[String], rule: bool) -> String {
         let arr: String = rows.iter().map(|r| format!("<m:e>{r}</m:e>")).collect();
-        let arr = format!("<m:eqArr><m:eqArrPr><m:baseJc m:val=\"top\"/></m:eqArrPr>{arr}</m:eqArr>");
+        let arr = format!("<m:eqArr><m:eqArrPr><m:baseJc m:val=\"center\"/></m:eqArrPr>{arr}</m:eqArr>");
         if rule { delimited(&arr, "│", "", None) } else { arr }
     }
 
@@ -269,7 +269,7 @@ impl Ctx<'_> {
                 _ => break,
             }
         }
-        self.rows(&rows, false)
+        self.rows(&rows, true)
     }
 
     fn loop_rows(&self, name: &str, args: &[Expr]) -> String {
@@ -298,7 +298,7 @@ impl Ctx<'_> {
             _ => self.keyword(name),
         };
         let body = args.last().map(|b| self.indented(self.stmt(b))).unwrap_or_default();
-        self.rows(&[head, body], false)
+        self.rows(&[head, body], true)
     }
 
     fn args(&self, args: &[Expr]) -> String {

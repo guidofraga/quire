@@ -2195,6 +2195,15 @@ mod tests {
     }
 
     #[test]
+    fn an_if_with_no_else_does_its_branch_or_nothing() {
+        // as a program's statement (#175): count the even numbers
+        assert_eq!(
+            shown(&["c := 0", "for(i, range(1, 6), if(mod(i, 2) == 0, c := c + 1))", "c", "if(1 > 2, 5)"]),
+            ["0", "3", "3", "0"]
+        );
+    }
+
+    #[test]
     fn block_on_the_right_side_of_a_definition_leaks_its_variables() {
         assert_eq!(shown(&["w := block(t := 2, t * 3)", "w", "t"]), ["6", "6", "2"]);
     }

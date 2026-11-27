@@ -226,33 +226,28 @@ const list = (e: Expr, xs: Expr[]) => xs.map((x, k) => (k ? mo(",", op_(e, k - 1
 
 const d = mi("d", true);
 
-// SMath's program constructs stand on rows of their own: a block is a column of statements
-// with a rule down its left, an `if` or a loop puts its body one step in. An `if` is drawn so
-// when it is a chain (`if … else if … else`, #175) or holds a program (mathLinear `ifInRows`),
-// and as a statement; a single `if(c, a, b)` with plain values stays on one line.
+// SMath's program constructs stand on rows of their own, every one alike: a column of lines
+// with a rule down its left, as in Mathcad. A block's lines are its statements; an `if` or a
+// loop puts its body one step in. An `if` is drawn so when it is a chain (`if … else if …
+// else`, #175) or holds a program (mathLinear `ifInRows`), and as a statement; a single
+// `if(c, a, b)` with plain values stays on one line. A program is centred on the line it sits
+// in (MathML's default for a table), so `f(x) :=` and `= result` sit at its middle, whatever
+// its kind.
 
 const keyword = (word: string) => `<mtext class="kw">${word}</mtext>`;
 const mtr = (html: string) => `<mtr><mtd>${html}</mtd></mtr>`;
-const indented = (html: string) => mtr(row(space(1.5), html));
-/** Rows stacked and left-aligned; `align="1"` puts the first row on the baseline of the line it sits in. */
-const column = (cls: string, rows: string, align = "top") =>
-  `<mtable class="${cls}" columnalign="left" align="${align}">${rows}</mtable>`;
+/** A line of a program: its cell carries the rule down the program's left (`.q-body`). */
+const line = (html: string) => `<mtr><mtd class="q-body">${html}</mtd></mtr>`;
+const indented = (html: string) => line(row(space(1.5), html));
+/** Rows stacked and left-aligned, centred on the line they sit in. */
+const column = (cls: string, rows: string) => `<mtable class="${cls}" columnalign="left">${rows}</mtable>`;
+/** A program's lines: rows that touch, so the rule down their left is unbroken. */
+const lines = (cls: string, rows: string) =>
+  `<mtable class="${cls}" columnalign="left" rowspacing="0">${rows}</mtable>`;
 
-/**
- * A block: one row per statement, with a rule down the statements (`.q-body`). A header such as
- * `f(x) :=` sits in the first row, so it is level with the first statement; `align="top"` keeps
- * the first row at the top of the line. Rows touch so the rule is unbroken. `part`: the
- * statements' cells marked as the block's, for the caret, when the table holds a header too.
- */
-function program(args: Expr[], header?: string, part = ""): string {
-  const rows = args
-    .map((s, i) => {
-      const body = `<mtd class="q-body"${part}>${stmt(s)}</mtd>`;
-      return header === undefined ? `<mtr>${body}</mtr>` : `<mtr><mtd>${i === 0 ? header : ""}</mtd>${body}</mtr>`;
-    })
-    .join("");
-  const columns = header === undefined ? "left" : "left left";
-  return `<mtable class="q-program" columnalign="${columns}" rowspacing="0" columnspacing="0.3em" align="top">${rows}</mtable>`;
+/** A block: one line per statement. */
+function program(args: Expr[]): string {
+  return lines("q-program", args.map((s) => line(stmt(s))).join(""));
 }
 
 /** A statement of a block: an `if` is drawn in rows even with plain values, anything else as usual. */
@@ -265,16 +260,16 @@ function ifColumn(args: Expr[]): string {
   let rows = "";
   for (let a = args, word = "if"; ; word = "else if") {
     const [c, v, other] = a;
-    rows += mtr(row(keyword(word), space(0.3), m(c))) + indented(stmt(v));
+    rows += line(row(keyword(word), space(0.3), m(c))) + indented(stmt(v));
     if (!other) break;
     if (other.t === "Call" && other.c[0] === "if" && isIfArgs(other.c[1])) {
       a = other.c[1];
       continue;
     }
-    rows += mtr(keyword("else")) + indented(stmt(other));
+    rows += line(keyword("else")) + indented(stmt(other));
     break;
   }
-  return column("q-stack", rows);
+  return lines("q-stack", rows);
 }
 
 /** `for(i, range, body)`, `for(init, cond, step, body)` and `while(cond, body)`. */
@@ -286,7 +281,7 @@ function loop(name: string, args: Expr[]): string {
       : args.length === 3
         ? row(keyword("for"), space(0.3), m(a), mo("∈"), m(b))
         : row(keyword("for"), space(0.3), m(a), mo(","), m(b), mo(","), m(c));
-  return column("q-stack", mtr(head) + indented(stmt(args[args.length - 1])));
+  return lines("q-stack", line(head) + indented(stmt(args[args.length - 1])));
 }
 
 /** `sys(e1, …, en, rows, cols)`: the elements in a column under a brace; rows and cols are not shown. */
@@ -295,7 +290,7 @@ function system(args: Expr[]): string {
     .slice(0, -2)
     .map((e) => mtr(m(e)))
     .join("");
-  return row(mo("{", ' stretchy="true"'), column("q-sys", rows, "axis"));
+  return row(mo("{", ' stretchy="true"'), column("q-sys", rows));
 }
 
 function call(name: string, args: Expr[], e?: Expr): string {
@@ -431,11 +426,6 @@ function m0(e: Expr): string {
     case "Define": {
       const op = mo(e.c.global ? "≡" : "≔", op_(e));
       const lhs = definedName(e.c.lhs);
-      // a block on the right is drawn from its header, so `f(x) :=` sits level with its first statement
-      const rhs = e.c.rhs;
-      const block = trace?.get(rhs)?.node;
-      if (rhs.t === "Call" && rhs.c[0] === "block")
-        return program(rhs.c[1], row(lhs, op), block ? attr("part", block.id) : "");
       return row(lhs, op, m(e.c.rhs));
     }
   }
