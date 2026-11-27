@@ -247,14 +247,26 @@ impl Ctx<'_> {
         }
     }
 
+    /// `if c` / value, then `else if c2` / value for each `if` nested in the else (a chain, as
+    /// the page draws it), then `else` / value.
     fn if_rows(&self, args: &[Expr]) -> String {
         let mut rows = Vec::new();
-        if let [c, a, rest @ ..] = args {
-            rows.push(format!("{}{}{}", self.keyword("if"), self.op(" "), self.m(c)));
+        let mut args = args;
+        let mut word = "if";
+        while let [c, a, rest @ ..] = args {
+            rows.push(format!("{}{}{}", self.keyword(word), self.op(" "), self.m(c)));
             rows.push(self.indented(self.stmt(a)));
-            if let [b] = rest {
-                rows.push(self.keyword("else"));
-                rows.push(self.indented(self.stmt(b)));
+            match rest {
+                [Expr::Call(name, inner)] if name == "if" && is_if(inner) => {
+                    args = inner;
+                    word = "else if";
+                }
+                [b] => {
+                    rows.push(self.keyword("else"));
+                    rows.push(self.indented(self.stmt(b)));
+                    break;
+                }
+                _ => break,
             }
         }
         self.rows(&rows, false)
@@ -306,7 +318,7 @@ impl Ctx<'_> {
         if (name == "for" && (args.len() == 3 || args.len() == 4)) || (name == "while" && args.len() == 2) {
             return self.loop_rows(name, args);
         }
-        if name == "if" && is_if(args) && args.iter().skip(1).any(is_program) {
+        if name == "if" && if_in_rows(args) {
             return self.if_rows(args);
         }
         let d = || self.run("d", Face::Upright, None);
@@ -452,12 +464,23 @@ fn is_if(args: &[Expr]) -> bool {
     args.len() == 2 || args.len() == 3
 }
 
-/// An assignment, a block or a loop, or an `if` holding one: such a value is drawn as rows.
+/// An `if` whose else is itself an `if`: a chain, `if … else if … else`.
+fn is_if_chain(args: &[Expr]) -> bool {
+    matches!(args, [_, _, Expr::Call(name, inner)] if name == "if" && is_if(inner))
+}
+
+/// An `if` drawn as rows, as the page draws it (app/src/mathLinear.ts `ifInRows`): a chain, or a
+/// branch holding a program. A single `if(c, a, b)` with plain values stays on one line.
+fn if_in_rows(args: &[Expr]) -> bool {
+    is_if(args) && (is_if_chain(args) || args.iter().skip(1).any(is_program))
+}
+
+/// An assignment, a block or a loop, or an `if` drawn as rows: such a value is drawn as rows.
 fn is_program(e: &Expr) -> bool {
     match e {
         Expr::Define { .. } => true,
         Expr::Call(name, args) => match name.as_str() {
-            "if" => is_if(args) && args.iter().skip(1).any(is_program),
+            "if" => if_in_rows(args),
             "block" | "for" | "while" => true,
             _ => false,
         },
@@ -672,6 +695,16 @@ mod tests {
         assert!(p.contains("<m:eqArr>") && p.contains("m:val=\"│\""), "{p}");
         let i = omml("if(x > 0, y := 1, y := 2)", &[]);
         assert!(i.contains("<m:eqArr>") && text(&i).contains("else"), "{i}");
+        // a chain, `if … else if … else` (#175): one array, its rows in reading order
+        let g = omml("grade(x) := if(x ≥ 90, \"A\", if(x ≥ 80, \"B\", \"C\"))", &[]);
+        assert_eq!(g.matches("<m:eqArr>").count(), 1, "{g}");
+        assert_eq!(
+            text(&g),
+            "gradex≔if x≥90\u{2003}\u{2003}&quot;A&quot;else if x≥80\u{2003}\u{2003}&quot;B&quot;else\u{2003}\u{2003}&quot;C&quot;"
+        );
+        // a single `if` with plain values stays on one line
+        let one = omml("if(x > 0, 1, -1)", &[]);
+        assert!(!one.contains("<m:eqArr>"), "{one}");
     }
 
     #[test]

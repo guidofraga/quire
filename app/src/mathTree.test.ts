@@ -36,6 +36,8 @@ const NAMED: Record<string, string> = {
   "↓": "ArrowDown",
   "⌫": "Backspace",
   "⌦": "Delete",
+  "⌥←": "WordLeft",
+  "⌥→": "WordRight",
 };
 
 /**
@@ -64,7 +66,13 @@ function run(keys: string, start: EditState = empty()): EditState {
 
 /** The state as the spec's second column shows it, with what the editor is asked to do. */
 function shown(s: EditState): string {
-  const effect = s.effect?.leave ? ` ⟶ leave ${s.effect.leave}` : s.effect?.command ? ` ⟶ \\${s.effect.command}` : "";
+  const effect = s.effect?.leave
+    ? ` ⟶ leave ${s.effect.leave}`
+    : s.effect?.command
+      ? ` ⟶ \\${s.effect.command}`
+      : s.effect?.finish
+        ? " ⟶ finish"
+        : "";
   return sketch(s) + effect;
 }
 
@@ -135,6 +143,39 @@ function* states(count: number, length = 30): Generator<EditState> {
   }
 }
 
+/** Programs to start from: Structures ▸ Programming's templates, and programs opened from their text. */
+const PROGRAM_TEMPLATES = ["if(?, ?, ?)", "if(?, ?, if(?, ?, ?))", "for(?, ?, ?)", "while(?, ?)", "block(?, ?)"];
+const PROGRAM_TEXTS = [
+  'grade(x) := if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))',
+  "total(n) := block(s := 0, for(i, 1..n, s := s + i), s)",
+  "if(a, block(x, y), 2)",
+  "block(for(i, 1..n, s), t)",
+  "fact(n) := block(p := 1, k := 1, while(k ≤ n, block(p := p*k, k := k + 1)), p)",
+  "for(i := 1, i ≤ n, i := i + 2, c := c + 1)",
+  "if(x > 0, 1, -1)",
+];
+/** The keys typed in programs: every other key, and Enter, `,`, word jumps, `else if `. */
+const PROGRAM_KEYS = [...KEYS, "Enter", "Enter", "Enter", ",", "WordLeft", "WordRight", "else if "];
+
+/** Random programs: a template or a program opened, then a random run of keys. */
+function* programStates(count: number, length = 30): Generator<EditState> {
+  const rand = random(175);
+  for (let r = 0; r < count; r++) {
+    let s =
+      r % 2
+        ? insertTemplate(empty(), PROGRAM_TEMPLATES[rand(PROGRAM_TEMPLATES.length)])
+        : key(fromLinear(PROGRAM_TEXTS[rand(PROGRAM_TEXTS.length)]), "End");
+    // a few steps in, so the keys land anywhere in it
+    for (let k = rand(12); k > 0; k--) s = key(s, "ArrowLeft");
+    for (let k = 0; k < length; k++) {
+      const kk = PROGRAM_KEYS[rand(PROGRAM_KEYS.length)];
+      if (kk.length > 1 && kk.includes(" ")) for (const ch of kk) s = key(s, ch);
+      else s = key(s, kk, { shift: rand(7) === 0 });
+    }
+    yield s;
+  }
+}
+
 /** Every caret position, walking → from the start. */
 function walk(s: EditState, dir: "ArrowRight" | "ArrowLeft"): string[] {
   let t = key(s, dir === "ArrowRight" ? "Home" : "End");
@@ -149,8 +190,12 @@ function walk(s: EditState, dir: "ArrowRight" | "ArrowLeft"): string[] {
 }
 
 // thousands of random key sequences: about a second here, several on a slow CI runner
-describe("whatever is typed", { timeout: 60_000 }, () => {
-  test("no key throws, and the caret is always somewhere on the line", () => {
+const SUITES = [
+  ["whatever is typed", states],
+  ["whatever is typed in a program (if, else if, for, while, block)", programStates],
+] as const;
+describe.each(SUITES)("%s", (_, states) => {
+  test("no key throws, and the caret is always somewhere on the line", { timeout: 60_000 }, () => {
     let n = 0;
     for (const s of states(3000)) {
       n++;
@@ -163,7 +208,7 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     expect(n).toBe(3000);
   });
 
-  test("→ visits every position once, from the start to the end, and ← the same backwards", () => {
+  test("→ visits every position once, from the start to the end, and ← the same backwards", { timeout: 60_000 }, () => {
     for (const s of states(400)) {
       const right = walk(s, "ArrowRight");
       // never a dead step: each → lands somewhere new
@@ -173,7 +218,7 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     }
   });
 
-  test("↑ and ↓ never trap the caret: they move or say which way to leave", () => {
+  test("↑ and ↓ never trap the caret: they move or say which way to leave", { timeout: 60_000 }, () => {
     for (const s of states(400)) {
       let t = s;
       for (let n = 0; n < 50; n++) {
@@ -186,7 +231,7 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     }
   });
 
-  test("Backspace from the end, or Delete from the start, empties any formula", () => {
+  test("Backspace from the end, or Delete from the start, empties any formula", { timeout: 60_000 }, () => {
     for (const s of states(400)) {
       for (const [k, from] of [
         ["Backspace", "End"],
@@ -208,10 +253,10 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     }
   });
 
-  test("the selection is always one slice of one row", () => {
+  test("the selection is always one slice of one row", { timeout: 60_000 }, () => {
     for (const s of states(500)) {
       let t = s;
-      for (const k of ["ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight"]) {
+      for (const k of ["ArrowLeft", "WordLeft", "ArrowUp", "ArrowRight", "WordRight", "ArrowRight"]) {
         t = key(t, k, { shift: true });
         const sel = selection(t);
         if (sel) expect(sel.from).toBeLessThan(sel.to);

@@ -343,6 +343,11 @@ function say(e: Expr, cx: Ctx): string {
   }
 }
 
+/** An expression in words, as `spokenMath` reads it: `a/b` → "a over b". */
+export function spokenExpr(e: Expr, units: readonly string[] = [], constants: readonly string[] = []): string {
+  return say(e, { units: new Set(units), constants: new Set(constants) });
+}
+
 /** A math line in words, with its result: "M is defined as q times L squared over 8, equals 54 kilonewton metres". */
 export function spokenMath(
   input: Expr,

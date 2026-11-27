@@ -35,6 +35,7 @@ import { SHEET_GAP } from "./pages";
 import { bracketsOf, highlightPair, mathCaret } from "./brackets";
 import { noteSide, startNoteDrag } from "./notePosition";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
+import { shownUnit } from "./mathDraw";
 import { mathWords, nameMarks } from "./describe";
 import { spokenMath } from "./speech";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
@@ -311,8 +312,11 @@ function MathBody(props: { r: Region; noteWidth: () => number }) {
     // asked whether the line is being edited: opening it must not draw it again, which would
     // replace what is under the mouse and lose the click that opened it
     const brackets = bracketsOf(props.r.expr ?? "", null);
+    // a line that asks for a result it has none for (an error) keeps its `= □`, and the unit
+    // typed after it, as the formula edited in place draws them: ending that edit moves nothing
+    const pending = props.r.show && !comparison() && !result ? { unit: shownUnit(editText(props.r)) } : undefined;
     return input
-      ? mathml(input, result, v!.units, v!.constants, props.r.show === "symbolic", nameMarks(v!), brackets)
+      ? mathml(input, result, v!.units, v!.constants, props.r.show === "symbolic", nameMarks(v!), brackets, pending)
       : null;
   };
   // Settings ▸ Editing ▸ Edit math in place: the formula itself is the editor (MathInPlace.tsx)
