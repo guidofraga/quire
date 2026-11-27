@@ -170,7 +170,9 @@ const report = (name: string, t: Tally) =>
   `same text ${t.sameText}, typed ${t.typedSame}/${t.formulas - t.unparsed}` +
   (t.failures.length ? `\n  ${t.failures.slice(0, 30).join("\n  ")}` : "");
 
-describe.skipIf(!haveEngine)("against the engine", () => {
+// whole corpora and thousands of random keystrokes against the engine: a second or two here,
+// several times that on a slow CI runner
+describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
   test("the TypeScript printer prints as the engine does", () => {
     for (const s of [
       "M := q*L^2/8",
