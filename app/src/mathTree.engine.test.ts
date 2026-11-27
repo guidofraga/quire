@@ -21,7 +21,7 @@ import {
 import { print } from "./mathLinear";
 import { naturalKeys } from "./naturalKeys";
 import { mathml } from "./math";
-import { drawLine } from "./mathDraw";
+import { drawLine, textMathml } from "./mathDraw";
 import { InlineSim } from "./inlineSim";
 import { parseEditable } from "./richtext";
 
@@ -213,15 +213,15 @@ function drawnInline(sources: string[]): { checked: number; bad: string[] } {
       checked++;
       const said = { result: res, units: [], constants: [] };
       const symbolic = show === "symbolic";
-      const pending = show && !res ? { unit: null } : undefined;
-      const text = mathml(e, res, [], [], symbolic, {}, undefined, pending);
+      // the text as it reads when it isn't edited: an evaluation that failed (no result) included
+      const text = textMathml({ input: e, result: res, units: [], constants: [], symbolic }, show);
       const opened = bare(drawLine(fromExpr(e, show), said));
       if (opened !== text) bad.push(`opened: ${src}\n    ${opened}\n    ${text}`);
       const typed = settleSlots(key(fromLinear(parse(expr).print! + (show ? (symbolic ? " →" : " =") : "")), "End"));
       const stored = parse(splitShow(toLinear(typed)).expr).expr;
       if (!stored) continue;
       const drawn = bare(drawLine(typed, said));
-      const want = mathml(stored, res, [], [], symbolic, {}, undefined, pending);
+      const want = textMathml({ input: stored, result: res, units: [], constants: [], symbolic }, show);
       if (drawn !== want) bad.push(`typed: ${src}\n    ${drawn}\n    ${want}`);
     }
   }
@@ -447,13 +447,17 @@ describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
       else expect(text(back), where).toEqual(text(sim.state.doc));
       // and the engine evaluates each of them, numbered in order
       const doc = { format: "quire/1", regions: [{ id: "t", kind: "text", at: [0, 0], text: djot }] };
-      const views = call<{ regions: { id: string }[] }>("report", { doc }).regions.filter((v) =>
-        v.id.startsWith("t:m"),
-      );
+      const rep = call<{ regions: { id: string }[]; html: Record<string, string> }>("report", { doc });
+      const views = rep.regions.filter((v) => v.id.startsWith("t:m"));
       expect(
         views.map((v) => v.id),
         where,
       ).toEqual(exprs.map((_, n) => `t:m${n}`));
+      // the text's rendering says which ask for a result, as the editor reads them: drawn with `= □` when they have none
+      const shows = [...(rep.html.t ?? "").matchAll(/data-math="t:m\d+"(?: data-show="(\w+)")?/g)].map(
+        (m) => m[1] ?? null,
+      );
+      expect(shows, where).toEqual(exprs.map((x) => splitShow(x).show));
     }
     console.info(
       `inline: ${runs} sequences of 30 keys over text and formulas, ${formulasSeen} formulas, all read back ` +

@@ -163,7 +163,7 @@ pub fn render_djot_editable(src: &str) -> String {
         html.push_str("</div>\n");
     }
     let exprs = inline_math(&src);
-    let html = replace_sentinels(&html, "");
+    let html = replace_sentinels(&html, "", &[]);
     let mut out = String::with_capacity(html.len());
     let mut rest = html.as_str();
     let marker = "<span class=\"qmath\" data-math=\":m";
@@ -333,7 +333,9 @@ fn attrs_within(attrs: &jotdown::Attributes, classes: &[&str], keys: &[&str]) ->
 }
 
 /// Like [`render_djot`], but inline math becomes `<span class="qmath" data-math="<id>:m<n>">`
-/// placeholders that the editor fills with the evaluated, typeset expression.
+/// placeholders that the editor fills with the evaluated, typeset expression. One that asks for
+/// its result (`` $`A =` ``, `` $`f(x) →` ``) says so (`data-show="value"` or `"symbolic"`), so
+/// that it is drawn with its `= □` when it has none, as the editor draws it.
 pub fn render_djot_with_math(src: &str, region_id: &str) -> String {
     render(src, Some(region_id))
 }
@@ -344,12 +346,16 @@ fn without_nul(src: &str) -> Cow<'_, str> {
 
 fn render(src: &str, math_prefix: Option<&str>) -> String {
     let src = without_nul(src);
+    let shows: Vec<Option<&str>> = match math_prefix {
+        Some(_) => inline_math(&src).iter().map(|m| crate::inline_show(m)).collect(),
+        None => Vec::new(),
+    };
     let src = quote_colors(&src);
     let mut neutral = Neutralize::new(math_prefix.is_some());
     let events = jotdown::Parser::new(&src).filter_map(|e| neutral.apply(e));
     let html = jotdown::html::render_to_string(events);
     match math_prefix {
-        Some(id) => replace_sentinels(&html, id),
+        Some(id) => replace_sentinels(&html, id, &shows),
         None => html,
     }
 }
@@ -409,12 +415,14 @@ impl Neutralize {
     }
 }
 
-fn replace_sentinels(html: &str, id: &str) -> String {
+fn replace_sentinels(html: &str, id: &str, shows: &[Option<&str>]) -> String {
     let mut out = String::with_capacity(html.len());
     let mut parts = html.split('\u{0}');
     out.push_str(parts.next().unwrap_or_default());
     while let (Some(n), Some(rest)) = (parts.next(), parts.next()) {
-        out.push_str(&format!("<span class=\"qmath\" data-math=\"{id}:m{n}\"></span>"));
+        let show = n.parse::<usize>().ok().and_then(|i| shows.get(i).copied().flatten());
+        let show = show.map(|s| format!(" data-show=\"{s}\"")).unwrap_or_default();
+        out.push_str(&format!("<span class=\"qmath\" data-math=\"{id}:m{n}\"{show}></span>"));
         out.push_str(rest);
     }
     out
@@ -523,7 +531,11 @@ mod tests {
         let src = "*$`C := 5.1 'm`  X $`L := 2 'm =`*";
         assert_eq!(super::inline_math(src), ["C := 5.1 'm", "L := 2 'm ="]);
         let h = super::render_djot_with_math(src, "abc");
-        assert!(h.contains(r#"<span class="qmath" data-math="abc:m0"></span>  X <span class="qmath" data-math="abc:m1"></span>"#), "{h}");
+        assert!(h.contains(r#"<span class="qmath" data-math="abc:m0"></span>  X <span class="qmath" data-math="abc:m1" data-show="value"></span>"#), "{h}");
+        let s = super::render_djot_with_math("$`f(x) ->` and $`a == b` and $`x := 1 =`", "t");
+        assert!(s.contains(r#"data-math="t:m0" data-show="symbolic""#), "{s}");
+        assert!(s.contains(r#"data-math="t:m1"></span>"#), "{s}");
+        assert!(s.contains(r#"data-math="t:m2" data-show="value""#), "{s}");
     }
 
     #[test]

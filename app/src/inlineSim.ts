@@ -19,6 +19,7 @@ import {
   formulaChange,
   insertFormula,
   leaveFormula,
+  lineEnd,
   type Open,
   openAt,
   openFormula,
@@ -219,8 +220,10 @@ export class InlineSim {
       baseKeymap[how.edge === "back" ? "Backspace" : "Delete"](this.state, (tr) => this.apply(tr));
       return;
     }
-    // ↑ ↓ to another line need the page; without it, to the side as on the line's edge
-    this.apply(leaveFormula(this.state, f.pos, how.leave));
+    // ↑ ↓ to another line need the page; here every paragraph is one line, so as on its first
+    // or last: to the paragraph's start or end, as macOS does
+    const to = "at" in how && how.at ? lineEnd(this.state, f.pos, how.at) : null;
+    this.apply(leaveFormula(this.state, f.pos, how.leave, to));
     this.formula = null;
   }
 

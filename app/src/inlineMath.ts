@@ -108,6 +108,15 @@ export function leaveFormula(state: EditorState, pos: number, side: Side, at?: n
 }
 
 /**
+ * ↑ or ↓ out of a formula on its paragraph's first or last line (no line of text that way): the
+ * start or the end of the paragraph, as macOS moves a caret off a text's first or last line.
+ */
+export function lineEnd(state: EditorState, pos: number, dir: "up" | "down"): number {
+  const $p = state.doc.resolve(pos);
+  return dir === "up" ? $p.start() : $p.end();
+}
+
+/**
  * A key in the open formula that belongs to the text around it: Backspace at its very start,
  * Delete at its very end (the formula's first and last caret positions), with nothing selected.
  * There, the text's character on that side goes, as the formula's own characters would; an

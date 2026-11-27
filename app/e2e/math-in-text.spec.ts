@@ -275,6 +275,83 @@ test.describe("edited in place", () => {
   });
 });
 
+test.describe("edited in place, where things are", () => {
+  test.beforeEach(({ page }) => inPlace(page));
+
+  test("a formula whose result can't be worked out keeps its = □: starting and ending the text's edit moves nothing", async ({
+    page,
+  }) => {
+    // `w` is defined nowhere: the formula asks for a result it can't have
+    await withText(page, "The value is $`w*2 =` and the rest of the sentence.");
+    /** The formula's box and the paragraph's, relative to the paragraph. */
+    const where = (scope: string) =>
+      page.evaluate((scope) => {
+        const p = document.querySelector(`${scope} p`)!.getBoundingClientRect();
+        const m = document.querySelector(`${scope} .qmath math`)!.getBoundingClientRect();
+        return [m.left - p.left, m.top - p.top, m.width, m.height, p.width, p.height].map((v) => Math.round(v * 2) / 2);
+      }, scope);
+    await expect(page.locator(".region.text .qmath .ph")).toHaveCount(1);
+    const shown = await where(".region.text .text-body");
+    await edit(page, "The value");
+    const editing = await where(".rich-editor");
+    expect(editing).toEqual(shown);
+    await page.locator(".rich-editor .qmath math").click();
+    await expect(sink(page)).toBeFocused();
+    expect(await where(".rich-editor")).toEqual(shown);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(editor(page)).toHaveCount(0);
+    expect(await where(".region.text .text-body")).toEqual(shown);
+  });
+
+  test("↑ ↓ from a formula: the line above or below at the caret's x, or the paragraph's start or end", async ({
+    page,
+  }) => {
+    await withText(
+      page,
+      "One $`a` two three four five six seven eight nine ten $`c` eleven twelve thirteen fourteen fifteen $`b` end",
+      170,
+    );
+    // on the text, clear of the formulas
+    const p = page.locator(".region.text p");
+    await p.click({ position: { x: 100, y: 6 } });
+    await p.click({ position: { x: 100, y: 6 } });
+    await expect(editor(page)).toBeFocused();
+    const caretTop = () =>
+      page.evaluate(() => {
+        const r = getSelection()!.getRangeAt(0).getBoundingClientRect();
+        return r.top + r.height / 2;
+      });
+    const formulas = editor(page).locator(".qmath math");
+    // the first formula, on the first line: ↑ goes to the paragraph's start
+    await formulas.nth(0).click();
+    await expect(sink(page)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(editor(page)).toBeFocused();
+    expect(await textCaret(page)).toBe("");
+    // the last, on the last line: ↓ goes to its end
+    await formulas.nth(2).click();
+    await expect(sink(page)).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(editor(page)).toBeFocused();
+    expect(await textCaret(page)).toMatch(/fifteen \$ end$/);
+    // one in the middle: ↑ to the line above, ↓ to the line below, near the formula's x
+    const mid = (await formulas.nth(1).boundingBox())!;
+    await formulas.nth(1).click();
+    await page.keyboard.press("ArrowUp");
+    await expect(editor(page)).toBeFocused();
+    const above = await caretTop();
+    expect(above).toBeLessThan(mid.y);
+    expect(await textCaret(page)).not.toBe("");
+    await formulas.nth(1).click();
+    await page.keyboard.press("ArrowDown");
+    await expect(editor(page)).toBeFocused();
+    expect(await caretTop()).toBeGreaterThan(mid.y + mid.height);
+    expect(await textCaret(page)).not.toMatch(/ end$/);
+    await page.keyboard.press("Escape");
+  });
+});
+
 test("with the setting off, inline math is edited as linear text in a box, as before", async ({ page }) => {
   await withText(page, "A load $`a/b` on it.");
   await edit(page, "load");

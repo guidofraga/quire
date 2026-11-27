@@ -8,8 +8,7 @@ import { redo as redoCmd, undo as undoCmd } from "prosemirror-history";
 import type { NodeView, EditorView } from "prosemirror-view";
 import { createEffect, createRoot, createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { mathml } from "./math";
-import { drawLine, type Said } from "./mathDraw";
+import { drawLine, type Said, textMathml } from "./mathDraw";
 import { fromExpr, fromLinear, key, settleSlots, toLinear } from "./mathTree";
 import { MathInPlace, type Spot } from "./MathInPlace";
 import type { MathLine } from "./MathEditor";
@@ -20,6 +19,7 @@ import {
   deleteInText,
   type Exit,
   formulaChange,
+  lineEnd,
   type FormulaView,
   leaveFormula,
   mathIndex,
@@ -58,9 +58,7 @@ function readsAs(
  */
 export function inlineHtml(expr: string, v: RegionView | undefined): string {
   if (readsAs(v, expr)) {
-    const { show } = splitShow(expr);
-    const pending = show && !v.result ? { unit: null } : undefined;
-    return mathml(v.input, v.result, v.units, v.constants, v.symbolic, {}, undefined, pending);
+    return textMathml(v, splitShow(expr).show || null);
   }
   const s = settleSlots(key(fromLinear(expr), "End"));
   return drawLine(s, { result: null, units: v?.units ?? [], constants: v?.constants ?? [] }).replace(
@@ -279,12 +277,22 @@ export class MathInText implements NodeView, FormulaView {
       return;
     }
     let to: number | null = null;
-    if (how.at && at) {
-      // ↑ ↓: the line above or below, at the caret's x, as in the text
+    if (how.at) {
+      // ↑ ↓: the line above or below, at the caret's x, as in the text…
+      const up = how.at === "up";
       const r = this.dom.getBoundingClientRect();
-      const y = how.at === "up" ? r.top - 2 : r.bottom + 2;
-      const found = view.posAtCoords({ left: at.x, top: y });
-      if (found && (found.pos < pos || found.pos > pos + this.node.nodeSize)) to = found.pos;
+      const here = view.coordsAtPos(pos);
+      const x = at?.x ?? (up ? r.left : r.right);
+      let y = up ? Math.min(r.top, here.top) - 2 : Math.max(r.bottom, here.bottom) + 2;
+      for (let k = 0; k < 16 && to === null; k++, y += up ? -3 : 3) {
+        const found = view.posAtCoords({ left: x, top: y });
+        if (!found) break;
+        const c = view.coordsAtPos(found.pos);
+        const sameLine = c.top < here.bottom && c.bottom > here.top;
+        if (!sameLine && (found.pos < pos || found.pos > pos + this.node.nodeSize)) to = found.pos;
+      }
+      // …and on the paragraph's first or last line, to its start or end, as macOS does
+      to ??= lineEnd(view.state, pos, how.at);
     }
     view.dispatch(leaveFormula(view.state, pos, how.leave, to));
     view.focus();

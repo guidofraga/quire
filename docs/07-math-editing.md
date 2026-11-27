@@ -520,7 +520,7 @@ A formula in a paragraph (`` $`q*L^2/8` `` in the Djot, see [02 — File format]
 - **Backspace from the text right after a formula goes into it and deletes its last character**, and Delete before one its first: what a structure does inside a formula (§ Backspace and Delete), so one press always deletes one visible thing, and a typo at a formula's end is one key away. Selecting the formula first (MathQuill's way) would cost a press for every deletion and make Backspace behave unlike everywhere else on this page; a whole formula goes by deleting it to empty, or with a selection in the text.
 - **Backspace at a formula's first position deletes the character before it in the text**, Delete at its last the one after: the caret is at the formula's edge, and the thing drawn before it is the text's. An empty formula goes with one Backspace or Delete, and the caret stays where it was.
 - **An empty formula goes when it is left**, by an arrow, Esc or a click: as an empty math region does. While it is empty it isn't written to the Djot.
-- **↑ ↓** in a formula go to the line of text above or below, at the caret's x, as in the text; with no line there, to the formula's start or end.
+- **↑ ↓** in a formula go to the line of text above or below, at the caret's x, as in the text; on the paragraph's first line ↑ goes to its start, on its last ↓ to its end, as macOS moves a caret off a text's first or last line.
 - **A click** in a formula puts the caret where it lands, in the slot under it; a click in the text puts it in the text. Starting to edit a text region with a click on a formula opens the formula there.
 - **Inserting a formula**: the Inline Math button (⇧⌘M), `\math` and the structures of the format bar's galleries open a new formula with the caret in its first □. `$$` typed in text opens an empty one (as in Notion); `$` alone stays a dollar sign, so prices stay text; `$x$` still becomes the formula `x`, the caret after it.
 - **Undo is one history for the text and its formulas.** Each key that changes a formula is a step of the text's own undo history, of its own; ⌘Z undoes the latest step wherever it was, and a formula step undone opens that formula with its caret where it was. Redo goes forward the same way.
@@ -569,6 +569,10 @@ The table reads like the others. **Before** and **After** are the paragraph: tex
 | `{→}{→}+c{→}z{⌘Z}{⌘Z}{⌘Z}` | `x ‸$a$ y` | `x ⟨a‸⟩ y` | `` x $`a` y `` |  |
 | `{→}{→}+c{→}z{⌘Z}{⌘Z}{⌘Z}{⌘⇧Z}{⌘⇧Z}{⌘⇧Z}` | `x ‸$a$ y` | `x $a + c$z‸ y` | `` x $`a + c`z y `` | …and redo goes forward the same way. |
 | `{Inline math}{⌘Z}` | `x ‸ y` | `x ‸ y` | `x  y` | A formula just put in goes with one undo. |
+| `{←}{↑}` | `x $a$‸ y` | `‸x $a$ y` | `` x $`a` y `` | ↑ with no line of text above: the start of the paragraph, as macOS does… |
+| `{←}{↓}` | `x $a$‸ y` | `x $a$ y‸` | `` x $`a` y `` | …and ↓ with none below, its end. A line above or below is gone to at the caret's x (end-to-end tests). |
+| `{→}{→}{↑}` | `x ‸$a/b$ y` | `‸x $a/b$ y` | `` x $`a/b` y `` | From the numerator, ↑ leaves the formula the same way. |
+| `{→}{↓}{↓}` | `x ‸$a/b$ y` | `x $a/b$ y‸` | `` x $`a/b` y `` |  |
 
 ## Undo
 
@@ -642,7 +646,7 @@ Left for phase 3b: inline math in text (`richtext.ts`, the `$…$` node view), t
 - **A formula in a paragraph is typed into as it is drawn** (§ Inline math in text), with the same tree, drawing and editor as a math region: `MathInText.tsx` is ProseMirror's node view of the `math` node, drawn as `fillInlineMath` draws it when the text isn't edited, and holding `MathInPlace` while the text's selection is on the node (a NodeSelection: open exactly then, so ProseMirror's own selection, undo and node views decide it, not a second state beside them).
 - **The boundary** is `inlineMath.ts`, pure: which text keys go into a formula, which formula keys go to the text, leaving to a side, an empty formula going, `36139`, the formula's number among the text's (`<id>:m<n>`, counting the formulas of blocks kept as written).
 - **One undo history.** Every change to a formula is a ProseMirror step of its own (`setNodeAttribute`, `closeHistory`), with the NodeSelection before it, so undoing it opens the formula where it was; the formula's own `History` isn't used in text.
-- **Nothing moves.** The formula is drawn the same closed and open (`mathTree.engine.test.ts`, inline math drawn in place); a line asking for a result it has none for keeps its `= □` in the text being edited, as the editor draws it. The shading of the formula being typed into, the caret and the field that takes the keys are drawn out of the flow.
+- **Nothing moves.** The formula is drawn the same closed and open (`mathTree.engine.test.ts`, inline math drawn in place); a formula asking for a result it has none for (its evaluation failed) keeps its `= □` in the text, edited or not, as the editor draws it: the engine marks such a formula in the text's rendering (`data-show="value"` or `"symbolic"` on its placeholder, `quire-service` `render_djot_with_math`), and `textMathml` (mathDraw.ts) draws it so for both. The shading of the formula being typed into, the caret and the field that takes the keys are drawn out of the flow.
 - **Off**, inline math is the box of linear text it was, unchanged.
 
-Left: making in-place editing the default (a separate change, after the feel check), and with it the text not edited drawing a formula's `= □` when it has no result, as the editor does (today it is drawn without it there, underlined as an error).
+Left: making in-place editing the default (a separate change, after the feel check). With the setting off, the text not edited draws inline math as before (without the `= □`).

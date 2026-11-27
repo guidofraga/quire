@@ -2,7 +2,7 @@
 // row as the engine reads text (mathLinear `traceRow`), with the brackets the stored text will
 // have (`withPrintedBrackets`), drawn by math.ts exactly as the stored formula is drawn. Each
 // part carries where it is in the tree, for the caret (MathInPlace.tsx). Pure: no DOM.
-import { editingMathml, esc, type NameMarks, type Piece } from "./math";
+import { editingMathml, esc, mathml, type NameMarks, type Piece } from "./math";
 import { isDigit, isNameStart, OPS, traceRow, traceSlice, withPrintedBrackets } from "./mathLinear";
 import { fromLinear, type EditState, type Row } from "./mathTree";
 import type { Expr } from "./types";
@@ -24,6 +24,26 @@ export function shownUnit(text: string): Expr | null {
   if (!unit.atoms.length) return null;
   const e = traceRow(unit).expr;
   return e ? withPrintedBrackets(e) : null;
+}
+
+/** What the engine said about a formula in text (`<id>:m<n>`), as the text draws it. */
+export interface TextMath {
+  input: Expr;
+  result: Expr | null;
+  units: readonly string[];
+  constants: readonly string[];
+  symbolic?: boolean;
+}
+
+/**
+ * Inline math as the text draws it when it isn't edited (Region.tsx `fillInlineMath`), and in the
+ * text being edited (MathInText.tsx). `show`: the result it asks for (`=`, `→`), as the engine
+ * marks it (`data-show`). A formula that asks for a result it has none for (its evaluation failed)
+ * keeps its `= □`, as its editor draws it: starting or ending an edit of the text moves nothing.
+ */
+export function textMathml(v: TextMath, show: "value" | "symbolic" | null): string {
+  const pending = show && !v.result ? { unit: null } : undefined;
+  return mathml(v.input, v.result, v.units, v.constants, v.symbolic, {}, undefined, pending);
 }
 
 /** The line's MathML, tagged for the caret. */
