@@ -149,6 +149,8 @@ interface Box {
   b: number;
 }
 const boxOf = (r: DOMRect): Box => ({ l: r.left, r: r.right, t: r.top, b: r.bottom });
+/** Programs: drawn on rows of their own, so a caret beside one is as tall as it. */
+const PROGRAM_KINDS = new Set(["if", "block", "for", "while"]);
 const TEXT = new Set(["mi", "mn", "mo", "ms", "mtext"]);
 
 /** The caret on screen: its x and the top and bottom of its line, in window coordinates. */
@@ -500,6 +502,9 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     let line: { t: number; b: number } | null =
       near(row.atoms[i - 1], prev) ?? near(row.atoms[i], next) ?? (hole && textOf(holeEl!) ? lineOf(row, i) : null);
     line ??= lineOf(row, i);
+    // beside a structure on a line with nothing else (a branch holding a block): as tall as it
+    const beside = !line && PROGRAM_KINDS.has(row.atoms[i]?.k ?? row.atoms[i - 1]?.k ?? "g") ? (next ?? prev) : null;
+    if (beside) line = { t: beside.t, b: beside.b };
     for (let up = w; !line && up?.parent; up = whereIs(s, up.parent.id)) {
       // nothing typed in this row: a structure's middle, at the size of the line around it
       const el = up.owner && (ix.nodes.get(up.owner.id) ?? ix.scripts.get(up.owner.id));
