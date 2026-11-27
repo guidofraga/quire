@@ -7,8 +7,19 @@
 // .quire/.quirez/.sm files to run the round trip over as well.
 import { describe, expect, test } from "vitest";
 import type { Expr } from "./types";
-import { empty, fromExpr, fromLinear, key, settleSlots, toExpr, toLinear, type EditState } from "./mathTree";
+import {
+  empty,
+  fromExpr,
+  fromLinear,
+  insertTemplate,
+  key,
+  settleSlots,
+  toExpr,
+  toLinear,
+  type EditState,
+} from "./mathTree";
 import { print } from "./mathLinear";
+import { naturalKeys } from "./naturalKeys";
 import { mathml } from "./math";
 import { drawLine } from "./mathDraw";
 
@@ -160,7 +171,9 @@ const report = (name: string, t: Tally) =>
   `same text ${t.sameText}, typed ${t.typedSame}/${t.formulas - t.unparsed}` +
   (t.failures.length ? `\n  ${t.failures.slice(0, 30).join("\n  ")}` : "");
 
-describe.skipIf(!haveEngine)("against the engine", () => {
+// whole corpora and thousands of random keystrokes against the engine: a second or two here,
+// several times that on a slow CI runner
+describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
   test("the TypeScript printer prints as the engine does", () => {
     for (const s of [
       "M := q*L^2/8",
@@ -346,5 +359,94 @@ describe.skipIf(!haveEngine)("against the engine", () => {
       `random typing: ${sequences} sequences of 25 keys, ${complete} ended in a readable formula, all read alike`,
     );
     expect(complete).toBeGreaterThan(100);
+  });
+
+  test("every program in the repository typed as written (keywords and Enter) is stored as its text", () => {
+    const programs = IN_REPO.flatMap((p) => formulas(openDoc(p))).filter((s) => parse(s).expr);
+    let typedSo = 0;
+    const bad: string[] = [];
+    for (const s of programs) {
+      const p = parse(s);
+      const keys = naturalKeys(p.expr!);
+      if (!keys) continue;
+      typedSo++;
+      const typed = toLinear(keys.reduce((t, k) => key(t, k), empty()));
+      if (typed !== p.print) bad.push(`${p.print}  →  ${typed}`);
+    }
+    console.info(
+      `typed as written: ${typedSo} programs, ${bad.length} stored otherwise\n  ${bad.slice(0, 20).join("\n  ")}`,
+    );
+    expect(typedSo).toBeGreaterThan(15);
+    expect(bad).toEqual([]);
+  });
+
+  test("random typing in programs never breaks, and the engine reads what the editor drew", () => {
+    let seed = Number(env.env.MATHTREE_SEED ?? 175);
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return Math.floor(seed / 65536) % n;
+    };
+    const templates = ["if(?, ?, ?)", "if(?, ?, if(?, ?, ?))", "for(?, ?, ?)", "while(?, ?)", "block(?, ?)"];
+    // the programs in the repository's documents, and a few more
+    const opened = [
+      ...IN_REPO.flatMap((p) => formulas(openDoc(p))).filter(
+        (s) => /\b(if|block|for|while)\(/.test(s) && parse(s).expr,
+      ),
+      "if(a, block(x, y), 2)",
+      "block(for(i, 1..n, s), t)",
+    ];
+    const KEYS = [
+      ..."abcxyn0123456789",
+      ..."+-*/^().,,;[]=:' !\"<>%",
+      "Enter",
+      "Enter",
+      "Enter",
+      "WordLeft",
+      "WordRight",
+      "else if ",
+      "else ",
+      "if ",
+      "for i in ",
+      "while ",
+      "Tab",
+      "Backspace",
+      "Delete",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+    ];
+    let complete = 0;
+    let programs = 0;
+    const runs = Number(env.env.MATHTREE_RUNS ?? 1500);
+    for (let run = 0; run < runs; run++) {
+      let s: EditState =
+        run % 2
+          ? insertTemplate(empty(), templates[rand(templates.length)])
+          : key(fromLinear(opened[rand(opened.length)]), "End");
+      for (let k = rand(15); k > 0; k--) s = key(s, "ArrowLeft");
+      for (let k = 0; k < 25; k++) {
+        const kk = KEYS[rand(KEYS.length)];
+        if (kk.includes(" ") && kk.length > 1) for (const ch of kk) s = key(s, ch);
+        else s = key(s, kk, { shift: rand(6) === 0 });
+      }
+      const text = toLinear(s);
+      const mine = toExpr(s);
+      if (!mine || s.line.show || !text.trim()) continue;
+      complete++;
+      if (/\b(if|block|for|while)\(/.test(text)) programs++;
+      const theirs = parse(text);
+      expect(theirs.error, `${text}`).toBeNull();
+      expect(meaning(theirs.expr), text).toEqual(meaning(mine));
+      // reopened, the same program: the stored text is the canonical nested call form
+      expect(toLinear(fromExpr(theirs.expr)), text).toBe(theirs.print);
+    }
+    console.info(
+      `random typing in programs: ${runs} sequences of 25 keys from ${templates.length} templates and ${opened.length} programs, ` +
+        `${complete} ended in a readable formula (${programs} still programs), all read alike`,
+    );
+    expect(programs).toBeGreaterThan(200);
   });
 });

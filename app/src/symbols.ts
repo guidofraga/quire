@@ -286,7 +286,18 @@ export const STRUCTURES: Category[] = [
       t("abs", "abs(?)", "Absolute value"),
       t("max", "max(?, ?)", "Maximum"),
       t("min", "min(?, ?)", "Minimum"),
-      t("if", "if(?, ?, ?)", "Condition"),
+    ],
+  },
+  {
+    // SMath's programs, drawn on rows of their own (docs/07-math-editing.md § Programs)
+    id: "programming",
+    title: "Programming",
+    items: [
+      t("if", "if(?, ?, ?)", "if / else"),
+      t("elseif", "if(?, ?, if(?, ?, ?))", "if / else if / else"),
+      t("for", "for(?, ?, ?)", "for"),
+      t("while", "while(?, ?)", "while"),
+      t("block", "block(?, ?)", "block"),
     ],
   },
 ];

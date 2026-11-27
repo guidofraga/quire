@@ -87,15 +87,23 @@ describe("programs as rows", () => {
     expect(html).not.toContain("<mn>1</mn>");
   });
 
-  it("puts the header of a block in its first row, in the same table", () => {
-    const html = mathml(define("f", call("block", define("x", num("1")), define("y", num("2")))));
-    expect(html.match(/<mtable/g)?.length).toBe(1);
-    const table = html.indexOf('<mtable class="q-program"');
-    const op = html.indexOf("≔");
-    expect(table).toBeGreaterThan(-1);
-    expect(op).toBeGreaterThan(table);
-    expect(op).toBeLessThan(html.indexOf('class="q-body"'));
-    expect(rowsOf(html)).toBe(2);
+  it("puts the header beside a program, centred on it, for every kind", () => {
+    const block = mathml(define("f", call("block", define("x", num("1")), define("y", num("2")))));
+    // the header is outside the table: a table is centred on the line it sits in
+    expect(block.indexOf("≔")).toBeLessThan(block.indexOf("<mtable"));
+    expect(rowsOf(block)).toBe(2);
+    const chain = mathml(define("g", call("if", id("c"), num("1"), call("if", id("d"), num("2"), num("3")))));
+    expect(chain.indexOf("≔")).toBeLessThan(chain.indexOf("<mtable"));
+    for (const html of [block, chain]) expect(html).not.toMatch(/ align=/);
+  });
+
+  it("draws the rule down every program's lines: blocks, ifs on rows, loops", () => {
+    const chain = mathml(call("if", id("c"), num("1"), call("if", id("d"), num("2"), num("3"))));
+    expect(chain.match(/class="q-body"/g)?.length).toBe(6);
+    const loop = mathml(call("while", id("c"), define("x", num("1"))));
+    expect(loop.match(/class="q-body"/g)?.length).toBe(2);
+    // a single `if` with plain values is not a program: one line, no rule
+    expect(mathml(call("if", id("c"), num("1"), num("2")))).not.toContain("q-body");
   });
 
   it("nests blocks", () => {

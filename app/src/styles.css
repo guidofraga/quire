@@ -460,7 +460,7 @@ math {
   color: #9aa3af;
 }
 
-/* SMath programs (math.ts): a block's statements run down a rule (currentColor follows the theme),
+/* SMath programs (math.ts): every program's lines run down a rule (currentColor follows the theme),
    their cells are left-aligned, and a string literal never breaks across lines */
 .q-program > mtr > mtd,
 .q-stack > mtr > mtd,
@@ -468,7 +468,8 @@ math {
   text-align: left;
 }
 
-.q-program > mtr > .q-body {
+.q-program > mtr > .q-body,
+.q-stack > mtr > .q-body {
   border-left: 1.5px solid currentColor;
   padding-left: 0.3em;
 }

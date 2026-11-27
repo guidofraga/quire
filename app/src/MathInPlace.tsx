@@ -14,6 +14,7 @@ import { isMac } from "./api";
 import { announceFirst, completionKey, hideCompletions, type Item, openList, showCompletions } from "./Completion";
 import { nameHtml, prettyValue } from "./math";
 import { drawLine, type Said } from "./mathDraw";
+import { deletedWords, placeWords } from "./mathPlace";
 import { isDigit, isNameCont, isNameStart, OPS, rawText, rowText } from "./mathLinear";
 import {
   cutSelection,
@@ -35,6 +36,7 @@ import {
   toFirstHole,
   toLinear,
   type Atom,
+  type Deleted,
   type EditState,
   type Node,
   type Pos,
@@ -145,6 +147,8 @@ interface Box {
   b: number;
 }
 const boxOf = (r: DOMRect): Box => ({ l: r.left, r: r.right, t: r.top, b: r.bottom });
+/** Programs: drawn on rows of their own, so a caret beside one is as tall as it. */
+const PROGRAM_KINDS = new Set(["if", "block", "for", "while"]);
 const TEXT = new Set(["mi", "mn", "mo", "ms", "mtext"]);
 
 /** The caret on screen: its x and the top and bottom of its line, in window coordinates. */
@@ -197,8 +201,8 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
   /** What was last written to the document: nothing until the formula changes. */
   let sent = initialText;
 
-  /** The formula changed (or the caret moved): draw it, write it, and update the lists. */
-  const changed = (opts: { record?: boolean; typing?: boolean } = {}) => {
+  /** The formula changed (or the caret moved): draw it, write it, update the lists, and say where the caret went. */
+  const changed = (opts: { record?: boolean; typing?: boolean; deleted?: Deleted } = {}) => {
     s = settleSlots(s);
     if (opts.record !== false) history.record(s);
     draw();
@@ -211,12 +215,33 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     }
     updateLists(!!opts.typing);
     traceName();
+    speak(opts.deleted);
+  };
+
+  // ---- for a screen reader: where the caret is, when that changes, and what was deleted ----
+
+  let lastPlace = "";
+  const speak = (deleted?: Deleted) => {
+    const names = { units: props.said().units, constants: props.said().constants };
+    const place = placeWords(s, names);
+    const moved = !!place && place.key !== lastPlace;
+    if (place) lastPlace = place.key;
+    const words = [deleted ? deletedWords(deleted, names) : "", moved ? place.words : ""].filter(Boolean);
+    if (words.length) announce(words.join(", "));
+  };
+
+  /** Enter outside a program, or on its empty last line, or ⌘Enter anywhere: the edit ends, the insertion point under it. */
+  const finish = () => {
+    hideCompletions();
+    if (props.line) props.line.onEnter();
+    else commitBelow(props.r.id);
   };
 
   const effect = () => {
     const e = s.effect;
     if (!e) return;
     s = { ...s, effect: undefined };
+    if (e.finish) return finish();
     if (e.command) {
       if (e.command === "to_text") {
         const text = toLinear(s).trimEnd();
@@ -241,8 +266,10 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     s = key(s, k, {
       shift: opts.shift,
       pick: from ? (row, n) => nearest(row, n, from.x) : undefined,
+      choose: from ? (rows) => nearestRow(rows, from.x) : undefined,
     });
-    changed({ record: true, typing: s.version !== before && [...k].length === 1 });
+    const deleted = s.effect?.deleted;
+    changed({ record: true, typing: s.version !== before && [...k].length === 1, deleted });
     effect();
   };
 
@@ -461,6 +488,9 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     let line: { t: number; b: number } | null =
       near(row.atoms[i - 1], prev) ?? near(row.atoms[i], next) ?? (hole && textOf(holeEl!) ? lineOf(row, i) : null);
     line ??= lineOf(row, i);
+    // beside a structure on a line with nothing else (a branch holding a block): as tall as it
+    const beside = !line && PROGRAM_KINDS.has(row.atoms[i]?.k ?? row.atoms[i - 1]?.k ?? "g") ? (next ?? prev) : null;
+    if (beside) line = { t: beside.t, b: beside.b };
     for (let up = w; !line && up?.parent; up = whereIs(s, up.parent.id)) {
       // nothing typed in this row: a structure's middle, at the size of the line around it
       const el = up.owner && (ix.nodes.get(up.owner.id) ?? ix.scripts.get(up.owner.id));
@@ -476,6 +506,23 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
       line = { t: r.top, b: r.bottom };
     }
     return { x, t: line.t, b: line.b };
+  };
+
+  /** Of several slots on one line (↑ ↓ onto `for i ∈ 1..n`), the one nearest to screen x. */
+  const nearestRow = (rows: string[], x: number): string => {
+    let best = rows[0];
+    let d = Infinity;
+    for (const id of rows) {
+      const row = tree().get(id)?.row;
+      for (let i = 0; row && i <= row.atoms.length; i++) {
+        const sp = spot({ row: id, i });
+        if (sp && Math.abs(sp.x - x) < d) {
+          d = Math.abs(sp.x - x);
+          best = id;
+        }
+      }
+    }
+    return best;
   };
 
   /** The landing index in `row` (↑ ↓) nearest to screen x. */
@@ -989,8 +1036,9 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
       case "Enter":
         e.preventDefault();
         hideCompletions();
-        if (props.line) props.line.onEnter();
-        else commitBelow(props.r.id);
+        // in a program Enter adds a line (docs/07-math-editing.md); ⌘Enter ends the edit from anywhere
+        if (e.metaKey || e.ctrlKey) finish();
+        else press("Enter");
         return;
       case "Escape": {
         e.preventDefault();
@@ -1007,8 +1055,10 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
       case "ArrowLeft":
       case "ArrowRight":
         e.preventDefault();
-        // ⌘← ⌘→: to the start or the end, as in a line of text
+        // ⌘← ⌘→: to the start or the end, as in a line of text; ⌥← ⌥→ (Ctrl on Windows and Linux) by words
         if (e.metaKey) press(k === "ArrowLeft" ? "Home" : "End", { shift: e.shiftKey });
+        else if (isMac ? e.altKey : e.ctrlKey)
+          press(k === "ArrowLeft" ? "WordLeft" : "WordRight", { shift: e.shiftKey });
         else press(k, { shift: e.shiftKey });
         return;
       case "ArrowUp":
@@ -1116,6 +1166,7 @@ export function MathInPlace(props: { r: Region; line?: MathLine; said: () => Sai
     s = settleSlots(s);
     history.record(s);
     draw();
+    lastPlace = placeWords(s, { units: [], constants: [] })?.key ?? "";
     sink.focus({ preventScroll: true });
     setInPlace({ type, insert, undo: travel });
     forgetMeanings(viewId);

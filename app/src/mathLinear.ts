@@ -82,6 +82,36 @@ export function unitName(r: Row): string {
 }
 
 // ---------------------------------------------------------------------------
+// Programs: `if`, `block`, `for`, `while`
+// ---------------------------------------------------------------------------
+
+/** The edit tree's programs: written as calls, `if(…)`, `for(…)`, `while(…)`, `block(…)`. */
+const isProgramKind = (k: string) => k === "if" || k === "block" || k === "for" || k === "while";
+
+/** `if(c, a)` or `if(c, a, b)`. */
+export const isIfArgs = (args: Expr[]): boolean => args.length === 2 || args.length === 3;
+
+/** An `if` whose else is itself an `if` (not in brackets): a chain, `if … else if … else`. */
+export const isIfChain = (args: Expr[]): boolean =>
+  args.length === 3 && args[2].t === "Call" && args[2].c[0] === "if" && isIfArgs(args[2].c[1]);
+
+/**
+ * An `if` drawn as rows (`if c` / value / `else if c2` / value / `else` / value) rather than on
+ * one line as `if(c, a, b)`: a chain, or a branch holding a program. A single `if` with plain
+ * values keeps its one-line form, short and as typed.
+ */
+export const ifInRows = (args: Expr[]): boolean => isIfArgs(args) && (isIfChain(args) || args.slice(1).some(isProgram));
+
+/** An assignment, a block or a loop, or an `if` drawn as rows: a value drawn as rows. */
+export function isProgram(e: Expr): boolean {
+  if (e.t === "Define") return true;
+  if (e.t !== "Call") return false;
+  const [name, args] = e.c;
+  if (name === "if") return ifInRows(args);
+  return name === "block" || name === "for" || name === "while";
+}
+
+// ---------------------------------------------------------------------------
 // Rows as tokens
 // ---------------------------------------------------------------------------
 
@@ -418,7 +448,7 @@ class Parser {
     let e = this.postfix();
     while (this.peek().t === "sup") {
       const n = (this.bump() as { n: Node }).n;
-      const exp = this.slot(n.slots[0], true);
+      const exp = this.exponentSlot(n.slots[0]);
       e = this.mark(bin("Pow", e, exp), { node: n });
       // `10^-4 m^3`: a unit after the power multiplies the whole power
       const held = this.exponent ? null : holdsUnit(n.slots[0], exp);
@@ -434,18 +464,19 @@ class Parser {
     return e;
   }
 
-  /** A unit the value before it takes: a name, a quoted unit or a `#` constant. */
+  /** A unit the value before it takes: a name, a quoted unit or a `#` constant (or a call, `2 sin(x)`). */
   private unitNext(): boolean {
     const t = this.peek();
-    return t.t === "name" || (t.t === "node" && (t.n.k === "unit" || t.n.k === "const"));
+    return t.t === "name" || (t.t === "node" && (t.n.k === "unit" || t.n.k === "const" || isProgramKind(t.n.k)));
   }
 
   private unitTerm(): Expr {
     const t = this.peek();
     const next = this.peek(1);
     let unit: Expr;
-    // `2 sin(x)`, `3 v[i]`
-    if (t.t === "name" && (this.isParen(next) || next.t === "index")) unit = this.postfix();
+    // `2 sin(x)`, `3 v[i]`, and a program, which the text writes as a call (`2 if(c, a, b)`)
+    if ((t.t === "name" && (this.isParen(next) || next.t === "index")) || (t.t === "node" && isProgramKind(t.n.k)))
+      unit = this.postfix();
     else {
       this.bump();
       if (t.t === "name") unit = this.name(t);
@@ -454,7 +485,7 @@ class Parser {
     }
     if (this.peek().t === "sup") {
       const n = (this.bump() as { n: Node }).n;
-      unit = this.mark(bin("Pow", unit, this.slot(n.slots[0], true)), { node: n });
+      unit = this.mark(bin("Pow", unit, this.exponentSlot(n.slots[0])), { node: n });
     }
     return unit;
   }
@@ -548,6 +579,13 @@ class Parser {
         return at({ t: "Call", c: ["root", [slot(s[0]), slot(s[1])]] });
       case "big":
         return at({ t: "Call", c: [n.name ?? "", s.map((r) => slot(r))] });
+      case "if":
+        // a chain is stored as `if`s nested in the else: `if(c1, a, if(c2, b, c))`
+        return at(ifCall(s, 0));
+      case "block":
+      case "for":
+      case "while":
+        return at({ t: "Call", c: [n.k, s.map((r) => slot(r))] });
       case "str":
         return at({ t: "Str", c: rowText(s[0]) }, { row: s[0].id, from: 0, to: s[0].atoms.length });
       case "unit":
@@ -570,10 +608,29 @@ class Parser {
     }
   }
 
+  /**
+   * An exponent: read as an exponent, where a value takes no unit (`10^-4 m`); but when its text
+   * is in brackets (`x^(c*+0 kPa)`), what is inside them is read as anywhere else, as the engine
+   * reads the brackets.
+   */
+  private exponentSlot(r: Row): Expr {
+    const e = this.slot(r, true);
+    const inner = r.kept && e.t === "Paren" ? e.c : e;
+    return r.kept || NEEDS_BRACKETS.exponent(inner) ? this.slot(r, false) : e;
+  }
+
   /** A slot of a superscript: read in the exponent, where values take no units. */
   private slot(r: Row, exponent: boolean): Expr {
     return slot(r, exponent);
   }
+}
+
+/** An `if` node's slots from `k` on (condition, value, …, else) as the nested calls the text stores. */
+function ifCall(s: Row[], k: number): Expr {
+  const n = s.length;
+  const args = [slot(s[k]), s[k + 1] ? slot(s[k + 1]) : hole()];
+  if (k + 2 < n) args.push(n % 2 === 1 && k + 2 === n - 1 ? slot(s[n - 1]) : ifCall(s, k + 2));
+  return { t: "Call", c: ["if", args] };
 }
 
 /** A row read as one expression; an empty row is an empty slot. */
@@ -938,6 +995,18 @@ export function rawText(r: Row): string {
           return `root(${rawText(s[0])}, ${rawText(s[1])})`;
         case "big":
           return `${a.name}(${s.map(rawText).join(", ")})`;
+        case "if": {
+          const last = s.length % 2 === 1 ? s.length - 1 : -1;
+          const chain = (k: number): string =>
+            `if(${rawText(s[k])}, ${s[k + 1] ? rawText(s[k + 1]) : ""}${
+              k + 2 >= s.length ? "" : k + 2 === last ? `, ${rawText(s[last])}` : `, ${chain(k + 2)}`
+            })`;
+          return chain(0);
+        }
+        case "block":
+        case "for":
+        case "while":
+          return `${a.k}(${s.map(rawText).join(", ")})`;
         case "str":
           return quoteStr(rowText(s[0]));
         case "unit":

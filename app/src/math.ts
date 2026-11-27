@@ -2,7 +2,7 @@
 // fractions, radicals, stretchy fences and matrices read directly in WebKit and
 // Chromium and copy/speak cleanly; see docs/01-architecture.md §3.
 import { type Brackets, numberParens } from "./brackets";
-import { SEQ, type Span } from "./mathLinear";
+import { ifInRows, isIfArgs, SEQ, type Span } from "./mathLinear";
 import { prefs } from "./settings";
 import { state } from "./store";
 import type { BinaryOp, CmpOp, Expr } from "./types";
@@ -226,52 +226,50 @@ const list = (e: Expr, xs: Expr[]) => xs.map((x, k) => (k ? mo(",", op_(e, k - 1
 
 const d = mi("d", true);
 
-// SMath's program constructs stand on rows of their own: a block is a column of statements
-// with a rule down its left, an `if` or a loop puts its body one step in.
-
-const isIf = (args: Expr[]) => args.length === 2 || args.length === 3;
-
-/** An assignment, a block or a loop, or an `if` holding one: such a value is drawn as rows. */
-function isProgram(e: Expr): boolean {
-  if (e.t === "Define") return true;
-  if (e.t !== "Call") return false;
-  const [name, args] = e.c;
-  if (name === "if") return isIf(args) && args.slice(1).some(isProgram);
-  return name === "block" || name === "for" || name === "while";
-}
+// SMath's program constructs stand on rows of their own, every one alike: a column of lines
+// with a rule down its left, as in Mathcad. A block's lines are its statements; an `if` or a
+// loop puts its body one step in. An `if` is drawn so when it is a chain (`if … else if …
+// else`, #175) or holds a program (mathLinear `ifInRows`), and as a statement; a single
+// `if(c, a, b)` with plain values stays on one line. A program is centred on the line it sits
+// in (MathML's default for a table), so `f(x) :=` and `= result` sit at its middle, whatever
+// its kind.
 
 const keyword = (word: string) => `<mtext class="kw">${word}</mtext>`;
 const mtr = (html: string) => `<mtr><mtd>${html}</mtd></mtr>`;
-const indented = (html: string) => mtr(row(space(1.5), html));
-/** Rows stacked and left-aligned; `align="1"` puts the first row on the baseline of the line it sits in. */
-const column = (cls: string, rows: string, align = "top") =>
-  `<mtable class="${cls}" columnalign="left" align="${align}">${rows}</mtable>`;
+/** A line of a program: its cell carries the rule down the program's left (`.q-body`). */
+const line = (html: string) => `<mtr><mtd class="q-body">${html}</mtd></mtr>`;
+const indented = (html: string) => line(row(space(1.5), html));
+/** Rows stacked and left-aligned, centred on the line they sit in. */
+const column = (cls: string, rows: string) => `<mtable class="${cls}" columnalign="left">${rows}</mtable>`;
+/** A program's lines: rows that touch, so the rule down their left is unbroken. */
+const lines = (cls: string, rows: string) =>
+  `<mtable class="${cls}" columnalign="left" rowspacing="0">${rows}</mtable>`;
 
-/**
- * A block: one row per statement, with a rule down the statements (`.q-body`). A header such as
- * `f(x) :=` sits in the first row, so it is level with the first statement; `align="top"` keeps
- * the first row at the top of the line. Rows touch so the rule is unbroken.
- */
-function program(args: Expr[], header?: string): string {
-  const rows = args
-    .map((s, i) => {
-      const body = `<mtd class="q-body">${stmt(s)}</mtd>`;
-      return header === undefined ? `<mtr>${body}</mtr>` : `<mtr><mtd>${i === 0 ? header : ""}</mtd>${body}</mtr>`;
-    })
-    .join("");
-  const columns = header === undefined ? "left" : "left left";
-  return `<mtable class="q-program" columnalign="${columns}" rowspacing="0" columnspacing="0.3em" align="top">${rows}</mtable>`;
+/** A block: one line per statement. */
+function program(args: Expr[]): string {
+  return lines("q-program", args.map((s) => line(stmt(s))).join(""));
 }
 
 /** A statement of a block: an `if` is drawn in rows even with plain values, anything else as usual. */
 function stmt(e: Expr): string {
-  return e.t === "Call" && e.c[0] === "if" && isIf(e.c[1]) ? ifColumn(e.c[1]) : m(e);
+  return e.t === "Call" && e.c[0] === "if" && isIfArgs(e.c[1]) ? tagged(e, ifColumn(e.c[1])) : m(e);
 }
 
+/** `if c` / value, then `else if c2` / value for each `if` nested in the else, then `else` / value. */
 function ifColumn(args: Expr[]): string {
-  const [c, a] = args;
-  const head = mtr(row(keyword("if"), space(0.3), m(c))) + indented(stmt(a));
-  return column("q-stack", args.length === 3 ? head + mtr(keyword("else")) + indented(stmt(args[2])) : head);
+  let rows = "";
+  for (let a = args, word = "if"; ; word = "else if") {
+    const [c, v, other] = a;
+    rows += line(row(keyword(word), space(0.3), m(c))) + indented(stmt(v));
+    if (!other) break;
+    if (other.t === "Call" && other.c[0] === "if" && isIfArgs(other.c[1])) {
+      a = other.c[1];
+      continue;
+    }
+    rows += line(keyword("else")) + indented(stmt(other));
+    break;
+  }
+  return lines("q-stack", rows);
 }
 
 /** `for(i, range, body)`, `for(init, cond, step, body)` and `while(cond, body)`. */
@@ -283,7 +281,7 @@ function loop(name: string, args: Expr[]): string {
       : args.length === 3
         ? row(keyword("for"), space(0.3), m(a), mo("∈"), m(b))
         : row(keyword("for"), space(0.3), m(a), mo(","), m(b), mo(","), m(c));
-  return column("q-stack", mtr(head) + indented(stmt(args[args.length - 1])));
+  return lines("q-stack", line(head) + indented(stmt(args[args.length - 1])));
 }
 
 /** `sys(e1, …, en, rows, cols)`: the elements in a column under a brace; rows and cols are not shown. */
@@ -292,7 +290,7 @@ function system(args: Expr[]): string {
     .slice(0, -2)
     .map((e) => mtr(m(e)))
     .join("");
-  return row(mo("{", ' stretchy="true"'), column("q-sys", rows, "axis"));
+  return row(mo("{", ' stretchy="true"'), column("q-sys", rows));
 }
 
 function call(name: string, args: Expr[], e?: Expr): string {
@@ -307,7 +305,7 @@ function call(name: string, args: Expr[], e?: Expr): string {
   if ((name === "for" && (args.length === 3 || args.length === 4)) || (name === "while" && args.length === 2)) {
     return loop(name, args);
   }
-  if (name === "if" && isIf(args) && args.slice(1).some(isProgram)) return ifColumn(args);
+  if (name === "if" && ifInRows(args)) return ifColumn(args);
   const [x, y, z, w] = args;
   switch (`${name}/${args.length}`) {
     case "sqrt/1":
@@ -428,9 +426,6 @@ function m0(e: Expr): string {
     case "Define": {
       const op = mo(e.c.global ? "≡" : "≔", op_(e));
       const lhs = definedName(e.c.lhs);
-      // a block on the right is drawn from its header, so `f(x) :=` sits level with its first statement
-      const rhs = e.c.rhs;
-      if (rhs.t === "Call" && rhs.c[0] === "block") return program(rhs.c[1], row(lhs, op));
       return row(lhs, op, m(e.c.rhs));
     }
   }
@@ -449,7 +444,11 @@ function definedName(lhs: Expr): string {
   );
 }
 
-/** One `<math>` element for an input, optionally followed by `= result`. */
+/**
+ * One `<math>` element for an input, optionally followed by `= result`. `pending`: the line asks
+ * for a result it has none for (an error): `= □`, with the unit typed after it, drawn as while
+ * the line is edited in place, so ending the edit moves nothing.
+ */
 export function mathml(
   input: Expr,
   result?: Expr | null,
@@ -458,6 +457,7 @@ export function mathml(
   symbolic = false,
   nameMarks: NameMarks = {},
   brackets?: Brackets,
+  pending?: { unit: Expr | null },
 ): string {
   unitNames = new Set(units);
   constantNames = new Set(constants);
@@ -469,9 +469,17 @@ export function mathml(
   unitNames = new Set();
   constantNames = new Set();
   marks = {};
-  if (result) parts.push(mo(symbolic ? "→" : "="), `<mrow class="res${symbolic ? " sym" : ""}">${m(result)}</mrow>`);
+  const res = (html: string) => `<mrow class="res${symbolic ? " sym" : ""}">${html}</mrow>`;
+  if (result) parts.push(mo(symbolic ? "→" : "="), res(m(result)));
+  else if (pending) {
+    const unit = !symbolic && pending.unit ? asUnits(pending.unit) : null;
+    parts.push(mo(symbolic ? "→" : "="), res(unit ? row(EMPTY, space(0.2), m(unit)) : EMPTY));
+  }
   return `<math>${row(...parts)}</math>`;
 }
+
+/** The □ of a result not there. */
+const EMPTY = `<mi class="ph">□</mi>`;
 
 /** A row of the edit tree as read for drawing (mathLinear `traceRow`), or markup drawn by hand. */
 export type Piece = { expr: Expr; spans: Map<Expr, Span> } | string;
@@ -519,8 +527,8 @@ export function editingMathml(opts: {
     parts.push(
       mo(opts.show === "symbolic" ? "→" : "="),
       typed
-        ? res(value ? row(m(value), space(0.2), draw(typed)) : row(`<mi class="ph">□</mi>`, space(0.2), draw(typed)))
-        : res(opts.result ? m(opts.result) : `<mi class="ph">□</mi>`),
+        ? res(value ? row(m(value), space(0.2), draw(typed)) : row(EMPTY, space(0.2), draw(typed)))
+        : res(opts.result ? m(opts.result) : EMPTY),
     );
   }
   return `<math>${row(...parts)}</math>`;
@@ -543,13 +551,14 @@ function splitUnit(e: Expr): [Expr, Expr | null] {
 }
 
 /** The names typed after `=` are units: drawn as the result's units are. Changes `e` in place. */
-function asUnits(e: Expr) {
+function asUnits(e: Expr): Expr {
   if (e.t === "Ident") (e as { t: string }).t = "Unit";
   else if (e.t === "Paren" || e.t === "Factorial") asUnits(e.c);
   else if (e.t === "Binary") {
     asUnits(e.c[1]);
     if (e.c[0] !== "Pow") asUnits(e.c[2]);
   } else if (e.t === "Unary") asUnits(e.c[1]);
+  return e;
 }
 
 /** A name as the math draws it in its meaning: your variable italic, a unit or constant upright. */

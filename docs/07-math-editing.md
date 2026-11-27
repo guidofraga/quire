@@ -24,8 +24,8 @@ What every key does when a formula is edited in place, typeset (#165): the rules
 
 ## How to read the tables
 
-- **Keys:** characters as typed; `␣` is Space; `{←}` `{→}` `{↑}` `{↓}` arrows, `{⇧←}` with Shift, `{⌫}` Backspace, `{⌦}` Delete, `{Home}` `{End}` `{Tab}` `{Ctrl+.}` `{Ctrl+G}`. A row starts from an empty formula, or from `⟦text⟧`: that formula opened, the caret put at its end by hand.
-- **Tree:** `\frac{num}{den}`, `x^{exp}`, `A_{sub}` (literal subscript), `M_[i]` (index), `(…)` brackets and `(…⦆` brackets whose `)` is faint, `\mat{a, b; c, d}`, `\sqrt{x}`, `\root{index}{x}`, `|x|`, `\int{…}` and `\sum{…}` with their slots in the order → walks them, `'{kN}` a quoted unit, `#{G}` a constant, `"…"` a string, `\{name}` a `\` shortcut being typed. `·` is `*`, `≔` is `:=`, `=` in a tree is `==`, `␣` a gap between two names. `□` is an empty slot, `‸` the caret, `«…»` the selection, then ` = unit` or ` →` when the result is shown. `⟶ leave up` means the key would move out of the formula that way (phase 2 decides where).
+- **Keys:** characters as typed; `␣` is Space; `{←}` `{→}` `{↑}` `{↓}` arrows, `{⇧←}` with Shift, `{⌥←}` `{⌥→}` the word jumps (Ctrl+← Ctrl+→ on Windows and Linux), `{⌫}` Backspace, `{⌦}` Delete, `{Home}` `{End}` `{Tab}` `{Enter}` `{Ctrl+.}` `{Ctrl+G}`. A row starts from an empty formula, or from `⟦text⟧`: that formula opened, the caret put at its end by hand.
+- **Tree:** `\frac{num}{den}`, `x^{exp}`, `A_{sub}` (literal subscript), `M_[i]` (index), `(…)` brackets and `(…⦆` brackets whose `)` is faint, `\mat{a, b; c, d}`, `\sqrt{x}`, `\root{index}{x}`, `|x|`, `\int{…}` and `\sum{…}` with their slots in the order → walks them, `'{kN}` a quoted unit, `#{G}` a constant, `"…"` a string, `\{name}` a `\` shortcut being typed; programs as `\if{cond}{value}\elif{cond}{value}\else{value}`, `\block{line⏎line}`, `\for{i}{range}{body}`, `\while{cond}{body}`. `·` is `*`, `≔` is `:=`, `=` in a tree is `==`, `␣` a gap between two names. `□` is an empty slot, `‸` the caret, `«…»` the selection, then ` = unit` or ` →` when the result is shown. `⟶ leave up` means the key would move out of the formula that way (phase 2 decides where); `⟶ finish` that it ends the edit, as Enter does outside a program.
 - **Text:** what the editor sends on (`setLive`), as `MathEditor` holds it today: canonical linear syntax, `?` for an empty slot.
 
 ## `/` — fractions
@@ -112,7 +112,7 @@ What every key does when a formula is edited in place, typeset (#165): the rules
 
 ## `(` `)` — brackets, calls and shapes
 
-`sqrt`, `abs` and `root` become their shapes as soon as `(` is typed after the name (their argument count never varies). `sum`, `prod`, `int`, `diff` and `lim` become theirs when their `)` is typed with the arguments that shape has (`int` with 4 or 2, `diff` with 2 or 3, `sum` with 4…); until then they are a call, drawn as typed. `if`, `for`, `while`, `block` and the other functions stay calls while edited.
+`sqrt`, `abs` and `root` become their shapes as soon as `(` is typed after the name (their argument count never varies). `sum`, `prod`, `int`, `diff` and `lim` become theirs when their `)` is typed with the arguments that shape has (`int` with 4 or 2, `diff` with 2 or 3, `sum` with 4…); until then they are a call, drawn as typed. So do the programs, `if` (2 or 3), `for` (3 or 4), `while` (2) and `block` (any): see § Programs. The other functions stay calls while edited.
 
 | Keys | Tree | Text | Why |
 |---|---|---|---|
@@ -200,6 +200,27 @@ What every key does when a formula is edited in place, typeset (#165): the rules
 | `{←}` | `‸ ⟶ leave left` | `` |  |
 | `a/b{End}` | `\frac{a}{b}‸` | `a/b` |  |
 | `x=kN{Home}` | `‸x = kN` | `x = kN` |  |
+
+## Word jumps
+
+⌥← and ⌥→ (Ctrl+← and Ctrl+→ on Windows and Linux) move by whole things on the caret's row, as in a line of text: over the operators, then over one name with its subscript, one number, or one structure with the scripts, index or brackets of a call after it (`x²`, `M[i]`, `sin(x)`). At the edge of a slot they step out as ← → do, so they never trap the caret either. With Shift they select so, growing to the whole structure at the edge of a slot, as ⇧← ⇧→ do.
+
+| Keys | Tree | Text | Why |
+|---|---|---|---|
+| `⟦q*L^2/8 + x.net⟧{⌥←}` | `\frac{q·L^{2}}{8}+‸x_{net}` | `q*L^2/8 + x.net` | A name with its subscript is one word. |
+| `⟦q*L^2/8 + x.net⟧{⌥←}{⌥←}` | `‸\frac{q·L^{2}}{8}+x_{net}` | `q*L^2/8 + x.net` | Over the operator, then the whole fraction. |
+| `⟦q*L^2/8 + x.net⟧{Home}{⌥→}` | `\frac{q·L^{2}}{8}‸+x_{net}` | `q*L^2/8 + x.net` |  |
+| `⟦M := 12.5*L⟧{Home}{⌥→}{⌥→}` | `M≔12.5‸·L` | `M := 12.5*L` | A number with its decimal point is one word. |
+| `⟦M := 12.5*L⟧{Home}{⌥→}{⌥→}{⌥→}` | `M≔12.5·L‸` | `M := 12.5*L` |  |
+| `⟦sin(x)^2 + 1⟧{Home}{⌥→}` | `sin(x)^{2}‸+1` | `sin(x)^2 + 1` | A call with its brackets and its power. |
+| `⟦a + M[i]⟧{⌥←}` | `a+‸M_[i]` | `a + M[i]` | A name with its index. |
+| `⟦a/b⟧{⌥←}{⌥←}` | `‸\frac{a}{b} ⟶ leave left` | `a/b` | At the edge, as ←. |
+| `⟦a + b⟧{⌥→}` | `a+b‸ ⟶ leave right` | `a + b` |  |
+| `⟦if(x > 0, 1, -1)⟧{Home}{→}{⌥→}` | `\if{x‸>0}{1}\else{-1}` | `if(x > 0, 1, -1)` | In a slot, by the words of that slot… |
+| `⟦if(x > 0, 1, -1)⟧{Home}{→}{⌥→}{⌥→}` | `\if{x>0‸}{1}\else{-1}` | `if(x > 0, 1, -1)` |  |
+| `⟦if(x > 0, 1, -1)⟧{Home}{⌥→}` | `\if{x>0}{1}\else{-1}‸` | `if(x > 0, 1, -1)` | …and on the line, a program is one structure. |
+| `⟦a + bc⟧{⇧⌥←}` | `a+«bc»` | `a + bc` | With Shift, the selection grows by words. |
+| `⟦a + bc⟧{⇧⌥←}{⇧⌥←}` | `«a+bc»` | `a + bc` |  |
 
 ## Backspace and Delete
 
@@ -303,7 +324,7 @@ Everything the linear editor does keeps working, by the same keys.
 | `1e-5` | `1e-5‸` | `1e-5` | A number's exponent stays a number. |
 | `a/1e-5` | `\frac{a}{1e-5‸}` | `a/1e-5` | …even at the end of a denominator. |
 
-Also as today, outside the model: ⌥Enter cycles a name's meaning, Ctrl+Space (⌥Space on a Mac) lists names or units, Ctrl+Shift+T makes the region text (`toLinear` gives the text it starts from), a fresh region that reads as words becomes text on Space (`plainWords()` gives the words), Enter and Esc end the edit, a constraint line in a solve block types `==` for `=` (`fromExpr(…, { equation: true })`).
+Also as today, outside the model: ⌥Enter cycles a name's meaning, Ctrl+Space (⌥Space on a Mac) lists names or units, Ctrl+Shift+T makes the region text (`toLinear` gives the text it starts from), a fresh region that reads as words becomes text on Space (`plainWords()` gives the words), Enter (outside a program, see § Programs) and Esc end the edit, a constraint line in a solve block types `==` for `=` (`fromExpr(…, { equation: true })`).
 
 ## Selection
 
@@ -336,6 +357,144 @@ The selection is always a contiguous slice of one row: ⇧← ⇧→ grow it by 
 | `/{Tab}{Tab}` | `\frac{‸}{□}` | `?/?` | round to the first, |
 | `a/b{Tab}` | `\frac{a}{b‸} ⟶ leave right` | `a/b` | and with none left, on to the next line or region. |
 
+## Programs: `if`, `else if`, `for`, `while`, `block`
+
+SMath's programs (#175) are structures with a row for each line: an `if` has a condition and a value for each branch (`if`, then each `else if`), and the else's value; a block has its statements; a loop its header and its body. The text stays the call SMath and the engine read, a chain nested in the else: `if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))` is drawn `if x ≥ 90` / `"A"` / `else if x ≥ 80` / `"B"` / `else` / `"C"`, and that is the text stored, so files, SMath import, Word and PDF are unchanged.
+
+**How an `if` is drawn, edited or not (for everyone, not only with this editor).** On rows when it is a chain (its else is itself an `if`), when a branch holds a program (an assignment, a block, a loop, an `if` on rows), and as a statement of a block or a loop's body. A single `if(c, a, b)` with plain values keeps its one line, `if(x > 0, 1, -1)`: short, and read as typed. The rule is mathLinear's `ifInRows`, shared by the page and the editor.
+
+**Every program looks alike.** A block, an `if` on rows, a `for` and a `while` each have a rule down the left of their lines, as in Mathcad; a program inside another has its own, one step in. A program is centred on the line it sits in, so `f(x) :=` before it, and `= result` after it, sit at its middle, whatever its kind (a table's own alignment in MathML; nothing sets it). Word export (`omml.rs`) draws the same: an equation array centred on the line (`m:baseJc center`), with a `│` rule down its left.
+
+**Enter.** Outside a program Enter ends the edit, as always. Inside one it adds a line, as in Mathcad Prime: after a statement (taking what is after the caret, so Enter in the middle of a line splits it and Backspace joins it again), and in a branch or a loop's body, which then holds a block of statements. In a condition or a loop's header it goes on to the next slot (the branch; the range, then the body). **To leave, press Enter on the empty last line** (as in a list in a word processor, or an outliner): the line goes, and the caret goes **one level out**: to the next branch; or, out of an `if` or a loop that is a branch's or a body's value, to a new line in that branch or body; or a new line after the program in the block around it; or, at the outside, the edit ends. Repeated Enter on empty lines climbs out of nested programs one level at a time. So a program typed line by line ends with two Enters, and there is no key to learn. ⌘Enter (Ctrl+Enter) ends the edit from anywhere, and Esc or a click away end it as always. Shift+Enter is the same as Enter: a separate key for a new line would be one more thing to learn, and is easy to hit by accident while typing capitals.
+
+**Typing.** Programs are typed as they are written, with keywords and Enter, or as their text; § Typing programs below has the keys. `if(`, `for(`, `while(` and `block(` typed as text take their shape when their `)` is typed with their number of arguments (so typing the stored text builds the program it stores, and pasting it too). In a program `,` goes to the next slot (a new else after the last branch, a new statement in a block) and `)` steps out, as in the text. `else if ` typed at the start of an else (with the space after `if`) adds a branch before it: its condition, where the caret goes, and its value; the else keeps what it held. Structures ▸ Programming inserts `if / else`, `if / else if / else`, `for`, `while` and `block`, also as `\if`, `\elseif`, `\for`, `\while`, `\block`.
+
+**Moving.** ← → walk the lines in reading order, as everything else. ↑ ↓ go from line to line (from a loop's body up to the slot of its header nearest the caret, from a branch into a block's first or last line), and leave the formula above the first line or below the last. An `if` drawn on one line is walked as a call, and ↑ ↓ leave it.
+
+**Backspace and Delete** take a program apart line by line, never leaving a stray comma or bracket in the text: an empty statement, an empty else, an empty `else if` branch goes with one press; a block left with one statement in a branch goes too (the inverse of Enter there); at the start of a statement Backspace joins it to the one before; an `else if` with no condition, last and with no else, becomes the else. At the start of a program's first slot, an empty program goes and a filled one is selected, as an integral is.
+
+| Keys | Tree | Text | Why |
+|---|---|---|---|
+| `if(x>0,1,-1)` | `\if{x>0}{1}\else{-1}‸` | `if(x > 0, 1, -1)` | `)` typed with two or three arguments: an `if` (drawn on one line, as the view draws a plain one). |
+| `f(x):=if(x≥90,"A",if(x≥80,"B","C"))` | `f(x)≔\if{x≥90}{"A"}\elif{x≥80}{"B"}\else{"C"}‸` | `f(x) := if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))` | An `if` in the else is the chain's next branch: one structure, drawn on rows. |
+| `if(a,1,2,3)` | `if(a,1,2,3)‸` | `if(a, 1, 2, 3)` | Not an `if`'s arguments: a call, as typed. |
+| `if(a,1` | `if(a,1‸⦆` | `if(a, 1)` | Until its `)`, a call. |
+| `block(x:=1,x+1)` | `\block{x≔1⏎x+1}‸` | `block(x := 1, x + 1)` |  |
+| `for(i,1..n,s:=s+i)` | `\for{i}{1..n}{s≔s+i}‸` | `for(i, 1..n, s := s + i)` |  |
+| `for(i:=1,i<n,i:=i+1,s:=s+i)` | `\for{i≔1}{i<n}{i≔i+1}{s≔s+i}‸` | `for(i := 1, i < n, i := i + 1, s := s + i)` |  |
+| `while(k<n,k:=k+1)` | `\while{k<n}{k≔k+1}‸` | `while(k < n, k := k + 1)` |  |
+| `\if␣` | `\if{‸}{□}\else{□}` | `if(?, ?, ?)` | Structures ▸ Programming, also as shortcuts. |
+| `\elseif␣` | `\if{‸}{□}\elif{□}{□}\else{□}` | `if(?, ?, if(?, ?, ?))` |  |
+| `\for␣` | `\for{‸}{□}{□}` | `for(?, ?, ?)` |  |
+| `\while␣` | `\while{‸}{□}` | `while(?, ?)` |  |
+| `\block␣` | `\block{‸⏎□}` | `block(?, ?)` |  |
+| `\elseif␣x≥90{Tab}"A{Tab}x≥80{Tab}"B{Tab}"C` | `\if{x≥90}{"A⦆}\elif{x≥80}{"B⦆}\else{"C‸⦆}` | `if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))` | Tab from slot to slot. |
+| `⟦if(a, 1, 2)⟧{Home}{→}` | `\if{‸a}{1}\else{2}` | `if(a, 1, 2)` | → walks the lines in reading order. |
+| `⟦if(a, 1, if(b, 2, 3))⟧{Home}{→}{→}{→}` | `\if{a}{‸1}\elif{b}{2}\else{3}` | `if(a, 1, if(b, 2, 3))` |  |
+| `⟦if(a, 1)⟧{←}{→}` | `\if{a}{1}‸` | `if(a, 1)` |  |
+| `⟦if(a, 1, if(b, 2, 3))⟧{Home}{→}{↓}` | `\if{a}{‸1}\elif{b}{2}\else{3}` | `if(a, 1, if(b, 2, 3))` | ↓ to the line below… |
+| `⟦if(a, 1, if(b, 2, 3))⟧{Home}{→}{↓}{↓}` | `\if{a}{1}\elif{‸b}{2}\else{3}` | `if(a, 1, if(b, 2, 3))` |  |
+| `⟦if(a, 1, if(b, 2, 3))⟧{←}{↑}{↑}` | `\if{a}{1}\elif{b‸}{2}\else{3}` | `if(a, 1, if(b, 2, 3))` | …↑ to the line above. |
+| `⟦if(a, 1, if(b, 2, 3))⟧{Home}{→}{↑}` | `\if{‸a}{1}\elif{b}{2}\else{3} ⟶ leave up` | `if(a, 1, if(b, 2, 3))` | Above the first line: out of the formula. |
+| `⟦if(a, 1, 2)⟧{Home}{→}{↓}` | `\if{‸a}{1}\else{2} ⟶ leave down` | `if(a, 1, 2)` | An `if` on one line has no lines to go to. |
+| `⟦block(a, b)⟧{←}{↑}` | `\block{a‸⏎b}` | `block(a, b)` |  |
+| `⟦block(a, b)⟧{Home}{→}{↓}{↓}` | `\block{a⏎‸b} ⟶ leave down` | `block(a, b)` |  |
+| `⟦for(i, 1..n, s)⟧{Home}{→}{↓}` | `\for{i}{1..n}{‸s}` | `for(i, 1..n, s)` | From the header to the body… |
+| `⟦for(i, 1..n, s)⟧{←}{↑}` | `\for{i‸}{1..n}{s}` | `for(i, 1..n, s)` | …and back, to the slot of the header nearest the caret (here, with no geometry, the first). |
+| `⟦while(k < n, k := k + 1)⟧{←}{↑}` | `\while{k<n‸}{k≔k+1}` | `while(k < n, k := k + 1)` |  |
+| `⟦if(a, block(x, y), 2)⟧{Home}{→}{→}{↓}` | `\if{a}{\block{x‸⏎y}}\else{2}` | `if(a, block(x, y), 2)` | Into a block below: its first line… |
+| `⟦if(a, block(x, y), 2)⟧{←}{↑}` | `\if{a}{\block{x⏎y‸}}\else{2}` | `if(a, block(x, y), 2)` | …and from below, its last. |
+| `⟦f(x) := block(a, b)⟧{Home}{→}{→}{→}{→}{→}{→}` | `f(x)≔\block{‸a⏎b}` | `f(x) := block(a, b)` |  |
+| `⟦block(a, b)⟧{←}{Enter}` | `\block{a⏎b⏎‸}` | `block(a, b, ?)` | Enter at the end of a statement: a new line after it. |
+| `⟦block(a, b)⟧{←}{Enter}{Enter}` | `\block{a⏎b}‸ ⟶ finish` | `block(a, b)` | Enter on the empty last line: it goes, and the edit ends. |
+| `⟦block(ab, c)⟧{Home}{→}{→}{Enter}` | `\block{a⏎‸b⏎c}` | `block(a, b, c)` | In the middle, the line splits. |
+| `⟦block(a, b)⟧{Home}{→}{Enter}` | `\block{□⏎‸a⏎b}` | `block(?, a, b)` | At its start, a new line above. |
+| `⟦if(a, 1, 2)⟧{←}{Enter}` | `\if{a}{1}\else{\block{2⏎‸}}` | `if(a, 1, block(2, ?))` | In a branch, a second line: the branch holds a block. |
+| `⟦if(a, 1, 2)⟧{←}{Enter}y{Enter}{Enter}` | `\if{a}{1}\else{\block{2⏎y}}‸ ⟶ finish` | `if(a, 1, block(2, y))` |  |
+| `⟦if(a, 1, 2)⟧{←}{Enter}{Enter}` | `\if{a}{1}\else{2}‸ ⟶ finish` | `if(a, 1, 2)` | The block left with one line goes: Enter twice changed nothing. |
+| `⟦if(a, block(x, y), 2)⟧{Home}{→}{→}{→}{→}{→}{→}{→}{Enter}{Enter}` | `\if{a}{\block{x⏎y}}\else{‸2}` | `if(a, block(x, y), 2)` | Leaving a branch's block: on to the next branch. |
+| `⟦block(for(i, 1..n, s), t)⟧{Home}{→}{→}{→}{→}{→}{→}{→}{→}{→}{Enter}{Enter}` | `\block{\for{i}{1..n}{s}⏎‸⏎t}` | `block(for(i, 1..n, s), ?, t)` | Leaving a loop's body: a new line after the loop, in the block around it. |
+| `⟦for(i, 1..n, s := s + i)⟧{←}{Enter}` | `\for{i}{1..n}{\block{s≔s+i⏎‸}}` | `for(i, 1..n, block(s := s + i, ?))` |  |
+| `⟦if(a, 1, 2)⟧{Home}{→}{→}{Enter}` | `\if{a}{‸1}\else{2}` | `if(a, 1, 2)` | In a condition, Enter goes to its branch. |
+| `⟦for(i, 1..n, ?)⟧{Home}{→}{→}{Enter}` | `\for{i}{‸1..n}{□}` | `for(i, 1..n, ?)` | In a loop's header, to the next slot: the range, then the body. |
+| `⟦for(i, 1..n, if(a, b))⟧{←}{←}{Enter}{Enter}` | `\for{i}{1..n}{\block{\if{a}{b}⏎‸}}` | `for(i, 1..n, block(if(a, b), ?))` | Out of an `if` that is a loop's body: a new line in that body, one level out… |
+| `⟦for(i, 1..n, if(a, b))⟧{←}{←}{Enter}{Enter}{Enter}` | `\for{i}{1..n}{\if{a}{b}}‸ ⟶ finish` | `for(i, 1..n, if(a, b))` | …and the next empty Enter one more, here out of the formula. |
+| `\if␣{Enter}` | `\if{□}{‸}\else{□}` | `if(?, ?, ?)` |  |
+| `⟦if(a, 1, 2)⟧{Enter}` | `\if{a}{1}\else{2}‸ ⟶ finish` | `if(a, 1, 2)` | After the program, on the formula's line: the edit ends, as always. |
+| `x:=1{Enter}` | `x≔1‸ ⟶ finish` | `x := 1` |  |
+| `⟦if(a, 1)⟧{←},` | `\if{a}{1}\else{‸}` | `if(a, 1, ?)` | `,` after the last branch: an else, as in the text. |
+| `⟦if(a, 1, 2)⟧{Home}{→}{→},` | `\if{a}{‸1}\else{2}` | `if(a, 1, 2)` | `,` goes to the next slot. |
+| `⟦block(a, b)⟧{Home}{→}{→},` | `\block{a⏎‸⏎b}` | `block(a, ?, b)` | In a block, a new statement. |
+| `⟦if(a, 1, 2)⟧{←})` | `\if{a}{1}\else{2}‸` | `if(a, 1, 2)` | `)` steps out. |
+| `⟦if(a, 1, 2)⟧{Home}{→}{→}{→}{→}{→}else␣if␣` | `\if{a}{1}\elif{‸}{□}\else{2}` | `if(a, 1, if(?, ?, 2))` | `else if ` at the start of the else: a new branch before it, the caret in its condition. |
+| `⟦if(a, 1, "C")⟧{Home}{→}{→}{→}{→}{→}else␣if␣b` | `\if{a}{1}\elif{b‸}{□}\else{"C"}` | `if(a, 1, if(b, ?, "C"))` | The else keeps what it held. |
+| `\if␣x>0{Tab}1{Tab}else␣if␣x<0` | `\if{x>0}{1}\elif{x<0‸}{□}\else{□}` | `if(x > 0, 1, if(x < 0, ?, ?))` |  |
+| `⟦if(a, 1, if(b, 2, 3))⟧{←}{⌫}{⌫}` | `\if{a}{1}\elif{b}{2‸}` | `if(a, 1, if(b, 2))` | An empty else goes, its comma with it. |
+| `⟦if(a, 1, if(?, ?, 2))⟧{Home}{→}{→}{→}{→}{→}{⌫}` | `\if{a}{1‸}\else{2}` | `if(a, 1, 2)` | An empty `else if` branch goes with one Backspace: the inverse of typing `else if `. |
+| `⟦if(a, 1, if(?, 2))⟧{Home}{→}{→}{→}{→}{→}{⌫}` | `\if{a}{1}\else{‸2}` | `if(a, 1, 2)` | An `else if` with no condition, last, is an else. |
+| `⟦if(a, 1, 2)⟧{Home}{→}{→}{→}{→}{→}{⌫}` | `\if{a}{1‸}\else{2}` | `if(a, 1, 2)` | At the start of a filled line: to the end of the one before. |
+| `⟦block(a, b)⟧{←}{Enter}{⌫}` | `\block{a⏎b‸}` | `block(a, b)` | An empty statement goes. |
+| `⟦if(a, 1, 2)⟧{←}{Enter}{⌫}` | `\if{a}{1}\else{2‸}` | `if(a, 1, 2)` | …and with it the block it made. |
+| `⟦block(a, b)⟧{←}{←}{⌫}` | `\block{a‸b}` | `block(ab)` | At the start of a statement, it joins the one before (the inverse of Enter in its middle). |
+| `⟦block(a, b)⟧{Home}{→}{→}{⌦}` | `\block{a‸b}` | `block(ab)` | Delete at the end of one: the same. |
+| `⟦if(a, 1, if(b, 2, 3))⟧{Home}{→}{→}{→}{→}{⌦}` | `\if{a}{1}\elif{‸b}{2}\else{3}` | `if(a, 1, if(b, 2, 3))` | Delete at the end of a filled line goes on to the next. |
+| `⟦if(a, 1, 2)⟧{Home}{→}{→}{→}{→}{⌦}{⌦}` | `\if{a}{1}\else{‸}` | `if(a, 1, ?)` |  |
+| `⟦for(i, 1..n, ?)⟧{←}{⌫}` | `\for{i}{1..n‸}{□}` | `for(i, 1..n, ?)` | In a loop, back to the slot before. |
+| `⟦for(?, ?, s)⟧{←}{←}{⌫}` | `‸s` | `s` | Only one slot filled: the loop comes apart, its content stays. |
+| `\if␣{⌫}` | `‸` | `` | An empty program goes. |
+| `⟦if(a, 1, 2)⟧{Home}{→}{⌫}` | `«\if{a}{1}\else{2}»` | `if(a, 1, 2)` | A filled one is selected… |
+| `⟦if(a, 1, 2)⟧{Home}{→}{⌫}{⌫}` | `‸` | `` | …and goes with the next Backspace. |
+
+## Typing programs
+
+A program is typed as it is written, nested any way, with no menu: a keyword and a space start it, Enter goes from its header into its body and from line to line, and Enter on an empty line climbs one level out (§ Programs).
+
+- **`if `, `for `, `while `** (the word and a space) where a statement or a value starts start that program, the caret in its first slot (the condition, the loop variable). "Where a statement or a value starts" is the start of a line or of a slot, or right after `:=` or `≡`. Not in a condition or a loop's header, and never inside a name (`iffy`, `x.for`, `a if`), a subscript, a unit or a string: there the letters stay letters.
+- **`if(`, `for(`, `while(`, `block(`** stay the text's calls until their `)`, as in § Programs, so the stored text typed or pasted builds exactly the program it stores (and a call that isn't a program, `if(a, 1, 2, 3)`, stays as typed). The keyword and a space is the way in that doesn't need the text's commas.
+- **After a condition**, Enter or Tab goes into the branch. `:` doesn't (as some languages have it): `:` types `:=`, and is typed by habit.
+- **`for i in `** goes on to the range, as do `for i ∈` and `for i =` (SMath's and Mathcad's ways of writing it); the range is typed as text (`1..n`). Enter or Tab after it goes into the body.
+- **On a new line right after a branch**, `else` and Space or Enter starts the else, the caret in it; `else if ` adds a branch after that one, the caret in its condition. The same on the line after an `if` that is a statement of a block. The new line goes; a block it leaves with one line goes too, so the stored text is the nested calls. `else` then `if ` is `else if` too: an `if` started at the start of an else joins the chain (`chains()`).
+- **`else` attaches to the `if` whose branch the new line is in**: on the line after a nested `if`'s branch it is that `if`'s; one Enter further out it is the outer `if`'s.
+- **Anywhere else `else` stays a name**, as does `in` outside a `for`'s variable. The engine reserves none of `if`, `for`, `while`, `else`: they are names unless a call uses them. A variable called `for` or `else` is typed without the space after it (`for:=2`), or the conversion is undone with ⌘Z, which takes the keyword's space back as one step.
+- **A definition's body as lines:** `f(x) :=` and Enter makes the body a block, the caret on its first line. Without it, a definition's body is one program, and climbing out of it ends the edit.
+- The one thing with no keyword form: an else whose lines start with an `if` (`else` then `if ` is `else if`). It is typed as its text, `block(if(…), …)`.
+
+| Keys | Tree | Text | Why |
+|---|---|---|---|
+| `if␣` | `\if{‸}{□}` | `if(?, ?)` | The keyword and a space: the program, the caret in its condition. |
+| `if␣x>0{Enter}` | `\if{x>0}{‸}` | `if(x > 0, ?)` | Enter after the condition: into the branch. |
+| `if␣x>0{Tab}1` | `\if{x>0}{1‸}` | `if(x > 0, 1)` | Tab too. |
+| `if␣x>0{Enter}1{Enter}` | `\if{x>0}{\block{1⏎‸}}` | `if(x > 0, block(1, ?))` | A new line after the branch… |
+| `if␣x>0{Enter}1{Enter}else␣` | `\if{x>0}{1}\else{‸}` | `if(x > 0, 1, ?)` | …where `else` and Space starts the else; the new line goes. |
+| `if␣x>0{Enter}1{Enter}else{Enter}-1` | `\if{x>0}{1}\else{-1‸}` | `if(x > 0, 1, -1)` | Or `else` and Enter. |
+| `if␣x>0{Enter}1{Enter}else␣if␣` | `\if{x>0}{1}\elif{‸}{□}` | `if(x > 0, 1, if(?, ?))` | `else if `: a branch, the caret in its condition. |
+| `if␣x>0{Enter}1{Enter}else␣if␣x<0{Enter}-1{Enter}else{Enter}0{Enter}{Enter}` | `\if{x>0}{1}\elif{x<0}{-1}\else{0}‸ ⟶ finish` | `if(x > 0, 1, if(x < 0, -1, 0))` | Two Enters at the end: out of the else, then out of the formula. |
+| `grade(x):=if␣x>=90{Enter}"A"{Enter}else␣if␣x>=80{Enter}"B"{Enter}else{Enter}"C"{Enter}{Enter}` | `grade(x)≔\if{x≥90}{"A"}\elif{x≥80}{"B"}\else{"C"}‸ ⟶ finish` | `grade(x) := if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))` | #175's example, typed as written: stored as the nested `if`. |
+| `y:=␣if␣b` | `y≔\if{b‸}{□}` | `y := if(b, ?)` | After `:=`, a value starts. |
+| `⟦if(a, 1, if(b, 2, 3))⟧{Home}{→}{→}{→}{→}{Enter}else␣if␣` | `\if{a}{1}\elif{‸}{□}\elif{b}{2}\else{3}` | `if(a, 1, if(?, ?, if(b, 2, 3)))` | `else if ` after a branch in the middle: a branch after that one. |
+| `⟦if(a, 1, 2)⟧{←}{Enter}else␣` | `\if{a}{1}\else{\block{2⏎else‸}}` | `if(a, 1, block(2, else))` | After the else, `else` has no `if` to attach to: a name. |
+| `⟦block(if(a, 1), x)⟧{Home}{→}{→}{→}{→}{→}{Enter}{Enter}else␣` | `\block{\if{a}{1}\else{‸}⏎x}` | `block(if(a, 1, ?), x)` | On the line after an `if` statement of a block, too. |
+| `if␣a{Enter}if␣b{Enter}1{Enter}else{Enter}2{Enter}{Enter}else{Enter}3` | `\if{a}{\if{b}{1}\else{2}}\else{3‸}` | `if(a, if(b, 1, 2), 3)` | One Enter out of the inner `if`'s else, and `else` is the outer `if`'s. |
+| `iffy␣` | `iffy‸` | `iffy` | Never inside a name… |
+| `x.for␣` | `x_{for}‸` | `x.for` | …a subscript… |
+| `a␣if␣` | `a·if‸` | `a*if` | …or where no value starts. |
+| `for:=2` | `for≔2‸` | `for := 2` | A variable called `for`: no space after it. |
+| `else␣` | `else‸` | `else` | `else` with no `if` before it: a name. |
+| `for␣` | `\for{‸}{□}{□}` | `for(?, ?, ?)` |  |
+| `for␣i␣in␣1..n{Enter}s:=s+i` | `\for{i}{1..n}{s≔s+i‸}` | `for(i, 1..n, s := s + i)` | `in` goes on to the range, Enter into the body. |
+| `for␣i∈1..n` | `\for{i}{1..n‸}{□}` | `for(i, 1..n, ?)` | `∈`… |
+| `for␣i=1..n` | `\for{i}{1..n‸}{□}` | `for(i, 1..n, ?)` | …or `=`, as SMath writes it. |
+| `for␣i{Enter}` | `\for{i}{‸}{□}` | `for(i, ?, ?)` |  |
+| `while␣k<n{Enter}k:=k+1` | `\while{k<n}{k≔k+1‸}` | `while(k < n, k := k + 1)` |  |
+| `for␣x␣in␣v{Enter}while␣x>0{Enter}x:=x-1` | `\for{x}{v}{\while{x>0}{x≔x-1‸}}` | `for(x, v, while(x > 0, x := x - 1))` | Nested, straight through. |
+| `if␣a{Enter}while␣b{Enter}c` | `\if{a}{\while{b}{c‸}}` | `if(a, while(b, c))` |  |
+| `total(n):={Enter}` | `total(n)≔\block{‸}` | `total(n) := block(?)` | Enter after `:=`: the body is a block of lines. |
+| `x:={Enter}{Enter}` | `x≔‸ ⟶ finish` | `x := ?` | Its only line empty, Enter takes it away again. |
+| `total(n):={Enter}s:=0{Enter}for␣i␣in␣1..n{Enter}s:=s+i{Enter}{Enter}s{Enter}{Enter}` | `total(n)≔\block{s≔0⏎\for{i}{1..n}{s≔s+i}⏎s}‸ ⟶ finish` | `total(n) := block(s := 0, for(i, 1..n, s := s + i), s)` | A function typed line by line: two Enters out of the loop's body, two out of the function. |
+| `f(n):={Enter}c:=0{Enter}for␣i␣in␣1..n{Enter}if␣mod(i,2)==0{Enter}c:=c+1{Enter}{Enter}` | `f(n)≔\block{c≔0⏎\for{i}{1..n}{\block{\if{mod(i,2)=0}{c≔c+1}⏎‸}}}` | `f(n) := block(c := 0, for(i, 1..n, block(if(mod(i, 2) == 0, c := c + 1), ?)))` | Out of the `if`: a new line in the loop's body… |
+| `f(n):={Enter}c:=0{Enter}for␣i␣in␣1..n{Enter}if␣mod(i,2)==0{Enter}c:=c+1{Enter}{Enter}{Enter}c` | `f(n)≔\block{c≔0⏎\for{i}{1..n}{\if{mod(i,2)=0}{c≔c+1}}⏎c‸}` | `f(n) := block(c := 0, for(i, 1..n, if(mod(i, 2) == 0, c := c + 1)), c)` | …then out of the loop, a new line of the function. |
+| `f(n):={Enter}c:=0{Enter}for␣i␣in␣1..n{Enter}if␣i>2{Enter}c:=1{Enter}{Enter}{Enter}if␣c>0{Enter}c{Enter}else{Enter}0` | `f(n)≔\block{c≔0⏎\for{i}{1..n}{\if{i>2}{c≔1}}⏎\if{c>0}{c}\else{0‸}}` | `f(n) := block(c := 0, for(i, 1..n, if(i > 2, c := 1)), if(c > 0, c, 0))` |  |
+
 ## Typing fast
 
 The whole point: a formula typed as a linear typist types it, spaces and all, comes out as the formula its text says.
@@ -367,6 +526,7 @@ Each is a test.
 6. **Round trip:** for every formula in the repository's documents, `parse(toLinear(fromExpr(parse(s)))) == parse(s)`, the text is exactly `print(parse(s))`, and typing that text builds the same formula.
 7. **Brackets anywhere:** those formulas, and a few nested on purpose (`sqrt((1 - cos(α))/2)`, `(2*n - 1)!`, `(x ≠ 0) and (y ≠ 0)`), with brackets put around random parts at every depth (sometimes twice), typed key by key, build the formula their text says (4 rounds; more with `MATHTREE_ROUNDS`, other draws with `MATHTREE_SEED`).
 8. **Unfinished lines:** for every prefix of those formulas, the text of the typed tree previews as the engine previews the prefix (`parse_lenient`).
+9. **Programs typed as written:** for every program in the repository and 600 random ones (chains, loops, blocks nested any way), typing it with keywords and Enter (§ Typing programs) stores exactly its text and builds the tree typing its text builds; the invariants 1–4 hold for random keys in programs, keywords included.
 
 ## Tests
 
@@ -381,7 +541,7 @@ Each is a test.
 
 What phase 2 must take care of:
 
-- **Draw the tree as the view draws the stored formula,** or the formula will jump when the edit ends: brackets that are a slot's own (`kept`, or around a whole numerator, denominator, exponent, radicand) are not drawn; an index is a subscript; `A.b^2` is one msubsup; flat units (`80 km/h`) if that setting is on; programs (`if`, `for`, `block`) are drawn as calls while edited, which does jump: a later step.
+- **Draw the tree as the view draws the stored formula,** or the formula will jump when the edit ends: brackets that are a slot's own (`kept`, or around a whole numerator, denominator, exponent, radicand) are not drawn; an index is a subscript; `A.b^2` is one msubsup; flat units (`80 km/h`) if that setting is on; programs (`if`, `for`, `block`) on rows (phase 3a: they are structures of the tree, § Programs).
 - **Brackets filling a slot left by an arrow or a click** stay in the tree (and drawn) until the edit ends, so ← → stay a walk over a tree that doesn't change; the view then draws them as the slot's. Phase 2 may hide them as soon as the caret is outside that slot (`absorbAll` is the model's version of it).
 - **Positions that would draw at the same place.** The model already skips the one between a subscript and the superscript stacked above it. A caret drawn between `2` and `m` in `2 m` and at the start of `m` must not look the same: the model has one position there, the renderer must not add a second.
 - **↑ ↓ need geometry:** `key(…, { pick })` lets the editor choose the landing index from the caret's x; the default keeps the caret's share of the row.
@@ -402,3 +562,15 @@ Built behind Settings ▸ Editing ▸ Edit math in place (preview), off by defau
 - **Solve blocks** use the same editor for their lines.
 
 Left for phase 3: inline math in text (`richtext.ts`), programs (`if`, `for`, `block`) drawn as rows are walked as calls, VoiceOver announcements of the caret's context, and a word-wise ⌥← ⌥→.
+
+## Phase 3a: programs, word jumps, a screen reader
+
+- **Programs are structures of the tree** (`if`, `block`, `for`, `while` kinds in mathTree.ts), drawn by math.ts's own program code, so they stand on the rows the view draws (§ Programs). A chain is one `if` node whose slots run condition, value, …, else; `chains()` keeps it one node whatever is typed, and mathLinear `ifCall` writes it back as the nested calls the text stores. A block drawn from a definition's header (`f(x) :=` level with its first line) marks its statements' cells `data-part`, from which the editor takes the block's box.
+- **If-chains are drawn as rows for everyone** (#175), with the setting off too, and in Word export (§ Programs).
+- **Word jumps** ⌥← ⌥→ (§ Word jumps).
+- **A screen reader** hears where the caret is when it goes to another slot, in a polite live region (mathPlace.ts, in the words of speech.ts): "in the denominator of q times L squared over 8", "in the exponent", "in the else branch", "on line 2 of 3 of the block"; and what a key deleted: "deleted 8", "removed the fraction", "removed line 2", "removed the else branch". Nothing is said for a character typed into the same slot. `effect.deleted` is what the model deleted.
+- **Nothing moves when the edit ends**, a line with an error included: the view draws `= □` (and the unit typed after it) for a line that asks for a result it has none for, as the editor draws it while it is typed (math.ts `mathml(…, pending)`).
+
+**Phase 3a, second part.** Programs typed as written (§ Typing programs); the rule down every program's lines and every program centred on its line (§ Programs). Invariant 9 below: typing a program's text or typing it as written builds the same tree (`naturalKeys.ts` types any program the second way, for the tests).
+
+Left for phase 3b: inline math in text (`richtext.ts`, the `$…$` node view), then making in-place editing the default (and retiring the linear box behind it).

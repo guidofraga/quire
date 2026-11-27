@@ -11,6 +11,7 @@
 import type { Expr } from "./types";
 import {
   constName,
+  ifInRows,
   isDigit,
   isNameCont,
   isNameStart,
@@ -68,7 +69,17 @@ export type Kind =
   /** a built-in constant, `#G` */
   | "const"
   /** a `\name` shortcut being typed */
-  | "cmd";
+  | "cmd"
+  /**
+   * SMath's programs, on rows of their own. `if`: condition, value, then each `else if`'s
+   * condition and value, and the else's value last when there is one (an odd number of slots);
+   * the text nests the chain, `if(c1, a, if(c2, b, c))`. `block`: its statements, one per line.
+   * `for`: variable, range, body (or start, condition, step, body). `while`: condition, body.
+   */
+  | "if"
+  | "block"
+  | "for"
+  | "while";
 
 export interface Node {
   k: Kind;
@@ -125,8 +136,23 @@ export interface EditState {
   /** Counts changes to the line; undo steps are taken where it changes. */
   version: number;
   /** What the last key asks of the editor around the model. */
-  effect?: { leave?: Dir; command?: string };
+  effect?: Effect;
 }
+
+/**
+ * What a key asks of the editor around the model: to leave the formula that way (`leave`), to
+ * run an app command (`command`, after `\text`), to end the edit (`finish`, Enter outside a
+ * program or on its empty last line); and what it deleted, for a screen reader (`deleted`).
+ */
+export interface Effect {
+  leave?: Dir;
+  command?: string;
+  finish?: boolean;
+  deleted?: Deleted;
+}
+
+/** What a key took away: characters (as linear text), a structure, a line or branch of a program. */
+export type Deleted = { text: string } | { node: Kind } | { line: number } | { branch: "else" | "else if" };
 
 let seq = 0;
 const nid = () => `m${(++seq).toString(36)}`;
@@ -161,6 +187,41 @@ const BIG: Record<string, { order: number[]; up?: Record<number, number>; down?:
   "limit/3": { order: [1, 2, 0] },
 };
 const SHAPED_NOW: Record<string, Kind> = { sqrt: "sqrt", abs: "abs", root: "root" };
+
+/** Programs: rows of their own, Enter adds a line, `,` goes to the next slot. */
+const PROGRAM = new Set<Kind>(["if", "block", "for", "while"]);
+const isProgramNode = (a: Atom | undefined): a is Node => !!a && a.k !== "g" && PROGRAM.has(a.k);
+
+/** The calls that are programs, with the numbers of arguments each takes. */
+function programKind(name: string, arity: number): Kind | null {
+  if (name === "if" && (arity === 2 || arity === 3)) return "if";
+  if (name === "block" && arity >= 1) return "block";
+  if (name === "for" && (arity === 3 || arity === 4)) return "for";
+  if (name === "while" && arity === 2) return "while";
+  return null;
+}
+
+/** An `if` with an else: an odd number of slots, the else's value last. */
+const hasElse = (n: Node) => n.k === "if" && n.slots.length % 2 === 1;
+const isElse = (n: Node, slot: number) => hasElse(n) && slot === n.slots.length - 1;
+
+/** What a slot of a program is: a condition or a loop's header, a value or a body, a statement. */
+function role(n: Node, slot: number): "head" | "body" | "stmt" {
+  if (n.k === "block") return "stmt";
+  if (n.k === "if") return isElse(n, slot) || slot % 2 === 1 ? "body" : "head";
+  return slot === n.slots.length - 1 ? "body" : "head";
+}
+
+/** The slots of an `if` built from its parts: an else that is itself an `if` joins the chain. */
+function ifSlots(slots: Row[]): Row[] {
+  const out = [...slots];
+  for (;;) {
+    const last = out[out.length - 1];
+    const only = last?.atoms.length === 1 ? last.atoms[0] : null;
+    if (out.length % 2 === 0 || only?.k !== "if") return out;
+    out.splice(out.length - 1, 1, ...only.slots);
+  }
+}
 
 /** The order a structure's slots are walked in by ← and →. */
 function order(n: Node): number[] {
@@ -274,6 +335,9 @@ function atomsOf(e: Expr): Atom[] {
     }
     case "Call": {
       const [name, args] = e.c;
+      const prog = programKind(name, args.length);
+      if (prog === "if") return [mkNode("if", ifSlots(args.map(wholeSlot)))];
+      if (prog) return [mkNode(prog, args.map(wholeSlot))];
       const shape = shapeOf(name, args.length);
       if (shape === "sqrt" || shape === "abs") return [mkNode(shape, [slotOf(args[0], () => false)])];
       if (shape === "root") return [mkNode("root", [slotOf(args[0], () => false), mkRow(atomsOf(args[1]))])];
@@ -504,7 +568,7 @@ class Ed {
   assign: boolean;
   beforeShow?: { line: Line; caret: Pos };
   equation: boolean;
-  effect?: { leave?: Dir; command?: string };
+  effect?: Effect;
   w!: Map<string, Where>;
   private before: string;
 
@@ -530,6 +594,7 @@ class Ed {
   }
 
   done(s: EditState): EditState {
+    this.chains();
     const changed = content(this.line) !== this.before;
     return {
       line: this.line,
@@ -592,6 +657,33 @@ class Ed {
     forEachRow(this.line, (r) => delete r.born);
   }
 
+  /**
+   * An `if` whose else holds only another `if` is one chain (`else if`), as reopening its text
+   * would build it: the inner `if`'s slots join the outer's. The caret stays where it was drawn.
+   */
+  chains() {
+    let again = true;
+    while (again) {
+      again = false;
+      forEachRow(this.line, (r) => {
+        for (const a of r.atoms) {
+          if (a.k !== "if" || !hasElse(a)) continue;
+          const last = a.slots[a.slots.length - 1];
+          const inner = last.atoms.length === 1 ? last.atoms[0] : null;
+          if (inner?.k !== "if") continue;
+          a.slots.splice(a.slots.length - 1, 1, ...inner.slots);
+          if (this.caret.row === last.id) {
+            const to = this.caret.i === 0 ? inner.slots[0] : inner.slots[inner.slots.length - 1];
+            this.caret = { row: to.id, i: this.caret.i === 0 ? 0 : to.atoms.length };
+          }
+          if (this.anchor?.row === last.id) this.anchor = null;
+          again = true;
+        }
+      });
+      this.re();
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Typing
   // -------------------------------------------------------------------------
@@ -612,6 +704,9 @@ class Ed {
     this.anchor = null;
 
     const owner = this.here.owner;
+    // `for i ∈` or `for i =`: on to the range
+    if ((ch === "∈" || ch === "=") && owner?.k === "for" && owner.slots.length === 3 && this.here.slot === 0)
+      return this.set(owner.slots[1], 0);
     // a string takes everything as text, up to its closing quote
     if (owner?.k === "str") {
       if (ch === '"') {
@@ -632,7 +727,7 @@ class Ed {
     this.space = false;
 
     if (ch === " ") {
-      this.keyword();
+      this.keyword(true);
       this.space = true;
       return;
     }
@@ -973,7 +1068,8 @@ class Ed {
         this.shape(owner);
         return;
       }
-      const fn = owner.k === "sqrt" || owner.k === "abs" || owner.k === "root" || owner.k === "big";
+      const fn =
+        owner.k === "sqrt" || owner.k === "abs" || owner.k === "root" || owner.k === "big" || PROGRAM.has(owner.k);
       const bracket = owner.k === "index" || owner.k === "matrix";
       if ((ch === ")" && fn) || (ch === "]" && bracket)) {
         owner.ghost = false;
@@ -1043,12 +1139,13 @@ class Ed {
       if (glyph(a) === ",") parts.push([]);
       else parts[parts.length - 1].push(a);
     }
-    if (shapeOf(name, parts.length) !== "big") return;
-    const big = mkNode(
-      "big",
-      parts.map((p) => mkRow(p.length === 1 && glyph(p[0]) === "?" ? [] : p)),
-      { name },
-    );
+    const slots = () => parts.map((p) => mkRow(p.length === 1 && glyph(p[0]) === "?" ? [] : p));
+    const prog = programKind(name, parts.length);
+    let made: Node;
+    if (prog) made = mkNode(prog, prog === "if" ? ifSlots(slots()) : slots());
+    else if (shapeOf(name, parts.length) === "big") made = mkNode("big", slots(), { name });
+    else return;
+    const big = made;
     r.atoms.splice(start, place.at - start + 1, big);
     this.re();
     this.set(r, start + 1);
@@ -1103,6 +1200,7 @@ class Ed {
       this.re();
       return this.set(fresh[0], 0);
     }
+    if (ch === "," && owner && PROGRAM.has(owner.k)) return this.nextSlot(owner, slot, row);
     if (ch === "," && owner && (owner.k === "root" || owner.k === "big")) {
       const next = owner.slots[slot + 1];
       if (next) {
@@ -1112,6 +1210,28 @@ class Ed {
       return;
     }
     this.put(gl(ch));
+  }
+
+  /**
+   * `,` in a program, as in its text (`if(c, a, b)`, `block(a, b)`): the next slot; at the end of
+   * an `if` with no else, a new else; in a block, a new statement after this one, taking what is
+   * after the caret.
+   */
+  nextSlot(n: Node, slot: number, row: Row) {
+    if (n.k === "block") {
+      const line = mkRow(row.atoms.splice(this.i));
+      n.slots.splice(slot + 1, 0, line);
+      this.re();
+      return this.set(line, 0);
+    }
+    const next = n.slots[slot + 1];
+    if (next) return this.set(next, 0);
+    if (n.k === "if" && !hasElse(n)) {
+      const other = mkRow();
+      n.slots.push(other);
+      this.re();
+      this.set(other, 0);
+    }
   }
 
   /** `"`, `'`, `#`, `\`: a string, a quoted unit, a constant or a shortcut, the caret in it. */
@@ -1227,7 +1347,7 @@ class Ed {
    * or an automatic `·` before the word goes. Another word typed after a space is a second
    * name: the gap becomes `·`.
    */
-  keyword() {
+  keyword(space = false) {
     const r = this.row;
     let start = this.i;
     while (start > 0 && isWordChar(r.atoms[start - 1])) start--;
@@ -1237,7 +1357,11 @@ class Ed {
       .slice(start, this.i)
       .map((a) => glyph(a))
       .join("");
+    if (space && word === "if" && this.elseIf()) return;
     if (!word || isWordChar(this.next())) return;
+    if (space && (word === "else" || word === "if") && this.elseLine(word === "if" ? "else if" : "else")) return;
+    if (space && word === "in" && this.forIn(start)) return;
+    if (space && (word === "if" || word === "for" || word === "while") && this.startProgram(word, start)) return;
     const before = r.atoms[start - 1];
     if (!KW.has(word)) {
       if (glyph(before) === " " && endsName(r, start - 1)) {
@@ -1252,6 +1376,262 @@ class Ed {
     this.set(r, from + 1);
   }
 
+  /**
+   * `else if` typed at the start of an `if`'s else (and a space after it): a new branch, its
+   * condition and value, goes in before the else, which keeps what it held. The caret goes to
+   * the new condition. The text: `if(c, a, b)` becomes `if(c, a, if(?, ?, b))`.
+   */
+  elseIf(): boolean {
+    const { owner, slot, row } = this.here;
+    if (!owner || owner.k !== "if" || !isElse(owner, slot)) return false;
+    const typed = row.atoms
+      .slice(0, this.i)
+      .map((a) => glyph(a) ?? "\u0000")
+      .join("");
+    if (!/^else ?if$/.test(typed)) return false;
+    row.atoms.splice(0, this.i);
+    const cond = mkRow();
+    owner.slots.splice(slot, 0, cond, mkRow());
+    this.re();
+    this.set(cond, 0);
+    return true;
+  }
+
+  /**
+   * `if `, `for `, `while ` (the word and a space) where a statement or a value starts: at the
+   * start of a line or a slot, or right after `:=` or `≡`. The program goes in with the caret in
+   * its first slot (condition, loop variable), anything after the caret going into that slot.
+   * Not in a condition or a loop's header, nor in a name (`iffy`, `x.for`), a unit or a string.
+   */
+  startProgram(word: "if" | "for" | "while", start: number): boolean {
+    const { row: r, owner, slot } = this.here;
+    if (r === this.line.unit) return false;
+    if (owner && ["sub", "unit", "const", "str", "cmd"].includes(owner.k)) return false;
+    if (owner && PROGRAM.has(owner.k) && role(owner, slot) === "head") return false;
+    const before = r.atoms[start - 1];
+    if (before && !(before.k === "g" && (before.s === ":=" || before.s === "≡"))) return false;
+    const tail = r.atoms.splice(start).slice(this.i - start);
+    const first = mkRow(tail);
+    const n = mkNode(word, [first, ...Array.from({ length: word === "for" ? 2 : 1 }, () => mkRow())]);
+    r.atoms.push(n);
+    this.re();
+    this.set(first, 0);
+    this.space = false;
+    return true;
+  }
+
+  /**
+   * `in ` after a `for`'s variable (`for i in `): on to the range, as `∈` or `=` go.
+   */
+  forIn(start: number): boolean {
+    const { row: r, owner, slot } = this.here;
+    if (owner?.k !== "for" || owner.slots.length !== 3 || slot !== 0 || this.i !== r.atoms.length) return false;
+    if (glyph(r.atoms[start - 1]) !== " ") return false;
+    r.atoms.splice(start - 1);
+    this.re();
+    this.set(owner.slots[1], 0);
+    this.space = false;
+    return true;
+  }
+
+  /**
+   * `else` (then Space or Enter) or `else if ` alone on a new line of a program, right after a
+   * branch (its last line) or right after an `if` that is a statement of a block: the line goes
+   * and the `if` gets its else (the caret in it) or a new branch after that one (the caret in
+   * its condition). Anywhere else the word stays a name: a variable may be called `else`.
+   */
+  elseLine(word: "else" | "else if"): boolean {
+    const { row: R, owner: B, slot: k } = this.here;
+    if (!B || B.k !== "block" || this.i !== R.atoms.length) return false;
+    const typed = R.atoms.map((a) => glyph(a) ?? "\u0000").join("");
+    if (typed !== word && !(word === "else if" && typed === "elseif")) return false;
+    const place = this.placeOf(B);
+    if (!place) return false;
+    const pw = this.w.get(place.row.id)!;
+    let n: Node;
+    let j: number;
+    // right after a branch: the line is the last of the block that is the branch's value
+    const p = pw.owner;
+    if (
+      p?.k === "if" &&
+      k === B.slots.length - 1 &&
+      place.row.atoms.length === 1 &&
+      role(p, pw.slot) === "body" &&
+      !isElse(p, pw.slot)
+    ) {
+      n = p;
+      j = pw.slot;
+    } else {
+      // right after an `if` that is a statement of the block
+      const prev = B.slots[k - 1];
+      const only = prev?.atoms.length === 1 ? prev.atoms[0] : null;
+      if (only?.k !== "if" || hasElse(only)) return false;
+      n = only;
+      j = only.slots.length - 1;
+    }
+    if (word === "else" && (hasElse(n) || j !== n.slots.length - 1)) return false;
+    // the line goes, and a block left with one line in the branch with it
+    B.slots.splice(k, 1);
+    if (!B.slots.length) {
+      const at = this.placeOf(B)!;
+      at.row.atoms.splice(at.at, 1);
+    }
+    this.re();
+    this.unwrapLone(B);
+    const fresh = mkRow();
+    if (word === "else") n.slots.push(fresh);
+    else n.slots.splice(j + 1, 0, fresh, mkRow());
+    this.re();
+    this.set(fresh, 0);
+    this.space = false;
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Programs: Enter
+  // -------------------------------------------------------------------------
+
+  /**
+   * The line of a program the caret is on: the slot of the nearest program around it, and where
+   * the caret is on it (after the structure it is in, if it is deeper). Null outside programs.
+   */
+  lineAt(): { w: Where; i: number } | null {
+    let w = this.here;
+    let i = this.i;
+    while (w.owner && !PROGRAM.has(w.owner.k) && w.parent) {
+      i = w.at + 1;
+      w = this.w.get(w.parent.id)!;
+    }
+    return w.owner && PROGRAM.has(w.owner.k) ? { w, i } : null;
+  }
+
+  /**
+   * Enter. Outside a program it ends the edit (`finish`), as always. In a program it adds a
+   * line: after the statement (the rest of it, from the caret, going with it); in a branch or a
+   * loop's body, which then holds a block of statements. In a condition it goes to its branch.
+   * On an empty last line it removes that line and leaves the program: to the next branch, a
+   * new line after it in the block around it, or, at the outside, the end of the edit.
+   */
+  enter() {
+    this.anchor = null;
+    this.space = false;
+    this.clearBorn();
+    if (this.elseLine("else")) return;
+    const at = this.lineAt();
+    if (!at) {
+      // `f(x) :=` and Enter: the definition's body is a block, its first line here
+      const r = this.row;
+      const prev = glyph(this.prev());
+      if (r === this.line.main && this.i === r.atoms.length && (prev === ":=" || prev === "≡")) {
+        const first = mkRow();
+        this.put(mkNode("block", [first]));
+        return this.set(first, 0);
+      }
+      return void (this.effect = { finish: true });
+    }
+    const { w, i } = at;
+    const n = w.owner!;
+    const r = w.row;
+    const k = w.slot;
+    const kind = role(n, k);
+    // in a condition or a loop's header: on to the next slot (the range, the branch, the body)
+    if (kind === "head") return this.set(n.slots[k + 1], 0);
+    if (kind === "stmt") {
+      if (!r.atoms.length && k === n.slots.length - 1) {
+        if (n.slots.length === 1) {
+          // a block with only an empty line goes, and the caret on from where it was
+          const place = this.placeOf(n)!;
+          place.row.atoms.splice(place.at, 1);
+          this.re();
+          this.set(place.row, place.at);
+          const out = this.lineAt();
+          if (!out) return void (this.effect = { finish: true });
+          return this.onwards(out.w);
+        }
+        n.slots.splice(k, 1);
+        this.re();
+        const body = this.unwrapLone(n);
+        return body ? this.onwards(body) : this.exit(n);
+      }
+      const line = mkRow(i === 0 ? [] : r.atoms.splice(i));
+      n.slots.splice(i === 0 ? k : k + 1, 0, line);
+      this.re();
+      return i === 0 ? this.set(r, 0) : this.set(line, 0);
+    }
+    // a branch or a body
+    const only = r.atoms.length === 1 ? r.atoms[0] : null;
+    if (only?.k === "block") {
+      const line = mkRow();
+      if (i === 0) only.slots.unshift(line);
+      else only.slots.push(line);
+      this.re();
+      return this.set(line, 0);
+    }
+    if (!r.atoms.length) return this.onwards(w);
+    const tail = r.atoms.splice(i);
+    const first = mkRow(r.atoms);
+    const second = mkRow(tail);
+    r.atoms = [mkNode("block", [first, second])];
+    this.re();
+    this.set(second, 0);
+  }
+
+  /** On from line `w` of a program: the next statement (a new one), the next branch, or out. */
+  onwards(w: Where) {
+    const n = w.owner!;
+    if (role(n, w.slot) === "stmt") {
+      const line = mkRow();
+      n.slots.splice(w.slot + 1, 0, line);
+      this.re();
+      return this.set(line, 0);
+    }
+    const next = n.slots[w.slot + 1];
+    if (next) return this.set(next, 0);
+    this.exit(n);
+  }
+
+  /** Out of program `n`, forwards: on from the line it is on, or the end of the edit. */
+  exit(n: Node) {
+    const place = this.placeOf(n);
+    if (!place) return void (this.effect = { finish: true });
+    let w = this.w.get(place.row.id)!;
+    while (w.owner && !PROGRAM.has(w.owner.k) && w.parent) w = this.w.get(w.parent.id)!;
+    if (!w.owner || !PROGRAM.has(w.owner.k)) {
+      this.set(place.row, place.at + 1);
+      this.effect = { finish: true };
+      return;
+    }
+    // out of an `if` or a loop that is (in) a branch or a body: a new line there, one level out,
+    // as an outliner goes (a block is that body's lines: out of it is out of the body)
+    if (n.k !== "block" && role(w.owner, w.slot) === "body") {
+      const body = w.row;
+      const line = mkRow();
+      body.atoms = [mkNode("block", [mkRow(body.atoms), line])];
+      this.re();
+      return this.set(line, 0);
+    }
+    this.onwards(w);
+  }
+
+  /**
+   * A block left with one statement in a branch or a body goes, its statement staying there
+   * (the inverse of Enter there): the branch's line, or null when it stays a block.
+   */
+  unwrapLone(n: Node): Where | null {
+    if (n.k !== "block" || n.slots.length !== 1) return null;
+    const place = this.placeOf(n);
+    if (!place) return null;
+    const w = this.w.get(place.row.id)!;
+    if (!w.owner || !PROGRAM.has(w.owner.k) || role(w.owner, w.slot) !== "body" || place.row.atoms.length !== 1)
+      return null;
+    const inner = n.slots[0];
+    place.row.atoms = inner.atoms;
+    if (this.caret.row === inner.id) this.caret.row = place.row.id;
+    if (this.anchor?.row === inner.id) this.anchor = null;
+    this.re();
+    return this.w.get(place.row.id)!;
+  }
+
   // -------------------------------------------------------------------------
   // Wrapping a selection, deleting
   // -------------------------------------------------------------------------
@@ -1263,6 +1643,12 @@ class Ed {
     this.re();
     this.set(r, sel.from);
     return out;
+  }
+
+  /** The selection deleted, and said so. */
+  cutSaying(sel: { row: string; from: number; to: number }) {
+    const atoms = this.cut(sel);
+    this.effect = { deleted: { text: rowLinear(mkRow(atoms)) } };
   }
 
   /** A selection typed over with `/`, `^`, `(` or `[`, or given a shape: it goes inside. */
@@ -1304,11 +1690,12 @@ class Ed {
    */
   backspace() {
     const sel = selection(this.state());
-    if (sel) return void this.cut(sel);
+    if (sel) return this.cutSaying(sel);
     this.anchor = null;
     const prev = this.prev();
     if (!prev) return this.atStart();
     if (prev.k === "g") {
+      this.effect = { deleted: { text: prev.s } };
       this.row.atoms.splice(this.i - 1, 1);
       this.caret.i--;
       return this.re();
@@ -1327,11 +1714,12 @@ class Ed {
   /** Delete: the mirror of Backspace, on the first thing after the caret. */
   del() {
     const sel = selection(this.state());
-    if (sel) return void this.cut(sel);
+    if (sel) return this.cutSaying(sel);
     this.anchor = null;
     const next = this.next();
     if (!next) return this.atEnd();
     if (next.k === "g") {
+      this.effect = { deleted: { text: next.s } };
       this.row.atoms.splice(this.i, 1);
       return this.re();
     }
@@ -1359,10 +1747,11 @@ class Ed {
       return;
     }
     if (owner.k === "matrix") return this.cellStart(owner, slot);
+    if (PROGRAM.has(owner.k) && this.lineStart(owner, slot, row)) return;
     const o = order(owner);
     const p = o.indexOf(slot);
     if (owner.k === "str" && row.atoms.length) return this.select(owner);
-    if (owner.k === "root" || owner.k === "big") {
+    if (owner.k === "root" || owner.k === "big" || PROGRAM.has(owner.k)) {
       if (owner.slots.every((s, k) => k === slot || !s.atoms.length)) return this.unwrap(owner, true, slot);
       if (p > 0) {
         const before = owner.slots[o[p - 1]];
@@ -1384,15 +1773,115 @@ class Ed {
       return;
     }
     if (owner.k === "matrix") return this.cellEnd(owner, slot);
+    if (PROGRAM.has(owner.k) && this.lineEnd(owner, slot, row)) return;
     const o = order(owner);
     const p = o.indexOf(slot);
     if (owner.k === "str" && row.atoms.length) return this.select(owner);
-    if (owner.k === "root" || owner.k === "big") {
+    if (owner.k === "root" || owner.k === "big" || PROGRAM.has(owner.k)) {
       if (owner.slots.every((s, k) => k === slot || !s.atoms.length)) return this.unwrap(owner, false, slot);
       if (p < o.length - 1) return this.set(owner.slots[o[p + 1]], 0);
       return this.select(owner);
     }
     this.unwrap(owner, owner.k === "frac" && slot === 0, slot, true);
+  }
+
+  /**
+   * Backspace at the start of a line of a program, where it differs from other structures: an
+   * empty statement, an empty else, an empty `else if` branch goes (a block left with one
+   * statement in a branch goes too, the inverse of Enter there); a statement joins the one
+   * before (the inverse of Enter in its middle); an `else if` with no condition, last and with
+   * no else, becomes the else. Elsewhere the caret steps back to the end of the slot before.
+   * False where the structure comes apart or is selected, as a root or an integral would.
+   */
+  lineStart(n: Node, k: number, r: Row): boolean {
+    const end = (row: Row) => this.set(row, row.atoms.length);
+    if (n.k === "block") {
+      if (k === 0 && (r.atoms.length || n.slots.length === 1)) return false;
+      const prev = n.slots[k - 1];
+      if (!r.atoms.length) {
+        n.slots.splice(k, 1);
+        this.effect = { deleted: { line: k + 1 } };
+        this.re();
+        if (prev) end(prev);
+        else this.set(n.slots[0], 0);
+      } else {
+        const at = prev.atoms.length;
+        prev.atoms.push(...r.atoms);
+        n.slots.splice(k, 1);
+        this.re();
+        this.set(prev, at);
+      }
+      this.unwrapLone(n);
+      return true;
+    }
+    if (n.k !== "if" || k === 0) return false;
+    const before = n.slots[k - 1];
+    if (isElse(n, k)) {
+      if (r.atoms.length) return (end(before), true);
+      n.slots.pop();
+      this.effect = { deleted: { branch: "else" } };
+      this.re();
+      return (end(before), true);
+    }
+    const cond = k % 2 === 0 ? k : k - 1;
+    const pairEmpty = !n.slots[cond].atoms.length && !n.slots[cond + 1].atoms.length;
+    if (pairEmpty && (k === cond || k >= 3)) {
+      n.slots.splice(cond, 2);
+      this.effect = { deleted: { branch: "else if" } };
+      this.re();
+      return (end(n.slots[cond - 1]), true);
+    }
+    if (k === cond && !r.atoms.length && !hasElse(n) && k + 2 === n.slots.length) {
+      // `else if` with no condition: the else
+      const value = n.slots[k + 1];
+      n.slots.splice(k, 1);
+      this.re();
+      return (this.set(value, 0), true);
+    }
+    return (end(before), true);
+  }
+
+  /** Delete at the end of a line of a program: the mirror of `lineStart`. */
+  lineEnd(n: Node, k: number, r: Row): boolean {
+    if (n.k === "block") {
+      const last = k === n.slots.length - 1;
+      if (last && (r.atoms.length || n.slots.length === 1)) return false;
+      if (!r.atoms.length) {
+        n.slots.splice(k, 1);
+        this.effect = { deleted: { line: k + 1 } };
+        this.re();
+        const here = n.slots[k];
+        if (here) this.set(here, 0);
+        else this.set(n.slots[k - 1], n.slots[k - 1].atoms.length);
+      } else {
+        const next = n.slots[k + 1];
+        const at = r.atoms.length;
+        r.atoms.push(...next.atoms);
+        n.slots.splice(k + 1, 1);
+        this.re();
+        this.set(r, at);
+      }
+      this.unwrapLone(n);
+      return true;
+    }
+    if (n.k !== "if") return false;
+    const next = k + 1;
+    if (next >= n.slots.length) return false;
+    if (isElse(n, next) && !n.slots[next].atoms.length) {
+      n.slots.pop();
+      this.effect = { deleted: { branch: "else" } };
+      this.re();
+      return true;
+    }
+    if (next % 2 === 0 && !isElse(n, next) && !n.slots[next].atoms.length && !n.slots[next + 1].atoms.length) {
+      n.slots.splice(next, 2);
+      this.effect = { deleted: { branch: "else if" } };
+      this.re();
+      return true;
+    }
+    if (n.slots.every((s, j) => j === k || !s.atoms.length)) return false;
+    this.set(n.slots[next], 0);
+    return true;
   }
 
   /** The whole of structure `n` selected. */
@@ -1409,6 +1898,7 @@ class Ed {
    */
   unwrap(n: Node, junction: boolean, slot = 0, toEnd = false) {
     const place = this.placeOf(n)!;
+    this.effect = { deleted: { node: n.k } };
     const what = (k: number): keyof typeof NEEDS_BRACKETS | null =>
       n.k === "frac" ? (k === 0 ? "numerator" : "denominator") : n.k === "sup" ? "exponent" : null;
     const content = (k: number): Atom[] => {
@@ -1426,7 +1916,7 @@ class Ed {
       const den = content(1);
       atoms = [...num, ...den];
       caretAt = junction ? num.length : toEnd ? atoms.length : 0;
-    } else if (n.k === "matrix" || n.k === "root" || n.k === "big") {
+    } else if (n.k === "matrix" || n.k === "root" || n.k === "big" || PROGRAM.has(n.k)) {
       atoms = n.k === "matrix" ? n.slots[0].atoms : content(slot);
       caretAt = toEnd ? atoms.length : 0;
     } else {
@@ -1545,11 +2035,55 @@ class Ed {
   }
 
   /**
+   * Whether program `n` is drawn as rows, as math.ts draws it: blocks and loops always; an `if`
+   * when it is a chain or holds a program (`ifInRows`), or when it is a statement or the body
+   * of a program drawn as rows. A lone `if(c, a, b)` is drawn on one line, and ↑ ↓ leave it.
+   */
+  inRows(n: Node): boolean {
+    if (n.k !== "if") return PROGRAM.has(n.k);
+    const e = rowExpr(mkRow([n]));
+    if (e?.t === "Call" && ifInRows(e.c[1])) return true;
+    const place = this.placeOf(n);
+    if (!place || place.row.atoms.length !== 1) return false;
+    const w = this.w.get(place.row.id);
+    const o = w?.owner;
+    if (!o || !PROGRAM.has(o.k)) return false;
+    return o.k === "block" || (role(o, w.slot) === "body" && this.inRows(o));
+  }
+
+  /**
+   * ⌥← ⌥→ (Ctrl+← Ctrl+→ on Windows and Linux): by whole names, numbers and structures on the
+   * caret's row, over the operators between them; at the row's edge, one step as ← → take it.
+   * With Shift, the selection grows so.
+   */
+  word(dir: 1 | -1, shift: boolean) {
+    this.space = false;
+    if (shift) {
+      this.anchor ??= { ...this.caret };
+      const sel = selection(this.state());
+      const rowId = sel?.row ?? this.caret.row;
+      const w = this.w.get(rowId)!;
+      const f = !sel ? this.caret.i : this.caretBeforeAnchor(rowId) ? sel.from : sel.to;
+      const to = wordStop(w.row, f, dir);
+      if (to === f) return this.extend(dir);
+      if (sel) this.anchor = { row: rowId, i: this.caretBeforeAnchor(rowId) ? sel.to : sel.from };
+      return this.set(w.row, to);
+    }
+    const sel = selection(this.state());
+    this.anchor = null;
+    this.clearBorn();
+    if (sel) return this.set(sel.row, dir > 0 ? sel.to : sel.from);
+    const to = wordStop(this.row, this.i, dir);
+    if (to === this.i) return this.horizontal(dir, false);
+    this.set(this.row, to);
+  }
+
+  /**
    * ↑ ↓: between a fraction's numerator and denominator, a superscript and its base, a root's
    * index and radicand, the limits of a sum or integral, a matrix's rows. With nowhere to go in
    * the formula, the editor is told to leave it that way.
    */
-  vertical(dir: "up" | "down", pick?: (row: string, atoms: number) => number) {
+  vertical(dir: "up" | "down", pick?: (row: string, atoms: number) => number, choose?: (rows: string[]) => string) {
     this.space = false;
     this.anchor = null;
     this.clearBorn();
@@ -1569,9 +2103,21 @@ class Ed {
       const w = this.w.get(id)!;
       const n = w.owner;
       if (!n || !w.parent) return void (this.effect = { leave: dir });
-      const target = verticalSlot(n, w.slot, dir);
+      const target = verticalSlot(n, w.slot, dir, PROGRAM.has(n.k) && this.inRows(n));
       if (target !== null) {
-        const t = n.slots[target];
+        const slots = (Array.isArray(target) ? target : [target]).map((k) => n.slots[k]);
+        let t =
+          slots.length > 1 && choose
+            ? (slots.find((x) => x.id === choose(slots.map((y) => y.id))) ?? slots[0])
+            : slots[0];
+        // into a program drawn on the line reached: its first line going down, its last going up
+        for (
+          let only = t.atoms[0];
+          t.atoms.length === 1 && isProgramNode(only) && this.inRows(only);
+          only = t.atoms[0]
+        ) {
+          t = dir === "down" ? only.slots[0] : only.slots[only.slots.length - 1];
+        }
         const i = pick ? pick(t.id, t.atoms.length) : Math.round(share * t.atoms.length);
         return this.set(t, Math.max(0, Math.min(t.atoms.length, i)));
       }
@@ -1588,7 +2134,19 @@ class Ed {
   }
 }
 
-function verticalSlot(n: Node, slot: number, dir: "up" | "down"): number | null {
+function verticalSlot(n: Node, slot: number, dir: "up" | "down", rows: boolean): number | number[] | null {
+  if (PROGRAM.has(n.k)) {
+    if (!rows) return null;
+    const last = n.slots.length - 1;
+    // a loop: its header on one line (`for i ∈ 1..n`), its body under it
+    if (n.k === "for" || n.k === "while") {
+      if (dir === "down") return slot < last ? last : null;
+      return slot === last ? Array.from({ length: last }, (_, k) => k) : null;
+    }
+    // `if`, `else if`, `else` and their values, and a block's statements: one line each
+    const to = slot + (dir === "down" ? 1 : -1);
+    return to >= 0 && to <= last ? to : null;
+  }
   switch (n.k) {
     case "frac":
       return dir === "down" && slot === 0 ? 1 : dir === "up" && slot === 1 ? 0 : null;
@@ -1606,6 +2164,40 @@ function verticalSlot(n: Node, slot: number, dir: "up" | "down"): number | null 
     default:
       return null;
   }
+}
+
+/**
+ * Where a word jump from `i` lands on row `r`: past the operators and spaces, then past one
+ * whole value: a name with its subscript, a number, or a structure, with the scripts, index or
+ * call brackets that follow it (`x^2`, `M[i]`, `sin(x)`). `i` itself at the row's edge.
+ */
+function wordStop(r: Row, i: number, dir: 1 | -1): number {
+  const a = (k: number) => r.atoms[k];
+  const gap = (x: Atom | undefined) => !!x && x.k === "g" && (isOp(x) || x.s === " " || x.s === "!");
+  const wordy = (x: Atom | undefined) =>
+    !!x && ((x.k === "g" && (isNameCont(x.s) || x.s === "." || x.s === "?")) || x.k === "sub");
+  const script = (x: Atom | undefined) => !!x && (x.k === "sup" || x.k === "index");
+  const n = r.atoms.length;
+  let k = i;
+  if (dir > 0) {
+    while (k < n && gap(a(k))) k++;
+    if (k >= n) return k;
+    if (wordy(a(k))) {
+      while (k < n && wordy(a(k))) k++;
+      if (a(k)?.k === "paren") k++;
+    } else k++;
+    while (k < n && script(a(k))) k++;
+    return k;
+  }
+  while (k > 0 && gap(a(k - 1))) k--;
+  if (k === 0) return k;
+  while (k > 0 && script(a(k - 1))) k--;
+  if (k > 0 && !wordy(a(k - 1))) {
+    k--;
+    if (a(k)?.k !== "paren" || !wordy(a(k - 1))) return k;
+  }
+  while (k > 0 && wordy(a(k - 1))) k--;
+  return k;
 }
 
 /** A name ends just before `i` (not a number: `x2` against `12`). */
@@ -1682,11 +2274,14 @@ export interface KeyOptions {
   shift?: boolean;
   /** For ↑ ↓: the index to land on in the row reached, from the caret's position on screen. */
   pick?: (row: string, atoms: number) => number;
+  /** For ↑ ↓ onto a line with several slots (`for i ∈ 1..n`): the one nearest the caret. */
+  choose?: (rows: string[]) => string;
 }
 
 /**
  * One key: a character typed (`"a"`, `"/"`, `" "`), or `Backspace`, `Delete`, `ArrowLeft`,
- * `ArrowRight`, `ArrowUp`, `ArrowDown`, `Home`, `End`, `Tab`. The editor's own shortcuts are
+ * `ArrowRight`, `ArrowUp`, `ArrowDown`, `Home`, `End`, `Tab`, `Enter`, and the word jumps
+ * `WordLeft`, `WordRight` (⌥← ⌥→). The editor's own shortcuts are
  * `symbolic()` (Ctrl+.) and `greek()` (Ctrl+G). `effect.leave` says the caret would leave the
  * formula that way; `effect.command` asks for an app command (`\text`).
  */
@@ -1708,7 +2303,14 @@ export function key(s: EditState, k: string, opts: KeyOptions = {}): EditState {
       break;
     case "ArrowUp":
     case "ArrowDown":
-      e.vertical(k === "ArrowUp" ? "up" : "down", opts.pick);
+      e.vertical(k === "ArrowUp" ? "up" : "down", opts.pick, opts.choose);
+      break;
+    case "WordLeft":
+    case "WordRight":
+      e.word(k === "WordRight" ? 1 : -1, !!opts.shift);
+      break;
+    case "Enter":
+      e.enter();
       break;
     case "Home":
     case "End": {
@@ -2019,6 +2621,17 @@ export function sketch(s: EditState): string {
         return `#{${sl[0]}}`;
       case "cmd":
         return `\\{${sl[0]}}`;
+      case "if": {
+        const pairs = sl.length - (sl.length % 2);
+        let out = "";
+        for (let k = 0; k < pairs; k += 2) out += `${k ? "\\elif" : "\\if"}{${sl[k]}}{${sl[k + 1]}}`;
+        return sl.length % 2 ? `${out}\\else{${sl[sl.length - 1]}}` : out;
+      }
+      case "block":
+        return `\\block{${sl.join("⏎")}}`;
+      case "for":
+      case "while":
+        return `\\${a.k}${sl.map((x) => `{${x}}`).join("")}`;
     }
   };
   const main = row(s.line.main);
@@ -2073,6 +2686,11 @@ export function whereIs(
 /** Selects `[from, to)` of a row (the caret at `to`). */
 export function selectRange(s: EditState, row: string, from: number, to: number): EditState {
   return setCaret(setCaret(s, { row, i: from }), { row, i: to }, true);
+}
+
+/** What structure `n` says, as the engine would read it on its own (for a screen reader). */
+export function nodeExpr(n: Node): Expr | null {
+  return rowExpr(mkRow([n]));
 }
 
 /** An empty formula, the caret in it. */

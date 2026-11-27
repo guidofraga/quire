@@ -594,7 +594,7 @@ impl<'u> Interp<'u> {
     #[inline(never)]
     fn lazy(&mut self, s: &mut Scope, name: &str, args: &[Expr]) -> Option<Result<Value>> {
         Some(match (name, args.len()) {
-            ("if", 3) => self.if_(s, args),
+            ("if", 2 | 3) => self.if_(s, args),
             ("block", _) => self.block(s, args),
             ("for", 3) => self.for_in(s, args),
             ("for", 4) => self.for_c(s, args),
@@ -643,6 +643,10 @@ impl<'u> Interp<'u> {
 
     fn if_(&mut self, s: &mut Scope, args: &[Expr]) -> Result<Value> {
         let c = self.eval(s, arg(args, 0)?)?.truthy()?;
+        // an `if` with no else, as a program's statement: nothing done, 0, as a loop that doesn't run
+        if !c && args.len() == 2 {
+            return Ok(Value::num(0.0));
+        }
         self.eval(s, arg(args, if c { 1 } else { 2 })?)
     }
 

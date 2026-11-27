@@ -4,7 +4,7 @@
 // part carries where it is in the tree, for the caret (MathInPlace.tsx). Pure: no DOM.
 import { editingMathml, esc, type NameMarks, type Piece } from "./math";
 import { isDigit, isNameStart, OPS, traceRow, traceSlice, withPrintedBrackets } from "./mathLinear";
-import type { EditState, Row } from "./mathTree";
+import { fromLinear, type EditState, type Row } from "./mathTree";
 import type { Expr } from "./types";
 
 /** What the engine said about the line last: the result, and which names are units or constants. */
@@ -13,6 +13,17 @@ export interface Said {
   units: readonly string[];
   constants: readonly string[];
   marks?: NameMarks;
+}
+
+/**
+ * The unit typed after a line's `=` (`M := … = kN*m`), read as the editor reads it, with the
+ * brackets the text will have: what the view draws after `= □` when the line has no result.
+ */
+export function shownUnit(text: string): Expr | null {
+  const unit = fromLinear(text).line.unit;
+  if (!unit.atoms.length) return null;
+  const e = traceRow(unit).expr;
+  return e ? withPrintedBrackets(e) : null;
 }
 
 /** The line's MathML, tagged for the caret. */

@@ -16,10 +16,14 @@ import {
   setCaret,
   sketch,
   symbolic,
+  toExpr,
   toLinear,
   wrapIn,
   type EditState,
 } from "./mathTree";
+import { print } from "./mathLinear";
+import { naturalKeys } from "./naturalKeys";
+import type { Expr } from "./types";
 
 interface Fs {
   readFileSync(p: string, enc: string): string;
@@ -36,6 +40,8 @@ const NAMED: Record<string, string> = {
   "↓": "ArrowDown",
   "⌫": "Backspace",
   "⌦": "Delete",
+  "⌥←": "WordLeft",
+  "⌥→": "WordRight",
 };
 
 /**
@@ -64,7 +70,13 @@ function run(keys: string, start: EditState = empty()): EditState {
 
 /** The state as the spec's second column shows it, with what the editor is asked to do. */
 function shown(s: EditState): string {
-  const effect = s.effect?.leave ? ` ⟶ leave ${s.effect.leave}` : s.effect?.command ? ` ⟶ \\${s.effect.command}` : "";
+  const effect = s.effect?.leave
+    ? ` ⟶ leave ${s.effect.leave}`
+    : s.effect?.command
+      ? ` ⟶ \\${s.effect.command}`
+      : s.effect?.finish
+        ? " ⟶ finish"
+        : "";
   return sketch(s) + effect;
 }
 
@@ -135,6 +147,42 @@ function* states(count: number, length = 30): Generator<EditState> {
   }
 }
 
+/** Programs to start from: Structures ▸ Programming's templates, and programs opened from their text. */
+const PROGRAM_TEMPLATES = ["if(?, ?, ?)", "if(?, ?, if(?, ?, ?))", "for(?, ?, ?)", "while(?, ?)", "block(?, ?)"];
+const PROGRAM_TEXTS = [
+  'grade(x) := if(x ≥ 90, "A", if(x ≥ 80, "B", "C"))',
+  "total(n) := block(s := 0, for(i, 1..n, s := s + i), s)",
+  "if(a, block(x, y), 2)",
+  "block(for(i, 1..n, s), t)",
+  "fact(n) := block(p := 1, k := 1, while(k ≤ n, block(p := p*k, k := k + 1)), p)",
+  "for(i := 1, i ≤ n, i := i + 2, c := c + 1)",
+  "if(x > 0, 1, -1)",
+];
+/** The keys typed in programs: every other key, and Enter, `,`, word jumps, `else if `. */
+const PROGRAM_KEYS = [
+  ...KEYS,
+  ...["Enter", "Enter", "Enter", ",", "WordLeft", "WordRight", "else if ", "else ", "if ", "for i in ", "while "],
+];
+
+/** Random programs: a template or a program opened, then a random run of keys. */
+function* programStates(count: number, length = 30): Generator<EditState> {
+  const rand = random(175);
+  for (let r = 0; r < count; r++) {
+    let s =
+      r % 2
+        ? insertTemplate(empty(), PROGRAM_TEMPLATES[rand(PROGRAM_TEMPLATES.length)])
+        : key(fromLinear(PROGRAM_TEXTS[rand(PROGRAM_TEXTS.length)]), "End");
+    // a few steps in, so the keys land anywhere in it
+    for (let k = rand(12); k > 0; k--) s = key(s, "ArrowLeft");
+    for (let k = 0; k < length; k++) {
+      const kk = PROGRAM_KEYS[rand(PROGRAM_KEYS.length)];
+      if (kk.length > 1 && kk.includes(" ")) for (const ch of kk) s = key(s, ch);
+      else s = key(s, kk, { shift: rand(7) === 0 });
+    }
+    yield s;
+  }
+}
+
 /** Every caret position, walking → from the start. */
 function walk(s: EditState, dir: "ArrowRight" | "ArrowLeft"): string[] {
   let t = key(s, dir === "ArrowRight" ? "Home" : "End");
@@ -149,8 +197,12 @@ function walk(s: EditState, dir: "ArrowRight" | "ArrowLeft"): string[] {
 }
 
 // thousands of random key sequences: about a second here, several on a slow CI runner
-describe("whatever is typed", { timeout: 60_000 }, () => {
-  test("no key throws, and the caret is always somewhere on the line", () => {
+const SUITES = [
+  ["whatever is typed", states],
+  ["whatever is typed in a program (if, else if, for, while, block)", programStates],
+] as const;
+describe.each(SUITES)("%s", (_, states) => {
+  test("no key throws, and the caret is always somewhere on the line", { timeout: 60_000 }, () => {
     let n = 0;
     for (const s of states(3000)) {
       n++;
@@ -163,7 +215,7 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     expect(n).toBe(3000);
   });
 
-  test("→ visits every position once, from the start to the end, and ← the same backwards", () => {
+  test("→ visits every position once, from the start to the end, and ← the same backwards", { timeout: 60_000 }, () => {
     for (const s of states(400)) {
       const right = walk(s, "ArrowRight");
       // never a dead step: each → lands somewhere new
@@ -173,7 +225,7 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     }
   });
 
-  test("↑ and ↓ never trap the caret: they move or say which way to leave", () => {
+  test("↑ and ↓ never trap the caret: they move or say which way to leave", { timeout: 60_000 }, () => {
     for (const s of states(400)) {
       let t = s;
       for (let n = 0; n < 50; n++) {
@@ -186,7 +238,7 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     }
   });
 
-  test("Backspace from the end, or Delete from the start, empties any formula", () => {
+  test("Backspace from the end, or Delete from the start, empties any formula", { timeout: 60_000 }, () => {
     for (const s of states(400)) {
       for (const [k, from] of [
         ["Backspace", "End"],
@@ -208,15 +260,97 @@ describe("whatever is typed", { timeout: 60_000 }, () => {
     }
   });
 
-  test("the selection is always one slice of one row", () => {
+  test("the selection is always one slice of one row", { timeout: 60_000 }, () => {
     for (const s of states(500)) {
       let t = s;
-      for (const k of ["ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight"]) {
+      for (const k of ["ArrowLeft", "WordLeft", "ArrowUp", "ArrowRight", "WordRight", "ArrowRight"]) {
         t = key(t, k, { shift: true });
         const sel = selection(t);
         if (sel) expect(sel.from).toBeLessThan(sel.to);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Programs typed as written: keywords and Enter, or their linear text, build the same tree
+// ---------------------------------------------------------------------------
+
+/** The tree as a formula, without ids, the caret or slots open for typing. */
+const formula = (s: EditState) =>
+  JSON.stringify(s.line, (k, v) => (k === "id" || k === "born" || k === "auto" ? undefined : v));
+
+/** Random programs, nested any way: ifs with else ifs and elses, for and while loops, blocks of lines. */
+function randomProgram(rand: (n: number) => number): Expr {
+  const id = (c: string): Expr => ({ t: "Ident", c });
+  const num = (c: string): Expr => ({ t: "Num", c });
+  const call = (name: string, ...args: Expr[]): Expr => ({ t: "Call", c: [name, args] });
+  const define = (lhs: string, rhs: Expr): Expr => ({ t: "Define", c: { lhs: id(lhs), rhs, global: false } });
+  const add = (a: Expr, b: Expr): Expr => ({ t: "Binary", c: ["Add", a, b] });
+  const cmp = (a: Expr, b: Expr): Expr => ({ t: "Compare", c: [a, [[["Lt", "Ge", "Eq"][rand(3)] as "Lt", b]]] });
+  const names = ["s", "c", "x", "k"];
+  const name = () => names[rand(names.length)];
+  const leaf = (): Expr =>
+    [
+      () => define(name(), add(id(name()), num(String(rand(9) + 1)))),
+      () => id(name()),
+      () => ({ t: "Str", c: "AB"[rand(2)] }) as Expr,
+      () => call("if", cmp(id(name()), num("2")), num("1"), num("0")),
+    ][rand(4)]();
+  const value = (d: number): Expr => {
+    if (d > 2 || rand(3) === 0) return leaf();
+    if (rand(3) === 0) return call("block", ...Array.from({ length: 2 + rand(2) }, () => value(d + 1)));
+    return prog(d + 1);
+  };
+  const prog = (d: number): Expr => {
+    switch (rand(3)) {
+      case 0: {
+        // a chain: `if`, `else if`s, maybe an else
+        const links = 1 + rand(3);
+        const build = (k: number): Expr =>
+          k === links - 1
+            ? rand(2)
+              ? call("if", cmp(id(name()), num(String(k))), value(d))
+              : call("if", cmp(id(name()), num(String(k))), value(d), value(d))
+            : call("if", cmp(id(name()), num(String(k))), value(d), build(k + 1));
+        return build(0);
+      }
+      case 1:
+        return call("for", id("i"), { t: "Range", c: [num("1"), id("n")] }, value(d));
+      default:
+        return call("while", cmp(id(name()), id("n")), value(d));
+    }
+  };
+  switch (rand(3)) {
+    case 0:
+      return prog(0);
+    case 1:
+      return define("f", prog(0));
+    default:
+      return define("f", call("block", define("s", num("0")), prog(0), id("s")));
+  }
+}
+
+/** Types keys as the spec writes them: characters, and named keys such as `Enter`. */
+const typed = (keys: string[]) => keys.reduce((s, k) => key(s, k), empty());
+
+describe("a program typed as written", { timeout: 60_000 }, () => {
+  test("keywords and Enter build the tree its linear text builds, and the same text", () => {
+    const rand = random(175);
+    const sources = [...PROGRAM_TEXTS.map((t) => toExpr(fromLinear(t))!)];
+    for (let k = 0; k < 600; k++) sources.push(randomProgram(rand));
+    let checked = 0;
+    for (const e of sources) {
+      const keys = naturalKeys(e);
+      if (!keys) continue;
+      checked++;
+      const text = print(e);
+      const byKeywords = typed(keys);
+      expect(toLinear(byKeywords), `${text}\n  ${keys.join(" ")}`).toBe(text);
+      const byText = key(fromLinear(text), "End");
+      expect(formula(byKeywords), text).toBe(formula(byText));
+    }
+    expect(checked).toBeGreaterThan(500);
   });
 });
 
