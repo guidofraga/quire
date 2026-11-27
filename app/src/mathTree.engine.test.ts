@@ -21,7 +21,9 @@ import {
 import { print } from "./mathLinear";
 import { naturalKeys } from "./naturalKeys";
 import { mathml } from "./math";
-import { drawLine } from "./mathDraw";
+import { drawLine, textMathml } from "./mathDraw";
+import { InlineSim } from "./inlineSim";
+import { parseEditable } from "./richtext";
 
 interface Fs {
   existsSync(p: string): boolean;
@@ -83,7 +85,7 @@ const parse = (src: string) => call<Parsed>("parse", { src });
 // The formulas in the repository's documents
 // ---------------------------------------------------------------------------
 
-/** Every line of math a document holds: math regions, solve blocks, math inside text. */
+/** Every line of math a document holds: math regions, solve blocks, math inside text (without its `=`). */
 function formulas(doc: unknown): string[] {
   const out: string[] = [];
   const walk = (v: unknown) => {
@@ -94,12 +96,37 @@ function formulas(doc: unknown): string[] {
     if (typeof o.find === "string") out.push(o.find);
     for (const k of ["guesses", "given"])
       if (Array.isArray(o[k])) out.push(...(o[k] as unknown[]).filter((x): x is string => typeof x === "string"));
-    if (o.kind === "text" && typeof o.text === "string")
-      for (const m of o.text.matchAll(/\$`([^`]+)`/g)) out.push(m[1]);
+    Object.values(o).forEach(walk);
+  };
+  walk(doc);
+  return [...out, ...inlineMath(doc).map((s) => splitShow(s).expr)].filter((s) => s.trim());
+}
+
+/** The inline math in a document's text regions, as written (`η =` with its `=`), every language of it. */
+function inlineMath(doc: unknown): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    if (o.kind === "text") {
+      const texts =
+        typeof o.text === "string" ? [o.text] : Object.values(o.text ?? {}).filter((t) => typeof t === "string");
+      for (const t of texts as string[]) for (const m of t.matchAll(/\$(`+)([\s\S]+?)\1/g)) out.push(m[2]);
+    }
     Object.values(o).forEach(walk);
   };
   walk(doc);
   return out.filter((s) => s.trim());
+}
+
+/** A line's `=` (show the value) or `→` (symbolically), as the engine splits inline math (`split_show`). */
+function splitShow(s: string): { expr: string; show: "value" | "symbolic" | null } {
+  const t = s.trimEnd();
+  const arrow = /\s*(→|->)$/.exec(t);
+  if (arrow) return { expr: t.slice(0, arrow.index).trimEnd(), show: "symbolic" };
+  if (t.endsWith("=") && !/(==|:=|<=|>=|!=|≠=)$/.test(t)) return { expr: t.slice(0, -1).trimEnd(), show: "value" };
+  return { expr: s, show: null };
 }
 
 /** A document file or folder, opened as the app opens it (SMath files are converted). */
@@ -164,6 +191,41 @@ function roundTrip(sources: string[]): Tally {
     else t.failures.push(`typed:    ${p.print}  →  ${typed}`);
   }
   return t;
+}
+
+/** What the editor adds for the caret: the only difference allowed between the two drawings. */
+const bare = (html: string) => html.replace(/ data-(?:r|a|n|node|hole|script|open|close|unitrow)="[^"]*"/g, "");
+
+/**
+ * Inline math (`q*L^2/8 =` as written in the text) drawn as the text draws it (MathInText
+ * `inlineHtml`, as Region.tsx `fillInlineMath`) and as its editor draws it, opened from what the
+ * engine read and typed anew: with a result, and with none (an error keeps its `= □`).
+ */
+function drawnInline(sources: string[]): { checked: number; bad: string[] } {
+  const result = parse("12.5 kN*m").expr;
+  const bad: string[] = [];
+  let checked = 0;
+  for (const src of sources) {
+    const { expr, show } = splitShow(src);
+    const e = parse(expr).expr;
+    if (!e) continue;
+    for (const res of show ? [result, null] : [null]) {
+      checked++;
+      const said = { result: res, units: [], constants: [] };
+      const symbolic = show === "symbolic";
+      // the text as it reads when it isn't edited: an evaluation that failed (no result) included
+      const text = textMathml({ input: e, result: res, units: [], constants: [], symbolic }, show);
+      const opened = bare(drawLine(fromExpr(e, show), said));
+      if (opened !== text) bad.push(`opened: ${src}\n    ${opened}\n    ${text}`);
+      const typed = settleSlots(key(fromLinear(parse(expr).print! + (show ? (symbolic ? " →" : " =") : "")), "End"));
+      const stored = parse(splitShow(toLinear(typed)).expr).expr;
+      if (!stored) continue;
+      const drawn = bare(drawLine(typed, said));
+      const want = textMathml({ input: stored, result: res, units: [], constants: [], symbolic }, show);
+      if (drawn !== want) bad.push(`typed: ${src}\n    ${drawn}\n    ${want}`);
+    }
+  }
+  return { checked, bad };
 }
 
 const report = (name: string, t: Tally) =>
@@ -259,22 +321,31 @@ describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
     const dir = env.env.QUIRE_ROUNDTRIP_CORPUS!;
     const files = docsIn(dir, (n) => /\.(quire|quirez|sm)$/i.test(n));
     const sources: string[] = [];
+    const inline: string[] = [];
     let unreadable = 0;
     for (const f of files) {
       try {
-        sources.push(...formulas(openDoc(f)));
+        const doc = openDoc(f);
+        sources.push(...formulas(doc));
+        inline.push(...inlineMath(doc));
       } catch {
         unreadable++;
       }
     }
     const t = roundTrip(sources);
     console.info(report(`${dir} (${files.length} files, ${unreadable} not opened)`, t));
+    const ti = roundTrip(inline.map((s) => splitShow(s).expr));
+    console.info(report(`${dir}: its inline math`, ti));
+    const d = drawnInline(inline);
+    console.info(
+      `${dir}: inline math drawn in place: ${d.checked} drawn, ${d.bad.length} drawn otherwise\n  ${d.bad.slice(0, 12).join("\n  ")}`,
+    );
     expect(t.failures).toEqual([]);
+    expect(d.bad).toEqual([]);
   });
 
   test("a formula edited in place is drawn exactly as the view draws it, when the edit starts and ends", () => {
     // what the editor adds for the caret may differ, and nothing else
-    const bare = (html: string) => html.replace(/ data-(?:r|a|n|node|hole|script|open|close|unitrow)="[^"]*"/g, "");
     const said = { result: null, units: [], constants: [] };
     const sources = IN_REPO.flatMap((p) => formulas(openDoc(p))).filter((s) => parse(s).expr);
     const bad: string[] = [];
@@ -295,6 +366,104 @@ describe.skipIf(!haveEngine)("against the engine", { timeout: 120_000 }, () => {
     );
     expect(sources.length).toBeGreaterThan(100);
     expect(bad).toEqual([]);
+  });
+
+  test("inline math is drawn in place exactly as the text draws it, with its result or without, opened and left", () => {
+    // the formulas in the documents' text, and every formula of the documents written in a sentence
+    // with its result asked for (`… =`), symbolically (`… →`), and with none
+    const inline = IN_REPO.flatMap((p) => inlineMath(openDoc(p)));
+    const asked = IN_REPO.flatMap((p) => formulas(openDoc(p))).flatMap((s) => [`${s} =`, `${s} →`, s]);
+    const t = drawnInline([...inline, ...asked]);
+    console.info(
+      `inline math drawn in place: ${inline.length} formulas in the documents' text and ${asked.length} written ` +
+        `inline from their formulas; ${t.checked} drawn (with a result and without), ${t.bad.length} drawn otherwise\n  ` +
+        t.bad.slice(0, 12).join("\n  "),
+    );
+    expect(inline.length).toBeGreaterThan(3);
+    expect(t.checked).toBeGreaterThan(300);
+    expect(t.bad).toEqual([]);
+  });
+
+  test("inline math in the documents' text survives the editor", () => {
+    const inline = IN_REPO.flatMap((p) => inlineMath(openDoc(p))).map((s) => splitShow(s).expr);
+    const t = roundTrip(inline);
+    console.info(report(`inline math in text (${IN_REPO.length} documents)`, t));
+    expect(t.failures).toEqual([]);
+    expect(t.formulas - t.unparsed).toBeGreaterThan(3);
+  });
+
+  test("random keys across text and inline formulas always leave Djot the engine reads as the paragraphs say", () => {
+    let seed = Number(env.env.MATHTREE_SEED ?? 35);
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return Math.floor(seed / 65536) % n;
+    };
+    const KEYS = [
+      ..."ab12+*/^(). =$",
+      "ArrowLeft",
+      "ArrowRight",
+      "Backspace",
+      "Delete",
+      "Enter",
+      "Escape",
+      "⌘Z",
+      "Inline math",
+    ];
+    const STARTS = ["‸", "x ‸$a/b$ y", "The moment $M := q*L^2/8$‸ at *midspan*.", "$a$$b$‸ and `code`"];
+    const runs = Number(env.env.INLINE_RUNS ?? 300);
+    let formulasSeen = 0;
+    let misread = 0;
+    for (let run = 0; run < runs; run++) {
+      const sim = new InlineSim(STARTS[run % STARTS.length]);
+      for (let k = 0; k < 30; k++) {
+        const kk = KEYS[rand(KEYS.length)];
+        if (kk !== "Escape" || sim.formula) sim.key(kk);
+      }
+      const djot = sim.djot();
+      const exprs: string[] = [];
+      sim.state.doc.descendants((n) => {
+        if (n.type.name === "math" && String(n.attrs.expr).trim()) exprs.push(String(n.attrs.expr));
+      });
+      formulasSeen += exprs.length;
+      // the engine's editor HTML for the Djot reads back as the same paragraphs and formulas
+      const html = call<string>("djot_html", { src: djot });
+      const back = parseEditable(html).doc;
+      const read: string[] = [];
+      back.descendants((n) => {
+        if (n.type.name === "math") read.push(String(n.attrs.expr));
+      });
+      const where = `${STARTS[run % STARTS.length]} after ${JSON.stringify(sim.log)}\n${djot}`;
+      expect(read, where).toEqual(exprs);
+      // (as Djot reads text: spaces at a paragraph's ends go, runs of them are one, an empty paragraph goes; `...` is an ellipsis)
+      const text = (d: typeof back) => {
+        const out: string[] = [];
+        d.forEach((p) => out.push(p.textContent.replace(/\s+/g, " ").replace(/…/g, "...").trim()));
+        return out.filter(Boolean);
+      };
+      // jotdown reads an escaped `*` or `_` right after a closing backtick (`` `x`\*$`y`\* ``) as
+      // emphasis: a parser bug that code spans have as well, apart from this work. Its formulas
+      // still read alike (above); only the text's marks differ.
+      if (/`\\[*_]/.test(djot)) misread++;
+      else expect(text(back), where).toEqual(text(sim.state.doc));
+      // and the engine evaluates each of them, numbered in order
+      const doc = { format: "quire/1", regions: [{ id: "t", kind: "text", at: [0, 0], text: djot }] };
+      const rep = call<{ regions: { id: string }[]; html: Record<string, string> }>("report", { doc });
+      const views = rep.regions.filter((v) => v.id.startsWith("t:m"));
+      expect(
+        views.map((v) => v.id),
+        where,
+      ).toEqual(exprs.map((_, n) => `t:m${n}`));
+      // the text's rendering says which ask for a result, as the editor reads them: drawn with `= □` when they have none
+      const shows = [...(rep.html.t ?? "").matchAll(/data-math="t:m\d+"(?: data-show="(\w+)")?/g)].map(
+        (m) => m[1] ?? null,
+      );
+      expect(shows, where).toEqual(exprs.map((x) => splitShow(x).show));
+    }
+    console.info(
+      `inline: ${runs} sequences of 30 keys over text and formulas, ${formulasSeen} formulas, all read back ` +
+        `(the text of ${misread} not compared: jotdown's escape after a backtick)`,
+    );
+    expect(formulasSeen).toBeGreaterThan(runs / 2);
   });
 
   test("every prefix of a line typed previews as the engine previews that text", () => {

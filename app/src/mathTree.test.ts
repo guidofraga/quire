@@ -84,7 +84,10 @@ function shown(s: EditState): string {
 // The spec's tables, row by row
 // ---------------------------------------------------------------------------
 
-const SPEC = fs.readFileSync(`${ROOT}docs/07-math-editing.md`, "utf8");
+// the inline math table has its own columns, and its own test (inlineMath.test.ts)
+const SPEC = fs
+  .readFileSync(`${ROOT}docs/07-math-editing.md`, "utf8")
+  .replace(/\n## Inline math in text\n[\s\S]*?(?=\n## )/, "\n");
 const code = (cell: string) => /^`(.*)`$/u.exec(cell.trim())?.[1].replace(/\\\|/g, "|");
 const rows = SPEC.split("\n")
   .filter((l) => l.startsWith("| `"))

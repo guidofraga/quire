@@ -1,5 +1,6 @@
 import { MathEditor } from "./MathEditor";
 import { MathInPlace } from "./MathInPlace";
+import { MathInText } from "./MathInText";
 import { prefs } from "./settings";
 import type { EditorView } from "prosemirror-view";
 import { hitIds } from "./find";
@@ -35,7 +36,7 @@ import { SHEET_GAP } from "./pages";
 import { bracketsOf, highlightPair, mathCaret } from "./brackets";
 import { noteSide, startNoteDrag } from "./notePosition";
 import { cellHtml, esc, mathml, prettyValue } from "./math";
-import { shownUnit } from "./mathDraw";
+import { shownUnit, textMathml } from "./mathDraw";
 import { mathWords, nameMarks } from "./describe";
 import { spokenMath } from "./speech";
 import { closeMenu, type MenuItems, openRegionMenu, setMenu } from "./menu";
@@ -105,9 +106,10 @@ function fillInlineMath(el: HTMLElement) {
     const v = state.views[span.dataset.math!];
     span.classList.toggle("inline-error", !!v?.error);
     span.title = v?.error ?? "";
-    span.innerHTML = v?.input
-      ? mathml(v.input, v.result, v.units, v.constants, v.symbolic)
-      : `<code class="raw">?</code>`;
+    // in place, a formula asking for a result it has none for keeps its `= □`, as its editor draws
+    // it (MathInText.tsx): starting to edit the text moves nothing
+    const show = prefs.mathInPlace ? ((span.dataset.show ?? null) as "value" | "symbolic" | null) : null;
+    span.innerHTML = v?.input ? textMathml({ ...v, input: v.input }, show) : `<code class="raw">?</code>`;
     // read as words, not as the MathML
     if (v?.input) span.setAttribute("aria-label", spokenMath(v.input, v.result, v.units, v.constants, v.symbolic));
     span.setAttribute("role", "img");
@@ -249,6 +251,9 @@ function RichTextEditor(props: { p: Placed; style: Record<string, string | undef
     const html = plain ? null : await api.djotHtml(src).catch(() => "");
     if (state.editing !== id) return;
     view = createEditor(host, html ?? { text: src }, {
+      region: id,
+      // Settings ▸ Editing ▸ Edit math in place: inline math typed into as it is drawn
+      formula: prefs.mathInPlace ? (node, v, getPos, host) => new MathInText(node, v, getPos, host) : undefined,
       onChange: (djot) => setLive(id, djot),
       onExit: (below) => (below ? commitBelow(id) : commitEditing()),
       onKey: (v, e) => {

@@ -267,6 +267,18 @@ fn split_show(expr: &str) -> (String, bool) {
     }
 }
 
+/// What inline math asks to show: its value (`A =`), symbolically (`f(x) →`), or nothing. As
+/// [`math_inputs`] reads it, for the text's rendering to draw a missing result as `= □`.
+pub(crate) fn inline_show(m: &str) -> Option<&'static str> {
+    if split_symbolic(m).is_some() {
+        Some("symbolic")
+    } else if split_show(m).1 {
+        Some("value")
+    } else {
+        None
+    }
+}
+
 /// Math in evaluation order: math regions, inline math inside text (`<id>:m<n>`) and,
 /// with `tables`, bound tables (`"source"`), so the editor can show their matrix.
 pub fn math_inputs(doc: &Document, tables: bool) -> Vec<MathInput> {

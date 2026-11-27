@@ -25,6 +25,18 @@ import { prefs } from "./settings";
 import { runAppCommand } from "./store";
 import { completionKey, hideCompletions, showCompletions } from "./Completion";
 import { commandsFor, completions, exact, isTemplate, type Sym } from "./symbols";
+import {
+  doubleDollar,
+  enterFromText,
+  type FormulaView,
+  FROM_FORMULA,
+  insertFormula,
+  openAt,
+  opening,
+  openMath,
+  refocusFormula,
+  type TextHost,
+} from "./inlineMath";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -318,10 +330,14 @@ function linkDest(href: string): string {
   return href.replace(/[()\\\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
 }
 
+/** Formulas typed in place (MathInText.tsx) that are still empty aren't written: nothing to evaluate. */
+let dropEmptyMath = false;
+
 function inlineNode(child: PMNode): string {
   if (child.type === N.hard_break) return "\\\n";
   if (child.type === N.math) {
     const expr = String(child.attrs.expr);
+    if (dropEmptyMath && !expr.trim()) return "";
     const fence = expr.includes("`") ? "``" : "`";
     return `$${fence}${expr}${fence}`;
   }
@@ -427,7 +443,16 @@ export interface Loaded {
  * The document as Djot. Blocks still as they were loaded (`loaded`, in order) are written
  * back exactly as their source, so editing one paragraph never rewrites the others.
  */
-export function toDjot(doc: PMNode, loaded: readonly Loaded[] = []): string {
+export function toDjot(doc: PMNode, loaded: readonly Loaded[] = [], opts: { dropEmptyMath?: boolean } = {}): string {
+  dropEmptyMath = !!opts.dropEmptyMath;
+  try {
+    return writeDjot(doc, loaded);
+  } finally {
+    dropEmptyMath = false;
+  }
+}
+
+function writeDjot(doc: PMNode, loaded: readonly Loaded[]): string {
   const tail = (src: string) => src.slice(src.trimEnd().length);
   const used = new Set<number>();
   // structural equality, so a block typed in and then undone is still written as it was
@@ -635,7 +660,12 @@ export const commands = {
       dispatch?.(state.tr.replaceSelectionWith(N.xref.create({ id, style })).scrollIntoView());
       return true;
     },
-  insertMath: ((state, dispatch) => {
+  insertMath: ((state, dispatch, view) => {
+    // typed in place: a new formula, open, the caret in its □ (already in one: nothing to do)
+    if (view && inPlace.has(view)) {
+      if (openAt(state) === null) opening("hole", () => dispatch?.(insertFormula(state).scrollIntoView()));
+      return true;
+    }
     const node = N.math.create({ expr: "" });
     dispatch?.(state.tr.replaceSelectionWith(node).scrollIntoView());
     return true;
@@ -656,7 +686,8 @@ export function run(cmd: Command) {
   const view = activeView();
   if (!view) return;
   cmd(view.state, view.dispatch, view);
-  view.focus();
+  // a formula being typed into keeps the keyboard (an undo that lands in it, a new one)
+  if (!refocusFormula(view)) view.focus();
 }
 
 export function editorState(): EditorState | null {
@@ -849,6 +880,12 @@ function insertSym(view: EditorView, sym: Sym, from: number, to: number) {
     runAppCommand(sym.command);
     return;
   }
+  // typed in place: the structure opens, the caret in its first □
+  if (isTemplate(sym) && inPlace.has(view)) {
+    view.focus();
+    opening("hole", () => view.dispatch(insertFormula(view.state, sym.insert, from, to).scrollIntoView()));
+    return;
+  }
   const tr = view.state.tr;
   if (isTemplate(sym)) tr.replaceWith(from, to, N.math.create({ expr: sym.insert }));
   else tr.insertText(sym.insert, from, to);
@@ -879,6 +916,11 @@ export function insertText(text: string) {
 export function insertMathChip(expr: string) {
   const view = activeView();
   if (!view) return false;
+  if (inPlace.has(view)) {
+    if (openAt(view.state) === null)
+      opening("hole", () => view.dispatch(insertFormula(view.state, expr).scrollIntoView()));
+    return true;
+  }
   view.dispatch(view.state.tr.replaceSelectionWith(N.math.create({ expr })).scrollIntoView());
   return true;
 }
@@ -893,6 +935,30 @@ export interface EditorHooks {
   onExit(below: boolean): void;
   /** Return true to swallow the key (used to turn "word :" back into math). */
   onKey?(view: EditorView, e: KeyboardEvent): boolean;
+  /** The text region's id, for its inline math (`<id>:m<n>`). */
+  region?: string;
+  /**
+   * With Settings ▸ Editing ▸ Edit math in place on: the node view that draws a formula typeset
+   * and is typed into as it is (MathInText.tsx). Without it, a formula is a box of linear text.
+   */
+  formula?: (
+    node: PMNode,
+    view: EditorView,
+    getPos: () => number | undefined,
+    host: TextHost,
+  ) => NodeView & FormulaView;
+}
+
+/** Text editors whose formulas are typed in place, and those formulas' node views. */
+const inPlace = new WeakMap<EditorView, Set<FormulaView>>();
+
+/** A key in the text that goes into a formula next to the caret (inlineMath.ts `enterFromText`). */
+function intoFormula(view: EditorView, e: KeyboardEvent): boolean {
+  if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey || e.isComposing) return false;
+  const into = enterFromText(view.state, e.key);
+  if (!into) return false;
+  openMath(view, into);
+  return true;
 }
 
 function literalDoc(text: string): PMNode {
@@ -938,12 +1004,40 @@ export function createEditor(host: HTMLElement, content: string | { text: string
       keymap(baseKeymap),
     ],
   });
+  // Settings ▸ Editing ▸ Edit math in place: formulas drawn typeset and typed into as they are
+  const typeset = !!hooks.formula && hooks.region !== undefined;
+  const formulas = new Set<FormulaView>();
+  const textHost: TextHost = {
+    region: hooks.region ?? "",
+    finish: () => hooks.onExit(true),
+    textKey: (v, k) => void baseKeymap[k]?.(v.state, v.dispatch, v),
+    forget: (f) => formulas.delete(f),
+  };
   const view = new EditorView(host, {
     state,
-    nodeViews: { math: (node, v, getPos) => new MathChip(node, v, getPos), xref: (node) => new RefChip(node) },
-    handleTextInput: (v, from, to, text) => (text === "$" ? dollarMath(v, from, to) : false),
+    nodeViews: {
+      math: (node, v, getPos) => {
+        if (!typeset || !hooks.formula) return new MathChip(node, v, getPos);
+        const f = hooks.formula(node, v, getPos, textHost);
+        formulas.add(f);
+        return f;
+      },
+      xref: (node) => new RefChip(node),
+    },
+    handleTextInput: (v, from, to, text) => {
+      if (text !== "$") return false;
+      // `$$`: an empty formula, open
+      const at = typeset ? doubleDollar(v.state, from, to, text) : null;
+      if (at !== null) {
+        opening("hole", () => v.dispatch(insertFormula(v.state, "", at, to).scrollIntoView()));
+        return true;
+      }
+      return dollarMath(v, from, to);
+    },
     handleKeyDown: (v, e) => {
       if (completionKey(e)) return true;
+      // ← → Backspace Delete next to a formula go into it
+      if (typeset && intoFormula(v, e)) return true;
       // `\Delta` followed by a space or punctuation becomes Δ
       if (e.key.length === 1 && !/[A-Za-z\\]/.test(e.key) && !e.metaKey && !e.ctrlKey) {
         const m = latexBefore(v);
@@ -968,11 +1062,15 @@ export function createEditor(host: HTMLElement, content: string | { text: string
       view.updateState(next);
       setRevision((r) => r + 1);
       if (tr.docChanged) {
-        hooks.onChange(toDjot(next.doc, loaded));
-        updateCompletion(view);
+        hooks.onChange(toDjot(next.doc, loaded, { dropEmptyMath: typeset }));
+        // each formula's number among the text's (its results are `<id>:m<n>`)
+        for (const f of formulas) f.reindex();
+        // a key typed in a formula: its own lists are open, not the text's
+        if (!tr.getMeta(FROM_FORMULA)) updateCompletion(view);
       } else if (tr.selectionSet) hideCompletions();
     },
   });
+  if (typeset) inPlace.set(view, formulas);
   view.dom.addEventListener("focus", () => {
     setActiveView(view);
     setRevision((r) => r + 1);
@@ -986,6 +1084,13 @@ export function createEditor(host: HTMLElement, content: string | { text: string
 
 /** Put the caret where the user clicked (editing started from a click). */
 export function placeCaret(view: EditorView, x: number, y: number) {
+  // on a formula typed in place: into it, where the click landed
+  for (const f of inPlace.get(view) ?? []) {
+    const r = f.dom.getBoundingClientRect();
+    const pos = f.pos();
+    if (pos !== undefined && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+      return openMath(view, { pos, start: [x, y] });
+  }
   const pos = view.posAtCoords({ left: x, top: y });
   if (pos) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos.pos)));
 }
